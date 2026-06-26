@@ -31,6 +31,14 @@ export function getProjectileSprite() {
     return sprite;
 }
 
+export function getXPGemSprite(tier) {
+    const key = `gem:${tier}`;
+    if (cache.has(key)) return cache.get(key);
+    const sprite = drawXPGem(tier);
+    cache.set(key, sprite);
+    return sprite;
+}
+
 function drawMonkey(size) {
     const canvas = document.createElement('canvas');
     canvas.width = size;
@@ -325,6 +333,64 @@ function drawProjectile() {
     ctx.beginPath();
     ctx.ellipse(W / 2, H / 2, 11, 5, 0, 0, TWO_PI);
     ctx.fill();
+
+    return canvas;
+}
+
+function drawXPGem(tier) {
+    const SIZES = { small: 28, medium: 36, large: 44 };
+    const COLORS = {
+        small:  { base: '#4ec1ff', light: '#bfeaff', dark: '#1e6fa8' },
+        medium: { base: '#5fe87a', light: '#c7f7d0', dark: '#1f7a35' },
+        large:  { base: '#ffcc4a', light: '#fff0b8', dark: '#a06f1d' },
+    };
+    const size = SIZES[tier] ?? SIZES.small;
+    const c = COLORS[tier] ?? COLORS.small;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = size / 2;
+
+    const glow = ctx.createRadialGradient(cx, cy, 1, cx, cy, r);
+    glow.addColorStop(0, c.light);
+    glow.addColorStop(0.55, c.base + 'cc');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, size, size);
+
+    const dx = r * 0.72;
+    const dy = r * 0.86;
+    ctx.fillStyle = c.base;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - dy);
+    ctx.lineTo(cx + dx, cy);
+    ctx.lineTo(cx, cy + dy);
+    ctx.lineTo(cx - dx, cy);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = c.light;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - dy + 2);
+    ctx.lineTo(cx + dx * 0.45, cy);
+    ctx.lineTo(cx, cy - 2);
+    ctx.lineTo(cx - dx * 0.45, cy);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = c.dark;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - dy);
+    ctx.lineTo(cx + dx, cy);
+    ctx.lineTo(cx, cy + dy);
+    ctx.lineTo(cx - dx, cy);
+    ctx.closePath();
+    ctx.stroke();
 
     return canvas;
 }

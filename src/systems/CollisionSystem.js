@@ -7,7 +7,7 @@ export class CollisionSystem {
     }
 
     resolve(dt, player, enemies, projectiles) {
-        let kills = 0;
+        const killed = [];
 
         for (const p of projectiles) {
             if (!p.active) continue;
@@ -19,7 +19,7 @@ export class CollisionSystem {
                 if (dx * dx + dy * dy <= r * r) {
                     e.takeDamage(p.damage);
                     p.active = false;
-                    if (!e.active) kills += 1;
+                    if (!e.active) killed.push(e);
                     break;
                 }
             }
@@ -43,6 +43,6 @@ export class CollisionSystem {
             this.contactFlash = Math.max(0, this.contactFlash - dt);
         }
 
-        return kills;
+        return killed;
     }
 }

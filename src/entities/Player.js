@@ -3,6 +3,7 @@ import {
     SPRITE_SIZE,
     WORLD_WIDTH,
     WORLD_HEIGHT,
+    xpRequired,
 } from '../config.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { getMonkeySprite } from '../assets/ProceduralSprites.js';
@@ -20,6 +21,28 @@ export class Player {
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
         this.moving = false;
+
+        this.level = 1;
+        this.xp = 0;
+        this.xpToNext = xpRequired(1);
+        this.pickupRange = PLAYER.pickupRange;
+        this.xpMultiplier = 1;
+
+        this.maxHp = PLAYER.maxHp;
+        this.hp = PLAYER.maxHp;
+    }
+
+    gainXP(amount) {
+        if (amount <= 0) return 0;
+        this.xp += amount * this.xpMultiplier;
+        let levels = 0;
+        while (this.xp >= this.xpToNext) {
+            this.xp -= this.xpToNext;
+            this.level += 1;
+            levels += 1;
+            this.xpToNext = xpRequired(this.level);
+        }
+        return levels;
     }
 
     update(dt, input) {
@@ -51,6 +74,14 @@ export class Player {
 
     drawDebug(ctx) {
         ctx.save();
+        ctx.strokeStyle = 'rgba(78, 193, 255, 0.45)';
+        ctx.setLineDash([6, 8]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.pickupRange, 0, TWO_PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
         ctx.strokeStyle = '#ff4757';
         ctx.lineWidth = 2;
         ctx.beginPath();

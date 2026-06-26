@@ -17,6 +17,29 @@ export const PLAYER = {
     speed: 420,
     startX: 0,
     startY: 0,
+    pickupRange: 120,
+    maxHp: 100,
+};
+
+export const XP_CURVE = {
+    base: 10,
+    perLevel: 6,
+};
+
+export function xpRequired(level) {
+    return XP_CURVE.base + Math.max(0, level - 1) * XP_CURVE.perLevel;
+}
+
+export const GEM = {
+    small:  { xp: 1,  radius: 12, bounceSpeed: 200, dropWeight: 92 },
+    medium: { xp: 5,  radius: 16, bounceSpeed: 180, dropWeight: 7 },
+    large:  { xp: 20, radius: 20, bounceSpeed: 160, dropWeight: 1 },
+};
+
+export const MAGNET = {
+    initialSpeed: 150,
+    acceleration: 1600,
+    maxSpeed: 1500,
 };
 
 export const ENEMY = {

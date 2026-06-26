@@ -8,6 +8,7 @@ export class TouchJoystick {
         this.deadzone = JOYSTICK.deadzone;
 
         this.active = false;
+        this.enabled = true;
         this.touchId = null;
         this.origin = { x: 0, y: 0 };
         this.current = { x: 0, y: 0 };
@@ -45,6 +46,11 @@ export class TouchJoystick {
         this.touchId = null;
     }
 
+    setEnabled(enabled) {
+        this.enabled = !!enabled;
+        if (!this.enabled) this._reset();
+    }
+
     _safeOrigin(pos) {
         const sa = this.renderer.safeArea;
         const margin = 12;
@@ -60,6 +66,7 @@ export class TouchJoystick {
 
     _handleStart(e) {
         e.preventDefault();
+        if (!this.enabled) return;
         if (this.active) return;
         for (const t of e.changedTouches) {
             const pos = this.renderer.clientToInternal(t.clientX, t.clientY);
