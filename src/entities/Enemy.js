@@ -1,5 +1,10 @@
-import { ENEMY, SPRITE_SIZE, HIT_FLASH_DURATION } from '../config.js';
-import { TWO_PI } from '../core/MathUtils.js';
+import {
+    ENEMY,
+    SPRITE_SIZE,
+    HIT_FLASH_DURATION,
+    KNOCKBACK,
+} from '../config.js';
+import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { getSlimeSprite, getBatSprite } from '../assets/ProceduralSprites.js';
 
 const SPRITE_GETTERS = {
@@ -30,6 +35,9 @@ export class Enemy {
         this.spriteHalf = SPRITE_SIZE / 2;
         this.active = true;
         this.hitFlashTimer = 0;
+
+        this.knockbackVx = 0;
+        this.knockbackVy = 0;
     }
 
     update(dt, player) {
@@ -42,12 +50,25 @@ export class Enemy {
             this.x += this.vx * dt;
             this.y += this.vy * dt;
         }
+
+        if (this.knockbackVx !== 0 || this.knockbackVy !== 0) {
+            this.x += this.knockbackVx * dt;
+            this.y += this.knockbackVy * dt;
+            const decay = Math.exp(-dt / KNOCKBACK.timeConstant);
+            this.knockbackVx *= decay;
+            this.knockbackVy *= decay;
+            if (Math.abs(this.knockbackVx) < 1) this.knockbackVx = 0;
+            if (Math.abs(this.knockbackVy) < 1) this.knockbackVy = 0;
+        }
+
         if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
     }
 
-    takeDamage(amount) {
+    takeDamage(amount, knockbackVx = 0, knockbackVy = 0) {
         this.hp -= amount;
         this.hitFlashTimer = HIT_FLASH_DURATION;
+        this.knockbackVx += knockbackVx;
+        this.knockbackVy += knockbackVy;
         if (this.hp <= 0) {
             this.hp = 0;
             this.active = false;
@@ -62,6 +83,24 @@ export class Enemy {
             ctx.filter = `brightness(${1 + t * 1.6}) saturate(0.4)`;
         }
         ctx.drawImage(this.sprite, -this.spriteHalf, -this.spriteHalf);
+        ctx.restore();
+    }
+
+    drawHpBar(ctx) {
+        if (this.hp >= this.maxHp) return;
+        const barW = 60;
+        const barH = 6;
+        const x = this.x - barW / 2;
+        const y = this.y - this.radius - 14;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(x - 1, y - 1, barW + 2, barH + 2);
+        ctx.fillStyle = '#3a1010';
+        ctx.fillRect(x, y, barW, barH);
+        const pct = clamp(this.hp / this.maxHp, 0, 1);
+        ctx.fillStyle = pct < 0.35 ? '#ff4757' : '#ffa53b';
+        ctx.fillRect(x, y, barW * pct, barH);
         ctx.restore();
     }
 

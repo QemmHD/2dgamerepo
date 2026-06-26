@@ -30,6 +30,8 @@ export class Player {
 
         this.maxHp = PLAYER.maxHp;
         this.hp = PLAYER.maxHp;
+        this.invincibleTimer = 0;
+        this.hitFlashTimer = 0;
     }
 
     gainXP(amount) {
@@ -43,6 +45,20 @@ export class Player {
             this.xpToNext = xpRequired(this.level);
         }
         return levels;
+    }
+
+    takeDamage(amount) {
+        if (this.invincibleTimer > 0 || this.hp <= 0) return 0;
+        const dealt = Math.min(amount, this.hp);
+        this.hp -= dealt;
+        if (this.hp < 0) this.hp = 0;
+        this.invincibleTimer = PLAYER.invincibilityDuration;
+        this.hitFlashTimer = PLAYER.hitFlashDuration;
+        return dealt;
+    }
+
+    isDead() {
+        return this.hp <= 0;
     }
 
     update(dt, input) {
@@ -61,14 +77,46 @@ export class Player {
         this.moving = speedSq > 1;
         if (this.moving) this.bobTimer += dt;
         if (move.x !== 0) this.facingX = move.x < 0 ? -1 : 1;
+
+        if (this.invincibleTimer > 0) this.invincibleTimer = Math.max(0, this.invincibleTimer - dt);
+        if (this.hitFlashTimer > 0) this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
     }
 
     draw(ctx) {
+        let alpha = 1;
+        if (this.invincibleTimer > 0) {
+            const pulse = (Math.sin(this.invincibleTimer * 26) + 1) / 2;
+            alpha = 0.45 + pulse * 0.5;
+        }
+
         const bobY = this.moving ? Math.sin(this.bobTimer * 12) * 3 : 0;
         ctx.save();
+        ctx.globalAlpha = alpha;
         ctx.translate(this.x, this.y + bobY);
         if (this.facingX < 0) ctx.scale(-1, 1);
+        if (this.hitFlashTimer > 0 && typeof ctx.filter === 'string') {
+            const t = this.hitFlashTimer / PLAYER.hitFlashDuration;
+            ctx.filter = `brightness(${1 + t * 1.6})`;
+        }
         ctx.drawImage(this.sprite, -this.spriteHalf, -this.spriteHalf);
+        ctx.restore();
+    }
+
+    drawHpBar(ctx) {
+        if (this.hp >= this.maxHp) return;
+        const barW = 80;
+        const barH = 8;
+        const x = this.x - barW / 2;
+        const y = this.y - this.spriteHalf - 16;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(x - 2, y - 2, barW + 4, barH + 4);
+        ctx.fillStyle = '#5a1c1c';
+        ctx.fillRect(x, y, barW, barH);
+        const pct = clamp(this.hp / this.maxHp, 0, 1);
+        ctx.fillStyle = pct < 0.3 ? '#ff4757' : pct < 0.6 ? '#ffa53b' : '#5fe87a';
+        ctx.fillRect(x, y, barW * pct, barH);
         ctx.restore();
     }
 

@@ -19,6 +19,23 @@ export const PLAYER = {
     startY: 0,
     pickupRange: 120,
     maxHp: 100,
+    invincibilityDuration: 0.7,
+    hitFlashDuration: 0.18,
+};
+
+export const KNOCKBACK = {
+    strength: 520,
+    timeConstant: 0.08,
+};
+
+export const SCREEN_SHAKE = {
+    intensity: 24,
+    duration: 0.28,
+};
+
+export const DAMAGE_NUMBER = {
+    lifetime: 0.75,
+    riseSpeed: 70,
 };
 
 export const XP_CURVE = {

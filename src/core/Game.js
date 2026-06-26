@@ -8,12 +8,14 @@ import {
     INTERNAL_WIDTH,
     INTERNAL_HEIGHT,
     CONTACT_FLASH_DURATION,
+    SCREEN_SHAKE,
     GEM,
 } from '../config.js';
 import { TWO_PI } from './MathUtils.js';
 import { Camera } from './Camera.js';
 import { Player } from '../entities/Player.js';
 import { XPGem } from '../entities/XPGem.js';
+import { DamageNumber } from '../entities/DamageNumber.js';
 import { Spawner } from '../systems/Spawner.js';
 import { WeaponSystem } from '../systems/WeaponSystem.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
@@ -36,22 +38,9 @@ export class Game {
         this.input = input;
         this.loop = loop;
         this.camera = new Camera();
-        this.player = new Player();
-        this.camera.follow(this.player);
         this.ui = new UISystem({ renderer, loop });
 
-        this.enemies = [];
-        this.projectiles = [];
-        this.gems = [];
-        this.spawner = new Spawner();
-        this.weaponSystem = new WeaponSystem();
-        this.collisionSystem = new CollisionSystem();
-        this.upgradeSystem = new UpgradeSystem();
-
-        this.time = 0;
-        this.kills = 0;
-        this.upgradeChoices = null;
-        this.pendingLevelUps = 0;
+        this._initRunState();
 
         const touchPrimary = typeof window.matchMedia === 'function'
             ? window.matchMedia('(pointer: coarse)').matches
@@ -61,6 +50,13 @@ export class Game {
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Backquote' || e.code === 'F2') {
                 this.showDebug = !this.showDebug;
+                return;
+            }
+            if (this.gameOver) {
+                if (e.code === 'KeyR' || e.code === 'Enter') {
+                    e.preventDefault();
+                    this.restart();
+                }
                 return;
             }
             if (this.upgradeChoices) {
@@ -112,9 +108,28 @@ export class Game {
             return true;
         };
 
+        const tryRestartAt = (clientX, clientY) => {
+            if (!this.gameOver) return false;
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            const r = this.ui.getRestartButtonRect();
+            const slop = 20;
+            if (
+                pos.x >= r.x - slop &&
+                pos.x <= r.x + r.w + slop &&
+                pos.y >= r.y - slop &&
+                pos.y <= r.y + r.h + slop
+            ) {
+                this.restart();
+                return true;
+            }
+            return true;
+        };
+
         this.renderer.canvas.addEventListener('touchstart', (e) => {
             for (const t of e.changedTouches) {
-                if (this.upgradeChoices) {
+                if (this.gameOver) {
+                    if (tryRestartAt(t.clientX, t.clientY)) return;
+                } else if (this.upgradeChoices) {
                     if (tryPickUpgradeAt(t.clientX, t.clientY)) return;
                 } else if (tryToggleDebugAt(t.clientX, t.clientY)) {
                     return;
@@ -123,7 +138,9 @@ export class Game {
         }, { passive: false });
 
         this.renderer.canvas.addEventListener('mousedown', (e) => {
-            if (this.upgradeChoices) {
+            if (this.gameOver) {
+                tryRestartAt(e.clientX, e.clientY);
+            } else if (this.upgradeChoices) {
                 tryPickUpgradeAt(e.clientX, e.clientY);
             } else {
                 tryToggleDebugAt(e.clientX, e.clientY);
@@ -131,10 +148,37 @@ export class Game {
         });
     }
 
+    _initRunState() {
+        this.player = new Player();
+        this.camera.follow(this.player);
+
+        this.enemies = [];
+        this.projectiles = [];
+        this.gems = [];
+        this.damageNumbers = [];
+
+        this.spawner = new Spawner();
+        this.weaponSystem = new WeaponSystem();
+        this.collisionSystem = new CollisionSystem();
+        this.upgradeSystem = new UpgradeSystem();
+
+        this.time = 0;
+        this.kills = 0;
+        this.upgradeChoices = null;
+        this.pendingLevelUps = 0;
+        this.gameOver = false;
+
+        if (this.input.touch) this.input.touch.setEnabled(true);
+    }
+
+    restart() {
+        this._initRunState();
+    }
+
     setUpgradeChoices(choices) {
         this.upgradeChoices = choices;
         if (this.input.touch) {
-            this.input.touch.setEnabled(choices === null);
+            this.input.touch.setEnabled(choices === null && !this.gameOver);
         }
     }
 
@@ -154,8 +198,22 @@ export class Game {
         if (this.pendingLevelUps > 0) this._presentLevelUp();
     }
 
+    _enterGameOver() {
+        this.gameOver = true;
+        this.upgradeChoices = null;
+        this.pendingLevelUps = 0;
+        if (this.input.touch) this.input.touch.setEnabled(false);
+    }
+
     update(dt) {
-        if (this.upgradeChoices) return;
+        if (this.gameOver) {
+            this.camera.update(dt);
+            return;
+        }
+        if (this.upgradeChoices) {
+            this.camera.update(dt);
+            return;
+        }
 
         this.time += dt;
 
@@ -184,19 +242,40 @@ export class Game {
             }
         }
 
-        const killed = this.collisionSystem.resolve(
+        const result = this.collisionSystem.resolve(
             dt, this.player, this.enemies, this.projectiles
         );
-        if (killed.length > 0) {
-            this.kills += killed.length;
-            for (const e of killed) this._dropGem(e.x, e.y);
+        if (result.killed.length > 0) {
+            this.kills += result.killed.length;
+            for (const e of result.killed) this._dropGem(e.x, e.y);
+        }
+        for (const hit of result.hits) {
+            this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, '#ffffff'));
+        }
+        if (result.playerHit) {
+            this.camera.shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+            this.damageNumbers.push(new DamageNumber(
+                this.player.x,
+                this.player.y - this.player.radius,
+                result.playerDamageTaken,
+                '#ff4757'
+            ));
+        }
+
+        for (const d of this.damageNumbers) {
+            if (d.active) d.update(dt);
         }
 
         this._cull(this.enemies);
         this._cull(this.projectiles);
         this._cull(this.gems);
+        this._cull(this.damageNumbers);
 
         this.camera.update(dt);
+
+        if (this.player.isDead()) {
+            this._enterGameOver();
+        }
     }
 
     _dropGem(x, y) {
@@ -230,9 +309,14 @@ export class Game {
         this._drawWorldBounds(ctx, this.showDebug);
 
         for (const g of this.gems) g.draw(ctx);
-        for (const e of this.enemies) e.draw(ctx);
+        for (const e of this.enemies) {
+            e.draw(ctx);
+            e.drawHpBar(ctx);
+        }
         this.player.draw(ctx);
+        this.player.drawHpBar(ctx);
         for (const p of this.projectiles) p.draw(ctx);
+        for (const d of this.damageNumbers) d.draw(ctx);
 
         if (this.collisionSystem.contactFlash > 0) {
             this._drawContactFlash(ctx);
@@ -260,6 +344,7 @@ export class Game {
             inContact: this.collisionSystem.inContact,
             upgradeChoices: this.upgradeChoices,
             pendingLevelUps: this.pendingLevelUps,
+            gameOver: this.gameOver,
         });
 
         if (this.input.touch) this.input.touch.draw(ctx);

@@ -7,6 +7,9 @@ const CARD_W = 440;
 const CARD_H = 540;
 const CARD_GAP = 40;
 
+const RESTART_BTN_W = 360;
+const RESTART_BTN_H = 96;
+
 const RARITY_COLORS = {
     common:   { border: '#7ea3c4', accent: '#dfe9f5' },
     uncommon: { border: '#5fe87a', accent: '#bff7c8' },
@@ -48,12 +51,24 @@ export class UISystem {
         return rects;
     }
 
+    getRestartButtonRect() {
+        return {
+            x: (INTERNAL_WIDTH - RESTART_BTN_W) / 2,
+            y: INTERNAL_HEIGHT / 2 + 200,
+            w: RESTART_BTN_W,
+            h: RESTART_BTN_H,
+        };
+    }
+
     draw(ctx, gameState) {
         this._drawTitle(ctx);
+        this._drawHpBar(ctx, gameState);
         this._drawXPBar(ctx, gameState);
         this._drawHUD(ctx, gameState);
         this._drawDebugToggleHint(ctx, gameState);
-        if (gameState.upgradeChoices) {
+        if (gameState.gameOver) {
+            this._drawGameOverOverlay(ctx, gameState);
+        } else if (gameState.upgradeChoices) {
             this._drawLevelUpOverlay(ctx, gameState);
         }
     }
@@ -69,17 +84,23 @@ export class UISystem {
         ctx.restore();
     }
 
-    _drawXPBar(ctx, state) {
+    _bottomBarLayout() {
         const sa = this.renderer.safeArea;
-        const padL = sa.left + 40;
-        const padR = sa.right + 40;
-        const padB = sa.bottom + 72;
+        return {
+            padL: sa.left + 40,
+            padR: sa.right + 40,
+            labelW: 160,
+            readoutW: 200,
+            barH: 24,
+        };
+    }
 
-        const barH = 28;
-        const labelW = 160;
-        const xpReadoutW = 200;
-        const barLeft = padL + labelW;
-        const barRight = INTERNAL_WIDTH - padR - xpReadoutW;
+    _drawHpBar(ctx, state) {
+        const layout = this._bottomBarLayout();
+        const sa = this.renderer.safeArea;
+        const padB = sa.bottom + 122;
+        const barLeft = layout.padL + layout.labelW;
+        const barRight = INTERNAL_WIDTH - layout.padR - layout.readoutW;
         const barW = Math.max(60, barRight - barLeft);
         const barY = INTERNAL_HEIGHT - padB;
 
@@ -88,13 +109,53 @@ export class UISystem {
         ctx.fillStyle = '#fff';
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
-        ctx.fillText(`LV ${state.player.level}`, padL, barY + barH / 2);
+        ctx.fillText('HP', layout.padL, barY + layout.barH / 2);
 
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(barLeft, barY, barW, barH);
+        ctx.fillRect(barLeft, barY, barW, layout.barH);
         ctx.strokeStyle = 'rgba(255,255,255,0.45)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(barLeft, barY, barW, barH);
+        ctx.strokeRect(barLeft, barY, barW, layout.barH);
+
+        const pct = state.player.maxHp > 0
+            ? Math.max(0, state.player.hp / state.player.maxHp)
+            : 0;
+        const color = pct < 0.3 ? '#ff4757' : pct < 0.6 ? '#ffa53b' : '#5fe87a';
+        ctx.fillStyle = color;
+        ctx.fillRect(barLeft + 2, barY + 2, Math.max(0, (barW - 4) * pct), layout.barH - 4);
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(
+            `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`,
+            barRight + 16,
+            barY + layout.barH / 2
+        );
+        ctx.restore();
+    }
+
+    _drawXPBar(ctx, state) {
+        const layout = this._bottomBarLayout();
+        const sa = this.renderer.safeArea;
+        const padB = sa.bottom + 72;
+        const barLeft = layout.padL + layout.labelW;
+        const barRight = INTERNAL_WIDTH - layout.padR - layout.readoutW;
+        const barW = Math.max(60, barRight - barLeft);
+        const barY = INTERNAL_HEIGHT - padB;
+
+        ctx.save();
+        ctx.font = 'bold 30px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillStyle = '#fff';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillText(`LV ${state.player.level}`, layout.padL, barY + layout.barH / 2);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(barLeft, barY, barW, layout.barH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barLeft, barY, barW, layout.barH);
 
         const pct = state.player.xpToNext > 0
             ? Math.min(1, state.player.xp / state.player.xpToNext)
@@ -103,7 +164,7 @@ export class UISystem {
         grad.addColorStop(0, '#3aa8ff');
         grad.addColorStop(1, '#7fdcff');
         ctx.fillStyle = grad;
-        ctx.fillRect(barLeft + 2, barY + 2, Math.max(0, (barW - 4) * pct), barH - 4);
+        ctx.fillRect(barLeft + 2, barY + 2, Math.max(0, (barW - 4) * pct), layout.barH - 4);
 
         ctx.fillStyle = '#fff';
         ctx.font = '22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
@@ -111,7 +172,7 @@ export class UISystem {
         ctx.fillText(
             `${Math.floor(state.player.xp)} / ${state.player.xpToNext}`,
             barRight + 16,
-            barY + barH / 2
+            barY + layout.barH / 2
         );
         ctx.restore();
     }
@@ -133,6 +194,10 @@ export class UISystem {
         const debugLines = state.showDebug ? [
             ``,
             `FPS     ${this.loop?.fps ? this.loop.fps.toFixed(0) : '--'}`,
+            `hp      ${Math.ceil(state.player.hp)}/${state.player.maxHp}` +
+                (state.player.invincibleTimer > 0
+                    ? `  iframes ${state.player.invincibleTimer.toFixed(2)}s`
+                    : ''),
             `lvl/xp  ${state.player.level}  ${Math.floor(state.player.xp)}/${state.player.xpToNext}`,
             `pickup  ${Math.round(state.player.pickupRange)}`,
             `spawn   ${formatSpawn(state.spawnTimer, state.spawnInterval)}`,
@@ -151,7 +216,7 @@ export class UISystem {
         ctx.textAlign = 'right';
 
         const lineH = 34;
-        const boxW = 500;
+        const boxW = 520;
         const boxH = lineH * lines.length + 20;
         const boxRight = INTERNAL_WIDTH - padR + 12;
         const boxLeft = boxRight - boxW;
@@ -166,12 +231,12 @@ export class UISystem {
         ctx.restore();
     }
 
-    _drawDebugToggleHint(ctx, { showDebug, upgradeChoices }) {
+    _drawDebugToggleHint(ctx, state) {
         const sa = this.renderer.safeArea;
         const { x: btnX, y: btnY, w: btnW, h: btnH } = this.getDebugButtonRect();
 
         ctx.save();
-        ctx.fillStyle = showDebug ? 'rgba(80,160,255,0.65)' : 'rgba(255,255,255,0.18)';
+        ctx.fillStyle = state.showDebug ? 'rgba(80,160,255,0.65)' : 'rgba(255,255,255,0.18)';
         ctx.strokeStyle = 'rgba(255,255,255,0.55)';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -189,7 +254,7 @@ export class UISystem {
         ctx.textBaseline = 'middle';
         ctx.fillText('DBG', btnX + btnW / 2, btnY + btnH / 2);
 
-        if (!upgradeChoices) {
+        if (!state.upgradeChoices && !state.gameOver) {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -281,6 +346,58 @@ export class UISystem {
         ctx.fillStyle = 'rgba(255,255,255,0.55)';
         ctx.font = '22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.fillText('TAP TO CHOOSE', r.x + r.w / 2, r.y + r.h - 24);
+
+        ctx.restore();
+    }
+
+    _drawGameOverOverlay(ctx, state) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(20, 4, 4, 0.86)';
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        ctx.fillStyle = '#ff4757';
+        ctx.font = 'bold 144px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText('GAME OVER', INTERNAL_WIDTH / 2, 280);
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '40px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        const lines = [
+            `Survived   ${formatTime(state.time)}`,
+            `Enemies killed   ${state.kills}`,
+            `Final level   ${state.player.level}`,
+            `Final XP   ${Math.floor(state.player.xp)} / ${state.player.xpToNext}`,
+        ];
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], INTERNAL_WIDTH / 2, 420 + i * 56);
+        }
+
+        const btn = this.getRestartButtonRect();
+        ctx.fillStyle = 'rgba(95, 232, 122, 0.18)';
+        ctx.strokeStyle = '#5fe87a';
+        ctx.lineWidth = 4;
+        if (typeof ctx.roundRect === 'function') {
+            ctx.beginPath();
+            ctx.roundRect(btn.x, btn.y, btn.w, btn.h, 22);
+            ctx.fill();
+            ctx.stroke();
+        } else {
+            ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+            ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+        }
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 46px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText('RESTART', btn.x + btn.w / 2, btn.y + btn.h / 2);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.font = '26px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(
+            'Tap RESTART  •  or press R',
+            INTERNAL_WIDTH / 2,
+            btn.y + btn.h + 48
+        );
 
         ctx.restore();
     }
