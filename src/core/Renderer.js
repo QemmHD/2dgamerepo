@@ -31,6 +31,8 @@ export class Renderer {
         const winW = window.visualViewport?.width ?? window.innerWidth;
         const winH = window.visualViewport?.height ?? window.innerHeight;
 
+        if (!(winW > 0) || !(winH > 0)) return;
+
         const targetRatio = this.internalWidth / this.internalHeight;
         let cssW, cssH;
         if (winW / winH > targetRatio) {
@@ -84,6 +86,9 @@ export class Renderer {
     }
 
     beginFrame() {
+        if (this.canvas.width === 0 || this.canvas.height === 0 || this.scale === 0) {
+            return false;
+        }
         const ctx = this.ctx;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = BACKGROUND_COLOR;
@@ -91,6 +96,7 @@ export class Renderer {
         ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
+        return true;
     }
 
     clientToInternal(clientX, clientY) {

@@ -24,3 +24,5 @@ export const GRID_COLOR = '#1c2632';
 export const GRID_SIZE = 200;
 
 export const DEBUG_DEFAULT_ON = true;
+
+export { TWO_PI } from './utils/math.js';

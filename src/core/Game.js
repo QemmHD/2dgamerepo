@@ -18,13 +18,27 @@ export class Game {
         this.camera.follow(this.player);
 
         this.time = 0;
-        this.showDebug = DEBUG_DEFAULT_ON;
+
+        const touchPrimary = typeof window.matchMedia === 'function'
+            ? window.matchMedia('(pointer: coarse)').matches
+            : ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+        this.showDebug = DEBUG_DEFAULT_ON && !touchPrimary;
 
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Backquote' || e.code === 'F2') {
                 this.showDebug = !this.showDebug;
             }
         });
+
+        this.renderer.canvas.addEventListener('touchstart', (e) => {
+            for (const t of e.changedTouches) {
+                const pos = this.renderer.clientToInternal(t.clientX, t.clientY);
+                if (pos.x > INTERNAL_WIDTH - 220 && pos.y < 220) {
+                    this.showDebug = !this.showDebug;
+                    return;
+                }
+            }
+        }, { passive: false });
     }
 
     update(dt) {
@@ -35,7 +49,7 @@ export class Game {
 
     render() {
         const r = this.renderer;
-        r.beginFrame();
+        if (!r.beginFrame()) return;
         const ctx = r.ctx;
 
         ctx.save();
@@ -45,9 +59,9 @@ export class Game {
         if (this.showDebug) this.player.drawDebug(ctx);
         ctx.restore();
 
-        if (this.input.touch) this.input.touch.draw(ctx);
-
         if (this.showDebug) this._drawDebugHUD(ctx);
+
+        if (this.input.touch) this.input.touch.draw(ctx);
     }
 
     _drawGrid(ctx) {
@@ -81,13 +95,14 @@ export class Game {
 
     _drawDebugHUD(ctx) {
         const sa = this.renderer.safeArea;
-        const padX = 40 + sa.left;
+        const W = INTERNAL_WIDTH;
+        const padR = 40 + sa.right;
         const padY = 40 + sa.top;
 
         ctx.save();
         ctx.font = '28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.textBaseline = 'top';
-        ctx.textAlign = 'left';
+        ctx.textAlign = 'right';
 
         const lines = [
             `FPS  ${this.loop?.fps ? this.loop.fps.toFixed(0) : '--'}`,
@@ -98,24 +113,27 @@ export class Game {
             `Stage 0-3 prototype`,
         ];
 
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
         const lineH = 34;
         const boxW = 460;
         const boxH = lineH * lines.length + 20;
-        ctx.fillRect(padX - 12, padY - 8, boxW, boxH);
+        const boxRight = W - padR + 12;
+        const boxLeft = boxRight - boxW;
+        const boxTop = padY - 8;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(boxLeft, boxTop, boxW, boxH);
 
         ctx.fillStyle = '#fff';
+        const textRight = W - padR;
         for (let i = 0; i < lines.length; i++) {
-            ctx.fillText(lines[i], padX, padY + i * lineH);
+            ctx.fillText(lines[i], textRight, padY + i * lineH);
         }
 
-        const hint = 'WASD / Arrows  •  Touch left half to move  •  ` toggles debug';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
         ctx.font = '24px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.fillText(
-            hint,
+            'WASD / Arrows  •  Touch left half to move  •  ` or tap top-right toggles debug',
             INTERNAL_WIDTH / 2,
             INTERNAL_HEIGHT - 30 - sa.bottom
         );

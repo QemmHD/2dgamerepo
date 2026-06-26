@@ -38,29 +38,33 @@ export class GameLoop {
 
     _tick(now) {
         if (!this.running) return;
-        let frameDt = (now - this.last) / 1000;
-        this.last = now;
-        if (frameDt > this.maxFrameDt) frameDt = this.maxFrameDt;
+        try {
+            let frameDt = (now - this.last) / 1000;
+            this.last = now;
+            if (frameDt > this.maxFrameDt) frameDt = this.maxFrameDt;
 
-        this._fpsAccum += frameDt;
-        this._fpsFrames += 1;
-        if (this._fpsAccum >= 0.5) {
-            this.fps = this._fpsFrames / this._fpsAccum;
-            this._fpsAccum = 0;
-            this._fpsFrames = 0;
+            this._fpsAccum += frameDt;
+            this._fpsFrames += 1;
+            if (this._fpsAccum >= 0.5) {
+                this.fps = this._fpsFrames / this._fpsAccum;
+                this._fpsAccum = 0;
+                this._fpsFrames = 0;
+            }
+
+            this.accumulator += frameDt;
+            let steps = 0;
+            while (this.accumulator >= this.fixedDt && steps < 8) {
+                this.update(this.fixedDt);
+                this.accumulator -= this.fixedDt;
+                steps += 1;
+            }
+
+            const alpha = this.accumulator / this.fixedDt;
+            this.render(alpha);
+        } catch (err) {
+            console.error('[GameLoop] frame error:', err);
+        } finally {
+            if (this.running) requestAnimationFrame(this._tick);
         }
-
-        this.accumulator += frameDt;
-        let steps = 0;
-        while (this.accumulator >= this.fixedDt && steps < 8) {
-            this.update(this.fixedDt);
-            this.accumulator -= this.fixedDt;
-            steps += 1;
-        }
-
-        const alpha = this.accumulator / this.fixedDt;
-        this.render(alpha);
-
-        requestAnimationFrame(this._tick);
     }
 }

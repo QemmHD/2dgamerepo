@@ -1,4 +1,5 @@
-import { JOYSTICK, INTERNAL_WIDTH, TWO_PI } from '../config.js';
+import { JOYSTICK, INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config.js';
+import { TWO_PI, clamp } from '../utils/math.js';
 
 export class TouchJoystick {
     constructor(renderer) {
@@ -19,16 +20,42 @@ export class TouchJoystick {
         this._onStart = (e) => this._handleStart(e);
         this._onMove = (e) => this._handleMove(e);
         this._onEnd = (e) => this._handleEnd(e);
+        this._onCancel = () => this._reset();
+        this._onBlur = () => this._reset();
+        this._onVisibility = () => {
+            if (document.hidden) this._reset();
+        };
 
         target.addEventListener('touchstart', this._onStart, opts);
         target.addEventListener('touchmove', this._onMove, opts);
         target.addEventListener('touchend', this._onEnd, opts);
-        target.addEventListener('touchcancel', this._onEnd, opts);
+        target.addEventListener('touchcancel', this._onCancel, opts);
+
+        window.addEventListener('blur', this._onBlur);
+        document.addEventListener('visibilitychange', this._onVisibility);
 
         const blockGesture = (e) => e.preventDefault();
         document.addEventListener('gesturestart', blockGesture);
         document.addEventListener('gesturechange', blockGesture);
         document.addEventListener('gestureend', blockGesture);
+    }
+
+    _reset() {
+        this.active = false;
+        this.touchId = null;
+    }
+
+    _safeOrigin(pos) {
+        const sa = this.renderer.safeArea;
+        const margin = 12;
+        const minX = sa.left + this.maxRadius + margin;
+        const maxX = Math.max(minX, INTERNAL_WIDTH / 2 - this.maxRadius - margin);
+        const minY = sa.top + this.maxRadius + margin;
+        const maxY = Math.max(minY, INTERNAL_HEIGHT - sa.bottom - this.maxRadius - margin);
+        return {
+            x: clamp(pos.x, minX, maxX),
+            y: clamp(pos.y, minY, maxY),
+        };
     }
 
     _handleStart(e) {
@@ -39,7 +66,7 @@ export class TouchJoystick {
             if (pos.x <= INTERNAL_WIDTH / 2) {
                 this.active = true;
                 this.touchId = t.identifier;
-                this.origin = pos;
+                this.origin = this._safeOrigin(pos);
                 this.current = pos;
                 return;
             }
@@ -47,8 +74,8 @@ export class TouchJoystick {
     }
 
     _handleMove(e) {
-        if (!this.active) return;
         e.preventDefault();
+        if (!this.active) return;
         for (const t of e.changedTouches) {
             if (t.identifier === this.touchId) {
                 this.current = this.renderer.clientToInternal(t.clientX, t.clientY);
@@ -58,11 +85,11 @@ export class TouchJoystick {
     }
 
     _handleEnd(e) {
+        e.preventDefault();
         if (!this.active) return;
         for (const t of e.changedTouches) {
             if (t.identifier === this.touchId) {
-                this.active = false;
-                this.touchId = null;
+                this._reset();
                 return;
             }
         }
