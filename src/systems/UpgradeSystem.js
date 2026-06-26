@@ -86,6 +86,21 @@ const UPGRADES = [
             game.player.xpMultiplier *= 1.1;
         },
     },
+    {
+        id: 'heal',
+        name: 'Banana Patch',
+        description: 'Restore 30 HP',
+        rarity: 'common',
+        weight: 0.8,
+        // No stack cap — heal is consumed each pick, never a permanent stat.
+        // Only offered when the player is actually hurt so it isn't a wasted card.
+        available(game) {
+            return game.player.hp < game.player.maxHp;
+        },
+        apply(game) {
+            game.player.hp = Math.min(game.player.hp + 30, game.player.maxHp);
+        },
+    },
 ];
 
 function findWeapon(game, name) {
@@ -101,13 +116,16 @@ export class UpgradeSystem {
         return UPGRADES;
     }
 
-    rollChoices(count = 3) {
-        // Pull from upgrades that still have stacks remaining; weighted-pick
-        // a card, remove it from the pool, repeat — guarantees no duplicates
-        // within a single level-up.
+    rollChoices(game, count = 3) {
+        // Pull from upgrades that still have stacks remaining AND pass any
+        // optional context check (e.g. heal hides at full HP). Then weighted-
+        // pick a card, remove it from the pool, repeat — guarantees no
+        // duplicates within a single level-up.
         const remaining = UPGRADES.filter((u) => {
             const cur = this.appliedCounts[u.id] ?? 0;
-            return cur < (u.maxStacks ?? Infinity);
+            if (cur >= (u.maxStacks ?? Infinity)) return false;
+            if (u.available && game && !u.available(game)) return false;
+            return true;
         });
 
         const choices = [];

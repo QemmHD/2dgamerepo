@@ -342,7 +342,7 @@ function drawXPGem(tier) {
     const COLORS = {
         small:  { base: '#4ec1ff', light: '#bfeaff', dark: '#1e6fa8' },
         medium: { base: '#5fe87a', light: '#c7f7d0', dark: '#1f7a35' },
-        large:  { base: '#ffcc4a', light: '#fff0b8', dark: '#a06f1d' },
+        large:  { base: '#ff5566', light: '#ffb4bc', dark: '#8a1d28' },
     };
     const size = SIZES[tier] ?? SIZES.small;
     const c = COLORS[tier] ?? COLORS.small;

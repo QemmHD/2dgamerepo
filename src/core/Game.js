@@ -178,7 +178,7 @@ export class Game {
     _presentLevelUp() {
         if (this.pendingLevelUps <= 0) return;
         this.pendingLevelUps -= 1;
-        const choices = this.upgradeSystem.rollChoices(3);
+        const choices = this.upgradeSystem.rollChoices(this, 3);
         this.setUpgradeChoices(choices.length > 0 ? choices : null);
     }
 
@@ -321,6 +321,7 @@ export class Game {
             spawnInterval: this.spawner.nextInterval,
             inContact: this.collisionSystem.inContact,
             upgradeChoices: this.upgradeChoices,
+            upgradeCounts: this.upgradeSystem.appliedCounts,
             pendingLevelUps: this.pendingLevelUps,
             gameOver: this.gameOver,
         });

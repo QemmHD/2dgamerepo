@@ -286,8 +286,9 @@ export class UISystem {
         ctx.fillText(sub, INTERNAL_WIDTH / 2, 290);
 
         const rects = this.getLevelUpCardRects(choices.length);
+        const counts = state.upgradeCounts ?? {};
         for (let i = 0; i < rects.length; i++) {
-            this._drawUpgradeCard(ctx, rects[i], choices[i], i);
+            this._drawUpgradeCard(ctx, rects[i], choices[i], i, counts);
         }
 
         ctx.textAlign = 'center';
@@ -303,8 +304,10 @@ export class UISystem {
         ctx.restore();
     }
 
-    _drawUpgradeCard(ctx, r, upgrade, index) {
+    _drawUpgradeCard(ctx, r, upgrade, index, counts) {
         const colors = RARITY_COLORS[upgrade.rarity] ?? RARITY_COLORS.common;
+        const stack = (counts && counts[upgrade.id]) ?? 0;
+        const nextLevel = stack + 1;
 
         ctx.save();
         ctx.fillStyle = 'rgba(20, 26, 38, 0.95)';
@@ -323,6 +326,12 @@ export class UISystem {
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 44px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.fillText(upgrade.name, r.x + r.w / 2, r.y + 90);
+
+        // "Lv N" badge so the player can see how much they've already stacked
+        // this upgrade. `nextLevel` is what they'd have after picking.
+        ctx.fillStyle = stack > 0 ? '#ffd166' : 'rgba(255,255,255,0.55)';
+        ctx.font = 'bold 26px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(`Lv ${nextLevel}`, r.x + r.w / 2, r.y + 150);
 
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.font = '30px -apple-system, system-ui, Helvetica, Arial, sans-serif';

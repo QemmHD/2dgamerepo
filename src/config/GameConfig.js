@@ -88,7 +88,7 @@ export function xpRequired(level) {
 export const GEM = {
     small:  { xp: 1,  radius: 12, bounceSpeed: 200, dropWeight: 92 },
     medium: { xp: 5,  radius: 16, bounceSpeed: 180, dropWeight: 7 },
-    large:  { xp: 20, radius: 20, bounceSpeed: 160, dropWeight: 1 },
+    large:  { xp: 10, radius: 20, bounceSpeed: 160, dropWeight: 1 },
 };
 
 export const GEM_TIERS = ['small', 'medium', 'large'];
