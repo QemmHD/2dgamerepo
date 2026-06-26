@@ -1,5 +1,11 @@
-import { PLAYER, SPRITE_SIZE, TWO_PI } from '../config.js';
-import { getMonkeySprite } from '../render/Sprites.js';
+import {
+    PLAYER,
+    SPRITE_SIZE,
+    WORLD_WIDTH,
+    WORLD_HEIGHT,
+} from '../config.js';
+import { TWO_PI, clamp } from '../core/MathUtils.js';
+import { getMonkeySprite } from '../assets/ProceduralSprites.js';
 
 export class Player {
     constructor(x = PLAYER.startX, y = PLAYER.startY) {
@@ -22,6 +28,11 @@ export class Player {
         this.vy = move.y * this.speed;
         this.x += this.vx * dt;
         this.y += this.vy * dt;
+
+        const halfW = WORLD_WIDTH / 2;
+        const halfH = WORLD_HEIGHT / 2;
+        this.x = clamp(this.x, -halfW + this.radius, halfW - this.radius);
+        this.y = clamp(this.y, -halfH + this.radius, halfH - this.radius);
 
         const speedSq = this.vx * this.vx + this.vy * this.vy;
         this.moving = speedSq > 1;

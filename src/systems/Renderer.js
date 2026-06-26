@@ -72,8 +72,8 @@ export class Renderer {
 
         const padLeftCss = Math.max(0, insetLeft - canvasLeftCss);
         const padTopCss = Math.max(0, insetTop - canvasTopCss);
-        const padRightCss = Math.max(0, (canvasRightCss) - (winW - insetRight));
-        const padBottomCss = Math.max(0, (canvasBottomCss) - (winH - insetBottom));
+        const padRightCss = Math.max(0, canvasRightCss - (winW - insetRight));
+        const padBottomCss = Math.max(0, canvasBottomCss - (winH - insetBottom));
 
         const internalPerCss = this.internalWidth / Math.max(1, this.cssWidth);
 

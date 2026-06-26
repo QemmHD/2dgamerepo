@@ -3,10 +3,16 @@ import {
     INTERNAL_HEIGHT,
     GRID_COLOR,
     GRID_SIZE,
+    WORLD_WIDTH,
+    WORLD_HEIGHT,
+    WORLD_BOUNDS_COLOR,
     DEBUG_DEFAULT_ON,
 } from '../config.js';
 import { Camera } from './Camera.js';
 import { Player } from '../entities/Player.js';
+import { UISystem } from '../systems/UISystem.js';
+
+const DEBUG_BUTTON_HIT_SIZE = 96;
 
 export class Game {
     constructor({ renderer, input, loop }) {
@@ -16,6 +22,7 @@ export class Game {
         this.camera = new Camera();
         this.player = new Player();
         this.camera.follow(this.player);
+        this.ui = new UISystem({ renderer, loop });
 
         this.time = 0;
 
@@ -30,15 +37,27 @@ export class Game {
             }
         });
 
+        const tryToggleDebugAt = (clientX, clientY) => {
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            if (
+                pos.x > INTERNAL_WIDTH - DEBUG_BUTTON_HIT_SIZE * 1.5 &&
+                pos.y < DEBUG_BUTTON_HIT_SIZE * 1.5
+            ) {
+                this.showDebug = !this.showDebug;
+                return true;
+            }
+            return false;
+        };
+
         this.renderer.canvas.addEventListener('touchstart', (e) => {
             for (const t of e.changedTouches) {
-                const pos = this.renderer.clientToInternal(t.clientX, t.clientY);
-                if (pos.x > INTERNAL_WIDTH - 220 && pos.y < 220) {
-                    this.showDebug = !this.showDebug;
-                    return;
-                }
+                if (tryToggleDebugAt(t.clientX, t.clientY)) return;
             }
         }, { passive: false });
+
+        this.renderer.canvas.addEventListener('mousedown', (e) => {
+            tryToggleDebugAt(e.clientX, e.clientY);
+        });
     }
 
     update(dt) {
@@ -55,11 +74,17 @@ export class Game {
         ctx.save();
         this.camera.apply(ctx);
         this._drawGrid(ctx);
+        if (this.showDebug) this._drawWorldBounds(ctx);
         this.player.draw(ctx);
         if (this.showDebug) this.player.drawDebug(ctx);
         ctx.restore();
 
-        if (this.showDebug) this._drawDebugHUD(ctx);
+        this.ui.draw(ctx, {
+            time: this.time,
+            player: this.player,
+            camera: this.camera,
+            showDebug: this.showDebug,
+        });
 
         if (this.input.touch) this.input.touch.draw(ctx);
     }
@@ -93,50 +118,15 @@ export class Game {
         ctx.fill();
     }
 
-    _drawDebugHUD(ctx) {
-        const sa = this.renderer.safeArea;
-        const W = INTERNAL_WIDTH;
-        const padR = 40 + sa.right;
-        const padY = 40 + sa.top;
-
+    _drawWorldBounds(ctx) {
+        const hw = WORLD_WIDTH / 2;
+        const hh = WORLD_HEIGHT / 2;
         ctx.save();
-        ctx.font = '28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
-        ctx.textBaseline = 'top';
-        ctx.textAlign = 'right';
-
-        const lines = [
-            `FPS  ${this.loop?.fps ? this.loop.fps.toFixed(0) : '--'}`,
-            `time ${this.time.toFixed(1)}s`,
-            `pos  (${Math.round(this.player.x)}, ${Math.round(this.player.y)})`,
-            `dpr  ${this.renderer.dpr.toFixed(2)}`,
-            `safe T${Math.round(sa.top)} R${Math.round(sa.right)} B${Math.round(sa.bottom)} L${Math.round(sa.left)}`,
-            `Stage 0-3 prototype`,
-        ];
-
-        const lineH = 34;
-        const boxW = 460;
-        const boxH = lineH * lines.length + 20;
-        const boxRight = W - padR + 12;
-        const boxLeft = boxRight - boxW;
-        const boxTop = padY - 8;
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(boxLeft, boxTop, boxW, boxH);
-
-        ctx.fillStyle = '#fff';
-        const textRight = W - padR;
-        for (let i = 0; i < lines.length; i++) {
-            ctx.fillText(lines[i], textRight, padY + i * lineH);
-        }
-
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.font = '24px -apple-system, system-ui, Helvetica, Arial, sans-serif';
-        ctx.fillText(
-            'WASD / Arrows  •  Touch left half to move  •  ` or tap top-right toggles debug',
-            INTERNAL_WIDTH / 2,
-            INTERNAL_HEIGHT - 30 - sa.bottom
-        );
+        ctx.strokeStyle = WORLD_BOUNDS_COLOR;
+        ctx.lineWidth = 4;
+        ctx.setLineDash([16, 12]);
+        ctx.strokeRect(-hw, -hh, WORLD_WIDTH, WORLD_HEIGHT);
+        ctx.setLineDash([]);
         ctx.restore();
     }
 }

@@ -1,9 +1,9 @@
-import { Renderer } from './core/Renderer.js';
+import { Renderer } from './systems/Renderer.js';
 import { GameLoop } from './core/GameLoop.js';
 import { Game } from './core/Game.js';
-import { Input } from './input/Input.js';
-import { KeyboardInput } from './input/KeyboardInput.js';
-import { TouchJoystick } from './input/TouchJoystick.js';
+import { Input } from './core/Input.js';
+import { KeyboardInput } from './core/KeyboardInput.js';
+import { TouchJoystick } from './core/TouchJoystick.js';
 
 function boot() {
     const canvas = document.getElementById('game');
