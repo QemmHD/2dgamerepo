@@ -1,18 +1,18 @@
 import {
-    INTERNAL_WIDTH,
-    INTERNAL_HEIGHT,
     GRID_COLOR,
     GRID_SIZE,
     WORLD_WIDTH,
     WORLD_HEIGHT,
     WORLD_BOUNDS_COLOR,
     DEBUG_DEFAULT_ON,
+    INTERNAL_WIDTH,
+    INTERNAL_HEIGHT,
 } from '../config.js';
 import { Camera } from './Camera.js';
 import { Player } from '../entities/Player.js';
 import { UISystem } from '../systems/UISystem.js';
 
-const DEBUG_BUTTON_HIT_SIZE = 96;
+const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
 export class Game {
     constructor({ renderer, input, loop }) {
@@ -39,9 +39,13 @@ export class Game {
 
         const tryToggleDebugAt = (clientX, clientY) => {
             const pos = this.renderer.clientToInternal(clientX, clientY);
+            const r = this.ui.getDebugButtonRect();
+            const slop = DEBUG_BUTTON_TOUCH_SLOP;
             if (
-                pos.x > INTERNAL_WIDTH - DEBUG_BUTTON_HIT_SIZE * 1.5 &&
-                pos.y < DEBUG_BUTTON_HIT_SIZE * 1.5
+                pos.x >= r.x - slop &&
+                pos.x <= r.x + r.w + slop &&
+                pos.y >= r.y - slop &&
+                pos.y <= r.y + r.h + slop
             ) {
                 this.showDebug = !this.showDebug;
                 return true;
@@ -74,7 +78,7 @@ export class Game {
         ctx.save();
         this.camera.apply(ctx);
         this._drawGrid(ctx);
-        if (this.showDebug) this._drawWorldBounds(ctx);
+        this._drawWorldBounds(ctx, this.showDebug);
         this.player.draw(ctx);
         if (this.showDebug) this.player.drawDebug(ctx);
         ctx.restore();
@@ -118,13 +122,20 @@ export class Game {
         ctx.fill();
     }
 
-    _drawWorldBounds(ctx) {
+    _drawWorldBounds(ctx, debug) {
         const hw = WORLD_WIDTH / 2;
         const hh = WORLD_HEIGHT / 2;
         ctx.save();
         ctx.strokeStyle = WORLD_BOUNDS_COLOR;
-        ctx.lineWidth = 4;
-        ctx.setLineDash([16, 12]);
+        if (debug) {
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = 4;
+            ctx.setLineDash([16, 12]);
+        } else {
+            ctx.globalAlpha = 0.22;
+            ctx.lineWidth = 6;
+            ctx.setLineDash([24, 18]);
+        }
         ctx.strokeRect(-hw, -hh, WORLD_WIDTH, WORLD_HEIGHT);
         ctx.setLineDash([]);
         ctx.restore();

@@ -1,9 +1,22 @@
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT, GAME_TITLE } from '../config.js';
 
+const DEBUG_BUTTON_SIZE = 96;
+const DEBUG_BUTTON_MARGIN = 20;
+
 export class UISystem {
     constructor({ renderer, loop }) {
         this.renderer = renderer;
         this.loop = loop;
+    }
+
+    getDebugButtonRect() {
+        const sa = this.renderer.safeArea;
+        return {
+            x: INTERNAL_WIDTH - sa.right - DEBUG_BUTTON_SIZE - DEBUG_BUTTON_MARGIN,
+            y: sa.top + DEBUG_BUTTON_MARGIN,
+            w: DEBUG_BUTTON_SIZE,
+            h: DEBUG_BUTTON_SIZE,
+        };
     }
 
     draw(ctx, gameState) {
@@ -66,27 +79,26 @@ export class UISystem {
 
     _drawDebugToggleHint(ctx, { showDebug }) {
         const sa = this.renderer.safeArea;
-
-        const btnSize = 56;
-        const btnX = INTERNAL_WIDTH - sa.right - btnSize - 20;
-        const btnY = sa.top + 20;
+        const { x: btnX, y: btnY, w: btnW, h: btnH } = this.getDebugButtonRect();
 
         ctx.save();
         ctx.fillStyle = showDebug ? 'rgba(80,160,255,0.65)' : 'rgba(255,255,255,0.18)';
         ctx.strokeStyle = 'rgba(255,255,255,0.55)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.roundRect
-            ? ctx.roundRect(btnX, btnY, btnSize, btnSize, 10)
-            : ctx.rect(btnX, btnY, btnSize, btnSize);
+        if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(btnX, btnY, btnW, btnH, 14);
+        } else {
+            ctx.rect(btnX, btnY, btnW, btnH);
+        }
         ctx.fill();
         ctx.stroke();
 
         ctx.fillStyle = '#fff';
-        ctx.font = '20px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.font = '32px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('DBG', btnX + btnSize / 2, btnY + btnSize / 2);
+        ctx.fillText('DBG', btnX + btnW / 2, btnY + btnH / 2);
 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
