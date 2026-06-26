@@ -21,56 +21,63 @@ export class UISystem {
 
     draw(ctx, gameState) {
         this._drawTitle(ctx);
-        if (gameState.showDebug) {
-            this._drawDebugHUD(ctx, gameState);
-        }
+        this._drawHUD(ctx, gameState);
         this._drawDebugToggleHint(ctx, gameState);
     }
 
     _drawTitle(ctx) {
         const sa = this.renderer.safeArea;
-        const y = 28 + sa.top;
         ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.font = '34px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.fillText(GAME_TITLE, INTERNAL_WIDTH / 2, y);
+        ctx.fillText(GAME_TITLE, INTERNAL_WIDTH / 2, 28 + sa.top);
         ctx.restore();
     }
 
-    _drawDebugHUD(ctx, { time, player, camera }) {
+    _drawHUD(ctx, state) {
         const sa = this.renderer.safeArea;
-        const W = INTERNAL_WIDTH;
-        const padR = 40 + sa.right;
-        const padY = 100 + sa.top;
+        const btn = this.getDebugButtonRect();
+        const padR = INTERNAL_WIDTH - btn.x + 8;
+        const padY = btn.y + btn.h + 18;
+
+        const gameplayLines = [
+            `TIME    ${formatTime(state.time)}`,
+            `KILLS   ${state.kills}`,
+            `ENEMIES ${state.enemyCount}`,
+            `BOLTS   ${state.projectileCount}`,
+        ];
+
+        const debugLines = state.showDebug ? [
+            ``,
+            `FPS     ${this.loop?.fps ? this.loop.fps.toFixed(0) : '--'}`,
+            `spawn   ${formatSpawn(state.spawnTimer, state.spawnInterval)}`,
+            `player  (${Math.round(state.player.x)}, ${Math.round(state.player.y)})`,
+            `camera  (${Math.round(state.camera.x)}, ${Math.round(state.camera.y)})`,
+            `dpr     ${this.renderer.dpr.toFixed(2)}`,
+            `safe    T${Math.round(sa.top)} R${Math.round(sa.right)} B${Math.round(sa.bottom)} L${Math.round(sa.left)}`,
+            `contact ${state.inContact ? 'YES' : 'no'}`,
+        ] : [];
+
+        const lines = [...gameplayLines, ...debugLines];
 
         ctx.save();
         ctx.font = '28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.textBaseline = 'top';
         ctx.textAlign = 'right';
 
-        const lines = [
-            `FPS  ${this.loop?.fps ? this.loop.fps.toFixed(0) : '--'}`,
-            `time ${time.toFixed(1)}s`,
-            `player (${Math.round(player.x)}, ${Math.round(player.y)})`,
-            `camera (${Math.round(camera.x)}, ${Math.round(camera.y)})`,
-            `dpr  ${this.renderer.dpr.toFixed(2)}`,
-            `safe T${Math.round(sa.top)} R${Math.round(sa.right)} B${Math.round(sa.bottom)} L${Math.round(sa.left)}`,
-            `Stage 0-3 prototype`,
-        ];
-
         const lineH = 34;
         const boxW = 500;
         const boxH = lineH * lines.length + 20;
-        const boxRight = W - padR + 12;
+        const boxRight = INTERNAL_WIDTH - padR + 12;
         const boxLeft = boxRight - boxW;
         const boxTop = padY - 8;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.fillRect(boxLeft, boxTop, boxW, boxH);
 
         ctx.fillStyle = '#fff';
-        const textRight = W - padR;
+        const textRight = INTERNAL_WIDTH - padR;
         for (let i = 0; i < lines.length; i++) {
             ctx.fillText(lines[i], textRight, padY + i * lineH);
         }
@@ -111,4 +118,15 @@ export class UISystem {
         );
         ctx.restore();
     }
+}
+
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function formatSpawn(timer, interval) {
+    if (interval == null) return `${timer.toFixed(2)}s`;
+    return `${timer.toFixed(2)}s / ${interval.toFixed(2)}s`;
 }

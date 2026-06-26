@@ -1,9 +1,48 @@
-// Placeholder for Stage 6: circle-vs-circle collision detection.
-// Will resolve projectile↔enemy hits, player↔enemy contact damage with
-// i-frames, and gem pickup magnetism.
+import { CONTACT_FLASH_DURATION } from '../config.js';
 
 export class CollisionSystem {
     constructor() {
-        throw new Error('CollisionSystem is a placeholder — not implemented until Stage 6.');
+        this.contactFlash = 0;
+        this.inContact = false;
+    }
+
+    resolve(dt, player, enemies, projectiles) {
+        let kills = 0;
+
+        for (const p of projectiles) {
+            if (!p.active) continue;
+            for (const e of enemies) {
+                if (!e.active) continue;
+                const r = p.radius + e.radius;
+                const dx = p.x - e.x;
+                const dy = p.y - e.y;
+                if (dx * dx + dy * dy <= r * r) {
+                    e.takeDamage(p.damage);
+                    p.active = false;
+                    if (!e.active) kills += 1;
+                    break;
+                }
+            }
+        }
+
+        let contact = false;
+        for (const e of enemies) {
+            if (!e.active) continue;
+            const r = player.radius + e.radius;
+            const dx = player.x - e.x;
+            const dy = player.y - e.y;
+            if (dx * dx + dy * dy <= r * r) {
+                contact = true;
+                break;
+            }
+        }
+        this.inContact = contact;
+        if (contact) {
+            this.contactFlash = CONTACT_FLASH_DURATION;
+        } else if (this.contactFlash > 0) {
+            this.contactFlash = Math.max(0, this.contactFlash - dt);
+        }
+
+        return kills;
     }
 }

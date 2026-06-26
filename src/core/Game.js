@@ -7,9 +7,14 @@ import {
     DEBUG_DEFAULT_ON,
     INTERNAL_WIDTH,
     INTERNAL_HEIGHT,
+    CONTACT_FLASH_DURATION,
 } from '../config.js';
+import { TWO_PI } from './MathUtils.js';
 import { Camera } from './Camera.js';
 import { Player } from '../entities/Player.js';
+import { Spawner } from '../systems/Spawner.js';
+import { WeaponSystem } from '../systems/WeaponSystem.js';
+import { CollisionSystem } from '../systems/CollisionSystem.js';
 import { UISystem } from '../systems/UISystem.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
@@ -24,7 +29,14 @@ export class Game {
         this.camera.follow(this.player);
         this.ui = new UISystem({ renderer, loop });
 
+        this.enemies = [];
+        this.projectiles = [];
+        this.spawner = new Spawner();
+        this.weaponSystem = new WeaponSystem();
+        this.collisionSystem = new CollisionSystem();
+
         this.time = 0;
+        this.kills = 0;
 
         const touchPrimary = typeof window.matchMedia === 'function'
             ? window.matchMedia('(pointer: coarse)').matches
@@ -66,8 +78,35 @@ export class Game {
 
     update(dt) {
         this.time += dt;
+
         this.player.update(dt, this.input);
+        this.spawner.update(dt, this.player, this.enemies);
+        this.weaponSystem.update(dt, this.player, this.enemies, this.projectiles);
+
+        for (const e of this.enemies) {
+            if (e.active) e.update(dt, this.player);
+        }
+        for (const p of this.projectiles) {
+            if (p.active) p.update(dt);
+        }
+
+        this.kills += this.collisionSystem.resolve(dt, this.player, this.enemies, this.projectiles);
+
+        this._cull(this.enemies);
+        this._cull(this.projectiles);
+
         this.camera.update(dt);
+    }
+
+    _cull(list) {
+        let write = 0;
+        for (let read = 0; read < list.length; read++) {
+            if (list[read].active) {
+                if (write !== read) list[write] = list[read];
+                write += 1;
+            }
+        }
+        list.length = write;
     }
 
     render() {
@@ -79,8 +118,20 @@ export class Game {
         this.camera.apply(ctx);
         this._drawGrid(ctx);
         this._drawWorldBounds(ctx, this.showDebug);
+
+        for (const e of this.enemies) e.draw(ctx);
         this.player.draw(ctx);
-        if (this.showDebug) this.player.drawDebug(ctx);
+        for (const p of this.projectiles) p.draw(ctx);
+
+        if (this.collisionSystem.contactFlash > 0) {
+            this._drawContactFlash(ctx);
+        }
+
+        if (this.showDebug) {
+            this.player.drawDebug(ctx);
+            for (const e of this.enemies) e.drawDebug(ctx);
+            for (const p of this.projectiles) p.drawDebug(ctx);
+        }
         ctx.restore();
 
         this.ui.draw(ctx, {
@@ -88,6 +139,12 @@ export class Game {
             player: this.player,
             camera: this.camera,
             showDebug: this.showDebug,
+            kills: this.kills,
+            enemyCount: this.enemies.length,
+            projectileCount: this.projectiles.length,
+            spawnTimer: this.spawner.timer,
+            spawnInterval: this.spawner.nextInterval,
+            inContact: this.collisionSystem.inContact,
         });
 
         if (this.input.touch) this.input.touch.draw(ctx);
@@ -138,6 +195,18 @@ export class Game {
         }
         ctx.strokeRect(-hw, -hh, WORLD_WIDTH, WORLD_HEIGHT);
         ctx.setLineDash([]);
+        ctx.restore();
+    }
+
+    _drawContactFlash(ctx) {
+        const intensity = Math.min(1, this.collisionSystem.contactFlash / CONTACT_FLASH_DURATION);
+        ctx.save();
+        ctx.globalAlpha = intensity * 0.7;
+        ctx.strokeStyle = '#ff4757';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(this.player.x, this.player.y, this.player.radius + 14, 0, TWO_PI);
+        ctx.stroke();
         ctx.restore();
     }
 }

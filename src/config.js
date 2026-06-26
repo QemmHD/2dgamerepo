@@ -19,6 +19,48 @@ export const PLAYER = {
     startY: 0,
 };
 
+export const ENEMY = {
+    slime: {
+        hp: 30,
+        speed: 110,
+        radius: 55,
+        contactDamage: 8,
+        xpValue: 1,
+    },
+    bat: {
+        hp: 18,
+        speed: 220,
+        radius: 45,
+        contactDamage: 6,
+        xpValue: 1,
+    },
+};
+
+export const WEAPON = {
+    bolt: {
+        cooldown: 0.6,
+        damage: 12,
+        projectileSpeed: 900,
+        projectileLifetime: 1.5,
+        projectileRadius: 14,
+    },
+};
+
+export const SPAWN = {
+    intervalMin: 0.75,
+    intervalMax: 1.25,
+    maxAlive: 60,
+    ringRadiusMin: 1050,
+    ringRadiusMax: 1350,
+    minSpawnDistance: 800,
+    slimeOnlyUntil: 5,
+    batChance: 0.3,
+    placementAttempts: 8,
+};
+
+export const HIT_FLASH_DURATION = 0.08;
+export const CONTACT_FLASH_DURATION = 0.15;
+
 export const JOYSTICK = {
     maxRadius: 180,
     deadzone: 22,
