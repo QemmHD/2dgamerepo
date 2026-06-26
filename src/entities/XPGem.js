@@ -1,5 +1,5 @@
-import { GEM, MAGNET } from '../config.js';
-import { TWO_PI } from '../core/MathUtils.js';
+import { GEM, MAGNET } from '../config/GameConfig.js';
+import { TWO_PI, circleOverlap } from '../core/MathUtils.js';
 import { getXPGemSprite } from '../assets/ProceduralSprites.js';
 
 const BOUNCE_DURATION = 0.4;
@@ -55,10 +55,7 @@ export class XPGem {
             this.y += (dy / dist) * this.magnetSpeed * dt;
         }
 
-        const ndx = player.x - this.x;
-        const ndy = player.y - this.y;
-        const collectR = player.radius + this.radius;
-        if (ndx * ndx + ndy * ndy <= collectR * collectR) {
+        if (circleOverlap(this.x, this.y, this.radius, player.x, player.y, player.radius)) {
             this.active = false;
             return this.xp;
         }

@@ -1,3 +1,9 @@
+// Pool of available upgrades. Each entry is pure data + an `apply(game)`
+// that mutates the world (weapons[], player stats, etc.). Adding a new
+// upgrade is a single push to this array; no system code changes.
+
+import { pickWeighted } from '../core/MathUtils.js';
+
 const UPGRADES = [
     {
         id: 'bolt-damage',
@@ -96,26 +102,20 @@ export class UpgradeSystem {
     }
 
     rollChoices(count = 3) {
-        const pool = UPGRADES.filter((u) => {
+        // Pull from upgrades that still have stacks remaining; weighted-pick
+        // a card, remove it from the pool, repeat — guarantees no duplicates
+        // within a single level-up.
+        const remaining = UPGRADES.filter((u) => {
             const cur = this.appliedCounts[u.id] ?? 0;
             return cur < (u.maxStacks ?? Infinity);
         });
 
         const choices = [];
-        const remaining = pool.slice();
         while (choices.length < count && remaining.length > 0) {
-            const totalWeight = remaining.reduce((s, u) => s + (u.weight ?? 1), 0);
-            let pick = Math.random() * totalWeight;
-            let idx = 0;
-            for (let j = 0; j < remaining.length; j++) {
-                pick -= remaining[j].weight ?? 1;
-                if (pick <= 0) {
-                    idx = j;
-                    break;
-                }
-            }
-            choices.push(remaining[idx]);
-            remaining.splice(idx, 1);
+            const picked = pickWeighted(remaining);
+            if (!picked) break;
+            choices.push(picked);
+            remaining.splice(remaining.indexOf(picked), 1);
         }
         return choices;
     }

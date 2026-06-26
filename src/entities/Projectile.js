@@ -1,4 +1,4 @@
-import { WEAPON, WORLD_WIDTH, WORLD_HEIGHT } from '../config.js';
+import { WEAPON, WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import { getProjectileSprite } from '../assets/ProceduralSprites.js';
 

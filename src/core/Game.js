@@ -10,8 +10,9 @@ import {
     CONTACT_FLASH_DURATION,
     SCREEN_SHAKE,
     GEM,
-} from '../config.js';
-import { TWO_PI } from './MathUtils.js';
+    GEM_TIERS,
+} from '../config/GameConfig.js';
+import { TWO_PI, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Camera } from './Camera.js';
 import { Player } from '../entities/Player.js';
 import { XPGem } from '../entities/XPGem.js';
@@ -23,14 +24,6 @@ import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { UISystem } from '../systems/UISystem.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
-
-const GEM_DROP_TABLE = (() => {
-    const total = GEM.small.dropWeight + GEM.medium.dropWeight + GEM.large.dropWeight;
-    return {
-        smallThreshold: GEM.small.dropWeight / total,
-        mediumThreshold: (GEM.small.dropWeight + GEM.medium.dropWeight) / total,
-    };
-})();
 
 export class Game {
     constructor({ renderer, input, loop }) {
@@ -266,10 +259,10 @@ export class Game {
             if (d.active) d.update(dt);
         }
 
-        this._cull(this.enemies);
-        this._cull(this.projectiles);
-        this._cull(this.gems);
-        this._cull(this.damageNumbers);
+        compactInPlace(this.enemies);
+        compactInPlace(this.projectiles);
+        compactInPlace(this.gems);
+        compactInPlace(this.damageNumbers);
 
         this.camera.update(dt);
 
@@ -279,23 +272,8 @@ export class Game {
     }
 
     _dropGem(x, y) {
-        const r = Math.random();
-        let tier;
-        if (r < GEM_DROP_TABLE.smallThreshold) tier = 'small';
-        else if (r < GEM_DROP_TABLE.mediumThreshold) tier = 'medium';
-        else tier = 'large';
+        const tier = pickWeighted(GEM_TIERS, (t) => GEM[t].dropWeight) ?? 'small';
         this.gems.push(new XPGem(x, y, tier));
-    }
-
-    _cull(list) {
-        let write = 0;
-        for (let read = 0; read < list.length; read++) {
-            if (list[read].active) {
-                if (write !== read) list[write] = list[read];
-                write += 1;
-            }
-        }
-        list.length = write;
     }
 
     render() {

@@ -1,4 +1,10 @@
-import { WEAPON } from '../config.js';
+// Owns the player's automatic weapons. Each weapon ticks its own cooldown,
+// finds a target (currently always the nearest active enemy), and spawns
+// a Projectile heading that direction. Adding a new weapon = add an entry
+// to the weapons array; the loop here doesn't change.
+
+import { WEAPON } from '../config/GameConfig.js';
+import { distanceSq } from '../core/MathUtils.js';
 import { Projectile } from '../entities/Projectile.js';
 
 export class WeaponSystem {
@@ -22,6 +28,8 @@ export class WeaponSystem {
             if (w.timer > 0) continue;
             const target = this._findNearestEnemy(player, enemies);
             if (!target) {
+                // No target: hold the timer at 0 so the next enemy to appear
+                // gets shot immediately instead of waiting a full cycle.
                 if (w.timer < 0) w.timer = 0;
                 continue;
             }
@@ -35,9 +43,7 @@ export class WeaponSystem {
         let bestDistSq = Infinity;
         for (const e of enemies) {
             if (!e.active) continue;
-            const dx = e.x - player.x;
-            const dy = e.y - player.y;
-            const dsq = dx * dx + dy * dy;
+            const dsq = distanceSq(e.x, e.y, player.x, player.y);
             if (dsq < bestDistSq) {
                 bestDistSq = dsq;
                 best = e;

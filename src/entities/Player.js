@@ -3,10 +3,12 @@ import {
     SPRITE_SIZE,
     WORLD_WIDTH,
     WORLD_HEIGHT,
+    UI,
     xpRequired,
-} from '../config.js';
+} from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { getMonkeySprite } from '../assets/ProceduralSprites.js';
+import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 export class Player {
     constructor(x = PLAYER.startX, y = PLAYER.startY) {
@@ -104,20 +106,17 @@ export class Player {
 
     drawHpBar(ctx) {
         if (this.hp >= this.maxHp) return;
-        const barW = 80;
-        const barH = 8;
-        const x = this.x - barW / 2;
-        const y = this.y - this.spriteHalf - 16;
-
-        ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(x - 2, y - 2, barW + 4, barH + 4);
-        ctx.fillStyle = '#5a1c1c';
-        ctx.fillRect(x, y, barW, barH);
-        const pct = clamp(this.hp / this.maxHp, 0, 1);
-        ctx.fillStyle = pct < 0.3 ? '#ff4757' : pct < 0.6 ? '#ffa53b' : '#5fe87a';
-        ctx.fillRect(x, y, barW * pct, barH);
-        ctx.restore();
+        const { width, height, marginAboveSpriteHalf } = UI.playerHealthBar;
+        const ratio = clamp(this.hp / this.maxHp, 0, 1);
+        drawWorldHealthBar(
+            ctx,
+            this.x,
+            this.y - this.spriteHalf - marginAboveSpriteHalf,
+            width,
+            height,
+            ratio,
+            healthColor(ratio)
+        );
     }
 
     drawDebug(ctx) {

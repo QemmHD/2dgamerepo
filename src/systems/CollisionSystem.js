@@ -1,4 +1,13 @@
-import { CONTACT_FLASH_DURATION, KNOCKBACK } from '../config.js';
+// Frame-level collision pass.
+// Resolves projectile↔enemy hits (apply damage + knockback, queue floating
+// damage numbers, tally kills) and player↔enemy contact (apply contact
+// damage when i-frames have expired, update the contact-flash timer).
+//
+// The shape of the returned object is what Game.js consumes to drive
+// downstream effects (gem drops, screen shake, damage number spawns).
+
+import { CONTACT_FLASH_DURATION, KNOCKBACK } from '../config/GameConfig.js';
+import { circleOverlap } from '../core/MathUtils.js';
 
 export class CollisionSystem {
     constructor() {
@@ -14,23 +23,16 @@ export class CollisionSystem {
             if (!p.active) continue;
             for (const e of enemies) {
                 if (!e.active) continue;
-                const r = p.radius + e.radius;
-                const dx = p.x - e.x;
-                const dy = p.y - e.y;
-                if (dx * dx + dy * dy <= r * r) {
-                    const speed = Math.hypot(p.vx, p.vy) || 1;
-                    const kx = (p.vx / speed) * KNOCKBACK.strength;
-                    const ky = (p.vy / speed) * KNOCKBACK.strength;
-                    e.takeDamage(p.damage, kx, ky);
-                    hits.push({
-                        x: e.x,
-                        y: e.y - e.radius,
-                        amount: p.damage,
-                    });
-                    p.active = false;
-                    if (!e.active) killed.push(e);
-                    break;
-                }
+                if (!circleOverlap(p.x, p.y, p.radius, e.x, e.y, e.radius)) continue;
+
+                const speed = Math.hypot(p.vx, p.vy) || 1;
+                const kx = (p.vx / speed) * KNOCKBACK.strength;
+                const ky = (p.vy / speed) * KNOCKBACK.strength;
+                e.takeDamage(p.damage, kx, ky);
+                hits.push({ x: e.x, y: e.y - e.radius, amount: p.damage });
+                p.active = false;
+                if (!e.active) killed.push(e);
+                break;
             }
         }
 
@@ -38,14 +40,10 @@ export class CollisionSystem {
         let firstDamage = 0;
         for (const e of enemies) {
             if (!e.active) continue;
-            const r = player.radius + e.radius;
-            const dx = player.x - e.x;
-            const dy = player.y - e.y;
-            if (dx * dx + dy * dy <= r * r) {
-                contact = true;
-                firstDamage = e.contactDamage;
-                break;
-            }
+            if (!circleOverlap(player.x, player.y, player.radius, e.x, e.y, e.radius)) continue;
+            contact = true;
+            firstDamage = e.contactDamage;
+            break;
         }
         this.inContact = contact;
 

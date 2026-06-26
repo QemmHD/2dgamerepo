@@ -1,4 +1,4 @@
-import { DAMAGE_NUMBER } from '../config.js';
+import { DAMAGE_NUMBER } from '../config/GameConfig.js';
 
 export class DamageNumber {
     constructor(x, y, amount, color = '#ffffff') {

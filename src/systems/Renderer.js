@@ -1,4 +1,4 @@
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, BACKGROUND_COLOR } from '../config.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, BACKGROUND_COLOR } from '../config/GameConfig.js';
 
 export class Renderer {
     constructor(canvasEl) {

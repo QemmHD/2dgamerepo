@@ -3,9 +3,11 @@ import {
     SPRITE_SIZE,
     HIT_FLASH_DURATION,
     KNOCKBACK,
-} from '../config.js';
+    UI,
+} from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { getSlimeSprite, getBatSprite } from '../assets/ProceduralSprites.js';
+import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 const SPRITE_GETTERS = {
     slime: getSlimeSprite,
@@ -88,20 +90,17 @@ export class Enemy {
 
     drawHpBar(ctx) {
         if (this.hp >= this.maxHp) return;
-        const barW = 60;
-        const barH = 6;
-        const x = this.x - barW / 2;
-        const y = this.y - this.radius - 14;
-
-        ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(x - 1, y - 1, barW + 2, barH + 2);
-        ctx.fillStyle = '#3a1010';
-        ctx.fillRect(x, y, barW, barH);
-        const pct = clamp(this.hp / this.maxHp, 0, 1);
-        ctx.fillStyle = pct < 0.35 ? '#ff4757' : '#ffa53b';
-        ctx.fillRect(x, y, barW * pct, barH);
-        ctx.restore();
+        const { width, height, marginAboveRadius } = UI.enemyHealthBar;
+        const ratio = clamp(this.hp / this.maxHp, 0, 1);
+        drawWorldHealthBar(
+            ctx,
+            this.x,
+            this.y - this.radius - marginAboveRadius,
+            width,
+            height,
+            ratio,
+            healthColor(ratio)
+        );
     }
 
     drawDebug(ctx) {

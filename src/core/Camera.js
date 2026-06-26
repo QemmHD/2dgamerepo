@@ -1,4 +1,4 @@
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
 
 export class Camera {
     constructor() {

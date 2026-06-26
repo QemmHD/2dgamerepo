@@ -1,4 +1,5 @@
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, GAME_TITLE } from '../config.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, GAME_TITLE } from '../config/GameConfig.js';
+import { roundRectPath } from '../render/DrawUtils.js';
 
 const DEBUG_BUTTON_SIZE = 96;
 const DEBUG_BUTTON_MARGIN = 20;
@@ -239,12 +240,7 @@ export class UISystem {
         ctx.fillStyle = state.showDebug ? 'rgba(80,160,255,0.65)' : 'rgba(255,255,255,0.18)';
         ctx.strokeStyle = 'rgba(255,255,255,0.55)';
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        if (typeof ctx.roundRect === 'function') {
-            ctx.roundRect(btnX, btnY, btnW, btnH, 14);
-        } else {
-            ctx.rect(btnX, btnY, btnW, btnH);
-        }
+        roundRectPath(ctx, btnX, btnY, btnW, btnH, 14);
         ctx.fill();
         ctx.stroke();
 
@@ -314,15 +310,9 @@ export class UISystem {
         ctx.fillStyle = 'rgba(20, 26, 38, 0.95)';
         ctx.strokeStyle = colors.border;
         ctx.lineWidth = 4;
-        if (typeof ctx.roundRect === 'function') {
-            ctx.beginPath();
-            ctx.roundRect(r.x, r.y, r.w, r.h, 24);
-            ctx.fill();
-            ctx.stroke();
-        } else {
-            ctx.fillRect(r.x, r.y, r.w, r.h);
-            ctx.strokeRect(r.x, r.y, r.w, r.h);
-        }
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 24);
+        ctx.fill();
+        ctx.stroke();
 
         ctx.textAlign = 'center';
         ctx.fillStyle = colors.accent;
@@ -378,15 +368,9 @@ export class UISystem {
         ctx.fillStyle = 'rgba(95, 232, 122, 0.18)';
         ctx.strokeStyle = '#5fe87a';
         ctx.lineWidth = 4;
-        if (typeof ctx.roundRect === 'function') {
-            ctx.beginPath();
-            ctx.roundRect(btn.x, btn.y, btn.w, btn.h, 22);
-            ctx.fill();
-            ctx.stroke();
-        } else {
-            ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
-            ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
-        }
+        roundRectPath(ctx, btn.x, btn.y, btn.w, btn.h, 22);
+        ctx.fill();
+        ctx.stroke();
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 46px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.fillText('RESTART', btn.x + btn.w / 2, btn.y + btn.h / 2);

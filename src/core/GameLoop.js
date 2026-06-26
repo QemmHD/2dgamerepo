@@ -1,4 +1,4 @@
-import { FIXED_DT, MAX_FRAME_DT } from '../config.js';
+import { FIXED_DT, MAX_FRAME_DT } from '../config/GameConfig.js';
 
 export class GameLoop {
     constructor({ update, render, fixedDt = FIXED_DT, maxFrameDt = MAX_FRAME_DT }) {

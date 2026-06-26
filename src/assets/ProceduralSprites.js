@@ -1,4 +1,4 @@
-import { SPRITE_SIZE } from '../config.js';
+import { SPRITE_SIZE } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 
 const cache = new Map();

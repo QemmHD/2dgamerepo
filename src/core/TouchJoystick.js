@@ -1,4 +1,4 @@
-import { JOYSTICK, INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config.js';
+import { JOYSTICK, INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from './MathUtils.js';
 
 export class TouchJoystick {
