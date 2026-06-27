@@ -8,22 +8,24 @@ import {
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import {
-    getSlimeSprite,
-    getBatSprite,
-    getBruteSprite,
-    getCrawlerSprite,
-    getVinebackGoliathSprite,
-    getStormwingAlphaSprite,
+    getSlimeFrames,
+    getBatFrames,
+    getBruteFrames,
+    getCrawlerFrames,
+    getVinebackGoliathFrames,
+    getStormwingAlphaFrames,
 } from '../assets/ProceduralSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
-const SPRITE_GETTERS = {
-    slime: getSlimeSprite,
-    bat: getBatSprite,
-    brute: getBruteSprite,
-    crawler: getCrawlerSprite,
-    vinebackGoliath: getVinebackGoliathSprite,
-    stormwingAlpha: getStormwingAlphaSprite,
+// Frame getters all return a pre-cached array of canvases. Per-type
+// animation speed (Hz) — bats flap quickly, brutes breathe slowly.
+const FRAMES_BY_TYPE = {
+    slime:           { get: getSlimeFrames,           hz: 5 },
+    bat:             { get: getBatFrames,             hz: 10 },
+    brute:           { get: getBruteFrames,           hz: 1.4 },
+    crawler:         { get: getCrawlerFrames,         hz: 9 },
+    vinebackGoliath: { get: getVinebackGoliathFrames, hz: 1.6 },
+    stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 7 },
 };
 
 // Construction-time options:
@@ -36,8 +38,8 @@ export class Enemy {
     constructor(type, x, y, opts = {}) {
         const def = ENEMY[type];
         if (!def) throw new Error(`Unknown enemy type: ${type}`);
-        const getSprite = SPRITE_GETTERS[type];
-        if (!getSprite) throw new Error(`No sprite for enemy type: ${type}`);
+        const frameSpec = FRAMES_BY_TYPE[type];
+        if (!frameSpec) throw new Error(`No sprite for enemy type: ${type}`);
 
         const isBoss = !!def.boss;
         // Elite + boss don't stack — bosses already have their own scale and
@@ -75,7 +77,12 @@ export class Enemy {
         this.canDropChest = elite || isBoss;
         this.visualScale = baseScale * eliteSizeMul;
 
-        this.sprite = getSprite();
+        this.frames = frameSpec.get();
+        this.frameHz = frameSpec.hz;
+        // Random phase so adjacent enemies don't animate in lockstep —
+        // gives the swarm a more natural, varied motion feel.
+        this.animOffset = Math.random() * 1000;
+        this.animTimer = this.animOffset;
         this.spriteHalf = SPRITE_SIZE / 2;
         this.active = true;
         this.hitFlashTimer = 0;
@@ -108,6 +115,7 @@ export class Enemy {
 
         if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
         if (this.weaponHitCooldown > 0) this.weaponHitCooldown -= dt;
+        this.animTimer += dt;
     }
 
     takeDamage(amount, knockbackVx = 0, knockbackVy = 0) {
@@ -152,7 +160,8 @@ export class Enemy {
             if (parts.length > 0) ctx.filter = parts.join(' ');
         }
 
-        ctx.drawImage(this.sprite, -this.spriteHalf, -this.spriteHalf);
+        const idx = Math.floor(this.animTimer * this.frameHz) % this.frames.length;
+        ctx.drawImage(this.frames[idx], -this.spriteHalf, -this.spriteHalf);
         ctx.restore();
     }
 

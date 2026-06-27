@@ -7,7 +7,7 @@ import {
     xpRequired,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
-import { getMonkeySprite } from '../assets/ProceduralSprites.js';
+import { getMonkeyFrames } from '../assets/ProceduralSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 export class Player {
@@ -19,7 +19,9 @@ export class Player {
         this.radius = PLAYER.radius;
         this.speed = PLAYER.speed;
         this.facingX = 1;
-        this.sprite = getMonkeySprite();
+        // Frames: [0]=idle, [1..3]=walk cycle. draw() picks one per frame
+        // based on movement state — all four are cached up-front.
+        this.frames = getMonkeyFrames();
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
         this.moving = false;
@@ -102,6 +104,11 @@ export class Player {
         }
 
         const bobY = this.moving ? Math.sin(this.bobTimer * 12) * 3 : 0;
+        // 3 walk frames cycled at ~6 Hz, idle when standing still.
+        const walkIdx = this.moving
+            ? 1 + (Math.floor(this.bobTimer * 6) % 3)
+            : 0;
+        const sprite = this.frames[walkIdx] ?? this.frames[0];
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.translate(this.x, this.y + bobY);
@@ -110,7 +117,7 @@ export class Player {
             const t = this.hitFlashTimer / PLAYER.hitFlashDuration;
             ctx.filter = `brightness(${1 + t * 1.6})`;
         }
-        ctx.drawImage(this.sprite, -this.spriteHalf, -this.spriteHalf);
+        ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf);
         ctx.restore();
     }
 

@@ -1,7 +1,23 @@
+// Procedural sprite atlas — every character, monster, pickup, decoration,
+// and ground tile is drawn at boot into offscreen canvases and cached.
+// Nothing in this file allocates per frame.
+//
+// Animation strategy:
+//   Multi-frame entities (monkey, slime, bat, crawler, bosses, coin,
+//   chest) own a frame ARRAY in the cache. The draw call site picks an
+//   index using time-based math; the file simply hands back the cached
+//   canvas for that index. This keeps per-frame work to one drawImage.
+//
+// All character/enemy/boss source canvases are SPRITE_SIZE × SPRITE_SIZE
+// (182×182) — the visual is drawn inside that canvas so the world-space
+// half-extents stay constant across types.
+
 import { SPRITE_SIZE, MAP } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 
 const cache = new Map();
+
+// ── Ground tile ────────────────────────────────────────────────────────
 
 export function getGroundTileSprite() {
     if (cache.has('groundTile')) return cache.get('groundTile');
@@ -18,66 +34,79 @@ export function getDecorationSprite(type) {
     return sprite;
 }
 
+// ── Player / monkey ───────────────────────────────────────────────────
+// 4 frames: 0 idle, 1 / 3 walk extremes, 2 mid. Game picks by bobTimer.
+
+export function getMonkeyFrames() {
+    if (cache.has('monkeyFrames')) return cache.get('monkeyFrames');
+    const frames = [
+        drawMonkey(SPRITE_SIZE, 0),
+        drawMonkey(SPRITE_SIZE, 1),
+        drawMonkey(SPRITE_SIZE, 2),
+        drawMonkey(SPRITE_SIZE, 3),
+    ];
+    cache.set('monkeyFrames', frames);
+    return frames;
+}
+
+// Back-compat: returns idle frame.
 export function getMonkeySprite() {
-    if (cache.has('monkey')) return cache.get('monkey');
-    const sprite = drawMonkey(SPRITE_SIZE);
-    cache.set('monkey', sprite);
-    return sprite;
+    return getMonkeyFrames()[0];
 }
 
-export function getSlimeSprite() {
-    if (cache.has('slime')) return cache.get('slime');
-    const sprite = drawSlime(SPRITE_SIZE);
-    cache.set('slime', sprite);
-    return sprite;
+// ── Enemies ────────────────────────────────────────────────────────────
+
+function makeFrameGetter(key, count, drawer) {
+    return () => {
+        if (cache.has(key)) return cache.get(key);
+        const frames = [];
+        for (let i = 0; i < count; i++) frames.push(drawer(SPRITE_SIZE, i, count));
+        cache.set(key, frames);
+        return frames;
+    };
 }
 
-export function getBatSprite() {
-    if (cache.has('bat')) return cache.get('bat');
-    const sprite = drawBat(SPRITE_SIZE);
-    cache.set('bat', sprite);
-    return sprite;
+export const getSlimeFrames = makeFrameGetter('slimeFrames', 4, drawSlime);
+export const getBatFrames = makeFrameGetter('batFrames', 4, drawBat);
+export const getBruteFrames = makeFrameGetter('bruteFrames', 2, drawBrute);
+export const getCrawlerFrames = makeFrameGetter('crawlerFrames', 4, drawCrawler);
+export const getVinebackGoliathFrames = makeFrameGetter('vinebackFrames', 2, drawVinebackGoliath);
+export const getStormwingAlphaFrames = makeFrameGetter('stormwingFrames', 4, drawStormwingAlpha);
+
+// Back-compat: idle frames for legacy callers.
+export function getSlimeSprite() { return getSlimeFrames()[0]; }
+export function getBatSprite() { return getBatFrames()[0]; }
+export function getBruteSprite() { return getBruteFrames()[0]; }
+export function getCrawlerSprite() { return getCrawlerFrames()[0]; }
+export function getVinebackGoliathSprite() { return getVinebackGoliathFrames()[0]; }
+export function getStormwingAlphaSprite() { return getStormwingAlphaFrames()[0]; }
+
+// ── Pickups ────────────────────────────────────────────────────────────
+
+export function getChestFrames() {
+    if (cache.has('chestFrames')) return cache.get('chestFrames');
+    const frames = [drawChest(0), drawChest(1), drawChest(2)];
+    cache.set('chestFrames', frames);
+    return frames;
 }
 
-export function getBruteSprite() {
-    if (cache.has('brute')) return cache.get('brute');
-    const sprite = drawBrute(SPRITE_SIZE);
-    cache.set('brute', sprite);
-    return sprite;
+export function getChestSprite() { return getChestFrames()[0]; }
+
+export function getCoinFrames() {
+    if (cache.has('coinFrames')) return cache.get('coinFrames');
+    const frames = [];
+    for (let i = 0; i < 6; i++) frames.push(drawCoin(i, 6));
+    cache.set('coinFrames', frames);
+    return frames;
 }
 
-export function getCrawlerSprite() {
-    if (cache.has('crawler')) return cache.get('crawler');
-    const sprite = drawCrawler(SPRITE_SIZE);
-    cache.set('crawler', sprite);
-    return sprite;
-}
+export function getCoinSprite() { return getCoinFrames()[0]; }
 
-export function getVinebackGoliathSprite() {
-    if (cache.has('vinebackGoliath')) return cache.get('vinebackGoliath');
-    const sprite = drawVinebackGoliath(SPRITE_SIZE);
-    cache.set('vinebackGoliath', sprite);
-    return sprite;
-}
-
-export function getStormwingAlphaSprite() {
-    if (cache.has('stormwingAlpha')) return cache.get('stormwingAlpha');
-    const sprite = drawStormwingAlpha(SPRITE_SIZE);
-    cache.set('stormwingAlpha', sprite);
-    return sprite;
-}
-
-export function getChestSprite() {
-    if (cache.has('chest')) return cache.get('chest');
-    const sprite = drawChest();
-    cache.set('chest', sprite);
-    return sprite;
-}
-
-export function getCoinSprite() {
-    if (cache.has('coin')) return cache.get('coin');
-    const sprite = drawCoin();
-    cache.set('coin', sprite);
+export function getXPGemSprite(tier) {
+    const key = `gem:${tier}`;
+    if (cache.has(key)) return cache.get(key);
+    const sprite = drawXPGem(tier);
+    cache.set(key, sprite);
     return sprite;
 }
 
@@ -88,277 +117,559 @@ export function getProjectileSprite() {
     return sprite;
 }
 
-export function getXPGemSprite(tier) {
-    const key = `gem:${tier}`;
-    if (cache.has(key)) return cache.get(key);
-    const sprite = drawXPGem(tier);
-    cache.set(key, sprite);
-    return sprite;
-}
+// ─── Helpers ──────────────────────────────────────────────────────────
 
-function drawMonkey(size) {
+function newSpriteCanvas(size) {
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
-    const ctx = canvas.getContext('2d');
+    return canvas;
+}
 
+function softShadow(ctx, cx, cy, rx, ry, alpha = 0.35) {
+    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, TWO_PI);
+    ctx.fill();
+}
+
+// ─── Player / monkey ──────────────────────────────────────────────────
+
+function drawMonkey(size, frame) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
     const cx = size / 2;
     const cy = size / 2;
 
+    // Walk-cycle phase for limbs/tail. Frame 0 = idle.
+    const isIdle = frame === 0;
+    const phase = isIdle ? 0 : (frame - 1) * (TWO_PI / 3);
+    const swing = Math.sin(phase);
+    const bob = isIdle ? 0 : Math.abs(Math.cos(phase)) * 3;
+
     const FUR = '#8b5a2b';
-    const FUR_DARK = '#6b4423';
-    const FUR_LIGHT = '#a87341';
+    const FUR_DARK = '#5a3818';
+    const FUR_LIGHT = '#b07a44';
     const FACE = '#f0d2a5';
     const INNER_EAR = '#d4a373';
     const EYE = '#1b1b1b';
-    const HIGHLIGHT = '#ffffff';
+    const CLOAK = '#3a2c5e';
+    const CLOAK_LIGHT = '#5d4690';
+    const CLOAK_DARK = '#1f1734';
+    const SCARF = '#c93a3a';
+    const SCARF_DARK = '#7a1d1d';
+    const BELT = '#3c2210';
+    const GOLD = '#ffd166';
+    const STAFF = '#3a2412';
+    const STAFF_TIP = '#7be0ff';
 
+    softShadow(ctx, cx, cy + 60, 50, 9, 0.4);
+
+    // ── Tail (swayed) ─────────────────────────────────────────────────
+    const tailSway = (isIdle ? Math.sin(frame * 0.5) : swing) * 8;
     ctx.strokeStyle = FUR_DARK;
     ctx.lineWidth = 14;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(cx + 28, cy + 48);
-    ctx.bezierCurveTo(cx + 70, cy + 70, cx + 88, cy + 20, cx + 68, cy - 4);
+    ctx.moveTo(cx + 24, cy + 38);
+    ctx.bezierCurveTo(
+        cx + 70 + tailSway, cy + 60,
+        cx + 96 + tailSway, cy + 10,
+        cx + 70 + tailSway * 1.2, cy - 16
+    );
     ctx.stroke();
-
-    ctx.fillStyle = FUR;
+    ctx.strokeStyle = FUR;
+    ctx.lineWidth = 9;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 8, 55, 60, 0, 0, TWO_PI);
+    ctx.moveTo(cx + 24, cy + 38);
+    ctx.bezierCurveTo(
+        cx + 70 + tailSway, cy + 60,
+        cx + 96 + tailSway, cy + 10,
+        cx + 70 + tailSway * 1.2, cy - 16
+    );
+    ctx.stroke();
+    // Tail tuft
+    ctx.fillStyle = FUR_LIGHT;
+    ctx.beginPath();
+    ctx.arc(cx + 70 + tailSway * 1.2, cy - 18, 7, 0, TWO_PI);
     ctx.fill();
 
+    // ── Legs ──────────────────────────────────────────────────────────
+    const legL = cy + 48 + (isIdle ? 0 : swing * 4);
+    const legR = cy + 48 + (isIdle ? 0 : -swing * 4);
+    ctx.fillStyle = FUR_DARK;
+    ctx.beginPath();
+    ctx.ellipse(cx - 22, legL, 11, 16, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 22, legR, 11, 16, 0, 0, TWO_PI);
+    ctx.fill();
+    // Feet
     ctx.fillStyle = FACE;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 18, 28, 32, 0, 0, TWO_PI);
+    ctx.ellipse(cx - 22, legL + 12, 10, 6, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 22, legR + 12, 10, 6, 0, 0, TWO_PI);
     ctx.fill();
 
-    ctx.fillStyle = FUR_DARK;
+    // Body shift up while walking gives a subtle bounce.
+    const bodyY = cy + 4 - bob;
+
+    // ── Cloak (behind body) ───────────────────────────────────────────
+    ctx.fillStyle = CLOAK_DARK;
     ctx.beginPath();
-    ctx.ellipse(cx - 24, cy + 58, 14, 18, 0, 0, TWO_PI);
+    ctx.moveTo(cx - 46, bodyY - 16);
+    ctx.quadraticCurveTo(cx - 60, bodyY + 28, cx - 30, bodyY + 56);
+    ctx.lineTo(cx + 30, bodyY + 56);
+    ctx.quadraticCurveTo(cx + 60, bodyY + 28, cx + 46, bodyY - 16);
+    ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = CLOAK;
     ctx.beginPath();
-    ctx.ellipse(cx + 24, cy + 58, 14, 18, 0, 0, TWO_PI);
+    ctx.moveTo(cx - 42, bodyY - 14);
+    ctx.quadraticCurveTo(cx - 56, bodyY + 24, cx - 28, bodyY + 50);
+    ctx.lineTo(cx + 28, bodyY + 50);
+    ctx.quadraticCurveTo(cx + 56, bodyY + 24, cx + 42, bodyY - 14);
+    ctx.closePath();
+    ctx.fill();
+    // Cloak highlight stripe
+    ctx.fillStyle = CLOAK_LIGHT;
+    ctx.beginPath();
+    ctx.moveTo(cx - 30, bodyY - 8);
+    ctx.quadraticCurveTo(cx - 42, bodyY + 16, cx - 24, bodyY + 40);
+    ctx.lineTo(cx - 18, bodyY + 40);
+    ctx.quadraticCurveTo(cx - 32, bodyY + 16, cx - 22, bodyY - 8);
+    ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = FUR_DARK;
-    ctx.beginPath();
-    ctx.ellipse(cx - 52, cy + 12, 13, 17, 0.35, 0, TWO_PI);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(cx + 52, cy + 12, 13, 17, -0.35, 0, TWO_PI);
-    ctx.fill();
-
+    // ── Body ──────────────────────────────────────────────────────────
     ctx.fillStyle = FUR;
     ctx.beginPath();
-    ctx.arc(cx, cy - 35, 40, 0, TWO_PI);
+    ctx.ellipse(cx, bodyY + 4, 36, 42, 0, 0, TWO_PI);
+    ctx.fill();
+    // Belly
+    ctx.fillStyle = FACE;
+    ctx.beginPath();
+    ctx.ellipse(cx, bodyY + 14, 18, 22, 0, 0, TWO_PI);
     ctx.fill();
 
+    // ── Belt + satchel ────────────────────────────────────────────────
+    ctx.fillStyle = BELT;
+    ctx.fillRect(cx - 26, bodyY + 24, 52, 6);
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(cx - 4, bodyY + 24, 8, 6);
+    ctx.strokeStyle = '#7a5018';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx - 4, bodyY + 24, 8, 6);
+
+    // Satchel hanging from belt
+    ctx.fillStyle = '#5a3818';
+    ctx.beginPath();
+    ctx.ellipse(cx - 30, bodyY + 32, 8, 11, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = '#3a2410';
+    ctx.beginPath();
+    ctx.ellipse(cx - 30, bodyY + 27, 8, 3, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // ── Scarf at neck ────────────────────────────────────────────────
+    ctx.fillStyle = SCARF_DARK;
+    ctx.beginPath();
+    ctx.ellipse(cx, bodyY - 26, 24, 9, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = SCARF;
+    ctx.beginPath();
+    ctx.ellipse(cx, bodyY - 28, 22, 7, 0, 0, TWO_PI);
+    ctx.fill();
+    // Loose scarf tail
+    const scarfDrift = isIdle ? 2 : swing * 4;
+    ctx.fillStyle = SCARF;
+    ctx.beginPath();
+    ctx.moveTo(cx + 8, bodyY - 24);
+    ctx.lineTo(cx + 24 + scarfDrift, bodyY + 4);
+    ctx.lineTo(cx + 16 + scarfDrift, bodyY + 8);
+    ctx.lineTo(cx + 4, bodyY - 20);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = SCARF_DARK;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // ── Arms / staff ─────────────────────────────────────────────────
+    const armLY = bodyY + 4 + (isIdle ? 0 : -swing * 5);
+    const armRY = bodyY + 4 + (isIdle ? 0 : swing * 5);
+
+    // Left arm (player's left = screen left)
+    ctx.fillStyle = FUR;
+    ctx.beginPath();
+    ctx.ellipse(cx - 36, armLY, 10, 18, 0.2, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = FACE;
+    ctx.beginPath();
+    ctx.arc(cx - 40, armLY + 14, 7, 0, TWO_PI);
+    ctx.fill();
+
+    // Right arm holds staff
+    ctx.fillStyle = FUR;
+    ctx.beginPath();
+    ctx.ellipse(cx + 36, armRY, 10, 18, -0.2, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = FACE;
+    ctx.beginPath();
+    ctx.arc(cx + 40, armRY + 14, 7, 0, TWO_PI);
+    ctx.fill();
+
+    // Staff
+    ctx.strokeStyle = STAFF;
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx + 40, armRY + 20);
+    ctx.lineTo(cx + 50, armRY - 50);
+    ctx.stroke();
+    // Staff wraps
+    ctx.strokeStyle = SCARF;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+        const y = armRY + 14 - i * 9;
+        ctx.beginPath();
+        ctx.moveTo(cx + 38 + i * 1, y);
+        ctx.lineTo(cx + 46 + i * 1, y - 2);
+        ctx.stroke();
+    }
+    // Glowing crystal on top
+    const glowGrad = ctx.createRadialGradient(cx + 50, armRY - 50, 1, cx + 50, armRY - 50, 14);
+    glowGrad.addColorStop(0, '#e8fbff');
+    glowGrad.addColorStop(0.5, STAFF_TIP);
+    glowGrad.addColorStop(1, 'rgba(123, 224, 255, 0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.arc(cx + 50, armRY - 50, 14, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = STAFF_TIP;
+    ctx.beginPath();
+    ctx.moveTo(cx + 50, armRY - 58);
+    ctx.lineTo(cx + 56, armRY - 50);
+    ctx.lineTo(cx + 50, armRY - 42);
+    ctx.lineTo(cx + 44, armRY - 50);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx + 48, armRY - 52, 2, 0, TWO_PI);
+    ctx.fill();
+
+    // ── Head (front of body) ─────────────────────────────────────────
+    const headY = bodyY - 44;
+    // Ears outer
     ctx.fillStyle = FUR_DARK;
     ctx.beginPath();
-    ctx.arc(cx - 38, cy - 40, 15, 0, TWO_PI);
+    ctx.arc(cx - 36, headY - 6, 15, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 38, cy - 40, 15, 0, TWO_PI);
+    ctx.arc(cx + 36, headY - 6, 15, 0, TWO_PI);
     ctx.fill();
     ctx.fillStyle = INNER_EAR;
     ctx.beginPath();
-    ctx.arc(cx - 38, cy - 40, 8, 0, TWO_PI);
+    ctx.arc(cx - 36, headY - 6, 8, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 38, cy - 40, 8, 0, TWO_PI);
+    ctx.arc(cx + 36, headY - 6, 8, 0, TWO_PI);
     ctx.fill();
 
+    // Skull
+    ctx.fillStyle = FUR;
+    ctx.beginPath();
+    ctx.arc(cx, headY, 38, 0, TWO_PI);
+    ctx.fill();
+    // Face
     ctx.fillStyle = FACE;
     ctx.beginPath();
-    ctx.ellipse(cx, cy - 28, 25, 28, 0, 0, TWO_PI);
+    ctx.ellipse(cx, headY + 6, 25, 26, 0, 0, TWO_PI);
     ctx.fill();
-
+    // Hair tuft
     ctx.fillStyle = FUR_LIGHT;
     ctx.beginPath();
-    ctx.ellipse(cx, cy - 48, 18, 8, 0, 0, TWO_PI);
+    ctx.ellipse(cx, headY - 24, 16, 8, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx - 8, headY - 28, 8, 6, -0.3, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 8, headY - 28, 8, 6, 0.3, 0, TWO_PI);
     ctx.fill();
 
+    // Forehead charm (gem)
+    ctx.fillStyle = GOLD;
+    ctx.beginPath();
+    ctx.arc(cx, headY - 14, 5, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = '#c4242a';
+    ctx.beginPath();
+    ctx.arc(cx, headY - 14, 3, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = '#ffd0d0';
+    ctx.beginPath();
+    ctx.arc(cx - 1, headY - 15, 1, 0, TWO_PI);
+    ctx.fill();
+
+    // Eyes
     ctx.fillStyle = EYE;
     ctx.beginPath();
-    ctx.arc(cx - 9, cy - 32, 4.5, 0, TWO_PI);
+    ctx.arc(cx - 9, headY + 2, 4.6, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 9, cy - 32, 4.5, 0, TWO_PI);
+    ctx.arc(cx + 9, headY + 2, 4.6, 0, TWO_PI);
     ctx.fill();
-    ctx.fillStyle = HIGHLIGHT;
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(cx - 7.5, cy - 33.5, 1.6, 0, TWO_PI);
+    ctx.arc(cx - 7, headY + 0.5, 1.8, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 10.5, cy - 33.5, 1.6, 0, TWO_PI);
+    ctx.arc(cx + 11, headY + 0.5, 1.8, 0, TWO_PI);
     ctx.fill();
 
+    // Nose + mouth
     ctx.fillStyle = FUR_DARK;
     ctx.beginPath();
-    ctx.ellipse(cx, cy - 22, 3, 2, 0, 0, TWO_PI);
+    ctx.ellipse(cx, headY + 12, 3, 2, 0, 0, TWO_PI);
     ctx.fill();
-
     ctx.strokeStyle = FUR_DARK;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(cx, cy - 17, 5, 0, Math.PI);
+    ctx.arc(cx, headY + 17, 5, 0, Math.PI);
     ctx.stroke();
 
     return canvas;
 }
 
-function drawSlime(size) {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+// ─── Slime ────────────────────────────────────────────────────────────
+
+function drawSlime(size, frame, count) {
+    const canvas = newSpriteCanvas(size);
     const ctx = canvas.getContext('2d');
     const cx = size / 2;
     const cy = size / 2;
 
+    const phase = (frame / count) * TWO_PI;
+    // squash factor cycles between tall and squat.
+    const squash = Math.sin(phase);
+    const bodyRx = 65 + squash * 6;
+    const bodyRy = 55 - squash * 8;
+    const bodyY = cy + 8 - squash * 4;
+
     const BODY = '#5cc26d';
-    const BODY_DARK = '#3a8a47';
+    const BODY_DARK = '#2a6b35';
     const BODY_LIGHT = '#a0e8a8';
+    const SLIME = '#83e191';
     const EYE = '#1b1b1b';
 
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    softShadow(ctx, cx, cy + 60, bodyRx - 6, 11, 0.32);
+
+    // Drip strands above
+    ctx.fillStyle = BODY_DARK;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 50, 62, 12, 0, 0, TWO_PI);
+    ctx.arc(cx - 30, cy - 28 + squash * 3, 5, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 26, cy - 32 - squash * 3, 4, 0, TWO_PI);
     ctx.fill();
 
+    // Body
     ctx.fillStyle = BODY;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 8, 65, 55, 0, 0, TWO_PI);
+    ctx.ellipse(cx, bodyY, bodyRx, bodyRy, 0, 0, TWO_PI);
+    ctx.fill();
+    // Goop blobs at base
+    ctx.beginPath();
+    ctx.arc(cx - 38, bodyY + bodyRy * 0.65, 18, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 38, bodyY + bodyRy * 0.65, 18, 0, TWO_PI);
     ctx.fill();
 
-    ctx.beginPath();
-    ctx.arc(cx - 38, cy + 42, 16, 0, TWO_PI);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx + 38, cy + 42, 16, 0, TWO_PI);
-    ctx.fill();
-
-    ctx.strokeStyle = BODY_DARK;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 8, 65, 55, 0, 0, TWO_PI);
-    ctx.stroke();
-
+    // Bright highlight
     ctx.fillStyle = BODY_LIGHT;
     ctx.beginPath();
-    ctx.ellipse(cx - 18, cy - 18, 26, 14, -0.3, 0, TWO_PI);
+    ctx.ellipse(cx - 22, bodyY - 18, 26, 14, -0.3, 0, TWO_PI);
     ctx.fill();
+    ctx.fillStyle = SLIME;
+    ctx.beginPath();
+    ctx.ellipse(cx + 14, bodyY - 8, 14, 7, 0.4, 0, TWO_PI);
+    ctx.fill();
+
+    // Outline
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(cx, bodyY, bodyRx, bodyRy, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    // Glowing eyes
+    const eyeGlow = ctx.createRadialGradient(cx, bodyY - 4, 1, cx, bodyY - 4, 22);
+    eyeGlow.addColorStop(0, 'rgba(255,255,255,0.4)');
+    eyeGlow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.fillRect(cx - 32, bodyY - 22, 64, 36);
 
     ctx.fillStyle = EYE;
     ctx.beginPath();
-    ctx.arc(cx - 16, cy - 4, 8, 0, TWO_PI);
+    ctx.arc(cx - 17, bodyY - 4, 9, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 16, cy - 4, 8, 0, TWO_PI);
+    ctx.arc(cx + 17, bodyY - 4, 9, 0, TWO_PI);
     ctx.fill();
-
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(cx - 13, cy - 7, 2.5, 0, TWO_PI);
+    ctx.arc(cx - 14, bodyY - 7, 3, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 19, cy - 7, 2.5, 0, TWO_PI);
+    ctx.arc(cx + 20, bodyY - 7, 3, 0, TWO_PI);
     ctx.fill();
 
+    // Smile
     ctx.strokeStyle = EYE;
     ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.arc(cx, cy + 16, 9, 0, Math.PI);
+    ctx.arc(cx, bodyY + 14, 10, 0.15, Math.PI - 0.15);
     ctx.stroke();
+    // Fang
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, bodyY + 18);
+    ctx.lineTo(cx - 3, bodyY + 24);
+    ctx.lineTo(cx, bodyY + 18);
+    ctx.closePath();
+    ctx.fill();
 
     return canvas;
 }
 
-function drawBat(size) {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+// ─── Bat ──────────────────────────────────────────────────────────────
+
+function drawBat(size, frame, count) {
+    const canvas = newSpriteCanvas(size);
     const ctx = canvas.getContext('2d');
     const cx = size / 2;
     const cy = size / 2;
 
+    // Wing flap: 0 spread, 1 mid-down, 2 down, 3 mid-up
+    const phase = (frame / count) * TWO_PI;
+    const flap = Math.cos(phase);
+    const wingScale = 0.7 + flap * 0.3;
+    const wingY = -flap * 14;
+
+    const WING_DARK = '#1a1230';
     const WING = '#2a1f4a';
-    const WING_EDGE = '#4a3970';
+    const WING_EDGE = '#5b4690';
     const BODY = '#3a2860';
-    const FANG = '#fff';
+    const BODY_LIGHT = '#5d4690';
     const EYE = '#ff3046';
+    const FANG = '#fff';
 
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 36, 36, 8, 0, 0, TWO_PI);
-    ctx.fill();
+    softShadow(ctx, cx, cy + 50, 30, 8, 0.25 - flap * 0.05);
 
-    ctx.fillStyle = WING;
-    ctx.beginPath();
-    ctx.moveTo(cx - 4, cy - 4);
-    ctx.quadraticCurveTo(cx - 50, cy - 38, cx - 78, cy - 10);
-    ctx.quadraticCurveTo(cx - 60, cy - 4, cx - 50, cy + 2);
-    ctx.quadraticCurveTo(cx - 64, cy + 18, cx - 42, cy + 22);
-    ctx.quadraticCurveTo(cx - 26, cy + 10, cx - 12, cy + 12);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = WING_EDGE;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    // Wing membranes
+    function wing(side) {
+        const s = side;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(s, 1);
+        ctx.fillStyle = WING_DARK;
+        ctx.beginPath();
+        ctx.moveTo(4, -2);
+        ctx.quadraticCurveTo(60 * wingScale, -50 * wingScale + wingY, 92 * wingScale, -10 + wingY);
+        ctx.quadraticCurveTo(76 * wingScale, -4 + wingY, 64 * wingScale, 0);
+        ctx.quadraticCurveTo(82 * wingScale, 18 + wingY * 0.4, 56 * wingScale, 28);
+        ctx.quadraticCurveTo(34 * wingScale, 14, 12, 12);
+        ctx.closePath();
+        ctx.fill();
+        // Membrane highlight
+        ctx.fillStyle = WING;
+        ctx.beginPath();
+        ctx.moveTo(8, 0);
+        ctx.quadraticCurveTo(50 * wingScale, -36 * wingScale + wingY, 80 * wingScale, -6 + wingY);
+        ctx.quadraticCurveTo(60 * wingScale, 2 + wingY, 52 * wingScale, 6);
+        ctx.quadraticCurveTo(30 * wingScale, 10, 14, 10);
+        ctx.closePath();
+        ctx.fill();
+        // Bone struts
+        ctx.strokeStyle = WING_EDGE;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(8, 2);
+        ctx.lineTo(78 * wingScale, -10 + wingY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(8, 4);
+        ctx.lineTo(60 * wingScale, 16);
+        ctx.stroke();
+        ctx.restore();
+    }
+    wing(-1);
+    wing(1);
 
-    ctx.fillStyle = WING;
-    ctx.beginPath();
-    ctx.moveTo(cx + 4, cy - 4);
-    ctx.quadraticCurveTo(cx + 50, cy - 38, cx + 78, cy - 10);
-    ctx.quadraticCurveTo(cx + 60, cy - 4, cx + 50, cy + 2);
-    ctx.quadraticCurveTo(cx + 64, cy + 18, cx + 42, cy + 22);
-    ctx.quadraticCurveTo(cx + 26, cy + 10, cx + 12, cy + 12);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = WING_EDGE;
-    ctx.stroke();
-
+    // Body
     ctx.fillStyle = BODY;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 4, 18, 26, 0, 0, TWO_PI);
+    ctx.ellipse(cx, cy + 6, 19, 28, 0, 0, TWO_PI);
+    ctx.fill();
+    // Belly highlight
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 4, cy - 4, 8, 14, -0.2, 0, TWO_PI);
     ctx.fill();
 
+    // Ears
+    ctx.fillStyle = BODY;
     ctx.beginPath();
     ctx.moveTo(cx - 12, cy - 18);
-    ctx.lineTo(cx - 6, cy - 36);
+    ctx.lineTo(cx - 6, cy - 40);
     ctx.lineTo(cx - 2, cy - 18);
     ctx.closePath();
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(cx + 12, cy - 18);
-    ctx.lineTo(cx + 6, cy - 36);
+    ctx.lineTo(cx + 6, cy - 40);
     ctx.lineTo(cx + 2, cy - 18);
     ctx.closePath();
     ctx.fill();
 
+    // Eye glow
+    const eyeGlow = ctx.createRadialGradient(cx, cy - 8, 1, cx, cy - 8, 18);
+    eyeGlow.addColorStop(0, 'rgba(255, 80, 100, 0.45)');
+    eyeGlow.addColorStop(1, 'rgba(255, 80, 100, 0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.fillRect(cx - 18, cy - 22, 36, 28);
+
     ctx.fillStyle = EYE;
     ctx.beginPath();
-    ctx.arc(cx - 7, cy - 8, 4, 0, TWO_PI);
+    ctx.arc(cx - 8, cy - 8, 4.6, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 7, cy - 8, 4, 0, TWO_PI);
+    ctx.arc(cx + 8, cy - 8, 4.6, 0, TWO_PI);
     ctx.fill();
-    ctx.fillStyle = '#ffd6da';
+    ctx.fillStyle = '#ffe0e6';
     ctx.beginPath();
-    ctx.arc(cx - 6, cy - 9.5, 1.4, 0, TWO_PI);
+    ctx.arc(cx - 7, cy - 9.5, 1.7, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 8, cy - 9.5, 1.4, 0, TWO_PI);
+    ctx.arc(cx + 9, cy - 9.5, 1.7, 0, TWO_PI);
     ctx.fill();
 
+    // Fangs
     ctx.fillStyle = FANG;
     ctx.beginPath();
-    ctx.moveTo(cx - 5, cy + 4);
-    ctx.lineTo(cx - 2, cy + 12);
+    ctx.moveTo(cx - 6, cy + 4);
+    ctx.lineTo(cx - 2, cy + 14);
     ctx.lineTo(cx - 1, cy + 5);
     ctx.closePath();
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(cx + 5, cy + 4);
-    ctx.lineTo(cx + 2, cy + 12);
+    ctx.moveTo(cx + 6, cy + 4);
+    ctx.lineTo(cx + 2, cy + 14);
     ctx.lineTo(cx + 1, cy + 5);
     ctx.closePath();
     ctx.fill();
@@ -366,72 +677,139 @@ function drawBat(size) {
     return canvas;
 }
 
-function drawBrute(size) {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+// ─── Brute ────────────────────────────────────────────────────────────
+
+function drawBrute(size, frame) {
+    const canvas = newSpriteCanvas(size);
     const ctx = canvas.getContext('2d');
     const cx = size / 2;
     const cy = size / 2;
 
+    // Subtle breathing pulse: frame 0 contracted, frame 1 expanded.
+    const breathe = frame === 0 ? 0 : 1;
+    const bodyRx = 76 + breathe * 2;
+    const bodyRy = 64 + breathe * 2;
+
     const BODY = '#6b4226';
     const BODY_DARK = '#3a2410';
-    const BODY_LIGHT = '#8e5d36';
+    const BODY_LIGHT = '#a06f3e';
+    const ARMOR = '#3c352c';
+    const ARMOR_LIGHT = '#7a6e5c';
+    const SPIKE = '#cdd2d8';
+    const SPIKE_DARK = '#4a4f55';
     const EYE = '#ff8c40';
+    const FANG = '#fff5d0';
 
-    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    softShadow(ctx, cx, cy + 70, 76, 16, 0.42);
+
+    // Shoulder pauldrons (behind body)
+    ctx.fillStyle = ARMOR;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 60, 72, 14, 0, 0, TWO_PI);
+    ctx.arc(cx - 60, cy - 10, 18, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 60, cy - 10, 18, 0, TWO_PI);
+    ctx.fill();
+    // Pauldron rivets
+    ctx.fillStyle = ARMOR_LIGHT;
+    ctx.beginPath();
+    ctx.arc(cx - 60, cy - 14, 5, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 60, cy - 14, 5, 0, TWO_PI);
     ctx.fill();
 
+    // Body
     ctx.fillStyle = BODY;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 6, 72, 62, 0, 0, TWO_PI);
+    ctx.ellipse(cx, cy + 6, bodyRx, bodyRy, 0, 0, TWO_PI);
     ctx.fill();
-
     ctx.fillStyle = BODY_LIGHT;
     ctx.beginPath();
-    ctx.ellipse(cx - 18, cy - 18, 32, 18, -0.3, 0, TWO_PI);
+    ctx.ellipse(cx - 20, cy - 18, 34, 20, -0.3, 0, TWO_PI);
     ctx.fill();
-
+    // Outline
     ctx.strokeStyle = BODY_DARK;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 6, 72, 62, 0, 0, TWO_PI);
+    ctx.ellipse(cx, cy + 6, bodyRx, bodyRy, 0, 0, TWO_PI);
     ctx.stroke();
 
-    ctx.fillStyle = BODY_DARK;
+    // Chest plate (armor strap)
+    ctx.fillStyle = ARMOR;
+    ctx.beginPath();
+    ctx.moveTo(cx - 40, cy + 10);
+    ctx.lineTo(cx - 28, cy - 24);
+    ctx.lineTo(cx + 28, cy - 24);
+    ctx.lineTo(cx + 40, cy + 10);
+    ctx.lineTo(cx + 36, cy + 30);
+    ctx.lineTo(cx - 36, cy + 30);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = ARMOR_LIGHT;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Rune on plate
+    ctx.fillStyle = '#9d2222';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 12);
+    ctx.lineTo(cx + 8, cy + 4);
+    ctx.lineTo(cx, cy + 18);
+    ctx.lineTo(cx - 8, cy + 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Back spikes
+    ctx.fillStyle = SPIKE_DARK;
     for (let i = -1; i <= 1; i++) {
         ctx.beginPath();
-        ctx.moveTo(cx + i * 28 - 9, cy - 50);
-        ctx.lineTo(cx + i * 28 + 9, cy - 50);
-        ctx.lineTo(cx + i * 28, cy - 74);
+        ctx.moveTo(cx + i * 30 - 10, cy - 56);
+        ctx.lineTo(cx + i * 30 + 10, cy - 56);
+        ctx.lineTo(cx + i * 30, cy - 80);
+        ctx.closePath();
+        ctx.fill();
+    }
+    ctx.fillStyle = SPIKE;
+    for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 30 - 6, cy - 56);
+        ctx.lineTo(cx + i * 30 + 6, cy - 56);
+        ctx.lineTo(cx + i * 30, cy - 76);
         ctx.closePath();
         ctx.fill();
     }
 
+    // Eyes (deep set under brow)
+    ctx.fillStyle = BODY_DARK;
+    ctx.fillRect(cx - 38, cy - 18, 76, 8);
+    const eyeGlow = ctx.createRadialGradient(cx, cy - 14, 1, cx, cy - 14, 32);
+    eyeGlow.addColorStop(0, 'rgba(255, 140, 64, 0.55)');
+    eyeGlow.addColorStop(1, 'rgba(255, 140, 64, 0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.fillRect(cx - 36, cy - 26, 72, 22);
+
     ctx.fillStyle = EYE;
     ctx.beginPath();
-    ctx.arc(cx - 22, cy - 8, 8, 0, TWO_PI);
+    ctx.arc(cx - 22, cy - 14, 7, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 22, cy - 8, 8, 0, TWO_PI);
+    ctx.arc(cx + 22, cy - 14, 7, 0, TWO_PI);
     ctx.fill();
-
     ctx.fillStyle = '#fff5d0';
     ctx.beginPath();
-    ctx.arc(cx - 20, cy - 10, 2.8, 0, TWO_PI);
+    ctx.arc(cx - 20, cy - 16, 2.5, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 24, cy - 10, 2.8, 0, TWO_PI);
+    ctx.arc(cx + 24, cy - 16, 2.5, 0, TWO_PI);
     ctx.fill();
 
-    ctx.fillStyle = '#ffffff';
+    // Lower fangs (jaw)
+    ctx.fillStyle = FANG;
     for (let i = -2; i <= 2; i++) {
         ctx.beginPath();
-        ctx.moveTo(cx + i * 9 - 3, cy + 18);
-        ctx.lineTo(cx + i * 9 + 3, cy + 18);
-        ctx.lineTo(cx + i * 9, cy + 34);
+        ctx.moveTo(cx + i * 10 - 3, cy + 30);
+        ctx.lineTo(cx + i * 10 + 3, cy + 30);
+        ctx.lineTo(cx + i * 10, cy + 46);
         ctx.closePath();
         ctx.fill();
     }
@@ -439,63 +817,105 @@ function drawBrute(size) {
     return canvas;
 }
 
-function drawCrawler(size) {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+// ─── Crawler ──────────────────────────────────────────────────────────
+
+function drawCrawler(size, frame, count) {
+    const canvas = newSpriteCanvas(size);
     const ctx = canvas.getContext('2d');
     const cx = size / 2;
     const cy = size / 2;
 
+    const phase = (frame / count) * TWO_PI;
+    const skitter = Math.sin(phase) * 4;
+
     const BODY = '#3d2c5e';
     const BODY_DARK = '#1c1432';
-    const HIGHLIGHT = '#6a4cba';
+    const HIGHLIGHT = '#7a5cc8';
+    const CLAW = '#1c1432';
     const EYE = '#ffeb47';
 
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 28, 42, 8, 0, 0, TWO_PI);
-    ctx.fill();
+    softShadow(ctx, cx, cy + 36, 44, 8, 0.28);
 
+    // Legs (alternate up/down)
     ctx.strokeStyle = BODY_DARK;
     ctx.lineWidth = 5;
     ctx.lineCap = 'round';
     for (let i = 0; i < 3; i++) {
         const yOff = -10 + i * 12;
+        const sideSwing = (i % 2 === 0) ? skitter : -skitter;
         ctx.beginPath();
-        ctx.moveTo(cx - 30, cy + yOff);
-        ctx.lineTo(cx - 52, cy + yOff - 6);
-        ctx.lineTo(cx - 62, cy + yOff + 10);
+        ctx.moveTo(cx - 28, cy + yOff);
+        ctx.lineTo(cx - 50, cy + yOff - 6 - sideSwing);
+        ctx.lineTo(cx - 62, cy + yOff + 10 + sideSwing);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(cx + 30, cy + yOff);
-        ctx.lineTo(cx + 52, cy + yOff - 6);
-        ctx.lineTo(cx + 62, cy + yOff + 10);
+        ctx.moveTo(cx + 28, cy + yOff);
+        ctx.lineTo(cx + 50, cy + yOff - 6 + sideSwing);
+        ctx.lineTo(cx + 62, cy + yOff + 10 - sideSwing);
         ctx.stroke();
     }
+    // Claws at leg tips
+    ctx.fillStyle = CLAW;
+    for (let i = 0; i < 3; i++) {
+        const yOff = -10 + i * 12;
+        const sideSwing = (i % 2 === 0) ? skitter : -skitter;
+        ctx.beginPath();
+        ctx.arc(cx - 62, cy + yOff + 10 + sideSwing, 3, 0, TWO_PI);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx + 62, cy + yOff + 10 - sideSwing, 3, 0, TWO_PI);
+        ctx.fill();
+    }
 
+    // Mandibles in front
+    ctx.strokeStyle = CLAW;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy + 16);
+    ctx.lineTo(cx - 16, cy + 28);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 8, cy + 16);
+    ctx.lineTo(cx + 16, cy + 28);
+    ctx.stroke();
+
+    // Body (segmented look)
     ctx.fillStyle = BODY;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 5, 38, 26, 0, 0, TWO_PI);
+    ctx.ellipse(cx, cy + 6, 40, 28, 0, 0, TWO_PI);
     ctx.fill();
-
+    // Segment lines
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 2;
+    for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 12 - 4, cy - 14);
+        ctx.quadraticCurveTo(cx + i * 12, cy + 6, cx + i * 12 - 4, cy + 26);
+        ctx.stroke();
+    }
     ctx.fillStyle = HIGHLIGHT;
     ctx.beginPath();
-    ctx.ellipse(cx - 8, cy - 6, 14, 8, -0.2, 0, TWO_PI);
+    ctx.ellipse(cx - 10, cy - 6, 16, 9, -0.2, 0, TWO_PI);
     ctx.fill();
-
     ctx.strokeStyle = BODY_DARK;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 5, 38, 26, 0, 0, TWO_PI);
+    ctx.ellipse(cx, cy + 6, 40, 28, 0, 0, TWO_PI);
     ctx.stroke();
+
+    // Glowing cluster of eyes
+    const eyeGlow = ctx.createRadialGradient(cx, cy - 2, 1, cx, cy - 2, 18);
+    eyeGlow.addColorStop(0, 'rgba(255, 235, 71, 0.45)');
+    eyeGlow.addColorStop(1, 'rgba(255, 235, 71, 0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.fillRect(cx - 18, cy - 12, 36, 24);
 
     ctx.fillStyle = EYE;
     const eyePositions = [
-        [cx - 14, cy - 2],
-        [cx + 14, cy - 2],
-        [cx - 6, cy + 4],
-        [cx + 6, cy + 4],
+        [cx - 13, cy - 3],
+        [cx + 13, cy - 3],
+        [cx - 5, cy + 5],
+        [cx + 5, cy + 5],
     ];
     for (const [ex, ey] of eyePositions) {
         ctx.beginPath();
@@ -505,103 +925,183 @@ function drawCrawler(size) {
     ctx.fillStyle = '#000';
     for (const [ex, ey] of eyePositions) {
         ctx.beginPath();
-        ctx.arc(ex, ey, 1.3, 0, TWO_PI);
+        ctx.arc(ex, ey, 1.4, 0, TWO_PI);
         ctx.fill();
     }
-
-    ctx.strokeStyle = BODY_DARK;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(cx - 8, cy + 14);
-    ctx.lineTo(cx - 13, cy + 23);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx + 8, cy + 14);
-    ctx.lineTo(cx + 13, cy + 23);
-    ctx.stroke();
 
     return canvas;
 }
 
-function drawVinebackGoliath(size) {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+// ─── Bosses ───────────────────────────────────────────────────────────
+
+function drawVinebackGoliath(size, frame) {
+    const canvas = newSpriteCanvas(size);
     const ctx = canvas.getContext('2d');
     const cx = size / 2;
     const cy = size / 2;
 
+    // Idle pulse: frame 0 = base, frame 1 = vines flex slightly.
+    const pulse = frame === 0 ? 0 : 1;
+    const vineFlex = pulse * 3;
+
     const BODY = '#2d6b3f';
-    const BODY_DARK = '#143020';
-    const BODY_LIGHT = '#4a9959';
+    const BODY_DARK = '#102818';
+    const BODY_LIGHT = '#56a566';
+    const STONE = '#46423a';
+    const STONE_LIGHT = '#827c6e';
     const VINE = '#5a3c1e';
-    const VINE_DARK = '#3a2614';
+    const VINE_DARK = '#2a1a08';
     const LEAF = '#83b94a';
+    const LEAF_DARK = '#3e5d22';
     const EYE = '#ffeb47';
+    const FANG = '#fffae0';
 
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 76, 82, 16, 0, 0, TWO_PI);
-    ctx.fill();
+    softShadow(ctx, cx, cy + 80, 86, 18, 0.45);
 
+    // Stone shoulder spikes
+    for (let i = -1; i <= 1; i += 2) {
+        ctx.fillStyle = STONE;
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 50, cy - 20);
+        ctx.lineTo(cx + i * 70, cy - 60);
+        ctx.lineTo(cx + i * 78, cy - 18);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = STONE_LIGHT;
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 55, cy - 24);
+        ctx.lineTo(cx + i * 68, cy - 54);
+        ctx.lineTo(cx + i * 70, cy - 28);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // Body
     ctx.fillStyle = BODY;
     ctx.beginPath();
     ctx.ellipse(cx, cy + 5, 82, 76, 0, 0, TWO_PI);
     ctx.fill();
-
     ctx.fillStyle = BODY_LIGHT;
     ctx.beginPath();
-    ctx.ellipse(cx - 22, cy - 20, 38, 22, -0.3, 0, TWO_PI);
+    ctx.ellipse(cx - 22, cy - 22, 38, 24, -0.3, 0, TWO_PI);
     ctx.fill();
-
     ctx.strokeStyle = BODY_DARK;
     ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.ellipse(cx, cy + 5, 82, 76, 0, 0, TWO_PI);
     ctx.stroke();
 
+    // Stone plates on chest
+    ctx.fillStyle = STONE;
+    for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 28 - 12, cy + 24);
+        ctx.lineTo(cx + i * 28 + 12, cy + 24);
+        ctx.lineTo(cx + i * 28 + 8, cy + 50);
+        ctx.lineTo(cx + i * 28 - 8, cy + 50);
+        ctx.closePath();
+        ctx.fill();
+    }
+    ctx.strokeStyle = STONE_LIGHT;
+    ctx.lineWidth = 1.5;
+    for (let i = -1; i <= 1; i++) {
+        ctx.strokeRect(cx + i * 28 - 10, cy + 26, 20, 22);
+    }
+
+    // Thorny vines wrapping body
     ctx.strokeStyle = VINE_DARK;
-    ctx.lineWidth = 9;
+    ctx.lineWidth = 11;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(cx - 70, cy + 30);
-    ctx.bezierCurveTo(cx - 35, cy - 20, cx + 30, cy + 45, cx + 72, cy - 8);
+    ctx.moveTo(cx - 76, cy + 26);
+    ctx.bezierCurveTo(
+        cx - 30, cy - 24 - vineFlex,
+        cx + 36, cy + 50 + vineFlex,
+        cx + 76, cy - 6
+    );
     ctx.stroke();
     ctx.strokeStyle = VINE;
     ctx.lineWidth = 7;
     ctx.beginPath();
-    ctx.moveTo(cx - 70, cy + 30);
-    ctx.bezierCurveTo(cx - 35, cy - 20, cx + 30, cy + 45, cx + 72, cy - 8);
-    ctx.stroke();
-    ctx.strokeStyle = VINE;
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    ctx.moveTo(cx - 60, cy - 30);
-    ctx.bezierCurveTo(cx - 20, cy + 55, cx + 40, cy - 55, cx + 65, cy + 22);
+    ctx.moveTo(cx - 76, cy + 26);
+    ctx.bezierCurveTo(
+        cx - 30, cy - 24 - vineFlex,
+        cx + 36, cy + 50 + vineFlex,
+        cx + 76, cy - 6
+    );
     ctx.stroke();
 
-    ctx.fillStyle = LEAF;
+    ctx.strokeStyle = VINE_DARK;
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(cx - 60, cy - 32);
+    ctx.bezierCurveTo(
+        cx - 20, cy + 50 + vineFlex,
+        cx + 40, cy - 50 - vineFlex,
+        cx + 68, cy + 24
+    );
+    ctx.stroke();
+    ctx.strokeStyle = VINE;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 60, cy - 32);
+    ctx.bezierCurveTo(
+        cx - 20, cy + 50 + vineFlex,
+        cx + 40, cy - 50 - vineFlex,
+        cx + 68, cy + 24
+    );
+    ctx.stroke();
+
+    // Thorns
+    ctx.fillStyle = VINE_DARK;
+    const thorns = [
+        [cx - 36, cy - 10], [cx + 18, cy + 36], [cx + 48, cy - 24],
+        [cx - 8, cy + 40], [cx - 30, cy + 8], [cx + 32, cy - 8],
+    ];
+    for (const [tx, ty] of thorns) {
+        ctx.beginPath();
+        ctx.moveTo(tx - 3, ty);
+        ctx.lineTo(tx, ty - 7);
+        ctx.lineTo(tx + 3, ty);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // Leaves
     const leafPositions = [
-        [cx - 42, cy - 8, 0.4],
-        [cx + 22, cy + 32, -0.3],
-        [cx + 52, cy - 22, 0.7],
-        [cx - 12, cy + 42, 0.2],
+        [cx - 44, cy - 6, 0.4],
+        [cx + 22, cy + 36, -0.3],
+        [cx + 54, cy - 24, 0.7],
+        [cx - 12, cy + 44, 0.2],
+        [cx + 12, cy - 20, -0.6],
     ];
     for (const [lx, ly, rot] of leafPositions) {
+        ctx.fillStyle = LEAF_DARK;
+        ctx.beginPath();
+        ctx.ellipse(lx + 1, ly + 1, 14, 7, rot, 0, TWO_PI);
+        ctx.fill();
+        ctx.fillStyle = LEAF;
         ctx.beginPath();
         ctx.ellipse(lx, ly, 14, 7, rot, 0, TWO_PI);
         ctx.fill();
     }
 
+    // Eye glow
+    const eyeGlow = ctx.createRadialGradient(cx, cy - 16, 1, cx, cy - 16, 38);
+    eyeGlow.addColorStop(0, `rgba(255, 235, 71, ${0.4 + pulse * 0.2})`);
+    eyeGlow.addColorStop(1, 'rgba(255, 235, 71, 0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.fillRect(cx - 40, cy - 32, 80, 32);
+
     ctx.fillStyle = EYE;
     const eyePositions = [
-        [cx - 28, cy - 14],
+        [cx - 28, cy - 12],
         [cx, cy - 22],
-        [cx + 28, cy - 14],
+        [cx + 28, cy - 12],
     ];
     for (const [ex, ey] of eyePositions) {
         ctx.beginPath();
-        ctx.arc(ex, ey, 9, 0, TWO_PI);
+        ctx.arc(ex, ey, 9 + pulse * 0.8, 0, TWO_PI);
         ctx.fill();
     }
     ctx.fillStyle = '#000';
@@ -611,18 +1111,24 @@ function drawVinebackGoliath(size) {
         ctx.fill();
     }
 
+    // Mouth
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.arc(cx, cy + 18, 20, 0, Math.PI);
+    ctx.arc(cx, cy + 18, 22, 0, Math.PI);
     ctx.stroke();
+    ctx.fillStyle = '#1a0a08';
+    ctx.beginPath();
+    ctx.arc(cx, cy + 18, 20, 0.1, Math.PI - 0.1);
+    ctx.fill();
 
-    ctx.fillStyle = '#fff';
+    // Fangs
+    ctx.fillStyle = FANG;
     for (let i = -1; i <= 1; i++) {
         ctx.beginPath();
-        ctx.moveTo(cx + i * 14 - 4, cy + 22);
-        ctx.lineTo(cx + i * 14 + 4, cy + 22);
-        ctx.lineTo(cx + i * 14, cy + 40);
+        ctx.moveTo(cx + i * 16 - 5, cy + 22);
+        ctx.lineTo(cx + i * 16 + 5, cy + 22);
+        ctx.lineTo(cx + i * 16, cy + 42);
         ctx.closePath();
         ctx.fill();
     }
@@ -630,118 +1136,207 @@ function drawVinebackGoliath(size) {
     return canvas;
 }
 
-function drawStormwingAlpha(size) {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+function drawStormwingAlpha(size, frame, count) {
+    const canvas = newSpriteCanvas(size);
     const ctx = canvas.getContext('2d');
     const cx = size / 2;
     const cy = size / 2;
 
+    const phase = (frame / count) * TWO_PI;
+    const flap = Math.cos(phase);
+    const wingScale = 0.75 + flap * 0.25;
+    const wingY = -flap * 12;
+
+    const WING_DARK = '#0c0820';
     const WING = '#1a1438';
-    const WING_EDGE = '#3a2870';
+    const WING_EDGE = '#5b4690';
     const BODY = '#2c1c4a';
-    const FANG = '#fff';
+    const BODY_LIGHT = '#503884';
     const EYE = '#ff3060';
-    const LIGHTNING = '#90d8ff';
+    const FANG = '#fffadc';
+    const LIGHT = '#a8e0ff';
+    const LIGHT_BRIGHT = '#ffffff';
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 50, 56, 12, 0, 0, TWO_PI);
-    ctx.fill();
+    softShadow(ctx, cx, cy + 60, 54, 12, 0.4);
 
-    ctx.fillStyle = WING;
-    ctx.beginPath();
-    ctx.moveTo(cx - 5, cy - 4);
-    ctx.quadraticCurveTo(cx - 60, cy - 52, cx - 88, cy - 6);
-    ctx.quadraticCurveTo(cx - 75, cy + 4, cx - 60, cy + 6);
-    ctx.quadraticCurveTo(cx - 80, cy + 22, cx - 55, cy + 30);
-    ctx.quadraticCurveTo(cx - 30, cy + 16, cx - 12, cy + 12);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = WING_EDGE;
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    // Storm aura cloud
+    const auraGrad = ctx.createRadialGradient(cx, cy + 4, 10, cx, cy + 4, 96);
+    auraGrad.addColorStop(0, 'rgba(120, 180, 255, 0.18)');
+    auraGrad.addColorStop(1, 'rgba(120, 180, 255, 0)');
+    ctx.fillStyle = auraGrad;
+    ctx.fillRect(0, 0, size, size);
 
-    ctx.fillStyle = WING;
-    ctx.beginPath();
-    ctx.moveTo(cx + 5, cy - 4);
-    ctx.quadraticCurveTo(cx + 60, cy - 52, cx + 88, cy - 6);
-    ctx.quadraticCurveTo(cx + 75, cy + 4, cx + 60, cy + 6);
-    ctx.quadraticCurveTo(cx + 80, cy + 22, cx + 55, cy + 30);
-    ctx.quadraticCurveTo(cx + 30, cy + 16, cx + 12, cy + 12);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = WING_EDGE;
-    ctx.stroke();
+    // Wings
+    function wing(side) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(side, 1);
+        ctx.fillStyle = WING_DARK;
+        ctx.beginPath();
+        ctx.moveTo(6, -2);
+        ctx.quadraticCurveTo(64 * wingScale, -64 * wingScale + wingY, 102 * wingScale, -6 + wingY);
+        ctx.quadraticCurveTo(86 * wingScale, 4 + wingY, 72 * wingScale, 4);
+        ctx.quadraticCurveTo(94 * wingScale, 22 + wingY * 0.4, 64 * wingScale, 34);
+        ctx.quadraticCurveTo(36 * wingScale, 18, 14, 14);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = WING;
+        ctx.beginPath();
+        ctx.moveTo(12, 0);
+        ctx.quadraticCurveTo(54 * wingScale, -50 * wingScale + wingY, 88 * wingScale, -4 + wingY);
+        ctx.quadraticCurveTo(66 * wingScale, 4 + wingY, 56 * wingScale, 8);
+        ctx.quadraticCurveTo(30 * wingScale, 12, 16, 12);
+        ctx.closePath();
+        ctx.fill();
+        // Lightning veins on wing membrane
+        ctx.strokeStyle = LIGHT;
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(14, 2);
+        ctx.lineTo(40 * wingScale, -16 + wingY);
+        ctx.lineTo(56 * wingScale, -4 + wingY);
+        ctx.lineTo(78 * wingScale, -10 + wingY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(14, 6);
+        ctx.lineTo(36 * wingScale, 12);
+        ctx.lineTo(58 * wingScale, 18);
+        ctx.stroke();
+        // Bone strut
+        ctx.strokeStyle = WING_EDGE;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(14, 0);
+        ctx.lineTo(96 * wingScale, -6 + wingY);
+        ctx.stroke();
+        ctx.restore();
+    }
+    wing(-1);
+    wing(1);
 
+    // Body
     ctx.fillStyle = BODY;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 5, 30, 38, 0, 0, TWO_PI);
+    ctx.ellipse(cx, cy + 6, 32, 42, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 6, cy - 6, 12, 20, -0.2, 0, TWO_PI);
     ctx.fill();
 
+    // Crown spikes
+    ctx.fillStyle = BODY;
+    for (let i = -2; i <= 2; i++) {
+        const h = 18 - Math.abs(i) * 3;
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 8 - 4, cy - 32);
+        ctx.lineTo(cx + i * 8 + 4, cy - 32);
+        ctx.lineTo(cx + i * 8, cy - 32 - h);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // Ears
+    ctx.fillStyle = BODY;
     ctx.beginPath();
-    ctx.moveTo(cx - 18, cy - 26);
-    ctx.lineTo(cx - 8, cy - 50);
-    ctx.lineTo(cx - 2, cy - 26);
+    ctx.moveTo(cx - 18, cy - 28);
+    ctx.lineTo(cx - 10, cy - 56);
+    ctx.lineTo(cx - 2, cy - 28);
     ctx.closePath();
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(cx + 18, cy - 26);
-    ctx.lineTo(cx + 8, cy - 50);
-    ctx.lineTo(cx + 2, cy - 26);
+    ctx.moveTo(cx + 18, cy - 28);
+    ctx.lineTo(cx + 10, cy - 56);
+    ctx.lineTo(cx + 2, cy - 28);
     ctx.closePath();
     ctx.fill();
+
+    // Eye glow
+    const eyeGlow = ctx.createRadialGradient(cx, cy - 10, 1, cx, cy - 10, 24);
+    eyeGlow.addColorStop(0, 'rgba(255, 60, 120, 0.55)');
+    eyeGlow.addColorStop(1, 'rgba(255, 60, 120, 0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.fillRect(cx - 22, cy - 22, 44, 30);
 
     ctx.fillStyle = EYE;
     ctx.beginPath();
-    ctx.arc(cx - 11, cy - 11, 7, 0, TWO_PI);
+    ctx.arc(cx - 12, cy - 10, 7.5, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 11, cy - 11, 7, 0, TWO_PI);
+    ctx.arc(cx + 12, cy - 10, 7.5, 0, TWO_PI);
     ctx.fill();
-    ctx.fillStyle = '#ffe4e8';
+    ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(cx - 9, cy - 13, 2.4, 0, TWO_PI);
+    ctx.arc(cx - 10, cy - 12, 2.6, 0, TWO_PI);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 13, cy - 13, 2.4, 0, TWO_PI);
+    ctx.arc(cx + 14, cy - 12, 2.6, 0, TWO_PI);
     ctx.fill();
 
+    // Fangs
     ctx.fillStyle = FANG;
     ctx.beginPath();
-    ctx.moveTo(cx - 8, cy + 7);
-    ctx.lineTo(cx - 4, cy + 20);
-    ctx.lineTo(cx - 1, cy + 7);
+    ctx.moveTo(cx - 9, cy + 8);
+    ctx.lineTo(cx - 4, cy + 22);
+    ctx.lineTo(cx - 1, cy + 8);
     ctx.closePath();
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(cx + 8, cy + 7);
-    ctx.lineTo(cx + 4, cy + 20);
-    ctx.lineTo(cx + 1, cy + 7);
+    ctx.moveTo(cx + 9, cy + 8);
+    ctx.lineTo(cx + 4, cy + 22);
+    ctx.lineTo(cx + 1, cy + 8);
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = LIGHTNING;
+    // Lightning bolt arcs around body
+    ctx.strokeStyle = LIGHT_BRIGHT;
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(cx - 38, cy);
-    ctx.lineTo(cx - 30, cy + 6);
-    ctx.lineTo(cx - 34, cy + 14);
+    ctx.moveTo(cx - 48, cy);
+    ctx.lineTo(cx - 36, cy + 8);
+    ctx.lineTo(cx - 42, cy + 20);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(cx + 38, cy - 4);
-    ctx.lineTo(cx + 30, cy + 2);
-    ctx.lineTo(cx + 34, cy + 10);
+    ctx.moveTo(cx + 48, cy - 4);
+    ctx.lineTo(cx + 36, cy + 4);
+    ctx.lineTo(cx + 42, cy + 16);
+    ctx.stroke();
+    ctx.strokeStyle = LIGHT;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx - 48, cy);
+    ctx.lineTo(cx - 36, cy + 8);
+    ctx.lineTo(cx - 42, cy + 20);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 48, cy - 4);
+    ctx.lineTo(cx + 36, cy + 4);
+    ctx.lineTo(cx + 42, cy + 16);
+    ctx.stroke();
+    ctx.strokeStyle = LIGHT_BRIGHT;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 48, cy);
+    ctx.lineTo(cx - 36, cy + 8);
+    ctx.lineTo(cx - 42, cy + 20);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 48, cy - 4);
+    ctx.lineTo(cx + 36, cy + 4);
+    ctx.lineTo(cx + 42, cy + 16);
     ctx.stroke();
 
     return canvas;
 }
 
-function drawChest() {
+// ─── Chest ────────────────────────────────────────────────────────────
+// 3 frames: 0 closed, 1 mid-open, 2 fully open.
+
+function drawChest(frame) {
     const W = 96;
-    const H = 84;
+    const H = 96;
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
@@ -751,69 +1346,130 @@ function drawChest() {
     const WOOD_DARK = '#3a2410';
     const WOOD_LIGHT = '#a06430';
     const GOLD = '#ffd166';
-    const GOLD_DARK = '#a07530';
+    const GOLD_BRIGHT = '#fff5d0';
+    const GOLD_DARK = '#7a5018';
 
-    ctx.fillStyle = 'rgba(0,0,0,0.32)';
-    ctx.beginPath();
-    ctx.ellipse(W / 2, H - 6, W / 2 - 6, 5, 0, 0, TWO_PI);
-    ctx.fill();
+    softShadow(ctx, W / 2, H - 8, W / 2 - 8, 6, 0.36);
 
     // Body
     ctx.fillStyle = WOOD;
-    ctx.fillRect(6, 40, W - 12, H - 46);
+    ctx.fillRect(8, 50, W - 16, H - 56);
     ctx.fillStyle = WOOD_LIGHT;
-    ctx.fillRect(6, 40, 5, H - 46);
+    ctx.fillRect(8, 50, 6, H - 56);
+    ctx.fillStyle = WOOD_DARK;
+    ctx.fillRect(W - 14, 50, 6, H - 56);
     ctx.strokeStyle = WOOD_DARK;
     ctx.lineWidth = 2;
-    ctx.strokeRect(6, 40, W - 12, H - 46);
+    ctx.strokeRect(8, 50, W - 16, H - 56);
 
+    // Wood grain (a few faint vertical strokes)
+    ctx.strokeStyle = 'rgba(58, 36, 16, 0.35)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+        const x = 14 + i * 14;
+        ctx.beginPath();
+        ctx.moveTo(x, 54);
+        ctx.lineTo(x + 1, H - 12);
+        ctx.stroke();
+    }
+
+    // Lid pivots around the back edge. Closed = -0, mid = -0.55, open = -1.05 rad.
+    const lidAngle = frame === 0 ? 0 : (frame === 1 ? -0.6 : -1.1);
+
+    ctx.save();
+    ctx.translate(8, 50);
+    ctx.rotate(lidAngle);
     // Lid (curved top)
     ctx.fillStyle = WOOD;
     ctx.beginPath();
-    ctx.moveTo(6, 40);
-    ctx.lineTo(6, 22);
-    ctx.quadraticCurveTo(W / 2, 6, W - 6, 22);
-    ctx.lineTo(W - 6, 40);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -18);
+    ctx.quadraticCurveTo((W - 16) / 2, -36, W - 16, -18);
+    ctx.lineTo(W - 16, 0);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = WOOD_DARK;
+    ctx.lineWidth = 2;
     ctx.stroke();
 
+    // Highlight stripe on lid curve
     ctx.strokeStyle = WOOD_LIGHT;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(10, 32);
-    ctx.quadraticCurveTo(W / 2, 16, W - 10, 32);
+    ctx.moveTo(4, -8);
+    ctx.quadraticCurveTo((W - 16) / 2, -28, W - 20, -8);
     ctx.stroke();
 
-    // Gold horizontal band
+    // Gold band on lid bottom edge
     ctx.fillStyle = GOLD;
-    ctx.fillRect(6, 36, W - 12, 6);
+    ctx.fillRect(0, -6, W - 16, 6);
     ctx.strokeStyle = GOLD_DARK;
     ctx.lineWidth = 1;
-    ctx.strokeRect(6, 36, W - 12, 6);
+    ctx.strokeRect(0, -6, W - 16, 6);
 
-    // Gold vertical strap
+    // Vertical gold strap (lid portion)
     ctx.fillStyle = GOLD;
-    ctx.fillRect(W / 2 - 4, 12, 8, H - 18);
+    ctx.fillRect((W - 16) / 2 - 4, -28, 8, 28);
     ctx.strokeStyle = GOLD_DARK;
-    ctx.strokeRect(W / 2 - 4, 12, 8, H - 18);
+    ctx.strokeRect((W - 16) / 2 - 4, -28, 8, 28);
 
-    // Lock
+    // Lock (only visible when closed)
+    if (frame === 0) {
+        ctx.fillStyle = GOLD;
+        ctx.beginPath();
+        ctx.arc((W - 16) / 2, 2, 7, 0, TWO_PI);
+        ctx.fill();
+        ctx.strokeStyle = GOLD_DARK;
+        ctx.stroke();
+        ctx.fillStyle = WOOD_DARK;
+        ctx.fillRect((W - 16) / 2 - 1.5, 0, 3, 6);
+    }
+    ctx.restore();
+
+    // Vertical gold strap (body portion)
     ctx.fillStyle = GOLD;
-    ctx.beginPath();
-    ctx.arc(W / 2, 52, 7, 0, TWO_PI);
-    ctx.fill();
+    ctx.fillRect(W / 2 - 4, 50, 8, H - 56);
     ctx.strokeStyle = GOLD_DARK;
-    ctx.stroke();
-    ctx.fillStyle = WOOD_DARK;
-    ctx.fillRect(W / 2 - 1.5, 50, 3, 6);
+    ctx.strokeRect(W / 2 - 4, 50, 8, H - 56);
+
+    // When open, draw glowing contents.
+    if (frame >= 1) {
+        const openness = frame === 1 ? 0.5 : 1;
+        const glow = ctx.createRadialGradient(W / 2, 50, 2, W / 2, 50, 36);
+        glow.addColorStop(0, `rgba(255, 245, 200, ${0.85 * openness})`);
+        glow.addColorStop(0.6, `rgba(255, 209, 102, ${0.5 * openness})`);
+        glow.addColorStop(1, 'rgba(255, 200, 50, 0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(W / 2 - 36, 14, 72, 50);
+
+        // A small treasure peek (coin + gem) inside
+        if (frame === 2) {
+            ctx.fillStyle = GOLD_BRIGHT;
+            ctx.beginPath();
+            ctx.arc(W / 2 - 6, 52, 5, 0, TWO_PI);
+            ctx.fill();
+            ctx.fillStyle = GOLD;
+            ctx.beginPath();
+            ctx.arc(W / 2 + 6, 54, 4, 0, TWO_PI);
+            ctx.fill();
+            ctx.fillStyle = '#4ec1ff';
+            ctx.beginPath();
+            ctx.moveTo(W / 2, 48);
+            ctx.lineTo(W / 2 + 4, 54);
+            ctx.lineTo(W / 2, 60);
+            ctx.lineTo(W / 2 - 4, 54);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
 
     return canvas;
 }
 
-function drawCoin() {
-    const W = 28;
+// ─── Coin (spin frames) ───────────────────────────────────────────────
+
+function drawCoin(frame, count) {
+    const W = 32;
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = W;
@@ -821,69 +1477,119 @@ function drawCoin() {
     const cx = W / 2;
     const cy = W / 2;
 
+    const phase = (frame / count) * TWO_PI;
+    // Coin spins around vertical axis — squashes horizontally.
+    const squashX = Math.abs(Math.cos(phase));
+    const r = 12;
+
+    // Glow
     const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, W / 2);
     glow.addColorStop(0, '#fff5d0');
-    glow.addColorStop(0.55, 'rgba(255, 209, 102, 0.85)');
+    glow.addColorStop(0.55, 'rgba(255, 209, 102, 0.7)');
     glow.addColorStop(1, 'rgba(255, 200, 50, 0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, W, W);
 
+    // Coin disk (squashed for spin)
     ctx.fillStyle = '#ffd166';
     ctx.beginPath();
-    ctx.arc(cx, cy, 11, 0, TWO_PI);
+    ctx.ellipse(cx, cy, r * Math.max(0.18, squashX), r, 0, 0, TWO_PI);
     ctx.fill();
     ctx.strokeStyle = '#a07530';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    ctx.fillStyle = '#fff5d0';
-    ctx.beginPath();
-    ctx.ellipse(cx - 3, cy - 3, 4, 3, 0, 0, TWO_PI);
-    ctx.fill();
-
-    ctx.strokeStyle = '#a07530';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 7, 0, TWO_PI);
-    ctx.stroke();
+    // Front-face details only when mostly facing camera.
+    if (squashX > 0.55) {
+        ctx.fillStyle = '#fff5d0';
+        ctx.beginPath();
+        ctx.ellipse(cx - 2, cy - 3, 4 * squashX, 3, 0, 0, TWO_PI);
+        ctx.fill();
+        ctx.strokeStyle = '#a07530';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 7 * squashX, 7, 0, 0, TWO_PI);
+        ctx.stroke();
+        // Star symbol
+        ctx.fillStyle = '#a07530';
+        ctx.beginPath();
+        const starR = 3.5 * squashX;
+        for (let i = 0; i < 5; i++) {
+            const a = -Math.PI / 2 + i * (TWO_PI / 5);
+            const px = cx + Math.cos(a) * starR;
+            const py = cy + Math.sin(a) * starR;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+    } else {
+        // Edge view: bright vertical glint
+        ctx.fillStyle = '#fff5d0';
+        ctx.fillRect(cx - 1, cy - 8, 2, 16);
+    }
 
     return canvas;
 }
 
+// ─── Projectile ───────────────────────────────────────────────────────
+
 function drawProjectile() {
-    const W = 48;
-    const H = 24;
+    const W = 56;
+    const H = 28;
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext('2d');
 
-    const grad = ctx.createRadialGradient(W / 2, H / 2, 4, W / 2, H / 2, W / 2);
-    grad.addColorStop(0, 'rgba(255, 230, 110, 1)');
-    grad.addColorStop(0.5, 'rgba(255, 165, 50, 0.65)');
-    grad.addColorStop(1, 'rgba(255, 100, 0, 0)');
-    ctx.fillStyle = grad;
+    // Outer aura
+    const aura = ctx.createRadialGradient(W / 2, H / 2, 2, W / 2, H / 2, W / 2);
+    aura.addColorStop(0, 'rgba(255, 240, 130, 1)');
+    aura.addColorStop(0.45, 'rgba(255, 170, 60, 0.65)');
+    aura.addColorStop(1, 'rgba(255, 90, 0, 0)');
+    ctx.fillStyle = aura;
     ctx.fillRect(0, 0, W, H);
 
-    ctx.fillStyle = 'rgba(255, 210, 90, 0.55)';
+    // Trail behind (left side, since projectile points right)
+    const trail = ctx.createLinearGradient(0, H / 2, W / 2, H / 2);
+    trail.addColorStop(0, 'rgba(255, 200, 80, 0)');
+    trail.addColorStop(1, 'rgba(255, 220, 120, 0.55)');
+    ctx.fillStyle = trail;
     ctx.beginPath();
-    ctx.ellipse(W / 2 - 8, H / 2, 16, 4, 0, 0, TWO_PI);
+    ctx.ellipse(W / 2 - 10, H / 2, 18, 4, 0, 0, TWO_PI);
     ctx.fill();
 
+    // Brighter head
     ctx.fillStyle = '#fff8d0';
     ctx.beginPath();
-    ctx.ellipse(W / 2, H / 2, 11, 5, 0, 0, TWO_PI);
+    ctx.ellipse(W / 2 + 4, H / 2, 12, 6, 0, 0, TWO_PI);
     ctx.fill();
+    ctx.fillStyle = '#fffce8';
+    ctx.beginPath();
+    ctx.ellipse(W / 2 + 6, H / 2, 5, 3, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // Small arcane sparks around the head
+    ctx.strokeStyle = 'rgba(255, 250, 200, 0.7)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 + 14, H / 2 - 6);
+    ctx.lineTo(W / 2 + 18, H / 2 - 2);
+    ctx.moveTo(W / 2 + 16, H / 2 + 5);
+    ctx.lineTo(W / 2 + 12, H / 2 + 9);
+    ctx.stroke();
 
     return canvas;
 }
 
+// ─── XP Gem ──────────────────────────────────────────────────────────
+
 function drawXPGem(tier) {
-    const SIZES = { small: 28, medium: 36, large: 44 };
+    const SIZES = { small: 30, medium: 38, large: 46 };
     const COLORS = {
-        small:  { base: '#4ec1ff', light: '#bfeaff', dark: '#1e6fa8' },
-        medium: { base: '#5fe87a', light: '#c7f7d0', dark: '#1f7a35' },
-        large:  { base: '#ff5566', light: '#ffb4bc', dark: '#8a1d28' },
+        small:  { base: '#4ec1ff', light: '#dff3ff', dark: '#1e6fa8' },
+        medium: { base: '#5fe87a', light: '#d4f9d8', dark: '#1f7a35' },
+        large:  { base: '#ff5566', light: '#ffd0d6', dark: '#8a1d28' },
     };
     const size = SIZES[tier] ?? SIZES.small;
     const c = COLORS[tier] ?? COLORS.small;
@@ -896,48 +1602,75 @@ function drawXPGem(tier) {
     const cy = size / 2;
     const r = size / 2;
 
+    // Outer glow (larger tiers glow more)
     const glow = ctx.createRadialGradient(cx, cy, 1, cx, cy, r);
     glow.addColorStop(0, c.light);
-    glow.addColorStop(0.55, c.base + 'cc');
+    glow.addColorStop(0.45, c.base + 'cc');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, size, size);
 
+    // Faceted diamond body
     const dx = r * 0.72;
-    const dy = r * 0.86;
+    const dy = r * 0.88;
     ctx.fillStyle = c.base;
     ctx.beginPath();
     ctx.moveTo(cx, cy - dy);
-    ctx.lineTo(cx + dx, cy);
-    ctx.lineTo(cx, cy + dy);
-    ctx.lineTo(cx - dx, cy);
+    ctx.lineTo(cx + dx, cy - dy * 0.2);
+    ctx.lineTo(cx + dx * 0.6, cy + dy);
+    ctx.lineTo(cx - dx * 0.6, cy + dy);
+    ctx.lineTo(cx - dx, cy - dy * 0.2);
     ctx.closePath();
     ctx.fill();
 
+    // Bright top facet
     ctx.fillStyle = c.light;
     ctx.beginPath();
-    ctx.moveTo(cx, cy - dy + 2);
-    ctx.lineTo(cx + dx * 0.45, cy);
-    ctx.lineTo(cx, cy - 2);
-    ctx.lineTo(cx - dx * 0.45, cy);
+    ctx.moveTo(cx, cy - dy);
+    ctx.lineTo(cx + dx * 0.5, cy - dy * 0.2);
+    ctx.lineTo(cx, cy - dy * 0.05);
+    ctx.lineTo(cx - dx * 0.5, cy - dy * 0.2);
     ctx.closePath();
     ctx.fill();
 
+    // Side facets darker
+    ctx.fillStyle = c.dark;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(cx + dx * 0.6, cy + dy);
+    ctx.lineTo(cx + dx, cy - dy * 0.2);
+    ctx.lineTo(cx, cy - dy * 0.05);
+    ctx.lineTo(cx, cy + dy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Edges
     ctx.strokeStyle = c.dark;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(cx, cy - dy);
-    ctx.lineTo(cx + dx, cy);
-    ctx.lineTo(cx, cy + dy);
-    ctx.lineTo(cx - dx, cy);
+    ctx.lineTo(cx + dx, cy - dy * 0.2);
+    ctx.lineTo(cx + dx * 0.6, cy + dy);
+    ctx.lineTo(cx - dx * 0.6, cy + dy);
+    ctx.lineTo(cx - dx, cy - dy * 0.2);
     ctx.closePath();
     ctx.stroke();
+
+    // Sparkle
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx - dx * 0.3, cy - dy * 0.45, 1.8, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + dx * 0.1, cy - dy * 0.1, 1.2, 0, TWO_PI);
+    ctx.fill();
 
     return canvas;
 }
 
-// Deterministic small PRNG used for tile texture detail so the tile draws
-// the same set of speckles every reload. Keeps the tile sprite stable.
+// ─── Ground tile ─────────────────────────────────────────────────────
+
 function tileRng(seed) {
     let s = seed >>> 0;
     return () => {
@@ -964,7 +1697,6 @@ function drawGroundTile(size) {
     ctx.fillStyle = BASE;
     ctx.fillRect(0, 0, size, size);
 
-    // Soft gradient blob to break up tile flatness.
     const grad = ctx.createRadialGradient(
         size * 0.35, size * 0.45, size * 0.05,
         size * 0.35, size * 0.45, size * 0.85
@@ -975,8 +1707,6 @@ function drawGroundTile(size) {
     ctx.fillRect(0, 0, size, size);
 
     const rng = tileRng(1337);
-
-    // Light specks (dirt + small leaves).
     for (let i = 0; i < 50; i++) {
         const x = rng() * size;
         const y = rng() * size;
@@ -984,7 +1714,6 @@ function drawGroundTile(size) {
         ctx.fillStyle = SPECK;
         ctx.fillRect(x, y, r, r);
     }
-    // Dark specks (cracks).
     for (let i = 0; i < 28; i++) {
         const x = rng() * size;
         const y = rng() * size;
@@ -992,7 +1721,6 @@ function drawGroundTile(size) {
         ctx.fillStyle = SPECK_DARK;
         ctx.fillRect(x, y, r, r);
     }
-    // A few moss patches.
     for (let i = 0; i < 6; i++) {
         const x = rng() * size;
         const y = rng() * size;
@@ -1007,6 +1735,8 @@ function drawGroundTile(size) {
 
     return canvas;
 }
+
+// ─── Decorations (rock, mushroom, skull, …) ───────────────────────────
 
 function drawDecoration(type) {
     switch (type) {
@@ -1132,7 +1862,6 @@ function drawSkull() {
     ctx.beginPath();
     ctx.ellipse(cx, cy - 2, 13, 11, 0, 0, TWO_PI);
     ctx.fill();
-    // Jaw
     ctx.fillRect(cx - 8, cy + 7, 16, 4);
 
     ctx.fillStyle = '#1a1410';
@@ -1143,7 +1872,6 @@ function drawSkull() {
     ctx.arc(cx + 4, cy - 2, 2.6, 0, TWO_PI);
     ctx.fill();
 
-    // Teeth gaps
     ctx.strokeStyle = '#1a1410';
     ctx.lineWidth = 1;
     for (let i = -2; i <= 2; i++) {
@@ -1192,24 +1920,20 @@ function drawCandle() {
     ctx.ellipse(cx, H - 3, 8, 3, 0, 0, TWO_PI);
     ctx.fill();
 
-    // Stone base
     ctx.fillStyle = '#3a3530';
     ctx.fillRect(cx - 7, H - 12, 14, 10);
     ctx.strokeStyle = '#1c1a17';
     ctx.lineWidth = 1.2;
     ctx.strokeRect(cx - 7, H - 12, 14, 10);
 
-    // Candle stick
     ctx.fillStyle = '#e6dcc4';
     ctx.fillRect(cx - 3, H - 30, 6, 18);
     ctx.fillStyle = '#a99a6f';
     ctx.fillRect(cx - 3, H - 30, 1.5, 18);
 
-    // Wick
     ctx.fillStyle = '#1a1410';
     ctx.fillRect(cx - 0.5, H - 34, 1, 4);
 
-    // Flame
     const grad = ctx.createRadialGradient(cx, H - 36, 1, cx, H - 36, 8);
     grad.addColorStop(0, '#fff5b5');
     grad.addColorStop(0.55, 'rgba(255, 180, 60, 0.85)');
@@ -1239,7 +1963,6 @@ function drawRuin() {
     ctx.ellipse(W / 2, H - 4, 26, 4, 0, 0, TWO_PI);
     ctx.fill();
 
-    // Broken column shafts
     ctx.fillStyle = '#6e6354';
     ctx.fillRect(10, H - 30, 12, 26);
     ctx.fillRect(42, H - 22, 12, 18);
@@ -1253,7 +1976,6 @@ function drawRuin() {
     ctx.strokeRect(10, H - 30, 12, 26);
     ctx.strokeRect(42, H - 22, 12, 18);
 
-    // Top stones (jagged)
     ctx.fillStyle = '#7a6e5c';
     ctx.beginPath();
     ctx.moveTo(8, H - 30);
@@ -1270,7 +1992,6 @@ function drawRuin() {
     ctx.closePath();
     ctx.fill();
 
-    // A small rubble piece between them
     ctx.fillStyle = '#5e5446';
     ctx.beginPath();
     ctx.moveTo(26, H - 10);
@@ -1306,7 +2027,6 @@ function drawBranch() {
     ctx.bezierCurveTo(16, H - 14, 36, H - 2, W - 4, H - 8);
     ctx.stroke();
 
-    // Twigs
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(20, H - 8);
@@ -1347,7 +2067,6 @@ function drawCrackedStone() {
     ctx.ellipse(cx, cy, 18, 9, 0, 0, TWO_PI);
     ctx.stroke();
 
-    // Cracks
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.moveTo(cx - 8, cy - 2);
@@ -1374,7 +2093,6 @@ function drawBones() {
     ctx.ellipse(W / 2, H - 3, 16, 3, 0, 0, TWO_PI);
     ctx.fill();
 
-    // First bone
     ctx.save();
     ctx.translate(14, H - 9);
     ctx.rotate(-0.3);
@@ -1394,7 +2112,6 @@ function drawBones() {
     ctx.stroke();
     ctx.restore();
 
-    // Second bone
     ctx.save();
     ctx.translate(30, H - 7);
     ctx.rotate(0.4);

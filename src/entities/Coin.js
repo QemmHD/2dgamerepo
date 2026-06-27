@@ -5,9 +5,10 @@
 
 import { MAGNET } from '../config/GameConfig.js';
 import { TWO_PI, circleOverlap } from '../core/MathUtils.js';
-import { getCoinSprite } from '../assets/ProceduralSprites.js';
+import { getCoinFrames } from '../assets/ProceduralSprites.js';
 
 const BOUNCE_DURATION = 0.4;
+const SPIN_HZ = 5;
 
 export class Coin {
     constructor(x, y, value = 1) {
@@ -15,7 +16,9 @@ export class Coin {
         this.y = y;
         this.value = value;
         this.radius = 14;
-        this.sprite = getCoinSprite();
+        this.frames = getCoinFrames();
+        // Stagger spin phase per coin so bursts don't look in lockstep.
+        this.spinOffset = Math.random();
         this.active = true;
 
         const angle = Math.random() * TWO_PI;
@@ -69,9 +72,11 @@ export class Coin {
         const popScale = this.bounceTimer < BOUNCE_DURATION
             ? 0.6 + (this.bounceTimer / BOUNCE_DURATION) * 0.4
             : 1;
-        const w = this.sprite.width * popScale;
-        const h = this.sprite.height * popScale;
-        ctx.drawImage(this.sprite, this.x - w / 2, this.y - h / 2 + bobY, w, h);
+        const idx = Math.floor((this.age + this.spinOffset) * SPIN_HZ) % this.frames.length;
+        const sprite = this.frames[idx];
+        const w = sprite.width * popScale;
+        const h = sprite.height * popScale;
+        ctx.drawImage(sprite, this.x - w / 2, this.y - h / 2 + bobY, w, h);
     }
 
     drawDebug(ctx) {
