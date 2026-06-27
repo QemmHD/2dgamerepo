@@ -24,6 +24,20 @@ export function getBatSprite() {
     return sprite;
 }
 
+export function getBruteSprite() {
+    if (cache.has('brute')) return cache.get('brute');
+    const sprite = drawBrute(SPRITE_SIZE);
+    cache.set('brute', sprite);
+    return sprite;
+}
+
+export function getCrawlerSprite() {
+    if (cache.has('crawler')) return cache.get('crawler');
+    const sprite = drawCrawler(SPRITE_SIZE);
+    cache.set('crawler', sprite);
+    return sprite;
+}
+
 export function getProjectileSprite() {
     if (cache.has('projectile')) return cache.get('projectile');
     const sprite = drawProjectile();
@@ -305,6 +319,163 @@ function drawBat(size) {
     ctx.lineTo(cx + 1, cy + 5);
     ctx.closePath();
     ctx.fill();
+
+    return canvas;
+}
+
+function drawBrute(size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+
+    const BODY = '#6b4226';
+    const BODY_DARK = '#3a2410';
+    const BODY_LIGHT = '#8e5d36';
+    const EYE = '#ff8c40';
+
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 60, 72, 14, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 6, 72, 62, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 18, cy - 18, 32, 18, -0.3, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 6, 72, 62, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    ctx.fillStyle = BODY_DARK;
+    for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 28 - 9, cy - 50);
+        ctx.lineTo(cx + i * 28 + 9, cy - 50);
+        ctx.lineTo(cx + i * 28, cy - 74);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx - 22, cy - 8, 8, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 22, cy - 8, 8, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff5d0';
+    ctx.beginPath();
+    ctx.arc(cx - 20, cy - 10, 2.8, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 24, cy - 10, 2.8, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 9 - 3, cy + 18);
+        ctx.lineTo(cx + i * 9 + 3, cy + 18);
+        ctx.lineTo(cx + i * 9, cy + 34);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    return canvas;
+}
+
+function drawCrawler(size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+
+    const BODY = '#3d2c5e';
+    const BODY_DARK = '#1c1432';
+    const HIGHLIGHT = '#6a4cba';
+    const EYE = '#ffeb47';
+
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 28, 42, 8, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+        const yOff = -10 + i * 12;
+        ctx.beginPath();
+        ctx.moveTo(cx - 30, cy + yOff);
+        ctx.lineTo(cx - 52, cy + yOff - 6);
+        ctx.lineTo(cx - 62, cy + yOff + 10);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx + 30, cy + yOff);
+        ctx.lineTo(cx + 52, cy + yOff - 6);
+        ctx.lineTo(cx + 62, cy + yOff + 10);
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 5, 38, 26, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = HIGHLIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 8, cy - 6, 14, 8, -0.2, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 5, 38, 26, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    ctx.fillStyle = EYE;
+    const eyePositions = [
+        [cx - 14, cy - 2],
+        [cx + 14, cy - 2],
+        [cx - 6, cy + 4],
+        [cx + 6, cy + 4],
+    ];
+    for (const [ex, ey] of eyePositions) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, 3, 0, TWO_PI);
+        ctx.fill();
+    }
+    ctx.fillStyle = '#000';
+    for (const [ex, ey] of eyePositions) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, 1.3, 0, TWO_PI);
+        ctx.fill();
+    }
+
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy + 14);
+    ctx.lineTo(cx - 13, cy + 23);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 8, cy + 14);
+    ctx.lineTo(cx + 13, cy + 23);
+    ctx.stroke();
 
     return canvas;
 }

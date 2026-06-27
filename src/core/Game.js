@@ -22,6 +22,7 @@ import { WeaponSystem } from '../systems/WeaponSystem.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
+import { WaveDirector } from '../systems/WaveDirector.js';
 import { UISystem } from '../systems/UISystem.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
@@ -156,6 +157,10 @@ export class Game {
         this.collisionSystem = new CollisionSystem();
         this.upgradeSystem = new UpgradeSystem();
         this.passiveSystem = new PassiveSystem();
+        this.waveDirector = new WaveDirector();
+        // Cache the current wave state so render can read it without
+        // re-computing during the same frame.
+        this.waveState = this.waveDirector.getState(0);
 
         this.time = 0;
         this.kills = 0;
@@ -212,8 +217,11 @@ export class Game {
 
         this.time += dt;
 
+        this.waveDirector.update(dt, this.time);
+        this.waveState = this.waveDirector.getState(this.time);
+
         this.player.update(dt, this.input);
-        this.spawner.update(dt, this.player, this.enemies);
+        this.spawner.update(dt, this.player, this.enemies, this.waveState);
         const weaponResult = this.weaponSystem.update(
             dt, this.player, this.enemies, this.projectiles
         );
@@ -335,6 +343,8 @@ export class Game {
             ownedPassives: this.passiveSystem.snapshotForUI(),
             coins: this.player.coins ?? 0,
             chestLuck: this.player.chestLuck ?? 0,
+            waveState: this.waveState,
+            waveAnnouncement: this.waveDirector.announcement,
             spawnTimer: this.spawner.timer,
             spawnInterval: this.spawner.nextInterval,
             inContact: this.collisionSystem.inContact,

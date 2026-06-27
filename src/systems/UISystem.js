@@ -63,15 +63,72 @@ export class UISystem {
 
     draw(ctx, gameState) {
         this._drawTitle(ctx);
+        this._drawWaveLabel(ctx, gameState);
         this._drawHpBar(ctx, gameState);
         this._drawXPBar(ctx, gameState);
         this._drawHUD(ctx, gameState);
         this._drawDebugToggleHint(ctx, gameState);
+        // Announcement renders before overlays so the level-up / game-over
+        // overlays still cover it cleanly when both are visible.
+        if (!gameState.gameOver && !gameState.upgradeChoices) {
+            this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
+        }
         if (gameState.gameOver) {
             this._drawGameOverOverlay(ctx, gameState);
         } else if (gameState.upgradeChoices) {
             this._drawLevelUpOverlay(ctx, gameState);
         }
+    }
+
+    _drawWaveLabel(ctx, state) {
+        const ws = state.waveState;
+        if (!ws) return;
+        const sa = this.renderer.safeArea;
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = 'rgba(255, 209, 102, 0.88)';
+        ctx.font = 'bold 24px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(
+            `WAVE ${ws.index + 1}  •  ${ws.name}`,
+            INTERNAL_WIDTH / 2,
+            76 + sa.top
+        );
+        ctx.restore();
+    }
+
+    _drawWaveAnnouncement(ctx, ann) {
+        if (!ann) return;
+        const t = ann.age / ann.lifetime;
+        const fadeIn = 0.3 / ann.lifetime;
+        const fadeOut = 0.7 / ann.lifetime;
+        let alpha = 1;
+        if (t < fadeIn) alpha = t / fadeIn;
+        else if (t > 1 - fadeOut) alpha = (1 - t) / fadeOut;
+        alpha = Math.max(0, Math.min(1, alpha));
+        if (alpha <= 0) return;
+
+        const centerY = INTERNAL_HEIGHT * 0.32;
+        const panelW = 820;
+        const panelH = 120;
+        const panelX = (INTERNAL_WIDTH - panelW) / 2;
+        const panelY = centerY - panelH / 2;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = 'rgba(20, 18, 8, 0.78)';
+        roundRectPath(ctx, panelX, panelY, panelW, panelH, 18);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 209, 102, 0.55)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffd166';
+        ctx.font = 'bold 48px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(ann.text, INTERNAL_WIDTH / 2, centerY);
+        ctx.restore();
     }
 
     _drawTitle(ctx) {
@@ -201,6 +258,7 @@ export class UISystem {
             return `${p.name.padEnd(16)}${level}`;
         });
 
+        const ws = state.waveState;
         const debugLines = state.showDebug ? [
             ``,
             `FPS     ${this.loop?.fps ? this.loop.fps.toFixed(0) : '--'}`,
@@ -210,6 +268,14 @@ export class UISystem {
                     : ''),
             `lvl/xp  ${state.player.level}  ${Math.floor(state.player.xp)}/${state.player.xpToNext}`,
             `pickup  ${Math.round(state.player.pickupRange)}`,
+            ``,
+            `WAVE    ${ws ? ws.index + 1 : '?'} ${ws ? ws.name : ''}`,
+            `weights ${ws ? formatWeights(ws.typeWeights) : ''}`,
+            `int×    ${ws ? ws.spawnIntervalMul.toFixed(2) : '?'}`,
+            `cap     ${ws ? ws.maxAlive : '?'}`,
+            `hp×spd× ${ws ? ws.healthMul.toFixed(2) : '?'} / ${ws ? ws.speedMul.toFixed(2) : '?'}`,
+            `elite%  ${ws ? (ws.eliteChance * 100).toFixed(1) : '?'}%`,
+            ``,
             `spawn   ${formatSpawn(state.spawnTimer, state.spawnInterval)}`,
             `player  (${Math.round(state.player.x)}, ${Math.round(state.player.y)})`,
             `camera  (${Math.round(state.camera.x)}, ${Math.round(state.camera.y)})`,
@@ -420,6 +486,14 @@ function formatTime(seconds) {
 function formatSpawn(timer, interval) {
     if (interval == null) return `${timer.toFixed(2)}s`;
     return `${timer.toFixed(2)}s / ${interval.toFixed(2)}s`;
+}
+
+function formatWeights(weights) {
+    if (!weights) return '';
+    return Object.entries(weights)
+        .filter(([, w]) => w > 0)
+        .map(([id, w]) => `${id[0]}${w}`)
+        .join(' ');
 }
 
 function wrapText(ctx, text, x, y, maxWidth, lineHeight) {

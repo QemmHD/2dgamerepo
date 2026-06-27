@@ -48,6 +48,30 @@ export const ENEMY = {
         contactDamage: 6,
         xpValue: 1,
     },
+    brute: {
+        hp: 80,
+        speed: 80,
+        radius: 70,
+        contactDamage: 14,
+        xpValue: 3,
+    },
+    crawler: {
+        hp: 24,
+        speed: 175,
+        radius: 40,
+        contactDamage: 7,
+        xpValue: 1,
+    },
+};
+
+// Elite is a modifier applied to a base enemy type, not a separate type.
+// Spawner can roll an elite version of any base type using waveState.eliteChance.
+export const ELITE = {
+    hpMul: 4.0,
+    sizeMul: 1.3,
+    speedMul: 0.85,
+    contactDamageMul: 1.5,
+    xpMul: 5,
 };
 
 // ── Weapons ────────────────────────────────────────────────────────────
@@ -71,16 +95,112 @@ export const WEAPON = {
 };
 
 // ── Spawning ───────────────────────────────────────────────────────────
+// intervalMin/intervalMax are the BASE delay range between spawns; WaveDirector
+// supplies a per-wave multiplier so spawns get faster as time goes on. maxAlive
+// is now per-wave (also scaled) — the value here is the Wave-1 baseline.
 export const SPAWN = {
     intervalMin: 0.75,
     intervalMax: 1.25,
-    maxAlive: 60,
     ringRadiusMin: 1050,
     ringRadiusMax: 1350,
     minSpawnDistance: 800,
-    slimeOnlyUntil: 5,
-    batChance: 0.3,
     placementAttempts: 8,
+};
+
+// ── Waves / difficulty ────────────────────────────────────────────────
+// Each wave entry says "starting at startTime seconds, use these spawn rules
+// until the next wave kicks in." Beyond the last wave, ENDLESS_SCALING ramps
+// values smoothly each minute, capped by WAVE_LIMITS for performance safety.
+export const WAVES = [
+    {
+        index: 0,
+        startTime: 0,
+        name: 'Jungle Stirring',
+        announcement: 'Wave 1: Jungle Stirring',
+        spawnIntervalMul: 1.0,
+        maxAlive: 60,
+        typeWeights: { slime: 100 },
+        eliteChance: 0,
+        healthMul: 1.0,
+        speedMul: 1.0,
+    },
+    {
+        index: 1,
+        startTime: 60,
+        name: 'Wing Trouble',
+        announcement: 'Wave 2: Wing Trouble — Bats join in',
+        spawnIntervalMul: 0.85,
+        maxAlive: 75,
+        typeWeights: { slime: 70, bat: 30 },
+        eliteChance: 0,
+        healthMul: 1.1,
+        speedMul: 1.05,
+    },
+    {
+        index: 2,
+        startTime: 120,
+        name: 'Fast Swarm',
+        announcement: 'Wave 3: Fast Swarm — Crawlers skitter in',
+        spawnIntervalMul: 0.72,
+        maxAlive: 90,
+        typeWeights: { slime: 45, bat: 25, crawler: 30 },
+        eliteChance: 0,
+        healthMul: 1.2,
+        speedMul: 1.10,
+    },
+    {
+        index: 3,
+        startTime: 180,
+        name: 'Thick Horde',
+        announcement: 'Wave 4: Thick Horde — Pressure rises',
+        spawnIntervalMul: 0.60,
+        maxAlive: 110,
+        typeWeights: { slime: 35, bat: 25, crawler: 40 },
+        eliteChance: 0.015,
+        healthMul: 1.35,
+        speedMul: 1.15,
+    },
+    {
+        index: 4,
+        startTime: 240,
+        name: 'Heavy Steps',
+        announcement: 'Wave 5: Heavy Steps — Brutes arrive',
+        spawnIntervalMul: 0.52,
+        maxAlive: 125,
+        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25 },
+        eliteChance: 0.03,
+        healthMul: 1.5,
+        speedMul: 1.20,
+    },
+    {
+        index: 5,
+        startTime: 300,
+        name: 'Endless Swarm',
+        announcement: 'Wave 6: Endless Swarm — Survive!',
+        spawnIntervalMul: 0.44,
+        maxAlive: 145,
+        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30 },
+        eliteChance: 0.06,
+        healthMul: 1.7,
+        speedMul: 1.25,
+    },
+];
+
+// Applied on top of the last wave's values; one tick per minute of survival
+// past the last wave's startTime. Ramps stay small so progression stays fair.
+export const ENDLESS_SCALING = {
+    healthPerMinute: 0.06,
+    speedPerMinute: 0.025,
+    spawnIntervalShrinkPerMinute: 0.04,
+    capGrowthPerMinute: 4,
+    eliteChancePerMinute: 0.01,
+};
+
+export const WAVE_LIMITS = {
+    maxEnemyCap: 180,
+    maxSpeedMultiplier: 2.0,
+    maxHealthMultiplier: 4.0,
+    maxEliteChance: 0.25,
 };
 
 // ── XP / progression / gems ────────────────────────────────────────────
