@@ -21,18 +21,27 @@ export class CollisionSystem {
 
         for (const p of projectiles) {
             if (!p.active) continue;
+            const speed = Math.hypot(p.vx, p.vy) || 1;
+            const kx = (p.vx / speed) * KNOCKBACK.strength;
+            const ky = (p.vy / speed) * KNOCKBACK.strength;
             for (const e of enemies) {
                 if (!e.active) continue;
+                if (p.hitEnemies.has(e)) continue;
                 if (!circleOverlap(p.x, p.y, p.radius, e.x, e.y, e.radius)) continue;
 
-                const speed = Math.hypot(p.vx, p.vy) || 1;
-                const kx = (p.vx / speed) * KNOCKBACK.strength;
-                const ky = (p.vy / speed) * KNOCKBACK.strength;
                 e.takeDamage(p.damage, kx, ky);
                 hits.push({ x: e.x, y: e.y - e.radius, amount: p.damage });
-                p.active = false;
+                p.hitEnemies.add(e);
                 if (!e.active) killed.push(e);
-                break;
+
+                if (p.pierce > 0) {
+                    p.pierce -= 1;
+                    // Keep going — a piercing projectile can chain through
+                    // a clump of enemies in the same frame.
+                } else {
+                    p.active = false;
+                    break;
+                }
             }
         }
 

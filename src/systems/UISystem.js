@@ -192,6 +192,11 @@ export class UISystem {
             `GEMS    ${state.gemCount}`,
         ];
 
+        const weaponLines = (state.ownedWeapons ?? []).map((w) => {
+            const level = w.isMax ? 'Lv 8 MAX' : `Lv ${w.level}`;
+            return `${w.name.padEnd(16)}${level}`;
+        });
+
         const debugLines = state.showDebug ? [
             ``,
             `FPS     ${this.loop?.fps ? this.loop.fps.toFixed(0) : '--'}`,
@@ -209,7 +214,9 @@ export class UISystem {
             `contact ${state.inContact ? 'YES' : 'no'}`,
         ] : [];
 
-        const lines = [...gameplayLines, ...debugLines];
+        const lines = weaponLines.length > 0
+            ? [...gameplayLines, ``, ...weaponLines, ...debugLines]
+            : [...gameplayLines, ...debugLines];
 
         ctx.save();
         ctx.font = '28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
@@ -307,7 +314,9 @@ export class UISystem {
     _drawUpgradeCard(ctx, r, upgrade, index, counts) {
         const colors = RARITY_COLORS[upgrade.rarity] ?? RARITY_COLORS.common;
         const stack = (counts && counts[upgrade.id]) ?? 0;
-        const nextLevel = stack + 1;
+        const label = upgrade.cardLabel ?? (upgrade.rarity ?? 'common').toUpperCase();
+        const levelText = upgrade.cardLevelText ?? `Lv ${stack + 1}`;
+        const isWeaponish = upgrade.kind === 'weapon-new' || upgrade.kind === 'weapon-upgrade';
 
         ctx.save();
         ctx.fillStyle = 'rgba(20, 26, 38, 0.95)';
@@ -321,17 +330,18 @@ export class UISystem {
         ctx.fillStyle = colors.accent;
         ctx.font = 'bold 26px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.textBaseline = 'top';
-        ctx.fillText((upgrade.rarity ?? 'common').toUpperCase(), r.x + r.w / 2, r.y + 28);
+        ctx.fillText(label, r.x + r.w / 2, r.y + 28);
 
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 44px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.fillText(upgrade.name, r.x + r.w / 2, r.y + 90);
 
-        // "Lv N" badge so the player can see how much they've already stacked
-        // this upgrade. `nextLevel` is what they'd have after picking.
-        ctx.fillStyle = stack > 0 ? '#ffd166' : 'rgba(255,255,255,0.55)';
+        // Level badge: gold when this is a stacked weapon upgrade or stacked
+        // stat; white-translucent on a first pick / brand-new weapon card.
+        const badgeIsHighlighted = stack > 0 || isWeaponish;
+        ctx.fillStyle = badgeIsHighlighted ? '#ffd166' : 'rgba(255,255,255,0.55)';
         ctx.font = 'bold 26px -apple-system, system-ui, Helvetica, Arial, sans-serif';
-        ctx.fillText(`Lv ${nextLevel}`, r.x + r.w / 2, r.y + 150);
+        ctx.fillText(levelText, r.x + r.w / 2, r.y + 150);
 
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.font = '30px -apple-system, system-ui, Helvetica, Arial, sans-serif';

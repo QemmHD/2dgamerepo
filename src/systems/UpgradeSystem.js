@@ -1,36 +1,21 @@
-// Pool of available upgrades. Each entry is pure data + an `apply(game)`
-// that mutates the world (weapons[], player stats, etc.). Adding a new
-// upgrade is a single push to this array; no system code changes.
+// Builds the 3-card level-up pool. Mixes stat upgrades (data list below)
+// with dynamic per-weapon entries generated from game.weaponSystem.
+//
+// Cards are uniform shape: { id, name, description, cardLabel, rarity,
+// weight, maxStacks?, available?, apply(game) }. The `cardLabel` is what
+// UISystem prints in the rarity slot ("STAT" / "WEAPON UPGRADE" / "NEW
+// WEAPON"). Adding a new card = push a new STAT_UPGRADES entry or define
+// a new weapon in src/content/weapons.js; no system code change.
 
 import { pickWeighted } from '../core/MathUtils.js';
+import { WEAPONS, WEAPON_IDS } from '../content/weapons.js';
+import { MAX_WEAPON_LEVEL } from '../config/GameConfig.js';
 
-const UPGRADES = [
+const STAT_UPGRADES = [
     {
-        id: 'bolt-damage',
-        name: 'Sharper Bolts',
-        description: '+25% Bolt damage',
-        rarity: 'common',
-        weight: 1.2,
-        maxStacks: 8,
-        apply(game) {
-            const bolt = findWeapon(game, 'Bolt');
-            if (bolt) bolt.damage *= 1.25;
-        },
-    },
-    {
-        id: 'bolt-cooldown',
-        name: 'Quick Hands',
-        description: '-15% Bolt cooldown',
-        rarity: 'common',
-        weight: 1.1,
-        maxStacks: 6,
-        apply(game) {
-            const bolt = findWeapon(game, 'Bolt');
-            if (bolt) bolt.cooldown *= 0.85;
-        },
-    },
-    {
-        id: 'move-speed',
+        id: 'stat:move-speed',
+        kind: 'stat',
+        cardLabel: 'STAT',
         name: 'Quick Feet',
         description: '+15% movement speed',
         rarity: 'common',
@@ -41,7 +26,9 @@ const UPGRADES = [
         },
     },
     {
-        id: 'pickup-range',
+        id: 'stat:pickup-range',
+        kind: 'stat',
+        cardLabel: 'STAT',
         name: 'Banana Magnet',
         description: '+30% gem pickup range',
         rarity: 'common',
@@ -52,7 +39,9 @@ const UPGRADES = [
         },
     },
     {
-        id: 'max-hp',
+        id: 'stat:max-hp',
+        kind: 'stat',
+        cardLabel: 'STAT',
         name: 'Hearty',
         description: '+20 max HP',
         rarity: 'common',
@@ -64,19 +53,9 @@ const UPGRADES = [
         },
     },
     {
-        id: 'projectile-speed',
-        name: 'Faster Bolts',
-        description: '+25% projectile speed',
-        rarity: 'common',
-        weight: 0.9,
-        maxStacks: 4,
-        apply(game) {
-            const bolt = findWeapon(game, 'Bolt');
-            if (bolt) bolt.projectileSpeed *= 1.25;
-        },
-    },
-    {
-        id: 'xp-gain',
+        id: 'stat:xp-gain',
+        kind: 'stat',
+        cardLabel: 'STAT',
         name: 'Wise Monkey',
         description: '+10% XP from gems',
         rarity: 'uncommon',
@@ -87,13 +66,13 @@ const UPGRADES = [
         },
     },
     {
-        id: 'heal',
+        id: 'stat:heal',
+        kind: 'stat',
+        cardLabel: 'STAT',
         name: 'Banana Patch',
         description: 'Restore 30 HP',
         rarity: 'common',
         weight: 0.8,
-        // No stack cap — heal is consumed each pick, never a permanent stat.
-        // Only offered when the player is actually hurt so it isn't a wasted card.
         available(game) {
             return game.player.hp < game.player.maxHp;
         },
@@ -103,32 +82,19 @@ const UPGRADES = [
     },
 ];
 
-function findWeapon(game, name) {
-    return game.weaponSystem?.weapons?.find((w) => w.name === name) ?? null;
-}
+const WEIGHT_NEW_WEAPON = 0.9;
+const WEIGHT_WEAPON_UPGRADE = 1.1;
 
 export class UpgradeSystem {
     constructor() {
         this.appliedCounts = Object.create(null);
     }
 
-    getAll() {
-        return UPGRADES;
-    }
-
     rollChoices(game, count = 3) {
-        // Pull from upgrades that still have stacks remaining AND pass any
-        // optional context check (e.g. heal hides at full HP). Then weighted-
-        // pick a card, remove it from the pool, repeat — guarantees no
-        // duplicates within a single level-up.
-        const remaining = UPGRADES.filter((u) => {
-            const cur = this.appliedCounts[u.id] ?? 0;
-            if (cur >= (u.maxStacks ?? Infinity)) return false;
-            if (u.available && game && !u.available(game)) return false;
-            return true;
-        });
+        const pool = this._buildPool(game);
 
         const choices = [];
+        const remaining = pool.slice();
         while (choices.length < count && remaining.length > 0) {
             const picked = pickWeighted(remaining);
             if (!picked) break;
@@ -138,9 +104,73 @@ export class UpgradeSystem {
         return choices;
     }
 
+    _buildPool(game) {
+        const pool = [];
+
+        // Stat upgrades — gated by maxStacks and an optional context check.
+        for (const u of STAT_UPGRADES) {
+            const cur = this.appliedCounts[u.id] ?? 0;
+            if (cur >= (u.maxStacks ?? Infinity)) continue;
+            if (u.available && !u.available(game)) continue;
+            pool.push(u);
+        }
+
+        // Per-owned-weapon upgrade entries (skip maxed weapons).
+        const ownedIds = new Set();
+        for (const w of game.weaponSystem.owned) {
+            ownedIds.add(w.id);
+            if (w.level < MAX_WEAPON_LEVEL) {
+                pool.push(weaponUpgradeChoice(w));
+            }
+        }
+
+        // Per-unowned-weapon unlock entries.
+        for (const id of WEAPON_IDS) {
+            if (ownedIds.has(id)) continue;
+            pool.push(newWeaponChoice(id));
+        }
+
+        return pool;
+    }
+
     apply(upgrade, game) {
         if (!upgrade) return;
         this.appliedCounts[upgrade.id] = (this.appliedCounts[upgrade.id] ?? 0) + 1;
         upgrade.apply(game);
     }
+}
+
+function weaponUpgradeChoice(owned) {
+    const def = WEAPONS[owned.id];
+    const next = owned.level + 1;
+    return {
+        id: `weapon:${owned.id}:upgrade`,
+        kind: 'weapon-upgrade',
+        cardLabel: 'WEAPON UPGRADE',
+        name: def?.name ?? owned.id,
+        description: `Lv ${owned.level} → Lv ${next}`,
+        cardLevelText: `Lv ${next}`,
+        rarity: 'rare',
+        weight: WEIGHT_WEAPON_UPGRADE,
+        apply(game) {
+            game.weaponSystem.levelUpWeapon(owned.id);
+        },
+    };
+}
+
+function newWeaponChoice(id) {
+    const def = WEAPONS[id];
+    return {
+        id: `weapon:${id}:new`,
+        kind: 'weapon-new',
+        cardLabel: 'NEW WEAPON',
+        name: def?.name ?? id,
+        description: def?.description ?? '',
+        cardLevelText: 'Lv 1',
+        rarity: 'epic',
+        weight: WEIGHT_NEW_WEAPON,
+        apply(game) {
+            game.weaponSystem.addWeapon(id);
+        },
+    };
 }

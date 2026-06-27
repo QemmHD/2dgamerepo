@@ -51,6 +51,14 @@ export const ENEMY = {
 };
 
 // ── Weapons ────────────────────────────────────────────────────────────
+// Per-weapon balance lives in src/content/weapons.js so behavior functions
+// (which need real code) and stat tables can stay together. The cap on
+// how high any weapon can level lives here for easy tuning.
+export const MAX_WEAPON_LEVEL = 8;
+
+// Legacy block kept so Projectile's default opts still resolve cleanly when
+// a weapon doesn't pass per-projectile overrides. The starter weapon uses
+// the per-level table from content/weapons.js, not these values.
 export const WEAPON = {
     bolt: {
         cooldown: 0.6,

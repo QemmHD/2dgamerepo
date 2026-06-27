@@ -40,6 +40,11 @@ export class Enemy {
 
         this.knockbackVx = 0;
         this.knockbackVy = 0;
+
+        // Shared "this enemy was just damaged by a tick-style weapon (orbit
+        // blade, etc.)" cooldown. Set inside the weapon's behavior; ticked
+        // down here. Keeps stack-style weapons from melting the same target.
+        this.weaponHitCooldown = 0;
     }
 
     update(dt, player) {
@@ -64,6 +69,7 @@ export class Enemy {
         }
 
         if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
+        if (this.weaponHitCooldown > 0) this.weaponHitCooldown -= dt;
     }
 
     takeDamage(amount, knockbackVx = 0, knockbackVy = 0) {

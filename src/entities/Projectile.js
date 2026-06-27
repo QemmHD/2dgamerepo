@@ -13,6 +13,12 @@ export class Projectile {
         this.damage = opts.damage ?? WEAPON.bolt.damage;
         this.lifetime = opts.lifetime ?? WEAPON.bolt.projectileLifetime;
         this.radius = opts.radius ?? WEAPON.bolt.projectileRadius;
+        // pierce = additional enemies this projectile can hit before dying.
+        // 0 means it dies on first hit (original Arcane Bolt L1 behavior).
+        this.pierce = opts.pierce ?? 0;
+        // Tracks enemies already damaged so a single piercing projectile
+        // doesn't double-hit the same target while passing through.
+        this.hitEnemies = new Set();
         this.age = 0;
         this.active = true;
         this.angle = Math.atan2(vy, vx);

@@ -212,7 +212,9 @@ export class Game {
 
         this.player.update(dt, this.input);
         this.spawner.update(dt, this.player, this.enemies);
-        this.weaponSystem.update(dt, this.player, this.enemies, this.projectiles);
+        const weaponResult = this.weaponSystem.update(
+            dt, this.player, this.enemies, this.projectiles
+        );
 
         for (const e of this.enemies) {
             if (e.active) e.update(dt, this.player);
@@ -235,22 +237,29 @@ export class Game {
             }
         }
 
-        const result = this.collisionSystem.resolve(
+        const collisionResult = this.collisionSystem.resolve(
             dt, this.player, this.enemies, this.projectiles
         );
-        if (result.killed.length > 0) {
-            this.kills += result.killed.length;
-            for (const e of result.killed) this._dropGem(e.x, e.y);
+
+        // Merge weapon-system hits/kills (orbit blades, pulse, lightning) with
+        // projectile-collision results so gem drops, kill count, and damage
+        // numbers all flow through the same downstream path.
+        const allKilled = collisionResult.killed.concat(weaponResult.killed);
+        const allHits = collisionResult.hits.concat(weaponResult.hits);
+
+        if (allKilled.length > 0) {
+            this.kills += allKilled.length;
+            for (const e of allKilled) this._dropGem(e.x, e.y);
         }
-        for (const hit of result.hits) {
+        for (const hit of allHits) {
             this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, '#ffffff'));
         }
-        if (result.playerHit) {
+        if (collisionResult.playerHit) {
             this.camera.shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
             this.damageNumbers.push(new DamageNumber(
                 this.player.x,
                 this.player.y - this.player.radius,
-                result.playerDamageTaken,
+                collisionResult.playerDamageTaken,
                 '#ff4757'
             ));
         }
@@ -293,7 +302,9 @@ export class Game {
         }
         this.player.draw(ctx);
         this.player.drawHpBar(ctx);
+        this.weaponSystem.drawWeaponVisuals(ctx, this.player);
         for (const p of this.projectiles) p.draw(ctx);
+        this.weaponSystem.drawEffects(ctx);
         for (const d of this.damageNumbers) d.draw(ctx);
 
         if (this.collisionSystem.contactFlash > 0) {
@@ -317,6 +328,8 @@ export class Game {
             enemyCount: this.enemies.length,
             projectileCount: this.projectiles.length,
             gemCount: this.gems.length,
+            effectCount: this.weaponSystem.effects.length,
+            ownedWeapons: this.weaponSystem.snapshotForUI(),
             spawnTimer: this.spawner.timer,
             spawnInterval: this.spawner.nextInterval,
             inContact: this.collisionSystem.inContact,
