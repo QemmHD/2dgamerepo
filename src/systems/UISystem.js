@@ -141,7 +141,8 @@ export class UISystem {
         const gapX = 40;
         const gapY = 18;
         const startX = (INTERNAL_WIDTH - (cols * cardW + (cols - 1) * gapX)) / 2;
-        const startY = 250 + sa.top;
+        // Below the best-run ribbon (drawn at ~234) so they don't collide.
+        const startY = 280 + sa.top;
         const rects = [];
         for (let i = 0; i < count; i++) {
             const col = i % cols;
@@ -179,7 +180,11 @@ export class UISystem {
     // Level-up reroll button (below the cards) + a per-card banish button.
     getRerollButtonRect() {
         const sa = this.renderer.safeArea;
-        return { x: INTERNAL_WIDTH / 2 - 180, y: INTERNAL_HEIGHT - 150 - sa.bottom, w: 360, h: 68 };
+        // Anchor above the bottom inset, but never lift into the card row
+        // (cards aren't safe-area adjusted) — clamp to just below them.
+        const cardBottom = (INTERNAL_HEIGHT - CARD_H) / 2 + 60 + CARD_H;
+        const y = Math.max(cardBottom + 16, INTERNAL_HEIGHT - 150 - sa.bottom);
+        return { x: INTERNAL_WIDTH / 2 - 180, y, w: 360, h: 68 };
     }
     getBanishButtonRect(cardRect) {
         const s = 44;
@@ -210,7 +215,7 @@ export class UISystem {
         this._drawXPBar(ctx, gameState);
         this._drawDebugPanel(ctx, gameState);
         this._drawDebugButton(ctx, gameState);
-        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.paused) {
             this._drawPauseButton(ctx, gameState);
         }
         this._drawControlHint(ctx, gameState);
@@ -973,7 +978,9 @@ export class UISystem {
             ctx.scale(scale, scale);
             ctx.translate(-cxp, -cyp);
             this._drawUpgradeCard(ctx, r, choices[i], i, counts);
-            if (banishes > 0) this._drawBanishButton(ctx, r);
+            // No banish affordance on bonus/fallback cards (banishing them
+            // would just waste the charge — they'd re-appear).
+            if (banishes > 0 && choices[i].kind !== 'fallback') this._drawBanishButton(ctx, r);
             ctx.restore();
         }
 

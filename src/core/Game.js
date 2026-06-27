@@ -99,6 +99,10 @@ export class Game {
         // render a brief press state. { id, age } or null.
         this.pressFx = null;
 
+        // Screen-shake preference; loaded from save at run start. Defaulted
+        // here so it's never undefined before the first run.
+        this.shakeEnabled = this.saveSystem.getSetting('screenShake') !== false;
+
         this._initRunState();
 
         const touchPrimary = typeof window.matchMedia === 'function'
@@ -185,17 +189,17 @@ export class Game {
         const tryPickUpgradeAt = (clientX, clientY) => {
             if (!this.upgradeChoices) return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
-            // Reroll button first.
-            if (this.rerolls > 0) {
-                const rr = this.ui.getRerollButtonRect();
-                if (inRect(pos, rr)) { this._pressFeedback('reroll'); this.rerollChoices(); return true; }
-            }
             const rects = this.ui.getLevelUpCardRects(this.upgradeChoices.length);
+            // Cards are hit-tested FIRST so a card tap always wins over the
+            // reroll button even where their zones meet near a large bottom
+            // safe-area inset.
             for (let i = 0; i < rects.length; i++) {
                 const r = rects[i];
-                // A banish button sits inside each card — check it before the
-                // card body so banishing doesn't also pick the card.
-                if (this.banishes > 0) {
+                const card = this.upgradeChoices[i];
+                // Per-card banish button — not offered on bonus/fallback
+                // cards (they can't be meaningfully banished and doing so
+                // would just waste the charge).
+                if (this.banishes > 0 && card && card.kind !== 'fallback') {
                     const b = this.ui.getBanishButtonRect(r);
                     if (inRect(pos, b, 0)) { this._pressFeedback('banish'); this.banishChoice(i); return true; }
                 }
@@ -209,6 +213,12 @@ export class Game {
                     return true;
                 }
             }
+            // Reroll button last, with exact bounds (no slop) so it can't
+            // steal taps from the bottom edge of the cards.
+            if (this.rerolls > 0) {
+                const rr = this.ui.getRerollButtonRect();
+                if (inRect(pos, rr, 0)) { this._pressFeedback('reroll'); this.rerollChoices(); return true; }
+            }
             return true;
         };
 
@@ -216,17 +226,21 @@ export class Game {
         const tryPauseOverlayAt = (clientX, clientY) => {
             if (!this.paused) return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
-            if (inRect(pos, this.ui.getResumeButtonRect())) { this._pressFeedback('resume'); this.togglePause(); return true; }
-            if (inRect(pos, this.ui.getPauseRestartRect())) { this._pressFeedback('restart'); this.restart(); return true; }
-            if (inRect(pos, this.ui.getPauseShopRect())) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
-            if (inRect(pos, this.ui.getShakeToggleRect())) { this._pressFeedback('shake'); this.toggleScreenShake(); return true; }
+            // Exact bounds (no slop): these stacked buttons are large and
+            // adjacent, so slop padding would let an edge tap fire the wrong
+            // (destructive) action.
+            if (inRect(pos, this.ui.getResumeButtonRect(), 0)) { this._pressFeedback('resume'); this.togglePause(); return true; }
+            if (inRect(pos, this.ui.getPauseRestartRect(), 0)) { this._pressFeedback('restart'); this.restart(); return true; }
+            if (inRect(pos, this.ui.getPauseShopRect(), 0)) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
+            if (inRect(pos, this.ui.getShakeToggleRect(), 0)) { this._pressFeedback('shake'); this.toggleScreenShake(); return true; }
             return true; // consume all taps while paused
         };
 
-        // The little HUD pause button (gameplay, no overlay).
+        // The little HUD pause button (gameplay, no overlay). Exact bounds so
+        // its zone can't bleed into the adjacent DBG button's touch slop.
         const tryPauseButtonAt = (clientX, clientY) => {
             const pos = this.renderer.clientToInternal(clientX, clientY);
-            if (inRect(pos, this.ui.getPauseButtonRect())) { this._pressFeedback('pause'); this.togglePause(); return true; }
+            if (inRect(pos, this.ui.getPauseButtonRect(), 0)) { this._pressFeedback('pause'); this.togglePause(); return true; }
             return false;
         };
 
@@ -417,15 +431,33 @@ export class Game {
     }
 
     restart() {
+        // Leaving a live (paused) run still banks what was earned, matching
+        // the death path. No-op once already banked this run.
+        this._bankRunCoins();
         this._startRun();
     }
 
     returnToShop() {
+        this._bankRunCoins();
         this.screen = 'start';
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
         this.paused = false;
         this._updateJoystickEnabled();
+    }
+
+    // Bank coins earned this run into the save total, exactly once (guarded
+    // by bankedThisRun). Excludes the shop-granted starting seed. Returns the
+    // amount banked (0 if already banked).
+    _bankRunCoins() {
+        if (this.bankedThisRun) return 0;
+        const earned = Math.max(
+            0,
+            Math.floor((this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0))
+        );
+        if (earned > 0) this.saveSystem.addCoins(earned);
+        this.bankedThisRun = true;
+        return earned;
     }
 
     // Pause is only meaningful during live gameplay (overlays already
@@ -462,6 +494,9 @@ export class Game {
         if (!this.upgradeChoices || this.banishes <= 0) return;
         const card = this.upgradeChoices[idx];
         if (!card) return;
+        // Bonus/fallback cards aren't in the live pool, so banishing one
+        // can't keep it from re-appearing — refuse so the charge isn't lost.
+        if (card.kind === 'fallback') return;
         this.banishes -= 1;
         this.upgradeSystem.banish(card.id);
         const choices = this.upgradeSystem.rollChoices(this, 3);
@@ -616,19 +651,9 @@ export class Game {
         this.chestReward = null;
         this.pendingChests = 0;
 
-        // Bank run coins to total — exactly once thanks to bankedThisRun
-        // and the early-return above (guards against duplicate game-over
-        // triggers). Subtract the shop-granted starting coins so the
-        // Starting Coins upgrade can't refund its own seed into the bank
-        // every death.
-        const earned = Math.max(
-            0,
-            Math.floor((this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0))
-        );
-        if (!this.bankedThisRun && earned > 0) {
-            this.saveSystem.addCoins(earned);
-        }
-        this.bankedThisRun = true;
+        // Bank run coins to total — exactly once (the helper is guarded by
+        // bankedThisRun, which also covers abandoning via the pause overlay).
+        const earned = this._bankRunCoins();
 
         this.runSummary = {
             time: this.time,
