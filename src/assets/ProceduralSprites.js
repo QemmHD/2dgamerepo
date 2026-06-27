@@ -12,10 +12,31 @@
 // (182×182) — the visual is drawn inside that canvas so the world-space
 // half-extents stay constant across types.
 
-import { SPRITE_SIZE, MAP } from '../config/GameConfig.js';
+import { SPRITE_SIZE, MAP, GEM_TIERS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 
 const cache = new Map();
+
+// Build every sprite up-front (called once at boot) so nothing rasterizes
+// mid-frame. Without this the first spawn of each enemy, the first coin,
+// and especially the first boss (heavy multi-frame vector art) hitch the
+// frame exactly when the action spikes. All getters are memoized, so this
+// is a one-time cost and later calls are free Map hits.
+export function prewarmSprites() {
+    getMonkeyFrames();
+    getSlimeFrames();
+    getBatFrames();
+    getBruteFrames();
+    getCrawlerFrames();
+    getVinebackGoliathFrames();
+    getStormwingAlphaFrames();
+    getChestFrames();
+    getCoinFrames();
+    getProjectileSprite();
+    getGroundTileSprite();
+    for (const tier of GEM_TIERS) getXPGemSprite(tier);
+    for (const type of MAP.decorationTypes) getDecorationSprite(type);
+}
 
 // ── Ground tile ────────────────────────────────────────────────────────
 

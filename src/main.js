@@ -4,6 +4,7 @@ import { Game } from './core/Game.js';
 import { Input } from './core/Input.js';
 import { KeyboardInput } from './core/KeyboardInput.js';
 import { TouchJoystick } from './core/TouchJoystick.js';
+import { prewarmSprites } from './assets/ProceduralSprites.js';
 
 function boot() {
     const canvas = document.getElementById('game');
@@ -24,6 +25,10 @@ function boot() {
         update: (dt) => game.update(dt),
         render: () => game.render(),
     });
+
+    // Rasterize all procedural sprites once, before the first frame, so
+    // no spawn/boss/coin hitches the loop by building art mid-frame.
+    prewarmSprites();
 
     game = new Game({ renderer, input, loop });
     loop.start();

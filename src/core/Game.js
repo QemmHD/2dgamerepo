@@ -41,6 +41,11 @@ import { UISystem } from '../systems/UISystem.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
+// Half the largest sprite (~91) + bar/label headroom + max camera shake.
+// Anything whose center is farther than this from the view edge can't
+// contribute a visible pixel and is skipped at draw time.
+const CULL_MARGIN = 160;
+
 export class Game {
     constructor({ renderer, input, loop }) {
         this.renderer = renderer;
@@ -60,6 +65,10 @@ export class Game {
         this.screen = 'start';
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
+
+        // Transient "this control was just tapped" feedback for the UI to
+        // render a brief press state. { id, age } or null.
+        this.pressFx = null;
 
         this._initRunState();
 
@@ -121,6 +130,7 @@ export class Game {
                 pos.y >= r.y - slop &&
                 pos.y <= r.y + r.h + slop
             ) {
+                this._pressFeedback('dbg');
                 this.showDebug = !this.showDebug;
                 return true;
             }
@@ -154,9 +164,9 @@ export class Game {
             if (this.screen !== 'gameOver') return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const rRestart = this.ui.getRestartButtonRect();
-            if (inRect(pos, rRestart)) { this.restart(); return true; }
+            if (inRect(pos, rRestart)) { this._pressFeedback('restart'); this.restart(); return true; }
             const rShop = this.ui.getReturnToShopButtonRect();
-            if (rShop && inRect(pos, rShop)) { this.returnToShop(); return true; }
+            if (rShop && inRect(pos, rShop)) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
             return true;
         };
 
@@ -164,9 +174,10 @@ export class Game {
             if (this.screen !== 'start') return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const rStart = this.ui.getStartRunButtonRect();
-            if (inRect(pos, rStart)) { this._startRun(); return true; }
+            if (inRect(pos, rStart)) { this._pressFeedback('start'); this._startRun(); return true; }
             const rReset = this.ui.getResetSaveButtonRect();
             if (inRect(pos, rReset)) {
+                this._pressFeedback('reset');
                 this.requestResetSave();
                 return true;
             }
@@ -174,6 +185,7 @@ export class Game {
             const cards = this.ui.getShopUpgradeRects(PERMANENT_UPGRADES.length);
             for (let i = 0; i < cards.length; i++) {
                 if (inRect(pos, cards[i], 0)) {
+                    this._pressFeedback(`shop:${PERMANENT_UPGRADES[i].id}`);
                     this.buyUpgrade(PERMANENT_UPGRADES[i].id);
                     return true;
                 }
@@ -261,6 +273,22 @@ export class Game {
         // somehow fires more than once for the same run.
         this.bankedThisRun = false;
 
+        // Overlay entrance-animation clocks (advanced while the overlay is
+        // open so the UI can ease elements in instead of popping).
+        this.levelUpAge = 0;
+        this.gameOverAge = 0;
+
+        // Transient full-screen feedback events (hit/heal/levelup flashes).
+        this.feedback = [];
+        // Tracks HP between frames so a rise can fire a heal flash centrally.
+        this._lastHp = this.player.maxHp;
+        // Starting coins granted by the shop this run — excluded from the
+        // banked total so the Starting Coins upgrade doesn't refund itself.
+        this.startingCoinsGranted = 0;
+
+        // A fresh run should never inherit a half-armed save-reset confirm.
+        this.resetConfirming = false;
+
         if (this.input.touch) this.input.touch.setEnabled(true);
     }
 
@@ -269,8 +297,16 @@ export class Game {
     // shop button AND the RESTART game-over button.
     _startRun() {
         this._initRunState();
+        const coinsBefore = this.player.coins ?? 0;
         applyPermanentUpgrades(this.player, this.saveSystem.data);
+        // Remember how many coins the shop handed us so _enterGameOver can
+        // bank only what was *earned* this run, not the granted seed.
+        this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
+        this._lastHp = this.player.hp;
         this.screen = 'gameplay';
+        // Reset the UI's per-run animation state (bar display values, boss
+        // bar slide, etc.) so nothing carries over from the previous run.
+        if (this.ui.beginRun) this.ui.beginRun(this.player);
         this._updateJoystickEnabled();
     }
 
@@ -310,7 +346,33 @@ export class Game {
 
     setUpgradeChoices(choices) {
         this.upgradeChoices = choices;
+        if (choices) this.levelUpAge = 0;
         this._updateJoystickEnabled();
+    }
+
+    // Record a brief press on a UI control so the UI can render a pressed
+    // state. id is matched by UISystem (e.g. 'start', 'restart', 'dbg',
+    // 'shop:<upgradeId>').
+    _pressFeedback(id) {
+        this.pressFx = { id, age: 0 };
+    }
+
+    // Queue a short full-screen feedback flash (type: 'hit' | 'heal' |
+    // 'levelup'). Cheap, screen-space, drawn by UISystem.
+    _pushFeedback(type, life = 0.3) {
+        this.feedback.push({ type, age: 0, life });
+    }
+
+    _updateFeedback(dt) {
+        if (this.pressFx) {
+            this.pressFx.age += dt;
+            if (this.pressFx.age > 0.22) this.pressFx = null;
+        }
+        const fb = this.feedback;
+        for (let i = fb.length - 1; i >= 0; i--) {
+            fb[i].age += dt;
+            if (fb[i].age >= fb[i].life) fb.splice(i, 1);
+        }
     }
 
     // Joystick is disabled whenever ANY overlay is up so a stray drag can't
@@ -376,6 +438,8 @@ export class Game {
         });
         this.enemies.push(boss);
         this.waveDirector.announce(`${def.bossName} approaches!`, 3.5);
+        // A heavier, longer shake than a normal hit to telegraph the arrival.
+        this.camera.shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
     }
 
     _dropChest(x, y) {
@@ -398,6 +462,7 @@ export class Game {
         if (this.gameOver) return;
         this.gameOver = true;
         this.screen = 'gameOver';
+        this.gameOverAge = 0;
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.chestReward = null;
@@ -405,8 +470,13 @@ export class Game {
 
         // Bank run coins to total — exactly once thanks to bankedThisRun
         // and the early-return above (guards against duplicate game-over
-        // triggers).
-        const earned = Math.floor(this.player.coins ?? 0);
+        // triggers). Subtract the shop-granted starting coins so the
+        // Starting Coins upgrade can't refund its own seed into the bank
+        // every death.
+        const earned = Math.max(
+            0,
+            Math.floor((this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0))
+        );
         if (!this.bankedThisRun && earned > 0) {
             this.saveSystem.addCoins(earned);
         }
@@ -432,6 +502,18 @@ export class Game {
     }
 
     update(dt) {
+        // Feedback flashes + press states tick on every screen so they
+        // animate even while gameplay is frozen behind an overlay.
+        this._updateFeedback(dt);
+
+        // Death is authoritative and checked FIRST: if the player is dead,
+        // enter game-over even when an overlay is open, so a queued-overlay
+        // chain (chest reward → next overlay) can never strand a dead player
+        // in a frozen world.
+        if (this.screen === 'gameplay' && !this.gameOver && this.player.isDead()) {
+            this._enterGameOver();
+        }
+
         // Meta-screen states never tick gameplay; the start screen still
         // ticks the reset-confirm timeout so the "tap again to confirm"
         // prompt times out cleanly.
@@ -443,10 +525,12 @@ export class Game {
             return;
         }
         if (this.screen === 'gameOver') {
+            this.gameOverAge += dt;
             this.camera.update(dt);
             return;
         }
         if (this.upgradeChoices) {
+            this.levelUpAge += dt;
             this.camera.update(dt);
             return;
         }
@@ -489,6 +573,7 @@ export class Game {
             const levels = this.player.gainXP(xpCollected);
             if (levels > 0) {
                 this.pendingLevelUps += levels;
+                this._pushFeedback('levelup', 0.5);
                 if (!this.upgradeChoices) this._presentLevelUp();
             }
         }
@@ -541,6 +626,7 @@ export class Game {
         }
         if (collisionResult.playerHit) {
             this.camera.shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+            this._pushFeedback('hit', 0.32);
             this.damageNumbers.push(new DamageNumber(
                 this.player.x,
                 this.player.y - this.player.radius,
@@ -584,6 +670,12 @@ export class Game {
         compactInPlace(this.chests);
         compactInPlace(this.coins);
 
+        // Heal flash: any net HP rise this frame (level-up heal, chest heal)
+        // fires a green feedback pulse. Tracked centrally so individual
+        // reward code doesn't each need to remember to trigger it.
+        if (this.player.hp > this._lastHp + 0.5) this._pushFeedback('heal', 0.4);
+        this._lastHp = this.player.hp;
+
         this.camera.update(dt);
 
         if (this.player.isDead()) {
@@ -621,19 +713,28 @@ export class Game {
         this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         this._drawWorldBounds(ctx, this.showDebug);
 
-        for (const g of this.gems) g.draw(ctx);
-        for (const c of this.coins) c.draw(ctx);
-        for (const c of this.chests) c.draw(ctx);
+        // Off-screen culling: only entities whose center is within the
+        // camera view (plus a margin for the sprite half-extent + shake)
+        // are worth a draw call. Enemies spawn ~1100-1350px out with the
+        // cap reaching 145, so most are off the 1920x1080 view on any given
+        // frame — skipping them makes render cost scale with VISIBLE count,
+        // not total alive count.
+        const cull = (e) => this._inView(e.x, e.y, CULL_MARGIN);
+
+        for (const g of this.gems) if (cull(g)) g.draw(ctx);
+        for (const c of this.coins) if (cull(c)) c.draw(ctx);
+        for (const c of this.chests) if (cull(c)) c.draw(ctx);
         for (const e of this.enemies) {
+            if (!cull(e)) continue;
             e.draw(ctx);
             e.drawHpBar(ctx);
         }
         this.player.draw(ctx);
         this.player.drawHpBar(ctx);
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
-        for (const p of this.projectiles) p.draw(ctx);
+        for (const p of this.projectiles) if (cull(p)) p.draw(ctx);
         this.weaponSystem.drawEffects(ctx);
-        for (const d of this.damageNumbers) d.draw(ctx);
+        for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
 
         if (this.collisionSystem.contactFlash > 0) {
             this._drawContactFlash(ctx);
@@ -642,11 +743,11 @@ export class Game {
         if (this.showDebug) {
             this.mapRenderer.drawDebug(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
             this.player.drawDebug(ctx);
-            for (const g of this.gems) g.drawDebug(ctx);
-            for (const c of this.coins) c.drawDebug(ctx);
-            for (const c of this.chests) c.drawDebug(ctx);
-            for (const e of this.enemies) e.drawDebug(ctx);
-            for (const p of this.projectiles) p.drawDebug(ctx);
+            for (const g of this.gems) if (cull(g)) g.drawDebug(ctx);
+            for (const c of this.coins) if (cull(c)) c.drawDebug(ctx);
+            for (const c of this.chests) if (cull(c)) c.drawDebug(ctx);
+            for (const e of this.enemies) if (cull(e)) e.drawDebug(ctx);
+            for (const p of this.projectiles) if (cull(p)) p.drawDebug(ctx);
         }
         ctx.restore();
 
@@ -661,46 +762,22 @@ export class Game {
     }
 
     _buildUIState() {
-        return {
+        // Fields every screen needs. Press/feedback animation state is
+        // always included so flashes can play across transitions.
+        const base = {
             screen: this.screen,
-            time: this.time,
-            player: this.player,
-            camera: this.camera,
             showDebug: this.showDebug,
-            kills: this.kills,
-            enemyCount: this.enemies.length,
-            projectileCount: this.projectiles.length,
-            gemCount: this.gems.length,
-            coinCount: this.coins.length,
-            effectCount: this.weaponSystem.effects.length,
-            ownedWeapons: this.weaponSystem.snapshotForUI(),
-            ownedPassives: this.passiveSystem.snapshotForUI(),
-            runCoins: this.player.coins ?? 0,
-            chestLuck: this.player.chestLuck ?? 0,
-            waveState: this.waveState,
-            waveAnnouncement: this.waveDirector.announcement,
-            activeBoss: this.activeBossRef ? {
-                name: this.activeBossRef.name,
-                hp: this.activeBossRef.hp,
-                maxHp: this.activeBossRef.maxHp,
-            } : null,
-            chestCount: this.chests.length,
-            chestReward: this.chestReward,
-            pendingChests: this.pendingChests,
-            nextBossTime: this.bossDirector.getNextSpawnTime(),
-            eligibleEvolutionCount: findEligibleEvolutions(this).length,
-            spawnTimer: this.spawner.timer,
-            spawnInterval: this.spawner.nextInterval,
-            inContact: this.collisionSystem.inContact,
-            upgradeChoices: this.upgradeChoices,
-            upgradeCounts: this.upgradeSystem.appliedCounts,
-            pendingLevelUps: this.pendingLevelUps,
-            gameOver: this.gameOver,
-            bossesDefeated: this.bossesDefeated,
-            runSummary: this.runSummary,
             saveData: this.saveSystem.data,
-            resetConfirming: this.resetConfirming,
-            permanentUpgrades: PERMANENT_UPGRADES.map((u) => {
+            pressFx: this.pressFx,
+            feedback: this.feedback,
+        };
+
+        // Start/shop screen: only the shop data is meaningful. Skip every
+        // gameplay snapshot + the per-frame evolution scan entirely.
+        if (this.screen === 'start') {
+            base.resetConfirming = this.resetConfirming;
+            base.resetConfirmTimer = this.resetConfirmTimer;
+            base.permanentUpgrades = PERMANENT_UPGRADES.map((u) => {
                 const level = this.saveSystem.getUpgradeLevel(u.id);
                 return {
                     id: u.id,
@@ -711,8 +788,50 @@ export class Game {
                     cost: nextCost(u, level),
                     isMax: level >= u.maxLevel,
                 };
-            }),
-        };
+            });
+            return base;
+        }
+
+        // Gameplay + game-over share the HUD.
+        base.time = this.time;
+        base.player = this.player;
+        base.camera = this.camera;
+        base.kills = this.kills;
+        base.enemyCount = this.enemies.length;
+        base.projectileCount = this.projectiles.length;
+        base.gemCount = this.gems.length;
+        base.coinCount = this.coins.length;
+        base.effectCount = this.weaponSystem.effects.length;
+        base.ownedWeapons = this.weaponSystem.snapshotForUI();
+        base.ownedPassives = this.passiveSystem.snapshotForUI();
+        base.runCoins = this.player.coins ?? 0;
+        base.chestLuck = this.player.chestLuck ?? 0;
+        base.waveState = this.waveState;
+        base.waveAnnouncement = this.waveDirector.announcement;
+        base.activeBoss = this.activeBossRef ? {
+            name: this.activeBossRef.name,
+            hp: this.activeBossRef.hp,
+            maxHp: this.activeBossRef.maxHp,
+        } : null;
+        base.chestCount = this.chests.length;
+        base.chestReward = this.chestReward;
+        base.pendingChests = this.pendingChests;
+        base.nextBossTime = this.bossDirector.getNextSpawnTime();
+        // Only the debug panel shows this, and the scan walks every
+        // evolution every frame — so only pay for it when debug is on.
+        base.eligibleEvolutionCount = this.showDebug ? findEligibleEvolutions(this).length : 0;
+        base.spawnTimer = this.spawner.timer;
+        base.spawnInterval = this.spawner.nextInterval;
+        base.inContact = this.collisionSystem.inContact;
+        base.upgradeChoices = this.upgradeChoices;
+        base.upgradeCounts = this.upgradeSystem.appliedCounts;
+        base.pendingLevelUps = this.pendingLevelUps;
+        base.levelUpAge = this.levelUpAge;
+        base.gameOver = this.gameOver;
+        base.gameOverAge = this.gameOverAge;
+        base.bossesDefeated = this.bossesDefeated;
+        base.runSummary = this.runSummary;
+        return base;
     }
 
     _drawGrid(ctx) {
@@ -761,6 +880,16 @@ export class Game {
         ctx.strokeRect(-hw, -hh, WORLD_WIDTH, WORLD_HEIGHT);
         ctx.setLineDash([]);
         ctx.restore();
+    }
+
+    // True when (x, y) is within the camera view plus `margin`. Used to
+    // cull off-screen entity draws. Compares against camera.x/y (the follow
+    // center); the small shake offset is covered by the margin.
+    _inView(x, y, margin) {
+        return (
+            Math.abs(x - this.camera.x) <= INTERNAL_WIDTH / 2 + margin &&
+            Math.abs(y - this.camera.y) <= INTERNAL_HEIGHT / 2 + margin
+        );
     }
 
     _drawContactFlash(ctx) {

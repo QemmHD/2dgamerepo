@@ -148,20 +148,29 @@ export class Enemy {
 
         if (this.visualScale !== 1) ctx.scale(this.visualScale, this.visualScale);
 
-        if (typeof ctx.filter === 'string') {
-            const parts = [];
-            if (this.hitFlashTimer > 0) {
-                const t = this.hitFlashTimer / HIT_FLASH_DURATION;
-                parts.push(`brightness(${1 + t * 1.6})`, 'saturate(0.4)');
-            }
-            if (this.elite) {
-                parts.push('brightness(1.18)', 'saturate(1.35)', 'contrast(1.05)');
-            }
-            if (parts.length > 0) ctx.filter = parts.join(' ');
-        }
-
         const idx = Math.floor(this.animTimer * this.frameHz) % this.frames.length;
-        ctx.drawImage(this.frames[idx], -this.spriteHalf, -this.spriteHalf);
+        const frame = this.frames[idx];
+        ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+
+        // Elite shimmer + hit flash use additive 'lighter' re-draws of the
+        // sprite itself rather than ctx.filter. ctx.filter forces an
+        // offscreen pass per drawImage on iOS WebKit (a real frame-rate
+        // hazard with many flashing/elite enemies); re-drawing the cached
+        // frame in 'lighter' mode brightens exactly the sprite's own pixels
+        // for a fraction of the cost. globalAlpha/compositeOp reset on
+        // restore().
+        if (this.elite) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.18;
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+        }
+        if (this.hitFlashTimer > 0) {
+            const t = this.hitFlashTimer / HIT_FLASH_DURATION;
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = Math.min(1, 0.9 * t);
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+        }
         ctx.restore();
     }
 
