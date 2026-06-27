@@ -6,7 +6,7 @@ import {
 } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import { roundRectPath } from '../render/DrawUtils.js';
-import { getChestSprite } from '../assets/ProceduralSprites.js';
+import { getChestSprite, getCoinSprite } from '../assets/ProceduralSprites.js';
 
 const DEBUG_BUTTON_SIZE = 96;
 const DEBUG_BUTTON_MARGIN = 20;
@@ -60,15 +60,73 @@ export class UISystem {
     }
 
     getRestartButtonRect() {
+        // Two-button row at the bottom of the game-over summary; restart
+        // sits on the left, return-to-shop on the right.
         return {
-            x: (INTERNAL_WIDTH - RESTART_BTN_W) / 2,
-            y: INTERNAL_HEIGHT / 2 + 200,
+            x: INTERNAL_WIDTH / 2 - RESTART_BTN_W - 24,
+            y: INTERNAL_HEIGHT - 180 - this.renderer.safeArea.bottom,
             w: RESTART_BTN_W,
             h: RESTART_BTN_H,
         };
     }
 
+    getReturnToShopButtonRect() {
+        return {
+            x: INTERNAL_WIDTH / 2 + 24,
+            y: INTERNAL_HEIGHT - 180 - this.renderer.safeArea.bottom,
+            w: RESTART_BTN_W,
+            h: RESTART_BTN_H,
+        };
+    }
+
+    getStartRunButtonRect() {
+        return {
+            x: INTERNAL_WIDTH / 2 - 240,
+            y: INTERNAL_HEIGHT - 220 - this.renderer.safeArea.bottom,
+            w: 480,
+            h: 96,
+        };
+    }
+
+    getResetSaveButtonRect() {
+        return {
+            x: INTERNAL_WIDTH / 2 - 180,
+            y: INTERNAL_HEIGHT - 110 - this.renderer.safeArea.bottom,
+            w: 360,
+            h: 60,
+        };
+    }
+
+    getShopUpgradeRects(count) {
+        const sa = this.renderer.safeArea;
+        const cols = 2;
+        const cardW = 720;
+        const cardH = 120;
+        const gapX = 40;
+        const gapY = 18;
+        const startX = (INTERNAL_WIDTH - (cols * cardW + (cols - 1) * gapX)) / 2;
+        const startY = 250 + sa.top;
+        const rects = [];
+        for (let i = 0; i < count; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            rects.push({
+                x: startX + col * (cardW + gapX),
+                y: startY + row * (cardH + gapY),
+                w: cardW,
+                h: cardH,
+            });
+        }
+        return rects;
+    }
+
     draw(ctx, gameState) {
+        // Start / shop screen replaces the regular HUD entirely.
+        if (gameState.screen === 'start') {
+            this._drawStartScreen(ctx, gameState);
+            return;
+        }
+
         this._drawTitle(ctx);
         this._drawWaveLabel(ctx, gameState);
         this._drawBossHpBar(ctx, gameState);
@@ -76,8 +134,6 @@ export class UISystem {
         this._drawXPBar(ctx, gameState);
         this._drawHUD(ctx, gameState);
         this._drawDebugToggleHint(ctx, gameState);
-        // Announcement renders before overlays so the level-up / game-over
-        // / chest overlays still cover it cleanly when active.
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
             this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
         }
@@ -413,6 +469,7 @@ export class UISystem {
             `ENEMIES ${state.enemyCount}`,
             `BOLTS   ${state.projectileCount}`,
             `GEMS    ${state.gemCount}`,
+            `COINS   ${state.runCoins ?? 0}`,
         ];
 
         const weaponLines = (state.ownedWeapons ?? []).map((w) => {
@@ -606,48 +663,238 @@ export class UISystem {
     }
 
     _drawGameOverOverlay(ctx, state) {
+        const summary = state.runSummary;
+        const sa = this.renderer.safeArea;
+
         ctx.save();
-        ctx.fillStyle = 'rgba(20, 4, 4, 0.86)';
+        ctx.fillStyle = 'rgba(20, 4, 4, 0.88)';
         ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
         ctx.fillStyle = '#ff4757';
-        ctx.font = 'bold 144px -apple-system, system-ui, Helvetica, Arial, sans-serif';
-        ctx.fillText('GAME OVER', INTERNAL_WIDTH / 2, 280);
+        ctx.font = 'bold 112px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText('GAME OVER', INTERNAL_WIDTH / 2, 120 + sa.top);
 
-        ctx.fillStyle = '#fff';
-        ctx.font = '40px -apple-system, system-ui, Helvetica, Arial, sans-serif';
-        const lines = [
-            `Survived   ${formatTime(state.time)}`,
-            `Enemies killed   ${state.kills}`,
-            `Final level   ${state.player.level}`,
-            `Final XP   ${Math.floor(state.player.xp)} / ${state.player.xpToNext}`,
-        ];
-        for (let i = 0; i < lines.length; i++) {
-            ctx.fillText(lines[i], INTERNAL_WIDTH / 2, 420 + i * 56);
+        if (!summary) {
+            ctx.restore();
+            return;
         }
 
-        const btn = this.getRestartButtonRect();
-        ctx.fillStyle = 'rgba(95, 232, 122, 0.18)';
-        ctx.strokeStyle = '#5fe87a';
+        const stats = [
+            ['Survived', formatTime(summary.time)],
+            ['Final Wave', `${summary.finalWave}` + (summary.finalWaveName ? `  •  ${summary.finalWaveName}` : '')],
+            ['Level', `Lv ${summary.level}`],
+            ['Kills', summary.kills],
+            ['Bosses', summary.bossesDefeated],
+            ['Coins earned', summary.coinsEarned],
+        ];
+        const statsStartY = 240 + sa.top;
+        const lineH = 44;
+        const colWidth = 480;
+        const colLeftX = INTERNAL_WIDTH / 2 - colWidth - 40;
+        ctx.font = '28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        for (let i = 0; i < stats.length; i++) {
+            const col = i % 2;
+            const row = Math.floor(i / 2);
+            const x = col === 0 ? colLeftX : INTERNAL_WIDTH / 2 + 40;
+            const y = statsStartY + row * lineH;
+            ctx.textAlign = 'left';
+            ctx.fillStyle = 'rgba(255,255,255,0.55)';
+            ctx.fillText(stats[i][0], x, y);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#fff';
+            ctx.fillText(String(stats[i][1]), x + colWidth, y);
+        }
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffd166';
+        ctx.font = 'bold 34px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(
+            `Total Coins:  ${summary.totalCoins}`,
+            INTERNAL_WIDTH / 2,
+            statsStartY + Math.ceil(stats.length / 2) * lineH + 20
+        );
+
+        const listY = statsStartY + Math.ceil(stats.length / 2) * lineH + 80;
+        ctx.font = 'bold 24px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillText('WEAPONS', INTERNAL_WIDTH / 2 - 460, listY);
+        ctx.fillText('PASSIVES', INTERNAL_WIDTH / 2 + 60, listY);
+
+        ctx.font = '22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        const rowH = 28;
+        for (let i = 0; i < summary.weapons.length; i++) {
+            const w = summary.weapons[i];
+            const tag = w.evolved
+                ? 'EVOLVED'
+                : (w.isMax ? `Lv ${w.maxLevel} MAX` : `Lv ${w.level}`);
+            ctx.fillStyle = w.evolved ? '#ffd6f5' : '#fff';
+            ctx.fillText(`${w.name}  •  ${tag}`, INTERNAL_WIDTH / 2 - 460, listY + 30 + i * rowH);
+        }
+        for (let i = 0; i < summary.passives.length; i++) {
+            const p = summary.passives[i];
+            const tag = p.isMax ? `Lv ${p.maxLevel} MAX` : `Lv ${p.level}`;
+            ctx.fillStyle = '#fff';
+            ctx.fillText(`${p.name}  •  ${tag}`, INTERNAL_WIDTH / 2 + 60, listY + 30 + i * rowH);
+        }
+
+        const restartBtn = this.getRestartButtonRect();
+        const shopBtn = this.getReturnToShopButtonRect();
+        this._drawSummaryButton(ctx, restartBtn, 'RESTART', '#5fe87a', 'rgba(95, 232, 122, 0.18)');
+        this._drawSummaryButton(ctx, shopBtn, 'RETURN TO SHOP', '#5fc7ff', 'rgba(95, 199, 255, 0.16)');
+
+        ctx.fillStyle = 'rgba(255,255,255,0.65)';
+        ctx.font = '22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+            'R / Enter restart   •   B / Esc shop',
+            INTERNAL_WIDTH / 2,
+            restartBtn.y + restartBtn.h + 36
+        );
+
+        ctx.restore();
+    }
+
+    _drawSummaryButton(ctx, btn, label, borderColor, fillColor) {
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = borderColor;
         ctx.lineWidth = 4;
         roundRectPath(ctx, btn.x, btn.y, btn.w, btn.h, 22);
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 46px -apple-system, system-ui, Helvetica, Arial, sans-serif';
-        ctx.fillText('RESTART', btn.x + btn.w / 2, btn.y + btn.h / 2);
+        ctx.font = 'bold 36px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2);
+    }
 
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.font = '26px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+    _drawStartScreen(ctx, state) {
+        const sa = this.renderer.safeArea;
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#ffd166';
+        ctx.font = 'bold 84px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText('MONKEY SURVIVOR', INTERNAL_WIDTH / 2, 60 + sa.top);
+
+        const coinSprite = getCoinSprite();
+        const totalLabel = `${state.saveData?.totalCoins ?? 0} coins banked`;
+        ctx.font = 'bold 34px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        const textW = ctx.measureText(totalLabel).width;
+        const iconY = 170 + sa.top;
+        const iconX = (INTERNAL_WIDTH - textW) / 2 - 26;
+        ctx.drawImage(coinSprite, iconX, iconY - coinSprite.height / 2);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(totalLabel, iconX + coinSprite.width + 6, iconY);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.font = '22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
         ctx.fillText(
-            'Tap RESTART  •  or press R',
+            'Permanent upgrades — applied at the start of every run.',
             INTERNAL_WIDTH / 2,
-            btn.y + btn.h + 48
+            210 + sa.top
         );
 
+        const upgrades = state.permanentUpgrades ?? [];
+        const rects = this.getShopUpgradeRects(upgrades.length);
+        for (let i = 0; i < upgrades.length; i++) {
+            this._drawShopCard(ctx, rects[i], upgrades[i], state.saveData?.totalCoins ?? 0);
+        }
+
+        const startBtn = this.getStartRunButtonRect();
+        ctx.fillStyle = 'rgba(95, 232, 122, 0.78)';
+        ctx.strokeStyle = '#5fe87a';
+        ctx.lineWidth = 4;
+        roundRectPath(ctx, startBtn.x, startBtn.y, startBtn.w, startBtn.h, 22);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#0a1a10';
+        ctx.font = 'bold 44px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('START RUN', startBtn.x + startBtn.w / 2, startBtn.y + startBtn.h / 2);
+
+        const resetBtn = this.getResetSaveButtonRect();
+        const confirming = !!state.resetConfirming;
+        ctx.fillStyle = confirming ? 'rgba(255, 71, 87, 0.5)' : 'rgba(255, 71, 87, 0.18)';
+        ctx.strokeStyle = '#ff4757';
+        ctx.lineWidth = 2;
+        roundRectPath(ctx, resetBtn.x, resetBtn.y, resetBtn.w, resetBtn.h, 12);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(
+            confirming ? 'TAP AGAIN TO CONFIRM RESET' : 'RESET SAVE',
+            resetBtn.x + resetBtn.w / 2,
+            resetBtn.y + resetBtn.h / 2
+        );
+
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.font = '20px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(
+            'Space / Enter starts the run',
+            INTERNAL_WIDTH / 2,
+            INTERNAL_HEIGHT - 36 - sa.bottom
+        );
+    }
+
+    _drawShopCard(ctx, r, upgrade, totalCoins) {
+        const isMax = upgrade.isMax;
+        const canAfford = !isMax && totalCoins >= upgrade.cost;
+
+        ctx.save();
+        ctx.fillStyle = isMax
+            ? 'rgba(95, 232, 122, 0.12)'
+            : canAfford
+                ? 'rgba(255, 209, 102, 0.16)'
+                : 'rgba(255, 255, 255, 0.06)';
+        ctx.strokeStyle = isMax
+            ? '#5fe87a'
+            : canAfford
+                ? '#ffd166'
+                : 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 3;
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(upgrade.name, r.x + 24, r.y + 16);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.78)';
+        ctx.font = '22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(upgrade.description, r.x + 24, r.y + 52);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.font = 'bold 22px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(`Lv ${upgrade.level} / ${upgrade.maxLevel}`, r.x + 24, r.y + 84);
+
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        if (isMax) {
+            ctx.fillStyle = '#5fe87a';
+            ctx.font = 'bold 32px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+            ctx.fillText('MAX', r.x + r.w - 24, r.y + r.h / 2);
+        } else {
+            ctx.fillStyle = canAfford ? '#ffd166' : 'rgba(255,255,255,0.5)';
+            ctx.font = 'bold 32px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+            ctx.fillText(`${upgrade.cost} ¢`, r.x + r.w - 24, r.y + r.h / 2 - 16);
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = '18px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+            ctx.fillText(canAfford ? 'Tap to buy' : 'Not enough', r.x + r.w - 24, r.y + r.h / 2 + 18);
+        }
         ctx.restore();
     }
 }

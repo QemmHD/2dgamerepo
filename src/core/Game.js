@@ -14,6 +14,7 @@ import {
     ENEMY,
     BOSS,
     CHEST,
+    COIN,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Camera } from './Camera.js';
@@ -21,6 +22,7 @@ import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
 import { Chest } from '../entities/Chest.js';
+import { Coin } from '../entities/Coin.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 import { Spawner } from '../systems/Spawner.js';
 import { WeaponSystem } from '../systems/WeaponSystem.js';
@@ -29,8 +31,11 @@ import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
 import { BossDirector } from '../systems/BossDirector.js';
+import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
+import { WEAPONS } from '../content/weapons.js';
+import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
 import { UISystem } from '../systems/UISystem.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
@@ -42,6 +47,14 @@ export class Game {
         this.loop = loop;
         this.camera = new Camera();
         this.ui = new UISystem({ renderer, loop });
+        this.saveSystem = new SaveSystem();
+
+        // Meta-progression flow: 'start' (title + shop) → 'gameplay' → 'gameOver'.
+        // Boot lands on the start screen so the player can spend banked coins
+        // before kicking off their first run.
+        this.screen = 'start';
+        this.resetConfirming = false;
+        this.resetConfirmTimer = 0;
 
         this._initRunState();
 
@@ -55,10 +68,20 @@ export class Game {
                 this.showDebug = !this.showDebug;
                 return;
             }
-            if (this.gameOver) {
+            if (this.screen === 'start') {
+                if (e.code === 'Space' || e.code === 'Enter') {
+                    e.preventDefault();
+                    this._startRun();
+                }
+                return;
+            }
+            if (this.screen === 'gameOver') {
                 if (e.code === 'KeyR' || e.code === 'Enter') {
                     e.preventDefault();
                     this.restart();
+                } else if (e.code === 'KeyB' || e.code === 'Escape') {
+                    e.preventDefault();
+                    this.returnToShop();
                 }
                 return;
             }
@@ -118,20 +141,41 @@ export class Game {
             return true;
         };
 
+        const inRect = (pos, r, slop = 20) =>
+            pos.x >= r.x - slop && pos.x <= r.x + r.w + slop &&
+            pos.y >= r.y - slop && pos.y <= r.y + r.h + slop;
+
         const tryRestartAt = (clientX, clientY) => {
-            if (!this.gameOver) return false;
+            if (this.screen !== 'gameOver') return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
-            const r = this.ui.getRestartButtonRect();
-            const slop = 20;
-            if (
-                pos.x >= r.x - slop &&
-                pos.x <= r.x + r.w + slop &&
-                pos.y >= r.y - slop &&
-                pos.y <= r.y + r.h + slop
-            ) {
-                this.restart();
+            const rRestart = this.ui.getRestartButtonRect();
+            if (inRect(pos, rRestart)) { this.restart(); return true; }
+            const rShop = this.ui.getReturnToShopButtonRect();
+            if (rShop && inRect(pos, rShop)) { this.returnToShop(); return true; }
+            return true;
+        };
+
+        const tryStartScreenAt = (clientX, clientY) => {
+            if (this.screen !== 'start') return false;
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            const rStart = this.ui.getStartRunButtonRect();
+            if (inRect(pos, rStart)) { this._startRun(); return true; }
+            const rReset = this.ui.getResetSaveButtonRect();
+            if (inRect(pos, rReset)) {
+                this.requestResetSave();
                 return true;
             }
+            // Tap an upgrade card to buy it.
+            const cards = this.ui.getShopUpgradeRects(PERMANENT_UPGRADES.length);
+            for (let i = 0; i < cards.length; i++) {
+                if (inRect(pos, cards[i], 0)) {
+                    this.buyUpgrade(PERMANENT_UPGRADES[i].id);
+                    return true;
+                }
+            }
+            // Tap anywhere else cancels a pending reset confirmation so it
+            // can't silently linger.
+            this.resetConfirming = false;
             return true;
         };
 
@@ -143,7 +187,9 @@ export class Game {
                 return;
             }
             for (const t of e.changedTouches) {
-                if (this.gameOver) {
+                if (this.screen === 'start') {
+                    if (tryStartScreenAt(t.clientX, t.clientY)) return;
+                } else if (this.screen === 'gameOver') {
                     if (tryRestartAt(t.clientX, t.clientY)) return;
                 } else if (this.upgradeChoices) {
                     if (tryPickUpgradeAt(t.clientX, t.clientY)) return;
@@ -158,7 +204,9 @@ export class Game {
                 this._dismissChestReward();
                 return;
             }
-            if (this.gameOver) {
+            if (this.screen === 'start') {
+                tryStartScreenAt(e.clientX, e.clientY);
+            } else if (this.screen === 'gameOver') {
                 tryRestartAt(e.clientX, e.clientY);
             } else if (this.upgradeChoices) {
                 tryPickUpgradeAt(e.clientX, e.clientY);
@@ -193,20 +241,66 @@ export class Game {
         this.chests = [];
         this.chestReward = null;
         this.pendingChests = 0;
+        this.coins = [];
         // Cached reference to the strongest active boss for the boss HP bar.
         this.activeBossRef = null;
+        this.bossesDefeated = 0;
+        this.runSummary = null;
 
         this.time = 0;
         this.kills = 0;
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.gameOver = false;
+        // bankedThisRun guards against double-banking run coins if game-over
+        // somehow fires more than once for the same run.
+        this.bankedThisRun = false;
 
         if (this.input.touch) this.input.touch.setEnabled(true);
     }
 
-    restart() {
+    // _startRun resets the run and applies permanent upgrades from save —
+    // the canonical "begin a fresh game" entry point. Used by the START RUN
+    // shop button AND the RESTART game-over button.
+    _startRun() {
         this._initRunState();
+        applyPermanentUpgrades(this.player, this.saveSystem.data);
+        this.screen = 'gameplay';
+        this._updateJoystickEnabled();
+    }
+
+    restart() {
+        this._startRun();
+    }
+
+    returnToShop() {
+        this.screen = 'start';
+        this.resetConfirming = false;
+        this.resetConfirmTimer = 0;
+        this._updateJoystickEnabled();
+    }
+
+    buyUpgrade(id) {
+        const upgrade = PERMANENT_UPGRADES.find((u) => u.id === id);
+        if (!upgrade) return false;
+        const cur = this.saveSystem.getUpgradeLevel(id);
+        if (cur >= upgrade.maxLevel) return false;
+        const cost = upgrade.costAt(cur);
+        if (!this.saveSystem.spendCoins(cost)) return false;
+        this.saveSystem.incrementUpgrade(id);
+        return true;
+    }
+
+    requestResetSave() {
+        if (this.resetConfirming) {
+            this.saveSystem.reset();
+            this.resetConfirming = false;
+            this.resetConfirmTimer = 0;
+            return true;
+        }
+        this.resetConfirming = true;
+        this.resetConfirmTimer = 3;
+        return false;
     }
 
     setUpgradeChoices(choices) {
@@ -215,10 +309,11 @@ export class Game {
     }
 
     // Joystick is disabled whenever ANY overlay is up so a stray drag can't
-    // start while the player is reading a card / chest reward / GAME OVER.
+    // start while the player is reading a card / chest reward / shop /
+    // GAME OVER.
     _updateJoystickEnabled() {
         if (!this.input.touch) return;
-        const blocked = this.gameOver || !!this.upgradeChoices || !!this.chestReward;
+        const blocked = this.screen !== 'gameplay' || !!this.upgradeChoices || !!this.chestReward;
         this.input.touch.setEnabled(!blocked);
     }
 
@@ -282,17 +377,67 @@ export class Game {
         this.chests.push(new Chest(x, y));
     }
 
+    _dropCoin(x, y, value = 1) {
+        this.coins.push(new Coin(x, y, value));
+    }
+
+    _dropCoinBurst(x, y, count, value) {
+        for (let i = 0; i < count; i++) {
+            const ox = x + (Math.random() - 0.5) * 36;
+            const oy = y + (Math.random() - 0.5) * 36;
+            this._dropCoin(ox, oy, value);
+        }
+    }
+
     _enterGameOver() {
+        if (this.gameOver) return;
         this.gameOver = true;
+        this.screen = 'gameOver';
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.chestReward = null;
         this.pendingChests = 0;
+
+        // Bank run coins to total — exactly once thanks to bankedThisRun
+        // and the early-return above (guards against duplicate game-over
+        // triggers).
+        const earned = Math.floor(this.player.coins ?? 0);
+        if (!this.bankedThisRun && earned > 0) {
+            this.saveSystem.addCoins(earned);
+        }
+        this.bankedThisRun = true;
+
+        this.runSummary = {
+            time: this.time,
+            level: this.player.level,
+            kills: this.kills,
+            bossesDefeated: this.bossesDefeated,
+            coinsEarned: earned,
+            totalCoins: this.saveSystem.data.totalCoins,
+            finalWave: (this.waveState?.index ?? 0) + 1,
+            finalWaveName: this.waveState?.name ?? '',
+            weapons: this.weaponSystem.snapshotForUI(),
+            passives: this.passiveSystem.snapshotForUI(),
+            evolutions: this.weaponSystem.owned
+                .filter((w) => WEAPONS[w.id]?.evolved)
+                .map((w) => WEAPONS[w.id].name),
+        };
+
         this._updateJoystickEnabled();
     }
 
     update(dt) {
-        if (this.gameOver) {
+        // Meta-screen states never tick gameplay; the start screen still
+        // ticks the reset-confirm timeout so the "tap again to confirm"
+        // prompt times out cleanly.
+        if (this.screen === 'start') {
+            if (this.resetConfirming) {
+                this.resetConfirmTimer -= dt;
+                if (this.resetConfirmTimer <= 0) this.resetConfirming = false;
+            }
+            return;
+        }
+        if (this.screen === 'gameOver') {
             this.camera.update(dt);
             return;
         }
@@ -343,6 +488,13 @@ export class Game {
             }
         }
 
+        // Coin pickup — mirrors XPGem flow but feeds player.coins.
+        for (const c of this.coins) {
+            if (!c.active) continue;
+            const got = c.update(dt, this.player);
+            if (got > 0) this.player.coins = (this.player.coins ?? 0) + got;
+        }
+
         const collisionResult = this.collisionSystem.resolve(
             dt, this.player, this.enemies, this.projectiles
         );
@@ -357,11 +509,25 @@ export class Game {
             this.kills += allKilled.length;
             for (const e of allKilled) {
                 this._dropGem(e.x, e.y);
-                // Bosses always drop a chest. Elites have a small chance.
                 if (e.boss) {
+                    // Bosses always drop a chest + a coin burst.
+                    this.bossesDefeated += 1;
                     this._dropChest(e.x, e.y);
-                } else if (e.canDropChest && Math.random() < CHEST.eliteDropChance) {
-                    this._dropChest(e.x, e.y);
+                    this._dropCoinBurst(e.x, e.y, COIN.bossCoinCount, COIN.bossCoinValue);
+                } else if (e.elite) {
+                    // Elites: chance at a chest, chance at a coin burst.
+                    if (Math.random() < CHEST.eliteDropChance) {
+                        this._dropChest(e.x, e.y);
+                    }
+                    if (Math.random() < COIN.eliteDropChance) {
+                        const count = COIN.eliteCoinMin +
+                            Math.floor(Math.random() *
+                                Math.max(1, COIN.eliteCoinMax - COIN.eliteCoinMin + 1));
+                        this._dropCoinBurst(e.x, e.y, count, 1);
+                    }
+                } else if (Math.random() < COIN.normalDropChance) {
+                    // Normal enemies: small chance of a single coin.
+                    this._dropCoin(e.x, e.y, 1);
                 }
             }
         }
@@ -411,6 +577,7 @@ export class Game {
         compactInPlace(this.gems);
         compactInPlace(this.damageNumbers);
         compactInPlace(this.chests);
+        compactInPlace(this.coins);
 
         this.camera.update(dt);
 
@@ -429,12 +596,23 @@ export class Game {
         if (!r.beginFrame()) return;
         const ctx = r.ctx;
 
+        // Start screen renders on a flat background with no world behind —
+        // simpler to read and avoids drawing entities that haven't been
+        // bootstrapped by a real run yet.
+        if (this.screen === 'start') {
+            ctx.fillStyle = '#0a0e16';
+            ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+            this.ui.draw(ctx, this._buildUIState());
+            return;
+        }
+
         ctx.save();
         this.camera.apply(ctx);
         this._drawGrid(ctx);
         this._drawWorldBounds(ctx, this.showDebug);
 
         for (const g of this.gems) g.draw(ctx);
+        for (const c of this.coins) c.draw(ctx);
         for (const c of this.chests) c.draw(ctx);
         for (const e of this.enemies) {
             e.draw(ctx);
@@ -454,13 +632,21 @@ export class Game {
         if (this.showDebug) {
             this.player.drawDebug(ctx);
             for (const g of this.gems) g.drawDebug(ctx);
+            for (const c of this.coins) c.drawDebug(ctx);
             for (const c of this.chests) c.drawDebug(ctx);
             for (const e of this.enemies) e.drawDebug(ctx);
             for (const p of this.projectiles) p.drawDebug(ctx);
         }
         ctx.restore();
 
-        this.ui.draw(ctx, {
+        this.ui.draw(ctx, this._buildUIState());
+
+        if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
+    }
+
+    _buildUIState() {
+        return {
+            screen: this.screen,
             time: this.time,
             player: this.player,
             camera: this.camera,
@@ -469,10 +655,11 @@ export class Game {
             enemyCount: this.enemies.length,
             projectileCount: this.projectiles.length,
             gemCount: this.gems.length,
+            coinCount: this.coins.length,
             effectCount: this.weaponSystem.effects.length,
             ownedWeapons: this.weaponSystem.snapshotForUI(),
             ownedPassives: this.passiveSystem.snapshotForUI(),
-            coins: this.player.coins ?? 0,
+            runCoins: this.player.coins ?? 0,
             chestLuck: this.player.chestLuck ?? 0,
             waveState: this.waveState,
             waveAnnouncement: this.waveDirector.announcement,
@@ -485,9 +672,6 @@ export class Game {
             chestReward: this.chestReward,
             pendingChests: this.pendingChests,
             nextBossTime: this.bossDirector.getNextSpawnTime(),
-            // Cheap to compute; only meaningful inside the debug HUD where
-            // it's read. Tells the player whether their next chest will
-            // evolve something.
             eligibleEvolutionCount: findEligibleEvolutions(this).length,
             spawnTimer: this.spawner.timer,
             spawnInterval: this.spawner.nextInterval,
@@ -496,9 +680,23 @@ export class Game {
             upgradeCounts: this.upgradeSystem.appliedCounts,
             pendingLevelUps: this.pendingLevelUps,
             gameOver: this.gameOver,
-        });
-
-        if (this.input.touch) this.input.touch.draw(ctx);
+            bossesDefeated: this.bossesDefeated,
+            runSummary: this.runSummary,
+            saveData: this.saveSystem.data,
+            resetConfirming: this.resetConfirming,
+            permanentUpgrades: PERMANENT_UPGRADES.map((u) => {
+                const level = this.saveSystem.getUpgradeLevel(u.id);
+                return {
+                    id: u.id,
+                    name: u.name,
+                    description: u.description,
+                    level,
+                    maxLevel: u.maxLevel,
+                    cost: nextCost(u, level),
+                    isMax: level >= u.maxLevel,
+                };
+            }),
+        };
     }
 
     _drawGrid(ctx) {

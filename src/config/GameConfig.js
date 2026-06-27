@@ -94,6 +94,17 @@ export const BOSS = {
     types: ['vinebackGoliath', 'stormwingAlpha'],
 };
 
+// Coin drops from enemies / elites / bosses. Tunable so coins feel
+// valuable without being a constant pickup chore.
+export const COIN = {
+    normalDropChance: 0.05,
+    eliteDropChance: 0.5,
+    eliteCoinMin: 3,
+    eliteCoinMax: 5,
+    bossCoinCount: 5,
+    bossCoinValue: 4,
+};
+
 // Chest entity + reward weighting. luckUpgradeWeight is how much each unit
 // of player.chestLuck shifts the roll toward weapon/passive upgrades.
 export const CHEST = {

@@ -59,6 +59,13 @@ export function getChestSprite() {
     return sprite;
 }
 
+export function getCoinSprite() {
+    if (cache.has('coin')) return cache.get('coin');
+    const sprite = drawCoin();
+    cache.set('coin', sprite);
+    return sprite;
+}
+
 export function getProjectileSprite() {
     if (cache.has('projectile')) return cache.get('projectile');
     const sprite = drawProjectile();
@@ -786,6 +793,44 @@ function drawChest() {
     ctx.stroke();
     ctx.fillStyle = WOOD_DARK;
     ctx.fillRect(W / 2 - 1.5, 50, 3, 6);
+
+    return canvas;
+}
+
+function drawCoin() {
+    const W = 28;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = W;
+    const ctx = canvas.getContext('2d');
+    const cx = W / 2;
+    const cy = W / 2;
+
+    const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, W / 2);
+    glow.addColorStop(0, '#fff5d0');
+    glow.addColorStop(0.55, 'rgba(255, 209, 102, 0.85)');
+    glow.addColorStop(1, 'rgba(255, 200, 50, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, W);
+
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 11, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = '#a07530';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff5d0';
+    ctx.beginPath();
+    ctx.ellipse(cx - 3, cy - 3, 4, 3, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.strokeStyle = '#a07530';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, TWO_PI);
+    ctx.stroke();
 
     return canvas;
 }
