@@ -14,6 +14,10 @@ import { circleOverlap } from '../core/MathUtils.js';
 const CROWD_DAMAGE_FRACTION = 0.3;
 const CROWD_DAMAGE_CAP = 2.5;
 
+// Fallback redirect range for a ricochet bolt that has a budget but no
+// explicit ricochetRange set.
+const RICOCHET_FALLBACK_RANGE = 360;
+
 export class CollisionSystem {
     constructor() {
         this.contactFlash = 0;
@@ -37,7 +41,42 @@ export class CollisionSystem {
                 e.takeDamage(p.damage, kx, ky);
                 hits.push({ x: e.x, y: e.y - e.radius, amount: p.damage });
                 p.hitEnemies.add(e);
-                if (!e.active) killed.push(e);
+                const lethal = !e.active;
+                if (lethal) killed.push(e);
+
+                // Ricochet-on-kill (Arcane Bolt signature): a lethal hit with
+                // ricochet budget redirects the bolt toward the nearest
+                // not-yet-hit enemy within range instead of dying. Bounded by
+                // the finite p.ricochet count and the p.hitEnemies guard, so
+                // it can never loop. One redirect per frame (we break and let
+                // it re-scan next frame from its new heading).
+                if (lethal && p.ricochet > 0) {
+                    const rr = p.ricochetRange || RICOCHET_FALLBACK_RANGE;
+                    const rrSq = rr * rr;
+                    let best = null;
+                    let bestSq = rrSq;
+                    for (const t of enemies) {
+                        if (!t.active || p.hitEnemies.has(t)) continue;
+                        const tdx = t.x - e.x;
+                        const tdy = t.y - e.y;
+                        const dsq = tdx * tdx + tdy * tdy;
+                        if (dsq < bestSq) { bestSq = dsq; best = t; }
+                    }
+                    if (best) {
+                        const rdx = best.x - e.x;
+                        const rdy = best.y - e.y;
+                        const rlen = Math.hypot(rdx, rdy) || 1;
+                        const cur = Math.hypot(p.vx, p.vy) || 1;
+                        p.vx = (rdx / rlen) * cur;
+                        p.vy = (rdy / rlen) * cur;
+                        p.x = e.x;
+                        p.y = e.y;
+                        p.angle = Math.atan2(p.vy, p.vx);
+                        p.ricochet -= 1;
+                        break; // re-scan next frame from the new heading
+                    }
+                    // No target in range: fall through to normal pierce/die.
+                }
 
                 if (p.pierce > 0) {
                     p.pierce -= 1;

@@ -90,6 +90,31 @@ export class Enemy {
         this.knockbackVx = 0;
         this.knockbackVy = 0;
         this.weaponHitCooldown = 0;
+
+        // Weapon-identity status effects (all neutral = behaves as before).
+        // slow: chase-speed debuff from Orbiting Blade. shred: armor-shred
+        // stacks READ ONLY by Holy Pulse (kept local to that weapon).
+        this.slowTimer = 0;
+        this.slowMul = 1;
+        this.shredTimer = 0;
+        this.shredStacks = 0;
+    }
+
+    // Orbiting Blade stamp. Deepest slow wins; longest duration refreshes
+    // (never additive, so repeated hits can't compound into a freeze).
+    // Bosses are floored so they're nudged, never trivialized.
+    applySlow(mul, dur) {
+        const m = this.boss ? Math.max(mul, 0.85) : mul;
+        if (this.slowTimer <= 0 || m < this.slowMul) this.slowMul = m;
+        if (dur > this.slowTimer) this.slowTimer = dur;
+    }
+
+    // Holy Pulse stamp. Increments one stack up to a per-level cap and
+    // refreshes the decay timer. The per-stack % lives in the weapon cfg
+    // and is read at damage time, so shred never leaks to other weapons.
+    applyShred(maxStacks, dur) {
+        if (this.shredStacks < maxStacks) this.shredStacks += 1;
+        this.shredTimer = dur;
     }
 
     update(dt, player) {
@@ -97,8 +122,12 @@ export class Enemy {
         const dy = player.y - this.y;
         const len = Math.hypot(dx, dy);
         if (len > 0.001) {
-            this.vx = (dx / len) * this.speed;
-            this.vy = (dy / len) * this.speed;
+            // Apply slow transiently via a local scalar — never mutate
+            // this.speed (so wave/elite scaling stays intact and the slow
+            // fully reverses on decay).
+            const spd = this.slowTimer > 0 ? this.speed * this.slowMul : this.speed;
+            this.vx = (dx / len) * spd;
+            this.vy = (dy / len) * spd;
             this.x += this.vx * dt;
             this.y += this.vy * dt;
         }
@@ -115,6 +144,14 @@ export class Enemy {
 
         if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
         if (this.weaponHitCooldown > 0) this.weaponHitCooldown -= dt;
+        if (this.slowTimer > 0) {
+            this.slowTimer -= dt;
+            if (this.slowTimer <= 0) { this.slowTimer = 0; this.slowMul = 1; }
+        }
+        if (this.shredTimer > 0) {
+            this.shredTimer -= dt;
+            if (this.shredTimer <= 0) { this.shredTimer = 0; this.shredStacks = 0; }
+        }
         this.animTimer += dt;
     }
 
@@ -144,6 +181,17 @@ export class Enemy {
             ctx.beginPath();
             ctx.arc(0, 0, haloR, 0, TWO_PI);
             ctx.fill();
+        }
+
+        // Slow tell: a thin cool-blue ring (drawn pre-scale in world space,
+        // like the elite halo). Timer-gated, so un-slowed enemies pay nothing.
+        if (this.slowTimer > 0) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = 'rgba(120, 200, 255, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.spriteHalf * this.visualScale * 0.7, 0, TWO_PI);
+            ctx.stroke();
         }
 
         if (this.visualScale !== 1) ctx.scale(this.visualScale, this.visualScale);
