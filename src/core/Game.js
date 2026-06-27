@@ -21,6 +21,7 @@ import { Spawner } from '../systems/Spawner.js';
 import { WeaponSystem } from '../systems/WeaponSystem.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
+import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { UISystem } from '../systems/UISystem.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
@@ -154,6 +155,7 @@ export class Game {
         this.weaponSystem = new WeaponSystem();
         this.collisionSystem = new CollisionSystem();
         this.upgradeSystem = new UpgradeSystem();
+        this.passiveSystem = new PassiveSystem();
 
         this.time = 0;
         this.kills = 0;
@@ -330,6 +332,9 @@ export class Game {
             gemCount: this.gems.length,
             effectCount: this.weaponSystem.effects.length,
             ownedWeapons: this.weaponSystem.snapshotForUI(),
+            ownedPassives: this.passiveSystem.snapshotForUI(),
+            coins: this.player.coins ?? 0,
+            chestLuck: this.player.chestLuck ?? 0,
             spawnTimer: this.spawner.timer,
             spawnInterval: this.spawner.nextInterval,
             inContact: this.collisionSystem.inContact,

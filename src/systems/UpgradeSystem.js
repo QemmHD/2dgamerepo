@@ -1,15 +1,23 @@
-// Builds the 3-card level-up pool. Mixes stat upgrades (data list below)
-// with dynamic per-weapon entries generated from game.weaponSystem.
+// Builds the 3-card level-up pool. Mixes:
+//   - stat upgrades (data list below)
+//   - per-owned-weapon WEAPON UPGRADE cards
+//   - per-unowned-weapon NEW WEAPON cards
+//   - per-owned-passive PASSIVE UPGRADE cards
+//   - per-unowned-passive NEW PASSIVE cards
+//   - fallback cards when the live pool can't fill 3 slots
 //
 // Cards are uniform shape: { id, name, description, cardLabel, rarity,
 // weight, maxStacks?, available?, apply(game) }. The `cardLabel` is what
-// UISystem prints in the rarity slot ("STAT" / "WEAPON UPGRADE" / "NEW
-// WEAPON"). Adding a new card = push a new STAT_UPGRADES entry or define
-// a new weapon in src/content/weapons.js; no system code change.
+// UISystem prints in the rarity slot. Adding a new card =
+//   - push a new STAT_UPGRADES entry, or
+//   - define a new weapon in src/content/weapons.js, or
+//   - define a new passive in src/content/passives.js.
+// No system code change needed.
 
 import { pickWeighted } from '../core/MathUtils.js';
 import { WEAPONS, WEAPON_IDS } from '../content/weapons.js';
-import { MAX_WEAPON_LEVEL } from '../config/GameConfig.js';
+import { PASSIVES, PASSIVE_IDS } from '../content/passives.js';
+import { MAX_WEAPON_LEVEL, MAX_PASSIVE_LEVEL } from '../config/GameConfig.js';
 
 const STAT_UPGRADES = [
     {
@@ -82,8 +90,54 @@ const STAT_UPGRADES = [
     },
 ];
 
+// Fallback cards fire only when the live pool can't deliver 3 unique
+// choices (everything weapon/passive/stat-wise is maxed or unavailable).
+const FALLBACK_UPGRADES = [
+    {
+        id: 'fallback:bonus-xp',
+        kind: 'fallback',
+        cardLabel: 'BONUS',
+        name: 'Lucky Find',
+        description: 'Gain a small XP bonus.',
+        cardLevelText: '+5 XP',
+        rarity: 'common',
+        weight: 1.0,
+        apply(game) {
+            game.player.gainXP(5);
+        },
+    },
+    {
+        id: 'fallback:coins',
+        kind: 'fallback',
+        cardLabel: 'BONUS',
+        name: 'Coin Pile',
+        description: 'Stash a few coins for later.',
+        cardLevelText: '+10 Coins',
+        rarity: 'common',
+        weight: 1.0,
+        apply(game) {
+            game.player.coins = (game.player.coins ?? 0) + 10;
+        },
+    },
+    {
+        id: 'fallback:heal',
+        kind: 'fallback',
+        cardLabel: 'BONUS',
+        name: 'Vitality Burst',
+        description: 'Restore 50 HP.',
+        cardLevelText: '+50 HP',
+        rarity: 'common',
+        weight: 1.0,
+        apply(game) {
+            game.player.hp = Math.min(game.player.hp + 50, game.player.maxHp);
+        },
+    },
+];
+
 const WEIGHT_NEW_WEAPON = 0.9;
 const WEIGHT_WEAPON_UPGRADE = 1.1;
+const WEIGHT_NEW_PASSIVE = 0.85;
+const WEIGHT_PASSIVE_UPGRADE = 1.05;
 
 export class UpgradeSystem {
     constructor() {
@@ -101,6 +155,17 @@ export class UpgradeSystem {
             choices.push(picked);
             remaining.splice(remaining.indexOf(picked), 1);
         }
+
+        // If the live pool couldn't fill all 3 slots, top up from fallback
+        // cards without duplicating within the same draw.
+        if (choices.length < count) {
+            const fallbacks = FALLBACK_UPGRADES.slice();
+            while (choices.length < count && fallbacks.length > 0) {
+                const idx = Math.floor(Math.random() * fallbacks.length);
+                choices.push(fallbacks.splice(idx, 1)[0]);
+            }
+        }
+
         return choices;
     }
 
@@ -116,18 +181,33 @@ export class UpgradeSystem {
         }
 
         // Per-owned-weapon upgrade entries (skip maxed weapons).
-        const ownedIds = new Set();
+        const ownedWeaponIds = new Set();
         for (const w of game.weaponSystem.owned) {
-            ownedIds.add(w.id);
+            ownedWeaponIds.add(w.id);
             if (w.level < MAX_WEAPON_LEVEL) {
                 pool.push(weaponUpgradeChoice(w));
             }
         }
-
         // Per-unowned-weapon unlock entries.
         for (const id of WEAPON_IDS) {
-            if (ownedIds.has(id)) continue;
+            if (ownedWeaponIds.has(id)) continue;
             pool.push(newWeaponChoice(id));
+        }
+
+        // Per-owned-passive upgrade entries (skip maxed passives).
+        const ownedPassiveIds = new Set();
+        for (const p of game.passiveSystem.owned) {
+            ownedPassiveIds.add(p.id);
+            const def = PASSIVES[p.id];
+            const max = def?.maxLevel ?? MAX_PASSIVE_LEVEL;
+            if (p.level < max) {
+                pool.push(passiveUpgradeChoice(p, def));
+            }
+        }
+        // Per-unowned-passive unlock entries.
+        for (const id of PASSIVE_IDS) {
+            if (ownedPassiveIds.has(id)) continue;
+            pool.push(newPassiveChoice(id));
         }
 
         return pool;
@@ -171,6 +251,40 @@ function newWeaponChoice(id) {
         weight: WEIGHT_NEW_WEAPON,
         apply(game) {
             game.weaponSystem.addWeapon(id);
+        },
+    };
+}
+
+function passiveUpgradeChoice(owned, def) {
+    const next = owned.level + 1;
+    return {
+        id: `passive:${owned.id}:upgrade`,
+        kind: 'passive-upgrade',
+        cardLabel: 'PASSIVE UPGRADE',
+        name: def?.name ?? owned.id,
+        description: `${def?.description ?? ''}  •  Lv ${owned.level} → ${next}`,
+        cardLevelText: `Lv ${next}`,
+        rarity: 'uncommon',
+        weight: WEIGHT_PASSIVE_UPGRADE,
+        apply(game) {
+            game.passiveSystem.levelUpPassive(owned.id, game.player);
+        },
+    };
+}
+
+function newPassiveChoice(id) {
+    const def = PASSIVES[id];
+    return {
+        id: `passive:${id}:new`,
+        kind: 'passive-new',
+        cardLabel: 'NEW PASSIVE',
+        name: def?.name ?? id,
+        description: def?.description ?? '',
+        cardLevelText: 'Lv 1',
+        rarity: 'uncommon',
+        weight: WEIGHT_NEW_PASSIVE,
+        apply(game) {
+            game.passiveSystem.addPassive(id, game.player);
         },
     };
 }

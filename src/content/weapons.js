@@ -121,17 +121,19 @@ function arcaneBoltUpdate(dt, owned, ctx) {
         return;
     }
 
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
     const dx = target.x - ctx.player.x;
     const dy = target.y - ctx.player.y;
     const len = Math.hypot(dx, dy) || 1;
     const vx = (dx / len) * cfg.projectileSpeed;
     const vy = (dy / len) * cfg.projectileSpeed;
     ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
-        damage: cfg.damage,
+        damage: cfg.damage * dmgMul,
         radius: cfg.projectileRadius,
         pierce: cfg.pierce,
     }));
-    owned.timer = cfg.cooldown;
+    owned.timer = cfg.cooldown * cdMul;
 }
 
 // Orbiting Blade: advance shared base angle; recompute blade positions; for
@@ -154,6 +156,11 @@ function orbitingBladeUpdate(dt, owned, ctx) {
         });
     }
 
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const damage = cfg.damage * dmgMul;
+    const hitCooldown = cfg.hitCooldown * cdMul;
+
     for (const e of ctx.enemies) {
         if (!e.active) continue;
         if (e.weaponHitCooldown > 0) continue;
@@ -164,10 +171,10 @@ function orbitingBladeUpdate(dt, owned, ctx) {
             const len = Math.hypot(dx, dy) || 1;
             const kx = (dx / len) * KNOCKBACK.strength * 0.45;
             const ky = (dy / len) * KNOCKBACK.strength * 0.45;
-            e.takeDamage(cfg.damage, kx, ky);
-            ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: cfg.damage });
+            e.takeDamage(damage, kx, ky);
+            ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
             if (!e.active) ctx.killed.push(e);
-            e.weaponHitCooldown = cfg.hitCooldown;
+            e.weaponHitCooldown = hitCooldown;
             break;
         }
     }
@@ -180,7 +187,10 @@ function holyPulseUpdate(dt, owned, ctx) {
     const cfg = WEAPONS.holyPulse.perLevel[owned.level];
     owned.timer -= dt;
     if (owned.timer > 0) return;
-    owned.timer = cfg.cooldown;
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    owned.timer = cfg.cooldown * cdMul;
+    const damage = cfg.damage * dmgMul;
 
     for (const e of ctx.enemies) {
         if (!e.active) continue;
@@ -190,8 +200,8 @@ function holyPulseUpdate(dt, owned, ctx) {
         const len = Math.hypot(dx, dy) || 1;
         const kx = (dx / len) * KNOCKBACK.strength * 0.35;
         const ky = (dy / len) * KNOCKBACK.strength * 0.35;
-        e.takeDamage(cfg.damage, kx, ky);
-        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: cfg.damage });
+        e.takeDamage(damage, kx, ky);
+        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
         if (!e.active) ctx.killed.push(e);
     }
 
@@ -226,12 +236,15 @@ function lightningMarkUpdate(dt, owned, ctx) {
         return;
     }
 
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const damage = cfg.damage * dmgMul;
     const n = Math.min(cfg.strikes, candidates.length);
     for (let i = 0; i < n; i++) {
         const idx = Math.floor(Math.random() * candidates.length);
         const target = candidates.splice(idx, 1)[0];
-        target.takeDamage(cfg.damage);
-        ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: cfg.damage });
+        target.takeDamage(damage);
+        ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: damage });
         if (!target.active) ctx.killed.push(target);
         ctx.effects.push({
             kind: 'lightning',
@@ -242,7 +255,7 @@ function lightningMarkUpdate(dt, owned, ctx) {
             active: true,
         });
     }
-    owned.timer = cfg.cooldown;
+    owned.timer = cfg.cooldown * cdMul;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────

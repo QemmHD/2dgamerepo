@@ -34,6 +34,16 @@ export class Player {
         this.hp = PLAYER.maxHp;
         this.invincibleTimer = 0;
         this.hitFlashTimer = 0;
+
+        // Passive-driven global modifiers. Weapons read these every frame so
+        // a passive level-up takes effect on the next tick. Defaults are
+        // neutral identity values; restart rebuilds Player so these reset.
+        this.damageMul = 1;
+        this.cooldownMul = 1;
+
+        // Forward-looking stash for the chest stage.
+        this.chestLuck = 0;
+        this.coins = 0;
     }
 
     gainXP(amount) {

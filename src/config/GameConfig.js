@@ -55,6 +55,7 @@ export const ENEMY = {
 // (which need real code) and stat tables can stay together. The cap on
 // how high any weapon can level lives here for easy tuning.
 export const MAX_WEAPON_LEVEL = 8;
+export const MAX_PASSIVE_LEVEL = 5;
 
 // Legacy block kept so Projectile's default opts still resolve cleanly when
 // a weapon doesn't pass per-projectile overrides. The starter weapon uses

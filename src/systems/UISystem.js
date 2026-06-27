@@ -196,6 +196,10 @@ export class UISystem {
             const level = w.isMax ? 'Lv 8 MAX' : `Lv ${w.level}`;
             return `${w.name.padEnd(16)}${level}`;
         });
+        const passiveLines = (state.ownedPassives ?? []).map((p) => {
+            const level = p.isMax ? `Lv ${p.maxLevel} MAX` : `Lv ${p.level}`;
+            return `${p.name.padEnd(16)}${level}`;
+        });
 
         const debugLines = state.showDebug ? [
             ``,
@@ -214,9 +218,10 @@ export class UISystem {
             `contact ${state.inContact ? 'YES' : 'no'}`,
         ] : [];
 
-        const lines = weaponLines.length > 0
-            ? [...gameplayLines, ``, ...weaponLines, ...debugLines]
-            : [...gameplayLines, ...debugLines];
+        const lines = [...gameplayLines];
+        if (weaponLines.length > 0) lines.push(``, 'WEAPONS', ...weaponLines);
+        if (passiveLines.length > 0) lines.push(``, 'PASSIVES', ...passiveLines);
+        if (debugLines.length > 0) lines.push(...debugLines);
 
         ctx.save();
         ctx.font = '28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
