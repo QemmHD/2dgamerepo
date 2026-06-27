@@ -4,12 +4,17 @@
 // behavior function in src/content/weapons.js advances `state` and reads
 // the right per-level stats from WEAPONS[id].perLevel[level].
 //
-// Adding a new weapon: write a definition + behavior in content/weapons.js
-// and call game.weaponSystem.addWeapon('id'). No system code changes.
+// Evolved weapons live in the same `owned` array; they have
+// `WEAPONS[id].maxLevel = 1` and `evolved = true`. evolveWeapon() swaps
+// a base entry for its evolved variant in place.
 
 import { MAX_WEAPON_LEVEL } from '../config/GameConfig.js';
-import { compactInPlace } from '../core/MathUtils.js';
+import { compactInPlace, TWO_PI } from '../core/MathUtils.js';
 import { WEAPONS } from '../content/weapons.js';
+
+function weaponMaxLevel(def) {
+    return def?.maxLevel ?? MAX_WEAPON_LEVEL;
+}
 
 export class WeaponSystem {
     constructor() {
@@ -31,14 +36,29 @@ export class WeaponSystem {
     levelUpWeapon(id) {
         const w = this.owned.find((o) => o.id === id);
         if (!w) return false;
-        if (w.level >= MAX_WEAPON_LEVEL) return false;
+        const def = WEAPONS[id];
+        if (w.level >= weaponMaxLevel(def)) return false;
         w.level += 1;
+        return true;
+    }
+
+    // Replace baseId in the owned list with evolvedId at level 1. Keeps
+    // the same slot order so the UI list doesn't jump around.
+    evolveWeapon(baseId, evolvedId) {
+        const idx = this.owned.findIndex((o) => o.id === baseId);
+        if (idx < 0) return false;
+        const def = WEAPONS[evolvedId];
+        if (!def) return false;
+        const initial = def.initialState ? def.initialState() : {};
+        this.owned[idx] = { id: evolvedId, level: 1, timer: 0, state: initial };
         return true;
     }
 
     isMaxLevel(id) {
         const w = this.owned.find((o) => o.id === id);
-        return !!w && w.level >= MAX_WEAPON_LEVEL;
+        if (!w) return false;
+        const def = WEAPONS[id];
+        return w.level >= weaponMaxLevel(def);
     }
 
     update(dt, player, enemies, projectiles) {
@@ -70,14 +90,14 @@ export class WeaponSystem {
     }
 
     drawWeaponVisuals(ctx, player) {
-        // Orbit blades — rendered in world space around the player.
         for (const w of this.owned) {
             const def = WEAPONS[w.id];
             if (def.kind !== 'orbit') continue;
             const cfg = def.perLevel[w.level];
             const positions = w.state.bladePositions ?? [];
+            const isEvolved = !!def.evolved;
             for (const pos of positions) {
-                drawBlade(ctx, pos.x, pos.y, pos.angle, cfg.bladeRadius);
+                drawBlade(ctx, pos.x, pos.y, pos.angle, cfg.bladeRadius, isEvolved);
             }
         }
     }
@@ -90,25 +110,43 @@ export class WeaponSystem {
         }
     }
 
-    // Snapshot used by UI to list owned weapons with their level/max flag.
+    // Snapshot used by UI to list owned weapons with level / max / evolved.
     snapshotForUI() {
-        return this.owned.map((w) => ({
-            id: w.id,
-            name: WEAPONS[w.id]?.name ?? w.id,
-            level: w.level,
-            isMax: w.level >= MAX_WEAPON_LEVEL,
-        }));
+        return this.owned.map((w) => {
+            const def = WEAPONS[w.id];
+            const max = weaponMaxLevel(def);
+            return {
+                id: w.id,
+                name: def?.name ?? w.id,
+                level: w.level,
+                maxLevel: max,
+                isMax: w.level >= max,
+                evolved: !!def?.evolved,
+            };
+        });
     }
 }
 
 // ─── Visuals ───────────────────────────────────────────────────────────
 
-function drawBlade(ctx, x, y, angle, size) {
+function drawBlade(ctx, x, y, angle, size, isEvolved = false) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle * 3);
-    ctx.fillStyle = '#dde6ee';
-    ctx.strokeStyle = '#5a6770';
+
+    if (isEvolved) {
+        // Gold halo behind the blade so the ring reads as empowered.
+        const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, size * 1.5);
+        grad.addColorStop(0, 'rgba(255, 215, 90, 0.45)');
+        grad.addColorStop(1, 'rgba(255, 200, 50, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 1.5, 0, TWO_PI);
+        ctx.fill();
+    }
+
+    ctx.fillStyle = isEvolved ? '#ffe89a' : '#dde6ee';
+    ctx.strokeStyle = isEvolved ? '#a07530' : '#5a6770';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, -size);
@@ -126,6 +164,7 @@ function drawBlade(ctx, x, y, angle, size) {
     ctx.lineTo(-size * 0.18, 0);
     ctx.closePath();
     ctx.fill();
+
     ctx.restore();
 }
 
@@ -133,13 +172,20 @@ function drawPulse(ctx, fx) {
     const t = fx.age / fx.lifetime;
     const r = fx.radius * (0.35 + t * 0.65);
     const alpha = 1 - t;
+    const isEvolved = !!fx.evolved;
+
     ctx.save();
-    ctx.strokeStyle = `rgba(255, 240, 180, ${alpha * 0.9})`;
-    ctx.lineWidth = 8;
+    ctx.strokeStyle = isEvolved
+        ? `rgba(255, 230, 120, ${alpha * 0.95})`
+        : `rgba(255, 240, 180, ${alpha * 0.9})`;
+    ctx.lineWidth = isEvolved ? 14 : 8;
     ctx.beginPath();
     ctx.arc(fx.x, fx.y, r, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillStyle = `rgba(255, 230, 160, ${alpha * 0.12})`;
+
+    ctx.fillStyle = isEvolved
+        ? `rgba(255, 220, 130, ${alpha * 0.22})`
+        : `rgba(255, 230, 160, ${alpha * 0.12})`;
     ctx.beginPath();
     ctx.arc(fx.x, fx.y, r, 0, Math.PI * 2);
     ctx.fill();
@@ -149,17 +195,23 @@ function drawPulse(ctx, fx) {
 function drawLightning(ctx, fx) {
     const t = fx.age / fx.lifetime;
     const alpha = 1 - t;
+    const isEvolved = !!fx.evolved;
+    const isChain = !!fx.chain;
+
     ctx.save();
     ctx.lineCap = 'round';
 
-    // Outer glow
-    ctx.strokeStyle = `rgba(180, 220, 255, ${alpha * 0.85})`;
-    ctx.lineWidth = 8;
+    // Outer glow (thicker on evolved, thinner on chain links).
+    const glowWidth = isEvolved ? (isChain ? 6 : 10) : 8;
+    ctx.strokeStyle = isEvolved
+        ? `rgba(190, 230, 255, ${alpha * (isChain ? 0.8 : 0.95)})`
+        : `rgba(180, 220, 255, ${alpha * 0.85})`;
+    ctx.lineWidth = glowWidth;
     drawLightningPath(ctx, fx.x, fx.y);
 
-    // Bright core
+    // Bright core.
     ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = isEvolved && !isChain ? 4 : 3;
     drawLightningPath(ctx, fx.x, fx.y);
 
     ctx.restore();

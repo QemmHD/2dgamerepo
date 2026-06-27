@@ -30,6 +30,7 @@ import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
 import { BossDirector } from '../systems/BossDirector.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
+import { findEligibleEvolutions } from '../content/evolutions.js';
 import { UISystem } from '../systems/UISystem.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
@@ -484,6 +485,10 @@ export class Game {
             chestReward: this.chestReward,
             pendingChests: this.pendingChests,
             nextBossTime: this.bossDirector.getNextSpawnTime(),
+            // Cheap to compute; only meaningful inside the debug HUD where
+            // it's read. Tells the player whether their next chest will
+            // evolve something.
+            eligibleEvolutionCount: findEligibleEvolutions(this).length,
             spawnTimer: this.spawner.timer,
             spawnInterval: this.spawner.nextInterval,
             inContact: this.collisionSystem.inContact,

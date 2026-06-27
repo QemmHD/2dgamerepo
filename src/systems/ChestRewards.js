@@ -14,6 +14,7 @@
 import { pickWeighted } from '../core/MathUtils.js';
 import { WEAPONS } from '../content/weapons.js';
 import { PASSIVES } from '../content/passives.js';
+import { findEligibleEvolutions } from '../content/evolutions.js';
 import {
     MAX_WEAPON_LEVEL,
     MAX_PASSIVE_LEVEL,
@@ -21,6 +22,31 @@ import {
 } from '../config/GameConfig.js';
 
 export function rollChestReward(game) {
+    // Evolutions take priority over normal chest rewards. If any base
+    // weapon is at max level AND the matching catalyst passive is owned,
+    // pick one at random and return an evolution reward.
+    const eligibleEvolutions = findEligibleEvolutions(game);
+    if (eligibleEvolutions.length > 0) {
+        const evo = eligibleEvolutions[
+            Math.floor(Math.random() * eligibleEvolutions.length)
+        ];
+        const baseDef = WEAPONS[evo.baseWeaponId];
+        return {
+            kind: 'evolution',
+            evolutionId: evo.id,
+            baseWeaponId: evo.baseWeaponId,
+            evolvedWeaponId: evo.evolvedWeaponId,
+            baseName: baseDef?.name ?? evo.baseWeaponId,
+            evolvedName: evo.evolvedName,
+            catalystName: evo.catalystName,
+            chestRewardText: evo.chestRewardText,
+            text: evo.chestRewardText,
+            apply(g) {
+                g.weaponSystem.evolveWeapon(evo.baseWeaponId, evo.evolvedWeaponId);
+            },
+        };
+    }
+
     const luck = game.player.chestLuck ?? 0;
 
     const upgradeableWeapons = game.weaponSystem.owned.filter(

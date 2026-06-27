@@ -135,32 +135,41 @@ export class UISystem {
     _drawChestOverlay(ctx, state) {
         const c = state.chestReward;
         if (!c) return;
+        const isEvolution = c.reward.kind === 'evolution';
 
         ctx.save();
-        ctx.fillStyle = 'rgba(10, 8, 4, 0.82)';
+        ctx.fillStyle = isEvolution ? 'rgba(20, 10, 26, 0.84)' : 'rgba(10, 8, 4, 0.82)';
         ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffd166';
+        ctx.fillStyle = isEvolution ? '#ffd6f5' : '#ffd166';
         ctx.font = 'bold 80px -apple-system, system-ui, Helvetica, Arial, sans-serif';
-        ctx.fillText('TREASURE!', INTERNAL_WIDTH / 2, 220);
+        ctx.fillText(isEvolution ? 'WEAPON EVOLVED!' : 'TREASURE!', INTERNAL_WIDTH / 2, 220);
 
-        const animDur = CHEST.openAnimationDuration;
+        const animDur = isEvolution
+            ? CHEST.openAnimationDuration * 1.4
+            : CHEST.openAnimationDuration;
         const animT = Math.min(1, c.age / animDur);
         const sprite = getChestSprite();
         const scale = 4;
         const chestX = INTERNAL_WIDTH / 2;
         const chestY = INTERNAL_HEIGHT * 0.5;
 
-        // Light burst peaks around the end of the opening animation.
+        // Light burst peaks around the end of the opening animation; bigger,
+        // pink-tinged for evolutions so the moment feels different.
         if (animT >= 0.5) {
             const burstT = Math.min(1, (animT - 0.5) / 0.5);
             const burstAlpha = 1 - burstT;
-            const burstR = 200 + burstT * 480;
+            const burstR = (isEvolution ? 280 : 200) + burstT * (isEvolution ? 720 : 480);
             const grad = ctx.createRadialGradient(chestX, chestY, 0, chestX, chestY, burstR);
-            grad.addColorStop(0, `rgba(255, 240, 180, ${burstAlpha * 0.7})`);
-            grad.addColorStop(1, 'rgba(255, 200, 50, 0)');
+            if (isEvolution) {
+                grad.addColorStop(0, `rgba(255, 200, 240, ${burstAlpha * 0.85})`);
+                grad.addColorStop(1, 'rgba(200, 130, 255, 0)');
+            } else {
+                grad.addColorStop(0, `rgba(255, 240, 180, ${burstAlpha * 0.7})`);
+                grad.addColorStop(1, 'rgba(255, 200, 50, 0)');
+            }
             ctx.fillStyle = grad;
             ctx.beginPath();
             ctx.arc(chestX, chestY, burstR, 0, TWO_PI);
@@ -168,7 +177,9 @@ export class UISystem {
         }
 
         // Chest sprite — shakes during the opening animation, then settles.
-        const shakeMag = animT < 1 ? (1 - animT) * 14 : 0;
+        // Evolution shake is slightly stronger.
+        const shakeBase = isEvolution ? 20 : 14;
+        const shakeMag = animT < 1 ? (1 - animT) * shakeBase : 0;
         const shakeX = shakeMag ? (Math.random() - 0.5) * 2 * shakeMag : 0;
         const shakeY = shakeMag ? (Math.random() - 0.5) * 2 * shakeMag : 0;
         ctx.drawImage(
@@ -185,9 +196,35 @@ export class UISystem {
             const textAlpha = Math.min(1, (c.age - revealStart) / 0.25);
             ctx.save();
             ctx.globalAlpha = textAlpha;
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 48px -apple-system, system-ui, Helvetica, Arial, sans-serif';
-            ctx.fillText(c.reward.text, INTERNAL_WIDTH / 2, INTERNAL_HEIGHT * 0.78);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (isEvolution) {
+                ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                ctx.font = '34px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+                ctx.fillText(
+                    `${c.reward.baseName}  +  ${c.reward.catalystName}`,
+                    INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT * 0.73
+                );
+                ctx.fillStyle = '#ffd6f5';
+                ctx.font = 'bold 56px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+                ctx.fillText(
+                    c.reward.evolvedName,
+                    INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT * 0.80
+                );
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.font = '28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+                ctx.fillText(
+                    c.reward.chestRewardText,
+                    INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT * 0.86
+                );
+            } else {
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 48px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+                ctx.fillText(c.reward.text, INTERNAL_WIDTH / 2, INTERNAL_HEIGHT * 0.78);
+            }
             ctx.restore();
         }
 
@@ -379,7 +416,10 @@ export class UISystem {
         ];
 
         const weaponLines = (state.ownedWeapons ?? []).map((w) => {
-            const level = w.isMax ? 'Lv 8 MAX' : `Lv ${w.level}`;
+            let level;
+            if (w.evolved) level = 'EVOLVED';
+            else if (w.isMax) level = `Lv ${w.maxLevel ?? 8} MAX`;
+            else level = `Lv ${w.level}`;
             return `${w.name.padEnd(16)}${level}`;
         });
         const passiveLines = (state.ownedPassives ?? []).map((p) => {
@@ -409,6 +449,7 @@ export class UISystem {
             `next    ${formatBossClock(state.nextBossTime)}`,
             `active  ${state.activeBoss ? state.activeBoss.name : 'none'}`,
             `chests  ${state.chestCount ?? 0}` + (state.pendingChests > 0 ? ` (+${state.pendingChests})` : ''),
+            `evos    ${state.eligibleEvolutionCount ?? 0} ready`,
             ``,
             `spawn   ${formatSpawn(state.spawnTimer, state.spawnInterval)}`,
             `player  (${Math.round(state.player.x)}, ${Math.round(state.player.y)})`,

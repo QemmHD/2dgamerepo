@@ -180,17 +180,22 @@ export class UpgradeSystem {
             pool.push(u);
         }
 
-        // Per-owned-weapon upgrade entries (skip maxed weapons).
+        // Per-owned-weapon upgrade entries (skip maxed weapons + evolved
+        // weapons, which have maxLevel=1 and are considered done).
         const ownedWeaponIds = new Set();
         for (const w of game.weaponSystem.owned) {
             ownedWeaponIds.add(w.id);
-            if (w.level < MAX_WEAPON_LEVEL) {
+            const def = WEAPONS[w.id];
+            const max = def?.maxLevel ?? MAX_WEAPON_LEVEL;
+            if (!def?.evolved && w.level < max) {
                 pool.push(weaponUpgradeChoice(w));
             }
         }
-        // Per-unowned-weapon unlock entries.
+        // Per-unowned-weapon unlock entries. Evolved weapons are reached
+        // only via chest evolution, never offered as a level-up choice.
         for (const id of WEAPON_IDS) {
             if (ownedWeaponIds.has(id)) continue;
+            if (WEAPONS[id].evolved) continue;
             pool.push(newWeaponChoice(id));
         }
 
