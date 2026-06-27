@@ -17,8 +17,26 @@ function defaultData() {
             xpGain: 0,
             pickupRange: 0,
             startingCoins: 0,
+            rerolls: 0,
+            banish: 0,
         },
-        version: 1,
+        // Lifetime + best-run records, surfaced on the start screen and used
+        // for the game-over "NEW BEST!" banner.
+        stats: {
+            bestTime: 0,
+            bestWave: 0,
+            bestLevel: 0,
+            bestKills: 0,
+            bestBosses: 0,
+            runs: 0,
+            totalKills: 0,
+            totalBosses: 0,
+            totalCoinsEarned: 0,
+        },
+        settings: {
+            screenShake: true,
+        },
+        version: 2,
     };
 }
 
@@ -65,6 +83,9 @@ export class SaveSystem {
         const totalCoins = Number.isFinite(data.totalCoins) && data.totalCoins >= 0
             ? Math.floor(data.totalCoins)
             : 0;
+        // Migration is implicit: any key missing from an older save (e.g. a
+        // v1 save with no `rerolls`, `stats`, or `settings`) keeps its
+        // default, so old saves load cleanly.
         const upgrades = { ...def.upgrades };
         if (data.upgrades && typeof data.upgrades === 'object') {
             for (const key of Object.keys(upgrades)) {
@@ -72,7 +93,20 @@ export class SaveSystem {
                 if (Number.isFinite(v) && v >= 0) upgrades[key] = Math.floor(v);
             }
         }
-        return { totalCoins, upgrades, version: 1 };
+        const stats = { ...def.stats };
+        if (data.stats && typeof data.stats === 'object') {
+            for (const key of Object.keys(stats)) {
+                const v = data.stats[key];
+                if (Number.isFinite(v) && v >= 0) stats[key] = Math.floor(v);
+            }
+        }
+        const settings = { ...def.settings };
+        if (data.settings && typeof data.settings === 'object') {
+            if (typeof data.settings.screenShake === 'boolean') {
+                settings.screenShake = data.settings.screenShake;
+            }
+        }
+        return { totalCoins, upgrades, stats, settings, version: 2 };
     }
 
     save() {
@@ -107,6 +141,48 @@ export class SaveSystem {
         this.data.upgrades[id] += 1;
         this.save();
         return true;
+    }
+
+    // Fold a finished run into lifetime totals + best-run records. Returns
+    // a record of which "best" fields were newly beaten this run so the
+    // game-over screen can flag them with a NEW BEST banner.
+    recordRun(summary) {
+        const s = this.data.stats || (this.data.stats = {
+            bestTime: 0, bestWave: 0, bestLevel: 0, bestKills: 0, bestBosses: 0,
+            runs: 0, totalKills: 0, totalBosses: 0, totalCoinsEarned: 0,
+        });
+        const beat = { time: false, wave: false, level: false, kills: false };
+
+        const time = Math.floor(summary.time ?? 0);
+        const wave = Math.floor(summary.finalWave ?? 0);
+        const level = Math.floor(summary.level ?? 0);
+        const kills = Math.floor(summary.kills ?? 0);
+        const bosses = Math.floor(summary.bossesDefeated ?? 0);
+        const coins = Math.floor(summary.coinsEarned ?? 0);
+
+        if (time > s.bestTime) { s.bestTime = time; beat.time = true; }
+        if (wave > s.bestWave) { s.bestWave = wave; beat.wave = true; }
+        if (level > s.bestLevel) { s.bestLevel = level; beat.level = true; }
+        if (kills > s.bestKills) { s.bestKills = kills; beat.kills = true; }
+        if (bosses > s.bestBosses) s.bestBosses = bosses;
+
+        s.runs += 1;
+        s.totalKills += kills;
+        s.totalBosses += bosses;
+        s.totalCoinsEarned += Math.max(0, coins);
+
+        this.save();
+        return beat;
+    }
+
+    getSetting(key) {
+        return this.data.settings ? this.data.settings[key] : undefined;
+    }
+
+    setSetting(key, value) {
+        if (!this.data.settings) this.data.settings = {};
+        this.data.settings[key] = value;
+        this.save();
     }
 
     reset() {

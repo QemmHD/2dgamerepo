@@ -14,7 +14,17 @@ export class Renderer {
 
         this.safeArea = { top: 0, right: 0, bottom: 0, left: 0 };
 
-        this._onResize = () => this.resize();
+        // Coalesce the storm of resize/orientation/visualViewport events iOS
+        // fires during URL-bar show/hide + rubber-banding into one rAF so we
+        // don't reallocate the backing store many times per gesture.
+        this._resizeQueued = false;
+        this._onResize = () => {
+            if (this._resizeQueued) return;
+            this._resizeQueued = true;
+            const run = () => { this._resizeQueued = false; this.resize(); };
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+            else run();
+        };
         window.addEventListener('resize', this._onResize);
         window.addEventListener('orientationchange', this._onResize);
         if (window.visualViewport) {
@@ -25,7 +35,11 @@ export class Renderer {
     }
 
     resize() {
-        const dpr = window.devicePixelRatio || 1;
+        // Cap DPR at 2: above ~1920-wide internal art the extra backing-store
+        // pixels (iPhone/iPad report 2-3) buy no visible quality but multiply
+        // the cost of every full-screen op (bg fill, tile pattern, vignette,
+        // flashes) and risk iOS canvas-area memory limits on Pro devices.
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.dpr = dpr;
 
         const winW = window.visualViewport?.width ?? window.innerWidth;

@@ -32,14 +32,40 @@ import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
 import { BossDirector } from '../systems/BossDirector.js';
 import { MapRenderer } from '../systems/MapRenderer.js';
+import { LightingSystem } from '../systems/LightingSystem.js';
+import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
 import { UISystem } from '../systems/UISystem.js';
+import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
+
+// Half the largest sprite (~91) + bar/label headroom + max camera shake.
+// Anything whose center is farther than this from the view edge can't
+// contribute a visible pixel and is skipped at draw time.
+const CULL_MARGIN = 160;
+
+// Death-burst tint per enemy type (boss/elite handled separately).
+const DEATH_COLORS = {
+    slime: '#7be08a',
+    bat: '#b48cff',
+    crawler: '#9a7cff',
+    brute: '#d8a060',
+};
+function deathColor(e) {
+    if (e.boss) return '#ffd27a';
+    if (e.elite) return '#ffe08a';
+    return DEATH_COLORS[e.type] ?? '#ffcaa0';
+}
+function gemLightColor(tier) {
+    if (tier === 'large') return LIGHT_COLORS.gemLarge;
+    if (tier === 'medium') return LIGHT_COLORS.gemMedium;
+    return LIGHT_COLORS.gemSmall;
+}
 
 export class Game {
     constructor({ renderer, input, loop }) {
@@ -53,6 +79,14 @@ export class Game {
         // pattern and per-chunk decoration tables are world-static,
         // so they survive restarts intact (no need to rebuild).
         this.mapRenderer = new MapRenderer();
+        // Lighting buffer + particle pool are also world-static / pooled,
+        // so they live across runs (particles are cleared on run start).
+        this.lighting = new LightingSystem();
+        this.particles = new ParticleSystem();
+        // Adaptive graphics governor state. level 0 = full quality.
+        this._gfxLevel = 0;
+        this._gfxLowTimer = 0;
+        this._gfxHighTimer = 0;
 
         // Meta-progression flow: 'start' (title + shop) → 'gameplay' → 'gameOver'.
         // Boot lands on the start screen so the player can spend banked coins
@@ -60,6 +94,14 @@ export class Game {
         this.screen = 'start';
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
+
+        // Transient "this control was just tapped" feedback for the UI to
+        // render a brief press state. { id, age } or null.
+        this.pressFx = null;
+
+        // Screen-shake preference; loaded from save at run start. Defaulted
+        // here so it's never undefined before the first run.
+        this.shakeEnabled = this.saveSystem.getSetting('screenShake') !== false;
 
         this._initRunState();
 
@@ -90,6 +132,15 @@ export class Game {
                 }
                 return;
             }
+            // Pause toggle — gameplay only, never while a level-up/chest
+            // overlay is up (those already freeze the world).
+            if (!this.chestReward && !this.upgradeChoices &&
+                (e.code === 'KeyP' || e.code === 'Escape')) {
+                e.preventDefault();
+                this.togglePause();
+                return;
+            }
+            if (this.paused) return; // swallow other keys while paused
             if (this.chestReward) {
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault();
@@ -107,6 +158,9 @@ export class Game {
                 } else if (e.code === 'Digit3' || e.code === 'Numpad3') {
                     e.preventDefault();
                     this.selectUpgrade(2);
+                } else if (e.code === 'KeyR') {
+                    e.preventDefault();
+                    this.rerollChoices();
                 }
             }
         });
@@ -121,18 +175,34 @@ export class Game {
                 pos.y >= r.y - slop &&
                 pos.y <= r.y + r.h + slop
             ) {
+                this._pressFeedback('dbg');
                 this.showDebug = !this.showDebug;
                 return true;
             }
             return false;
         };
 
+        const inRect = (pos, r, slop = 20) =>
+            pos.x >= r.x - slop && pos.x <= r.x + r.w + slop &&
+            pos.y >= r.y - slop && pos.y <= r.y + r.h + slop;
+
         const tryPickUpgradeAt = (clientX, clientY) => {
             if (!this.upgradeChoices) return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const rects = this.ui.getLevelUpCardRects(this.upgradeChoices.length);
+            // Cards are hit-tested FIRST so a card tap always wins over the
+            // reroll button even where their zones meet near a large bottom
+            // safe-area inset.
             for (let i = 0; i < rects.length; i++) {
                 const r = rects[i];
+                const card = this.upgradeChoices[i];
+                // Per-card banish button — not offered on bonus/fallback
+                // cards (they can't be meaningfully banished and doing so
+                // would just waste the charge).
+                if (this.banishes > 0 && card && card.kind !== 'fallback') {
+                    const b = this.ui.getBanishButtonRect(r);
+                    if (inRect(pos, b, 0)) { this._pressFeedback('banish'); this.banishChoice(i); return true; }
+                }
                 if (
                     pos.x >= r.x &&
                     pos.x <= r.x + r.w &&
@@ -143,20 +213,44 @@ export class Game {
                     return true;
                 }
             }
+            // Reroll button last, with exact bounds (no slop) so it can't
+            // steal taps from the bottom edge of the cards.
+            if (this.rerolls > 0) {
+                const rr = this.ui.getRerollButtonRect();
+                if (inRect(pos, rr, 0)) { this._pressFeedback('reroll'); this.rerollChoices(); return true; }
+            }
             return true;
         };
 
-        const inRect = (pos, r, slop = 20) =>
-            pos.x >= r.x - slop && pos.x <= r.x + r.w + slop &&
-            pos.y >= r.y - slop && pos.y <= r.y + r.h + slop;
+        // Pause overlay buttons (resume / restart / shop / shake toggle).
+        const tryPauseOverlayAt = (clientX, clientY) => {
+            if (!this.paused) return false;
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            // Exact bounds (no slop): these stacked buttons are large and
+            // adjacent, so slop padding would let an edge tap fire the wrong
+            // (destructive) action.
+            if (inRect(pos, this.ui.getResumeButtonRect(), 0)) { this._pressFeedback('resume'); this.togglePause(); return true; }
+            if (inRect(pos, this.ui.getPauseRestartRect(), 0)) { this._pressFeedback('restart'); this.restart(); return true; }
+            if (inRect(pos, this.ui.getPauseShopRect(), 0)) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
+            if (inRect(pos, this.ui.getShakeToggleRect(), 0)) { this._pressFeedback('shake'); this.toggleScreenShake(); return true; }
+            return true; // consume all taps while paused
+        };
+
+        // The little HUD pause button (gameplay, no overlay). Exact bounds so
+        // its zone can't bleed into the adjacent DBG button's touch slop.
+        const tryPauseButtonAt = (clientX, clientY) => {
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            if (inRect(pos, this.ui.getPauseButtonRect(), 0)) { this._pressFeedback('pause'); this.togglePause(); return true; }
+            return false;
+        };
 
         const tryRestartAt = (clientX, clientY) => {
             if (this.screen !== 'gameOver') return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const rRestart = this.ui.getRestartButtonRect();
-            if (inRect(pos, rRestart)) { this.restart(); return true; }
+            if (inRect(pos, rRestart)) { this._pressFeedback('restart'); this.restart(); return true; }
             const rShop = this.ui.getReturnToShopButtonRect();
-            if (rShop && inRect(pos, rShop)) { this.returnToShop(); return true; }
+            if (rShop && inRect(pos, rShop)) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
             return true;
         };
 
@@ -164,9 +258,10 @@ export class Game {
             if (this.screen !== 'start') return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const rStart = this.ui.getStartRunButtonRect();
-            if (inRect(pos, rStart)) { this._startRun(); return true; }
+            if (inRect(pos, rStart)) { this._pressFeedback('start'); this._startRun(); return true; }
             const rReset = this.ui.getResetSaveButtonRect();
             if (inRect(pos, rReset)) {
+                this._pressFeedback('reset');
                 this.requestResetSave();
                 return true;
             }
@@ -174,6 +269,7 @@ export class Game {
             const cards = this.ui.getShopUpgradeRects(PERMANENT_UPGRADES.length);
             for (let i = 0; i < cards.length; i++) {
                 if (inRect(pos, cards[i], 0)) {
+                    this._pressFeedback(`shop:${PERMANENT_UPGRADES[i].id}`);
                     this.buyUpgrade(PERMANENT_UPGRADES[i].id);
                     return true;
                 }
@@ -198,8 +294,11 @@ export class Game {
                     if (tryRestartAt(t.clientX, t.clientY)) return;
                 } else if (this.upgradeChoices) {
                     if (tryPickUpgradeAt(t.clientX, t.clientY)) return;
-                } else if (tryToggleDebugAt(t.clientX, t.clientY)) {
-                    return;
+                } else if (this.paused) {
+                    if (tryPauseOverlayAt(t.clientX, t.clientY)) return;
+                } else {
+                    if (tryPauseButtonAt(t.clientX, t.clientY)) return;
+                    if (tryToggleDebugAt(t.clientX, t.clientY)) return;
                 }
             }
         }, { passive: false });
@@ -215,9 +314,27 @@ export class Game {
                 tryRestartAt(e.clientX, e.clientY);
             } else if (this.upgradeChoices) {
                 tryPickUpgradeAt(e.clientX, e.clientY);
+            } else if (this.paused) {
+                tryPauseOverlayAt(e.clientX, e.clientY);
             } else {
-                tryToggleDebugAt(e.clientX, e.clientY);
+                if (!tryPauseButtonAt(e.clientX, e.clientY)) {
+                    tryToggleDebugAt(e.clientX, e.clientY);
+                }
             }
+        });
+
+        // Auto-pause when the tab/window loses focus so a backgrounded run
+        // can't take unfair damage (the loop keeps stepping otherwise).
+        const autoPause = () => {
+            if (this.screen === 'gameplay' && !this.gameOver &&
+                !this.upgradeChoices && !this.chestReward && !this.paused) {
+                this.paused = true;
+                this._updateJoystickEnabled();
+            }
+        };
+        window.addEventListener('blur', autoPause);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) autoPause();
         });
     }
 
@@ -261,6 +378,31 @@ export class Game {
         // somehow fires more than once for the same run.
         this.bankedThisRun = false;
 
+        // Overlay entrance-animation clocks (advanced while the overlay is
+        // open so the UI can ease elements in instead of popping).
+        this.levelUpAge = 0;
+        this.gameOverAge = 0;
+
+        // Transient full-screen feedback events (hit/heal/levelup flashes).
+        this.feedback = [];
+        // Tracks HP between frames so a rise can fire a heal flash centrally.
+        this._lastHp = this.player.maxHp;
+        // Starting coins granted by the shop this run — excluded from the
+        // banked total so the Starting Coins upgrade doesn't refund itself.
+        this.startingCoinsGranted = 0;
+
+        // A fresh run should never inherit a half-armed save-reset confirm.
+        this.resetConfirming = false;
+        this.paused = false;
+        // Level-up agency resources (granted from the shop in _startRun).
+        this.rerolls = 0;
+        this.banishes = 0;
+        // Records beaten this run (set at game-over for the NEW BEST banner).
+        this.newBest = null;
+
+        // Drop any particles left over from the previous run.
+        if (this.particles) this.particles.reset();
+
         if (this.input.touch) this.input.touch.setEnabled(true);
     }
 
@@ -269,20 +411,96 @@ export class Game {
     // shop button AND the RESTART game-over button.
     _startRun() {
         this._initRunState();
+        const coinsBefore = this.player.coins ?? 0;
         applyPermanentUpgrades(this.player, this.saveSystem.data);
+        // Remember how many coins the shop handed us so _enterGameOver can
+        // bank only what was *earned* this run, not the granted seed.
+        this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
+        // Level-up agency resources: 1 free reroll baseline so the feature
+        // is discoverable, plus whatever the shop granted onto the player.
+        this.rerolls = 1 + (this.player.rerolls ?? 0);
+        this.banishes = this.player.banishes ?? 0;
+        // Screen-shake preference (accessibility) read from the save.
+        this.shakeEnabled = this.saveSystem.getSetting('screenShake') !== false;
+        this._lastHp = this.player.hp;
         this.screen = 'gameplay';
+        // Reset the UI's per-run animation state (bar display values, boss
+        // bar slide, etc.) so nothing carries over from the previous run.
+        if (this.ui.beginRun) this.ui.beginRun(this.player);
         this._updateJoystickEnabled();
     }
 
     restart() {
+        // Leaving a live (paused) run still banks what was earned, matching
+        // the death path. No-op once already banked this run.
+        this._bankRunCoins();
         this._startRun();
     }
 
     returnToShop() {
+        this._bankRunCoins();
         this.screen = 'start';
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
+        this.paused = false;
         this._updateJoystickEnabled();
+    }
+
+    // Bank coins earned this run into the save total, exactly once (guarded
+    // by bankedThisRun). Excludes the shop-granted starting seed. Returns the
+    // amount banked (0 if already banked).
+    _bankRunCoins() {
+        if (this.bankedThisRun) return 0;
+        const earned = Math.max(
+            0,
+            Math.floor((this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0))
+        );
+        if (earned > 0) this.saveSystem.addCoins(earned);
+        this.bankedThisRun = true;
+        return earned;
+    }
+
+    // Pause is only meaningful during live gameplay (overlays already
+    // freeze the world). Toggling re-enables/disables the joystick.
+    togglePause() {
+        if (this.screen !== 'gameplay' || this.gameOver ||
+            this.upgradeChoices || this.chestReward) return;
+        this.paused = !this.paused;
+        this._updateJoystickEnabled();
+    }
+
+    toggleScreenShake() {
+        this.shakeEnabled = !this.shakeEnabled;
+        this.saveSystem.setSetting('screenShake', this.shakeEnabled);
+    }
+
+    // Screen shake routed through here so the accessibility toggle can
+    // suppress it in one place.
+    _shake(intensity, duration) {
+        if (this.shakeEnabled) this.camera.shake(intensity, duration);
+    }
+
+    // Re-roll the current level-up offer (costs one reroll charge).
+    rerollChoices() {
+        if (!this.upgradeChoices || this.rerolls <= 0) return;
+        this.rerolls -= 1;
+        const choices = this.upgradeSystem.rollChoices(this, 3);
+        this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
+    }
+
+    // Banish the offered card at idx for the rest of the run, then re-roll
+    // the offer so the banished card is gone (costs one banish charge).
+    banishChoice(idx) {
+        if (!this.upgradeChoices || this.banishes <= 0) return;
+        const card = this.upgradeChoices[idx];
+        if (!card) return;
+        // Bonus/fallback cards aren't in the live pool, so banishing one
+        // can't keep it from re-appearing — refuse so the charge isn't lost.
+        if (card.kind === 'fallback') return;
+        this.banishes -= 1;
+        this.upgradeSystem.banish(card.id);
+        const choices = this.upgradeSystem.rollChoices(this, 3);
+        this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
     }
 
     buyUpgrade(id) {
@@ -310,7 +528,33 @@ export class Game {
 
     setUpgradeChoices(choices) {
         this.upgradeChoices = choices;
+        if (choices) this.levelUpAge = 0;
         this._updateJoystickEnabled();
+    }
+
+    // Record a brief press on a UI control so the UI can render a pressed
+    // state. id is matched by UISystem (e.g. 'start', 'restart', 'dbg',
+    // 'shop:<upgradeId>').
+    _pressFeedback(id) {
+        this.pressFx = { id, age: 0 };
+    }
+
+    // Queue a short full-screen feedback flash (type: 'hit' | 'heal' |
+    // 'levelup'). Cheap, screen-space, drawn by UISystem.
+    _pushFeedback(type, life = 0.3) {
+        this.feedback.push({ type, age: 0, life });
+    }
+
+    _updateFeedback(dt) {
+        if (this.pressFx) {
+            this.pressFx.age += dt;
+            if (this.pressFx.age > 0.22) this.pressFx = null;
+        }
+        const fb = this.feedback;
+        for (let i = fb.length - 1; i >= 0; i--) {
+            fb[i].age += dt;
+            if (fb[i].age >= fb[i].life) fb.splice(i, 1);
+        }
     }
 
     // Joystick is disabled whenever ANY overlay is up so a stray drag can't
@@ -318,7 +562,8 @@ export class Game {
     // GAME OVER.
     _updateJoystickEnabled() {
         if (!this.input.touch) return;
-        const blocked = this.screen !== 'gameplay' || !!this.upgradeChoices || !!this.chestReward;
+        const blocked = this.screen !== 'gameplay' || this.paused ||
+            !!this.upgradeChoices || !!this.chestReward;
         this.input.touch.setEnabled(!blocked);
     }
 
@@ -376,6 +621,8 @@ export class Game {
         });
         this.enemies.push(boss);
         this.waveDirector.announce(`${def.bossName} approaches!`, 3.5);
+        // A heavier, longer shake than a normal hit to telegraph the arrival.
+        this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
     }
 
     _dropChest(x, y) {
@@ -398,19 +645,15 @@ export class Game {
         if (this.gameOver) return;
         this.gameOver = true;
         this.screen = 'gameOver';
+        this.gameOverAge = 0;
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.chestReward = null;
         this.pendingChests = 0;
 
-        // Bank run coins to total — exactly once thanks to bankedThisRun
-        // and the early-return above (guards against duplicate game-over
-        // triggers).
-        const earned = Math.floor(this.player.coins ?? 0);
-        if (!this.bankedThisRun && earned > 0) {
-            this.saveSystem.addCoins(earned);
-        }
-        this.bankedThisRun = true;
+        // Bank run coins to total — exactly once (the helper is guarded by
+        // bankedThisRun, which also covers abandoning via the pause overlay).
+        const earned = this._bankRunCoins();
 
         this.runSummary = {
             time: this.time,
@@ -428,10 +671,26 @@ export class Game {
                 .map((w) => WEAPONS[w.id].name),
         };
 
+        // Fold the run into lifetime/best records; capture which bests were
+        // beaten so the game-over summary can flag them.
+        this.newBest = this.saveSystem.recordRun(this.runSummary);
+
         this._updateJoystickEnabled();
     }
 
     update(dt) {
+        // Feedback flashes + press states tick on every screen so they
+        // animate even while gameplay is frozen behind an overlay.
+        this._updateFeedback(dt);
+
+        // Death is authoritative and checked FIRST: if the player is dead,
+        // enter game-over even when an overlay is open, so a queued-overlay
+        // chain (chest reward → next overlay) can never strand a dead player
+        // in a frozen world.
+        if (this.screen === 'gameplay' && !this.gameOver && this.player.isDead()) {
+            this._enterGameOver();
+        }
+
         // Meta-screen states never tick gameplay; the start screen still
         // ticks the reset-confirm timeout so the "tap again to confirm"
         // prompt times out cleanly.
@@ -443,10 +702,12 @@ export class Game {
             return;
         }
         if (this.screen === 'gameOver') {
+            this.gameOverAge += dt;
             this.camera.update(dt);
             return;
         }
         if (this.upgradeChoices) {
+            this.levelUpAge += dt;
             this.camera.update(dt);
             return;
         }
@@ -454,6 +715,11 @@ export class Game {
             // Tick the chest-overlay animation but freeze gameplay so the
             // world behind it stays exactly as it was when the chest opened.
             this.chestReward.age += dt;
+            this.camera.update(dt);
+            return;
+        }
+        if (this.paused) {
+            // Frozen world; only the camera settles.
             this.camera.update(dt);
             return;
         }
@@ -483,12 +749,17 @@ export class Game {
         for (const g of this.gems) {
             if (!g.active) continue;
             const xp = g.update(dt, this.player);
-            if (xp > 0) xpCollected += xp;
+            if (xp > 0) {
+                xpCollected += xp;
+                this.particles.pickupSparkle(g.x, g.y, gemLightColor(g.tier));
+            }
         }
         if (xpCollected > 0) {
             const levels = this.player.gainXP(xpCollected);
             if (levels > 0) {
                 this.pendingLevelUps += levels;
+                this._pushFeedback('levelup', 0.5);
+                this.particles.levelUpBurst(this.player.x, this.player.y);
                 if (!this.upgradeChoices) this._presentLevelUp();
             }
         }
@@ -497,7 +768,10 @@ export class Game {
         for (const c of this.coins) {
             if (!c.active) continue;
             const got = c.update(dt, this.player);
-            if (got > 0) this.player.coins = (this.player.coins ?? 0) + got;
+            if (got > 0) {
+                this.player.coins = (this.player.coins ?? 0) + got;
+                this.particles.pickupSparkle(c.x, c.y, LIGHT_COLORS.coin);
+            }
         }
 
         const collisionResult = this.collisionSystem.resolve(
@@ -513,6 +787,7 @@ export class Game {
         if (allKilled.length > 0) {
             this.kills += allKilled.length;
             for (const e of allKilled) {
+                this.particles.deathBurst(e.x, e.y, deathColor(e));
                 this._dropGem(e.x, e.y);
                 if (e.boss) {
                     // Bosses always drop a chest + a coin burst.
@@ -536,11 +811,20 @@ export class Game {
                 }
             }
         }
+        // Hit sparks are bright but capped per frame so a wide AoE hit
+        // (pulse/orbit striking a crowd) can't drain the particle pool and
+        // starve death bursts.
+        let sparkBudget = 6;
         for (const hit of allHits) {
             this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, '#ffffff'));
+            if (sparkBudget > 0) {
+                this.particles.hitSpark(hit.x, hit.y);
+                sparkBudget--;
+            }
         }
         if (collisionResult.playerHit) {
-            this.camera.shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+            this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+            this._pushFeedback('hit', 0.32);
             this.damageNumbers.push(new DamageNumber(
                 this.player.x,
                 this.player.y - this.player.radius,
@@ -552,6 +836,10 @@ export class Game {
         for (const d of this.damageNumbers) {
             if (d.active) d.update(dt);
         }
+
+        // Advance particles (ambient embers + fog spawn around the player).
+        this.particles.update(dt, this.player);
+        this._updateGfxGovernor(dt);
 
         // Chest pickup: chests sit until the player walks onto them, then
         // queue a chest reward overlay. Multiple chests collected in the
@@ -584,6 +872,12 @@ export class Game {
         compactInPlace(this.chests);
         compactInPlace(this.coins);
 
+        // Heal flash: any net HP rise this frame (level-up heal, chest heal)
+        // fires a green feedback pulse. Tracked centrally so individual
+        // reward code doesn't each need to remember to trigger it.
+        if (this.player.hp > this._lastHp + 0.5) this._pushFeedback('heal', 0.4);
+        this._lastHp = this.player.hp;
+
         this.camera.update(dt);
 
         if (this.player.isDead()) {
@@ -611,29 +905,80 @@ export class Game {
             return;
         }
 
+        // "Emberlight" pipeline. The world draws fully lit; emitters
+        // register lights into the darkness buffer as they're drawn; the
+        // veil is composited in screen space afterward with bright sparks +
+        // damage numbers layered on top so feedback never dims.
+        const lightingOn = GFX.darkness.enabled && this.lighting.ok;
+        const L = lightingOn ? this.lighting : null;
+        if (L) L.beginFrame(this.camera);
+
         ctx.save();
         this.camera.apply(ctx);
-        // Order matters: ground → debug grid → decorations → bounds →
-        // entities. Decorations sit above the grid so the grid doesn't
-        // overdraw rocks/mushrooms when debug is on.
+
+        // Ground → grid(debug) → decorations (which register candle lights)
+        // → low fog (below entities) → bounds.
         this.mapRenderer.drawBackground(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         if (this.showDebug) this._drawGrid(ctx);
-        this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT, L);
+        this.particles.drawWorldFog(ctx, this.camera);
         this._drawWorldBounds(ctx, this.showDebug);
 
-        for (const g of this.gems) g.draw(ctx);
-        for (const c of this.coins) c.draw(ctx);
-        for (const c of this.chests) c.draw(ctx);
+        // Off-screen culling: only entities within the camera view (plus a
+        // sprite-half + shake margin) are worth a draw call (enemies spawn
+        // ~1100-1350px out, cap up to 145). Lights are registered in the
+        // SAME culled loops so light cost scales with visible emitters too.
+        const cull = (e) => this._inView(e.x, e.y, CULL_MARGIN);
+        const Lc = GFX.lighting;
+
+        // Player light first (always kept, exempt from caps).
+        if (L) L.addLight(this.player.x, this.player.y, Lc.playerRadius, LIGHT_COLORS.player, Lc.playerIntensity, 0);
+
+        for (const g of this.gems) {
+            if (!cull(g)) continue;
+            g.draw(ctx);
+            if (L) L.addLight(g.x, g.y, Lc.gemRadius, gemLightColor(g.tier), 0.85, 1);
+        }
+        for (const c of this.coins) {
+            if (!cull(c)) continue;
+            c.draw(ctx);
+            if (L) L.addLight(c.x, c.y, Lc.coinRadius, LIGHT_COLORS.coin, 0.8, 1);
+        }
+        for (const c of this.chests) {
+            if (!cull(c)) continue;
+            c.draw(ctx);
+            if (L) L.addLight(c.x, c.y, Lc.chestRadius, LIGHT_COLORS.chest, 0.9, 1);
+        }
         for (const e of this.enemies) {
+            if (!cull(e)) continue;
             e.draw(ctx);
             e.drawHpBar(ctx);
+            if (L) {
+                if (e.boss) L.addLight(e.x, e.y, Lc.bossRadius, LIGHT_COLORS.boss, 0.95, 0);
+                else L.addLight(e.x, e.y - e.radius * 0.3, Lc.enemyEyeRadius, LIGHT_COLORS.enemyEye, 0.7, 2);
+            }
         }
         this.player.draw(ctx);
         this.player.drawHpBar(ctx);
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
-        for (const p of this.projectiles) p.draw(ctx);
+        for (const p of this.projectiles) {
+            if (!cull(p)) continue;
+            p.draw(ctx);
+            if (L) L.addLight(p.x, p.y, Lc.projectileRadius, LIGHT_COLORS.projectile, 0.85, 0);
+        }
         this.weaponSystem.drawEffects(ctx);
-        for (const d of this.damageNumbers) d.draw(ctx);
+        // Weapon effects (pulse/lightning) are bright emitters — carve light
+        // holes so the veil doesn't dim them.
+        if (L) {
+            for (const fx of this.weaponSystem.effects) {
+                if (!fx.active) continue;
+                L.addLight(fx.x, fx.y, Lc.effectRadius, LIGHT_COLORS.effect, 0.8, 0);
+            }
+        }
+
+        // Occludable additive particles (embers + death dust) — these sit
+        // above entities but BELOW the veil, so they read as ambient glow.
+        this.particles.drawWorldAdditive(ctx, this.camera);
 
         if (this.collisionSystem.contactFlash > 0) {
             this._drawContactFlash(ctx);
@@ -642,18 +987,30 @@ export class Game {
         if (this.showDebug) {
             this.mapRenderer.drawDebug(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
             this.player.drawDebug(ctx);
-            for (const g of this.gems) g.drawDebug(ctx);
-            for (const c of this.coins) c.drawDebug(ctx);
-            for (const c of this.chests) c.drawDebug(ctx);
-            for (const e of this.enemies) e.drawDebug(ctx);
-            for (const p of this.projectiles) p.drawDebug(ctx);
+            for (const g of this.gems) if (cull(g)) g.drawDebug(ctx);
+            for (const c of this.coins) if (cull(c)) c.drawDebug(ctx);
+            for (const c of this.chests) if (cull(c)) c.drawDebug(ctx);
+            for (const e of this.enemies) if (cull(e)) e.drawDebug(ctx);
+            for (const p of this.projectiles) if (cull(p)) p.drawDebug(ctx);
         }
         ctx.restore();
 
-        // Vignette darkens screen corners — drawn in screen space so it
-        // stays anchored to the viewport, then UI on top so HUD stays
-        // perfectly readable.
-        this.mapRenderer.drawVignette(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        // SCREEN SPACE. Composite the darkness veil (+ baked vignette +
+        // color tint) over the lit world, or fall back to the plain
+        // vignette if the lighting buffer is unavailable.
+        if (L) L.composite(ctx);
+        else this.mapRenderer.drawVignette(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+
+        // Always-bright sparks sit ABOVE the veil so kill/hit/pickup/level
+        // feedback never gets dimmed by the darkness.
+        this.particles.drawScreenAdditive(ctx, this.camera);
+
+        // Damage numbers also draw above the veil (world-positioned via a
+        // re-applied camera transform) so combat math stays fully legible.
+        ctx.save();
+        this.camera.apply(ctx);
+        for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
+        ctx.restore();
 
         this.ui.draw(ctx, this._buildUIState());
 
@@ -661,46 +1018,23 @@ export class Game {
     }
 
     _buildUIState() {
-        return {
+        // Fields every screen needs. Press/feedback animation state is
+        // always included so flashes can play across transitions.
+        const base = {
             screen: this.screen,
-            time: this.time,
-            player: this.player,
-            camera: this.camera,
             showDebug: this.showDebug,
-            kills: this.kills,
-            enemyCount: this.enemies.length,
-            projectileCount: this.projectiles.length,
-            gemCount: this.gems.length,
-            coinCount: this.coins.length,
-            effectCount: this.weaponSystem.effects.length,
-            ownedWeapons: this.weaponSystem.snapshotForUI(),
-            ownedPassives: this.passiveSystem.snapshotForUI(),
-            runCoins: this.player.coins ?? 0,
-            chestLuck: this.player.chestLuck ?? 0,
-            waveState: this.waveState,
-            waveAnnouncement: this.waveDirector.announcement,
-            activeBoss: this.activeBossRef ? {
-                name: this.activeBossRef.name,
-                hp: this.activeBossRef.hp,
-                maxHp: this.activeBossRef.maxHp,
-            } : null,
-            chestCount: this.chests.length,
-            chestReward: this.chestReward,
-            pendingChests: this.pendingChests,
-            nextBossTime: this.bossDirector.getNextSpawnTime(),
-            eligibleEvolutionCount: findEligibleEvolutions(this).length,
-            spawnTimer: this.spawner.timer,
-            spawnInterval: this.spawner.nextInterval,
-            inContact: this.collisionSystem.inContact,
-            upgradeChoices: this.upgradeChoices,
-            upgradeCounts: this.upgradeSystem.appliedCounts,
-            pendingLevelUps: this.pendingLevelUps,
-            gameOver: this.gameOver,
-            bossesDefeated: this.bossesDefeated,
-            runSummary: this.runSummary,
             saveData: this.saveSystem.data,
-            resetConfirming: this.resetConfirming,
-            permanentUpgrades: PERMANENT_UPGRADES.map((u) => {
+            pressFx: this.pressFx,
+            feedback: this.feedback,
+        };
+
+        // Start/shop screen: only the shop data is meaningful. Skip every
+        // gameplay snapshot + the per-frame evolution scan entirely.
+        if (this.screen === 'start') {
+            base.resetConfirming = this.resetConfirming;
+            base.resetConfirmTimer = this.resetConfirmTimer;
+            base.stats = this.saveSystem.data.stats;
+            base.permanentUpgrades = PERMANENT_UPGRADES.map((u) => {
                 const level = this.saveSystem.getUpgradeLevel(u.id);
                 return {
                     id: u.id,
@@ -711,8 +1045,55 @@ export class Game {
                     cost: nextCost(u, level),
                     isMax: level >= u.maxLevel,
                 };
-            }),
-        };
+            });
+            return base;
+        }
+
+        // Gameplay + game-over share the HUD.
+        base.time = this.time;
+        base.player = this.player;
+        base.camera = this.camera;
+        base.kills = this.kills;
+        base.enemyCount = this.enemies.length;
+        base.projectileCount = this.projectiles.length;
+        base.gemCount = this.gems.length;
+        base.coinCount = this.coins.length;
+        base.effectCount = this.weaponSystem.effects.length;
+        base.ownedWeapons = this.weaponSystem.snapshotForUI();
+        base.ownedPassives = this.passiveSystem.snapshotForUI();
+        base.runCoins = this.player.coins ?? 0;
+        base.chestLuck = this.player.chestLuck ?? 0;
+        base.waveState = this.waveState;
+        base.waveAnnouncement = this.waveDirector.announcement;
+        base.activeBoss = this.activeBossRef ? {
+            name: this.activeBossRef.name,
+            hp: this.activeBossRef.hp,
+            maxHp: this.activeBossRef.maxHp,
+        } : null;
+        base.chestCount = this.chests.length;
+        base.chestReward = this.chestReward;
+        base.pendingChests = this.pendingChests;
+        base.nextBossTime = this.bossDirector.getNextSpawnTime();
+        // Only the debug panel shows this, and the scan walks every
+        // evolution every frame — so only pay for it when debug is on.
+        base.eligibleEvolutionCount = this.showDebug ? findEligibleEvolutions(this).length : 0;
+        base.spawnTimer = this.spawner.timer;
+        base.spawnInterval = this.spawner.nextInterval;
+        base.inContact = this.collisionSystem.inContact;
+        base.upgradeChoices = this.upgradeChoices;
+        base.upgradeCounts = this.upgradeSystem.appliedCounts;
+        base.pendingLevelUps = this.pendingLevelUps;
+        base.levelUpAge = this.levelUpAge;
+        base.gameOver = this.gameOver;
+        base.gameOverAge = this.gameOverAge;
+        base.bossesDefeated = this.bossesDefeated;
+        base.runSummary = this.runSummary;
+        base.newBest = this.newBest;
+        base.paused = this.paused;
+        base.shakeEnabled = this.shakeEnabled;
+        base.rerolls = this.rerolls;
+        base.banishes = this.banishes;
+        return base;
     }
 
     _drawGrid(ctx) {
@@ -761,6 +1142,58 @@ export class Game {
         ctx.strokeRect(-hw, -hh, WORLD_WIDTH, WORLD_HEIGHT);
         ctx.setLineDash([]);
         ctx.restore();
+    }
+
+    // Adaptive graphics quality. The GameLoop measures fps; a sustained
+    // dip steps quality down (fewer lights/particles, tint then fog off),
+    // and it recovers when fps climbs back. Player/pickup lights + combat
+    // sparks are never throttled (the lower levels only thin the extras).
+    _updateGfxGovernor(dt) {
+        if (!GFX.governor.enabled) return;
+        const fps = this.loop?.fps ?? 0;
+        if (fps <= 0) return; // not measured yet
+        const g = GFX.governor;
+        if (fps < g.downFps) { this._gfxLowTimer += dt; this._gfxHighTimer = 0; }
+        else if (fps > g.upFps) { this._gfxHighTimer += dt; this._gfxLowTimer = 0; }
+        else { this._gfxLowTimer = 0; this._gfxHighTimer = 0; }
+
+        if (this._gfxLowTimer >= g.sustainSeconds && this._gfxLevel < 2) {
+            this._gfxLevel++;
+            this._gfxLowTimer = 0;
+            this._applyGfxLevel();
+        } else if (this._gfxHighTimer >= g.sustainSeconds * 2 && this._gfxLevel > 0) {
+            this._gfxLevel--;
+            this._gfxHighTimer = 0;
+            this._applyGfxLevel();
+        }
+    }
+
+    _applyGfxLevel() {
+        const lvl = this._gfxLevel;
+        if (lvl === 0) {
+            this.lighting.setQuality({
+                maxLights: GFX.lighting.maxLights,
+                colorTint: GFX.lighting.colorTint,
+                strength: GFX.darkness.strength,
+            });
+            this.particles.setQuality({ max: GFX.particles.max, fog: GFX.particles.fog });
+        } else if (lvl === 1) {
+            this.lighting.setQuality({ maxLights: 64, colorTint: false });
+            this.particles.setQuality({ max: 140, fog: GFX.particles.fog });
+        } else {
+            this.lighting.setQuality({ maxLights: 44, colorTint: false });
+            this.particles.setQuality({ max: 90, fog: false });
+        }
+    }
+
+    // True when (x, y) is within the camera view plus `margin`. Used to
+    // cull off-screen entity draws. Compares against camera.x/y (the follow
+    // center); the small shake offset is covered by the margin.
+    _inView(x, y, margin) {
+        return (
+            Math.abs(x - this.camera.x) <= INTERNAL_WIDTH / 2 + margin &&
+            Math.abs(y - this.camera.y) <= INTERNAL_HEIGHT / 2 + margin
+        );
     }
 
     _drawContactFlash(ctx) {

@@ -74,6 +74,26 @@ export const PERMANENT_UPGRADES = [
             player.coins = (player.coins ?? 0) + 5 * level;
         },
     },
+    {
+        id: 'rerolls',
+        name: 'Rerolls',
+        description: '+1 level-up reroll per run, per level',
+        maxLevel: 5,
+        costAt(level) { return 25 + level * 15; },
+        apply(player, level) {
+            player.rerolls = (player.rerolls ?? 0) + level;
+        },
+    },
+    {
+        id: 'banish',
+        name: 'Banish',
+        description: '+1 banish (remove an offered card) per run, per level',
+        maxLevel: 3,
+        costAt(level) { return 40 + level * 25; },
+        apply(player, level) {
+            player.banishes = (player.banishes ?? 0) + level;
+        },
+    },
 ];
 
 // Apply every owned permanent upgrade exactly once to a freshly-built
