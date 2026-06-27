@@ -1,7 +1,22 @@
-import { SPRITE_SIZE } from '../config/GameConfig.js';
+import { SPRITE_SIZE, MAP } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 
 const cache = new Map();
+
+export function getGroundTileSprite() {
+    if (cache.has('groundTile')) return cache.get('groundTile');
+    const sprite = drawGroundTile(MAP.tileSize);
+    cache.set('groundTile', sprite);
+    return sprite;
+}
+
+export function getDecorationSprite(type) {
+    const key = `dec:${type}`;
+    if (cache.has(key)) return cache.get(key);
+    const sprite = drawDecoration(type);
+    cache.set(key, sprite);
+    return sprite;
+}
 
 export function getMonkeySprite() {
     if (cache.has('monkey')) return cache.get('monkey');
@@ -917,6 +932,481 @@ function drawXPGem(tier) {
     ctx.lineTo(cx - dx, cy);
     ctx.closePath();
     ctx.stroke();
+
+    return canvas;
+}
+
+// Deterministic small PRNG used for tile texture detail so the tile draws
+// the same set of speckles every reload. Keeps the tile sprite stable.
+function tileRng(seed) {
+    let s = seed >>> 0;
+    return () => {
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function drawGroundTile(size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const BASE = '#13201a';
+    const BASE_LIGHT = '#1b2c22';
+    const SPECK = '#243a2c';
+    const SPECK_DARK = '#0a120d';
+    const MOSS = '#2c4a35';
+
+    ctx.fillStyle = BASE;
+    ctx.fillRect(0, 0, size, size);
+
+    // Soft gradient blob to break up tile flatness.
+    const grad = ctx.createRadialGradient(
+        size * 0.35, size * 0.45, size * 0.05,
+        size * 0.35, size * 0.45, size * 0.85
+    );
+    grad.addColorStop(0, BASE_LIGHT);
+    grad.addColorStop(1, BASE);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+
+    const rng = tileRng(1337);
+
+    // Light specks (dirt + small leaves).
+    for (let i = 0; i < 50; i++) {
+        const x = rng() * size;
+        const y = rng() * size;
+        const r = 0.6 + rng() * 1.4;
+        ctx.fillStyle = SPECK;
+        ctx.fillRect(x, y, r, r);
+    }
+    // Dark specks (cracks).
+    for (let i = 0; i < 28; i++) {
+        const x = rng() * size;
+        const y = rng() * size;
+        const r = 0.8 + rng() * 1.6;
+        ctx.fillStyle = SPECK_DARK;
+        ctx.fillRect(x, y, r, r);
+    }
+    // A few moss patches.
+    for (let i = 0; i < 6; i++) {
+        const x = rng() * size;
+        const y = rng() * size;
+        const r = 3 + rng() * 5;
+        ctx.fillStyle = MOSS;
+        ctx.globalAlpha = 0.35 + rng() * 0.3;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, TWO_PI);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    return canvas;
+}
+
+function drawDecoration(type) {
+    switch (type) {
+        case 'rock':         return drawRock();
+        case 'mushroom':     return drawMushroom();
+        case 'skull':        return drawSkull();
+        case 'grass':        return drawGrass();
+        case 'candle':       return drawCandle();
+        case 'ruin':         return drawRuin();
+        case 'branch':       return drawBranch();
+        case 'crackedStone': return drawCrackedStone();
+        case 'bones':        return drawBones();
+        default:             return drawRock();
+    }
+}
+
+function newDecCanvas(w, h) {
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    return canvas;
+}
+
+function drawRock() {
+    const W = 56, H = 44;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+    const cx = W / 2, cy = H * 0.62;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 4, 22, 4, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#3a4148';
+    ctx.beginPath();
+    ctx.moveTo(cx - 22, cy + 6);
+    ctx.lineTo(cx - 16, cy - 12);
+    ctx.lineTo(cx - 2, cy - 16);
+    ctx.lineTo(cx + 14, cy - 10);
+    ctx.lineTo(cx + 22, cy + 4);
+    ctx.lineTo(cx + 16, cy + 12);
+    ctx.lineTo(cx - 14, cy + 12);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#52595f';
+    ctx.beginPath();
+    ctx.moveTo(cx - 16, cy - 4);
+    ctx.lineTo(cx - 10, cy - 12);
+    ctx.lineTo(cx + 2, cy - 14);
+    ctx.lineTo(cx + 4, cy - 6);
+    ctx.lineTo(cx - 8, cy - 2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = '#1d2226';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 22, cy + 6);
+    ctx.lineTo(cx - 16, cy - 12);
+    ctx.lineTo(cx - 2, cy - 16);
+    ctx.lineTo(cx + 14, cy - 10);
+    ctx.lineTo(cx + 22, cy + 4);
+    ctx.lineTo(cx + 16, cy + 12);
+    ctx.lineTo(cx - 14, cy + 12);
+    ctx.closePath();
+    ctx.stroke();
+
+    return canvas;
+}
+
+function drawMushroom() {
+    const W = 38, H = 44;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+    const cx = W / 2;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 3, 12, 3, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#e6e3d0';
+    ctx.fillRect(cx - 4, H - 22, 8, 18);
+
+    ctx.fillStyle = '#b3372d';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 22, 16, 12, 0, Math.PI, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#761d1a';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 22, 16, 12, 0, Math.PI, TWO_PI);
+    ctx.closePath();
+    ctx.strokeStyle = '#761d1a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff6dd';
+    const dots = [[cx - 7, H - 26], [cx + 6, H - 28], [cx, H - 22], [cx - 3, H - 31]];
+    for (const [dx, dy] of dots) {
+        ctx.beginPath();
+        ctx.arc(dx, dy, 2.2, 0, TWO_PI);
+        ctx.fill();
+    }
+
+    return canvas;
+}
+
+function drawSkull() {
+    const W = 36, H = 30;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+    const cx = W / 2, cy = H / 2;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 3, 12, 3, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#dcd2b8';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 2, 13, 11, 0, 0, TWO_PI);
+    ctx.fill();
+    // Jaw
+    ctx.fillRect(cx - 8, cy + 7, 16, 4);
+
+    ctx.fillStyle = '#1a1410';
+    ctx.beginPath();
+    ctx.arc(cx - 4, cy - 2, 2.6, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 4, cy - 2, 2.6, 0, TWO_PI);
+    ctx.fill();
+
+    // Teeth gaps
+    ctx.strokeStyle = '#1a1410';
+    ctx.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 3, cy + 7);
+        ctx.lineTo(cx + i * 3, cy + 11);
+        ctx.stroke();
+    }
+
+    return canvas;
+}
+
+function drawGrass() {
+    const W = 32, H = 26;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+
+    const blades = [
+        { x: 6,  h: 16, color: '#3b6b40' },
+        { x: 12, h: 22, color: '#4d8a52' },
+        { x: 17, h: 18, color: '#3b6b40' },
+        { x: 22, h: 24, color: '#4d8a52' },
+        { x: 27, h: 14, color: '#2f5634' },
+    ];
+    ctx.lineCap = 'round';
+    for (const b of blades) {
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(b.x, H - 2);
+        ctx.quadraticCurveTo(b.x + 2, H - b.h * 0.5, b.x + 4, H - b.h);
+        ctx.stroke();
+    }
+
+    return canvas;
+}
+
+function drawCandle() {
+    const W = 28, H = 50;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+    const cx = W / 2;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 3, 8, 3, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // Stone base
+    ctx.fillStyle = '#3a3530';
+    ctx.fillRect(cx - 7, H - 12, 14, 10);
+    ctx.strokeStyle = '#1c1a17';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(cx - 7, H - 12, 14, 10);
+
+    // Candle stick
+    ctx.fillStyle = '#e6dcc4';
+    ctx.fillRect(cx - 3, H - 30, 6, 18);
+    ctx.fillStyle = '#a99a6f';
+    ctx.fillRect(cx - 3, H - 30, 1.5, 18);
+
+    // Wick
+    ctx.fillStyle = '#1a1410';
+    ctx.fillRect(cx - 0.5, H - 34, 1, 4);
+
+    // Flame
+    const grad = ctx.createRadialGradient(cx, H - 36, 1, cx, H - 36, 8);
+    grad.addColorStop(0, '#fff5b5');
+    grad.addColorStop(0.55, 'rgba(255, 180, 60, 0.85)');
+    grad.addColorStop(1, 'rgba(255, 120, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx - 8, H - 46, 16, 16);
+
+    ctx.fillStyle = '#ffb74a';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 37, 2, 4, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = '#fff5d0';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 36, 1, 2.4, 0, 0, TWO_PI);
+    ctx.fill();
+
+    return canvas;
+}
+
+function drawRuin() {
+    const W = 64, H = 44;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath();
+    ctx.ellipse(W / 2, H - 4, 26, 4, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // Broken column shafts
+    ctx.fillStyle = '#6e6354';
+    ctx.fillRect(10, H - 30, 12, 26);
+    ctx.fillRect(42, H - 22, 12, 18);
+
+    ctx.fillStyle = '#494033';
+    ctx.fillRect(10, H - 30, 3, 26);
+    ctx.fillRect(42, H - 22, 3, 18);
+
+    ctx.strokeStyle = '#2c2620';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(10, H - 30, 12, 26);
+    ctx.strokeRect(42, H - 22, 12, 18);
+
+    // Top stones (jagged)
+    ctx.fillStyle = '#7a6e5c';
+    ctx.beginPath();
+    ctx.moveTo(8, H - 30);
+    ctx.lineTo(12, H - 35);
+    ctx.lineTo(20, H - 33);
+    ctx.lineTo(24, H - 30);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(40, H - 22);
+    ctx.lineTo(46, H - 27);
+    ctx.lineTo(52, H - 25);
+    ctx.lineTo(56, H - 22);
+    ctx.closePath();
+    ctx.fill();
+
+    // A small rubble piece between them
+    ctx.fillStyle = '#5e5446';
+    ctx.beginPath();
+    ctx.moveTo(26, H - 10);
+    ctx.lineTo(30, H - 16);
+    ctx.lineTo(38, H - 14);
+    ctx.lineTo(40, H - 6);
+    ctx.lineTo(28, H - 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#2c2620';
+    ctx.stroke();
+
+    return canvas;
+}
+
+function drawBranch() {
+    const W = 56, H = 18;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+
+    ctx.strokeStyle = '#2c1f12';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(4, H - 6);
+    ctx.bezierCurveTo(16, H - 14, 36, H - 2, W - 4, H - 8);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#5a3c1e';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(4, H - 6);
+    ctx.bezierCurveTo(16, H - 14, 36, H - 2, W - 4, H - 8);
+    ctx.stroke();
+
+    // Twigs
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(20, H - 8);
+    ctx.lineTo(24, H - 16);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(36, H - 6);
+    ctx.lineTo(40, H - 14);
+    ctx.stroke();
+
+    return canvas;
+}
+
+function drawCrackedStone() {
+    const W = 46, H = 32;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+    const cx = W / 2, cy = H * 0.62;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 3, 18, 3, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#646058';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 18, 9, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#7a766c';
+    ctx.beginPath();
+    ctx.ellipse(cx - 4, cy - 3, 10, 4, -0.2, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.strokeStyle = '#2c2a25';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 18, 9, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    // Cracks
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy - 2);
+    ctx.lineTo(cx - 2, cy + 1);
+    ctx.lineTo(cx + 4, cy - 1);
+    ctx.lineTo(cx + 10, cy + 3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 2, cy - 4);
+    ctx.lineTo(cx + 4, cy - 1);
+    ctx.lineTo(cx + 6, cy + 4);
+    ctx.stroke();
+
+    return canvas;
+}
+
+function drawBones() {
+    const W = 44, H = 22;
+    const canvas = newDecCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = 'rgba(0,0,0,0.26)';
+    ctx.beginPath();
+    ctx.ellipse(W / 2, H - 3, 16, 3, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // First bone
+    ctx.save();
+    ctx.translate(14, H - 9);
+    ctx.rotate(-0.3);
+    ctx.fillStyle = '#e6dcc4';
+    ctx.fillRect(-9, -2.5, 18, 5);
+    ctx.beginPath();
+    ctx.arc(-9, -1, 3, 0, TWO_PI);
+    ctx.arc(-9, 1, 3, 0, TWO_PI);
+    ctx.arc(9, -1, 3, 0, TWO_PI);
+    ctx.arc(9, 1, 3, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = '#8a7e62';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-7, 0);
+    ctx.lineTo(7, 0);
+    ctx.stroke();
+    ctx.restore();
+
+    // Second bone
+    ctx.save();
+    ctx.translate(30, H - 7);
+    ctx.rotate(0.4);
+    ctx.fillStyle = '#e6dcc4';
+    ctx.fillRect(-7, -2, 14, 4);
+    ctx.beginPath();
+    ctx.arc(-7, -1, 2.5, 0, TWO_PI);
+    ctx.arc(-7, 1, 2.5, 0, TWO_PI);
+    ctx.arc(7, -1, 2.5, 0, TWO_PI);
+    ctx.arc(7, 1, 2.5, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
 
     return canvas;
 }

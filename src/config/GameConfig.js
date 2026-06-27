@@ -312,6 +312,30 @@ export const GRID_COLOR = '#1c2632';
 export const WORLD_BOUNDS_COLOR = '#4a8fe7';
 export const GRID_SIZE = 200;
 
+// ── Map / world visuals ───────────────────────────────────────────────
+// Ground is drawn as a tiled procedural texture filled via createPattern,
+// then deterministically-placed decorations (rocks, mushrooms, etc.) are
+// scattered chunk-by-chunk using a seeded RNG so the same patch of world
+// always looks the same. chunkTilesPerSide * tileSize = world-space chunk
+// size; only chunks intersecting the camera view are visited per frame.
+export const MAP = {
+    tileSize: 128,
+    chunkTilesPerSide: 4,
+    decorationsPerChunkMin: 2,
+    decorationsPerChunkMax: 5,
+    backgroundColor: '#0c1410',
+    decorationTypes: ['rock', 'mushroom', 'skull', 'grass', 'candle', 'ruin', 'branch', 'crackedStone', 'bones'],
+};
+
+// Soft corner darkening drawn AFTER the world but BEFORE the UI so the
+// edges of the play area fade away gently — kept low so gameplay
+// readability stays unaffected.
+export const VIGNETTE = {
+    strength: 0.5,
+    innerRadius: 0.32,
+    outerRadius: 0.85,
+};
+
 // ── UI / debug defaults ────────────────────────────────────────────────
 export const UI = {
     enemyHealthBar: { width: 60, height: 6, marginAboveRadius: 14 },

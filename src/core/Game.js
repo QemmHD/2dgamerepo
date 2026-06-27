@@ -31,6 +31,7 @@ import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
 import { BossDirector } from '../systems/BossDirector.js';
+import { MapRenderer } from '../systems/MapRenderer.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
@@ -48,6 +49,10 @@ export class Game {
         this.camera = new Camera();
         this.ui = new UISystem({ renderer, loop });
         this.saveSystem = new SaveSystem();
+        // MapRenderer lives outside _initRunState — its cached tile
+        // pattern and per-chunk decoration tables are world-static,
+        // so they survive restarts intact (no need to rebuild).
+        this.mapRenderer = new MapRenderer();
 
         // Meta-progression flow: 'start' (title + shop) → 'gameplay' → 'gameOver'.
         // Boot lands on the start screen so the player can spend banked coins
@@ -608,7 +613,12 @@ export class Game {
 
         ctx.save();
         this.camera.apply(ctx);
-        this._drawGrid(ctx);
+        // Order matters: ground → debug grid → decorations → bounds →
+        // entities. Decorations sit above the grid so the grid doesn't
+        // overdraw rocks/mushrooms when debug is on.
+        this.mapRenderer.drawBackground(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        if (this.showDebug) this._drawGrid(ctx);
+        this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         this._drawWorldBounds(ctx, this.showDebug);
 
         for (const g of this.gems) g.draw(ctx);
@@ -630,6 +640,7 @@ export class Game {
         }
 
         if (this.showDebug) {
+            this.mapRenderer.drawDebug(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
             this.player.drawDebug(ctx);
             for (const g of this.gems) g.drawDebug(ctx);
             for (const c of this.coins) c.drawDebug(ctx);
@@ -638,6 +649,11 @@ export class Game {
             for (const p of this.projectiles) p.drawDebug(ctx);
         }
         ctx.restore();
+
+        // Vignette darkens screen corners — drawn in screen space so it
+        // stays anchored to the viewport, then UI on top so HUD stays
+        // perfectly readable.
+        this.mapRenderer.drawVignette(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT);
 
         this.ui.draw(ctx, this._buildUIState());
 
