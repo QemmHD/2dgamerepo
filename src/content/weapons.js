@@ -504,6 +504,17 @@ function thunderCrownUpdate(dt, owned, ctx) {
     const n = Math.min(cfg.strikes, candidates.length);
     const priorityStrikes = Math.max(1, Math.floor(n * 0.5));
     for (let i = 0; i < n; i++) {
+        // Chains kill/strike enemies that still sit in `candidates`; compact
+        // those corpses + already-struck entries out in place so a primary
+        // strike never lands on a dead target and gets wasted.
+        let w = 0;
+        for (let r = 0; r < candidates.length; r++) {
+            const c = candidates[r];
+            if (c.active && !struck.has(c)) candidates[w++] = c;
+        }
+        candidates.length = w;
+        if (candidates.length === 0) break;
+
         let idx;
         if (i < priorityStrikes) {
             idx = 0;
@@ -514,7 +525,6 @@ function thunderCrownUpdate(dt, owned, ctx) {
             idx = Math.floor(Math.random() * candidates.length);
         }
         const target = candidates.splice(idx, 1)[0];
-        if (struck.has(target) || !target.active) continue;
         target.takeDamage(damage);
         ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: damage });
         if (!target.active) ctx.killed.push(target);
