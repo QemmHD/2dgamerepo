@@ -16,6 +16,10 @@ export class Projectile {
         // pierce = additional enemies this projectile can hit before dying.
         // 0 means it dies on first hit (original Arcane Bolt L1 behavior).
         this.pierce = opts.pierce ?? 0;
+        // ricochet = times this bolt can redirect to a fresh target after a
+        // KILL (independent of pierce). ricochetRange caps the redirect hop.
+        this.ricochet = opts.ricochet ?? 0;
+        this.ricochetRange = opts.ricochetRange ?? 0;
         // Tracks enemies already damaged so a single piercing projectile
         // doesn't double-hit the same target while passing through.
         this.hitEnemies = new Set();

@@ -33,16 +33,19 @@ export const WEAPONS = {
         description: 'Fires a magic bolt at the nearest foe.',
         kind: 'projectile',
         evolvesTo: null,
+        // Signature: ricochet-on-kill — a lethal bolt leaps to the next
+        // nearest unhit foe (independent of pierce). ricochet count grows
+        // with level so it reads as an escalating chain-reaction sniper.
         perLevel: [
             null,
-            { damage: 12, cooldown: 0.60, projectileSpeed: 900,  pierce: 0, projectileRadius: 14 },
-            { damage: 15, cooldown: 0.55, projectileSpeed: 940,  pierce: 0, projectileRadius: 14 },
-            { damage: 18, cooldown: 0.50, projectileSpeed: 980,  pierce: 0, projectileRadius: 15 },
-            { damage: 21, cooldown: 0.46, projectileSpeed: 1020, pierce: 1, projectileRadius: 15 },
-            { damage: 24, cooldown: 0.42, projectileSpeed: 1060, pierce: 1, projectileRadius: 16 },
-            { damage: 28, cooldown: 0.38, projectileSpeed: 1120, pierce: 1, projectileRadius: 16 },
-            { damage: 32, cooldown: 0.34, projectileSpeed: 1180, pierce: 2, projectileRadius: 17 },
-            { damage: 38, cooldown: 0.30, projectileSpeed: 1260, pierce: 2, projectileRadius: 18 },
+            { damage: 12, cooldown: 0.60, projectileSpeed: 900,  pierce: 0, projectileRadius: 14, ricochet: 0, ricochetRange: 360 },
+            { damage: 15, cooldown: 0.55, projectileSpeed: 940,  pierce: 0, projectileRadius: 14, ricochet: 0, ricochetRange: 360 },
+            { damage: 18, cooldown: 0.50, projectileSpeed: 980,  pierce: 0, projectileRadius: 15, ricochet: 0, ricochetRange: 360 },
+            { damage: 21, cooldown: 0.46, projectileSpeed: 1020, pierce: 1, projectileRadius: 15, ricochet: 1, ricochetRange: 360 },
+            { damage: 24, cooldown: 0.42, projectileSpeed: 1060, pierce: 1, projectileRadius: 16, ricochet: 1, ricochetRange: 360 },
+            { damage: 28, cooldown: 0.38, projectileSpeed: 1120, pierce: 1, projectileRadius: 16, ricochet: 2, ricochetRange: 360 },
+            { damage: 32, cooldown: 0.34, projectileSpeed: 1180, pierce: 2, projectileRadius: 17, ricochet: 2, ricochetRange: 360 },
+            { damage: 38, cooldown: 0.30, projectileSpeed: 1260, pierce: 2, projectileRadius: 18, ricochet: 3, ricochetRange: 360 },
         ],
         update: arcaneBoltUpdate,
     },
@@ -53,16 +56,19 @@ export const WEAPONS = {
         description: 'Spinning blades that circle the monkey.',
         kind: 'orbit',
         evolvesTo: null,
+        // Signature: every blade strike stamps a slow on the enemy, turning
+        // the orbit ring into a moving zone of chilled foes. Deeper slow at
+        // higher levels; refresh-based so duration stays flat.
         perLevel: [
             null,
-            { bladeCount: 1, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35 },
-            { bladeCount: 2, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35 },
-            { bladeCount: 2, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32 },
-            { bladeCount: 3, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32 },
-            { bladeCount: 3, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30 },
-            { bladeCount: 4, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30 },
-            { bladeCount: 4, damage: 16, orbitSpeed: 3.8, orbitRadius: 140, bladeRadius: 30, hitCooldown: 0.28 },
-            { bladeCount: 5, damage: 18, orbitSpeed: 4.0, orbitRadius: 145, bladeRadius: 32, hitCooldown: 0.26 },
+            { bladeCount: 1, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35, slowMul: 0.78, slowDuration: 1.0 },
+            { bladeCount: 2, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35, slowMul: 0.78, slowDuration: 1.0 },
+            { bladeCount: 2, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32, slowMul: 0.74, slowDuration: 1.0 },
+            { bladeCount: 3, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32, slowMul: 0.74, slowDuration: 1.0 },
+            { bladeCount: 3, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30, slowMul: 0.70, slowDuration: 1.0 },
+            { bladeCount: 4, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30, slowMul: 0.70, slowDuration: 1.0 },
+            { bladeCount: 4, damage: 16, orbitSpeed: 3.8, orbitRadius: 140, bladeRadius: 30, hitCooldown: 0.28, slowMul: 0.66, slowDuration: 1.0 },
+            { bladeCount: 5, damage: 18, orbitSpeed: 4.0, orbitRadius: 145, bladeRadius: 32, hitCooldown: 0.26, slowMul: 0.62, slowDuration: 1.0 },
         ],
         initialState() { return { baseAngle: 0, bladePositions: [] }; },
         update: orbitingBladeUpdate,
@@ -74,16 +80,19 @@ export const WEAPONS = {
         description: 'A radiant burst hits everything around you.',
         kind: 'pulse',
         evolvesTo: null,
+        // Signature: stacking armor-shred LOCAL to Holy Pulse — each pulse
+        // makes a lingering enemy take +shredPerStack more from the NEXT
+        // pulse, up to maxShredStacks. Rewards holding a crowd in the aura.
         perLevel: [
             null,
-            { radius: 220, damage: 10, cooldown: 3.0 },
-            { radius: 240, damage: 12, cooldown: 2.8 },
-            { radius: 260, damage: 14, cooldown: 2.6 },
-            { radius: 280, damage: 16, cooldown: 2.4 },
-            { radius: 310, damage: 18, cooldown: 2.2 },
-            { radius: 340, damage: 22, cooldown: 2.0 },
-            { radius: 380, damage: 26, cooldown: 1.8 },
-            { radius: 420, damage: 32, cooldown: 1.6 },
+            { radius: 220, damage: 10, cooldown: 3.0, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 2 },
+            { radius: 240, damage: 12, cooldown: 2.8, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 2 },
+            { radius: 260, damage: 14, cooldown: 2.6, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 3 },
+            { radius: 280, damage: 16, cooldown: 2.4, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 3 },
+            { radius: 310, damage: 18, cooldown: 2.2, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 3 },
+            { radius: 340, damage: 22, cooldown: 2.0, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 4 },
+            { radius: 380, damage: 26, cooldown: 1.8, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 4 },
+            { radius: 420, damage: 32, cooldown: 1.6, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 4 },
         ],
         update: holyPulseUpdate,
     },
@@ -121,6 +130,7 @@ export const WEAPONS = {
             {
                 damage: 42, cooldown: 0.18, projectileSpeed: 1400,
                 pierce: 4, projectileRadius: 20, projectiles: 2, spread: 0.18,
+                ricochet: 4, ricochetRange: 420,
             },
         ],
         update: arcaneStormUpdate,
@@ -137,6 +147,7 @@ export const WEAPONS = {
             {
                 bladeCount: 8, damage: 26, orbitSpeed: 4.5,
                 orbitRadius: 165, bladeRadius: 38, hitCooldown: 0.22,
+                slowMul: 0.55, slowDuration: 1.4,
             },
         ],
         initialState() { return { baseAngle: 0, bladePositions: [] }; },
@@ -154,6 +165,7 @@ export const WEAPONS = {
             {
                 radius: 480, damage: 38, cooldown: 1.4,
                 healPerHit: 0.6, maxHealPerPulse: 14, visualLifetime: 0.7,
+                shredPerStack: 0.12, shredDuration: 4.0, maxShredStacks: 6,
             },
         ],
         update: divineNovaUpdate,
@@ -205,6 +217,8 @@ function arcaneBoltUpdate(dt, owned, ctx) {
         damage: cfg.damage * dmgMul,
         radius: cfg.projectileRadius,
         pierce: cfg.pierce,
+        ricochet: cfg.ricochet ?? 0,
+        ricochetRange: cfg.ricochetRange ?? 0,
     }));
     owned.timer = cfg.cooldown * cdMul;
 }
@@ -248,6 +262,8 @@ function orbitingBladeUpdate(dt, owned, ctx) {
             ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
             if (!e.active) ctx.killed.push(e);
             e.weaponHitCooldown = hitCooldown;
+            // Signature slow stamp (rate-limited by the hit cooldown above).
+            if (cfg.slowMul) e.applySlow(cfg.slowMul, cfg.slowDuration);
             break;
         }
     }
@@ -273,9 +289,16 @@ function holyPulseUpdate(dt, owned, ctx) {
         const len = Math.hypot(dx, dy) || 1;
         const kx = (dx / len) * KNOCKBACK.strength * 0.35;
         const ky = (dy / len) * KNOCKBACK.strength * 0.35;
-        e.takeDamage(damage, kx, ky);
-        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
+        // Armor-shred ramp: amplify by the stacks ALREADY on the enemy,
+        // deal + report that truthful amount, THEN add a stack (so the ramp
+        // is across pulses, never a same-frame self-spike). Shred is local —
+        // it amplifies only Holy Pulse, never other weapons' damage.
+        const amp = 1 + (e.shredStacks || 0) * (cfg.shredPerStack ?? 0);
+        const dmg = damage * amp;
+        e.takeDamage(dmg, kx, ky);
+        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
         if (!e.active) ctx.killed.push(e);
+        if (cfg.maxShredStacks) e.applyShred(cfg.maxShredStacks, cfg.shredDuration);
     }
 
     ctx.effects.push({
@@ -312,9 +335,21 @@ function lightningMarkUpdate(dt, owned, ctx) {
     const dmgMul = ctx.player.damageMul ?? 1;
     const cdMul = ctx.player.cooldownMul ?? 1;
     const damage = cfg.damage * dmgMul;
+    // Signature: anti-boss targeting. Reserve half the strikes (min 1) for
+    // the highest-current-HP foes via an in-place linear max-scan; the rest
+    // stay random so swarms are never starved when no tough target exists.
     const n = Math.min(cfg.strikes, candidates.length);
+    const priorityStrikes = Math.max(1, Math.floor(n * 0.5));
     for (let i = 0; i < n; i++) {
-        const idx = Math.floor(Math.random() * candidates.length);
+        let idx;
+        if (i < priorityStrikes) {
+            idx = 0;
+            for (let j = 1; j < candidates.length; j++) {
+                if (candidates[j].hp > candidates[idx].hp) idx = j;
+            }
+        } else {
+            idx = Math.floor(Math.random() * candidates.length);
+        }
         const target = candidates.splice(idx, 1)[0];
         target.takeDamage(damage);
         ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: damage });
@@ -381,6 +416,8 @@ function arcaneStormUpdate(dt, owned, ctx) {
             damage: cfg.damage * dmgMul,
             radius: cfg.projectileRadius,
             pierce: cfg.pierce,
+            ricochet: cfg.ricochet ?? 0,
+            ricochetRange: cfg.ricochetRange ?? 0,
         }));
     }
     owned.timer = cfg.cooldown * cdMul;
@@ -407,9 +444,12 @@ function divineNovaUpdate(dt, owned, ctx) {
         const len = Math.hypot(dx, dy) || 1;
         const kx = (dx / len) * KNOCKBACK.strength * 0.4;
         const ky = (dy / len) * KNOCKBACK.strength * 0.4;
-        e.takeDamage(damage, kx, ky);
-        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
+        const amp = 1 + (e.shredStacks || 0) * (cfg.shredPerStack ?? 0);
+        const dmg = damage * amp;
+        e.takeDamage(dmg, kx, ky);
+        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
         if (!e.active) ctx.killed.push(e);
+        if (cfg.maxShredStacks) e.applyShred(cfg.maxShredStacks, cfg.shredDuration);
         hitCount += 1;
     }
 
@@ -459,9 +499,20 @@ function thunderCrownUpdate(dt, owned, ctx) {
     const chainDamage = (cfg.chainDamage ?? cfg.damage) * dmgMul;
     const struck = new Set();
 
+    // Same anti-boss priority split as Lightning Mark for the PRIMARY
+    // strikes; chains below stay nearest-based to spread into the crowd.
     const n = Math.min(cfg.strikes, candidates.length);
+    const priorityStrikes = Math.max(1, Math.floor(n * 0.5));
     for (let i = 0; i < n; i++) {
-        const idx = Math.floor(Math.random() * candidates.length);
+        let idx;
+        if (i < priorityStrikes) {
+            idx = 0;
+            for (let j = 1; j < candidates.length; j++) {
+                if (candidates[j].hp > candidates[idx].hp) idx = j;
+            }
+        } else {
+            idx = Math.floor(Math.random() * candidates.length);
+        }
         const target = candidates.splice(idx, 1)[0];
         if (struck.has(target) || !target.active) continue;
         target.takeDamage(damage);
