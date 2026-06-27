@@ -38,6 +38,27 @@ export function getCrawlerSprite() {
     return sprite;
 }
 
+export function getVinebackGoliathSprite() {
+    if (cache.has('vinebackGoliath')) return cache.get('vinebackGoliath');
+    const sprite = drawVinebackGoliath(SPRITE_SIZE);
+    cache.set('vinebackGoliath', sprite);
+    return sprite;
+}
+
+export function getStormwingAlphaSprite() {
+    if (cache.has('stormwingAlpha')) return cache.get('stormwingAlpha');
+    const sprite = drawStormwingAlpha(SPRITE_SIZE);
+    cache.set('stormwingAlpha', sprite);
+    return sprite;
+}
+
+export function getChestSprite() {
+    if (cache.has('chest')) return cache.get('chest');
+    const sprite = drawChest();
+    cache.set('chest', sprite);
+    return sprite;
+}
+
 export function getProjectileSprite() {
     if (cache.has('projectile')) return cache.get('projectile');
     const sprite = drawProjectile();
@@ -476,6 +497,295 @@ function drawCrawler(size) {
     ctx.moveTo(cx + 8, cy + 14);
     ctx.lineTo(cx + 13, cy + 23);
     ctx.stroke();
+
+    return canvas;
+}
+
+function drawVinebackGoliath(size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+
+    const BODY = '#2d6b3f';
+    const BODY_DARK = '#143020';
+    const BODY_LIGHT = '#4a9959';
+    const VINE = '#5a3c1e';
+    const VINE_DARK = '#3a2614';
+    const LEAF = '#83b94a';
+    const EYE = '#ffeb47';
+
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 76, 82, 16, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 5, 82, 76, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 22, cy - 20, 38, 22, -0.3, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 5, 82, 76, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    ctx.strokeStyle = VINE_DARK;
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 70, cy + 30);
+    ctx.bezierCurveTo(cx - 35, cy - 20, cx + 30, cy + 45, cx + 72, cy - 8);
+    ctx.stroke();
+    ctx.strokeStyle = VINE;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(cx - 70, cy + 30);
+    ctx.bezierCurveTo(cx - 35, cy - 20, cx + 30, cy + 45, cx + 72, cy - 8);
+    ctx.stroke();
+    ctx.strokeStyle = VINE;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(cx - 60, cy - 30);
+    ctx.bezierCurveTo(cx - 20, cy + 55, cx + 40, cy - 55, cx + 65, cy + 22);
+    ctx.stroke();
+
+    ctx.fillStyle = LEAF;
+    const leafPositions = [
+        [cx - 42, cy - 8, 0.4],
+        [cx + 22, cy + 32, -0.3],
+        [cx + 52, cy - 22, 0.7],
+        [cx - 12, cy + 42, 0.2],
+    ];
+    for (const [lx, ly, rot] of leafPositions) {
+        ctx.beginPath();
+        ctx.ellipse(lx, ly, 14, 7, rot, 0, TWO_PI);
+        ctx.fill();
+    }
+
+    ctx.fillStyle = EYE;
+    const eyePositions = [
+        [cx - 28, cy - 14],
+        [cx, cy - 22],
+        [cx + 28, cy - 14],
+    ];
+    for (const [ex, ey] of eyePositions) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, 9, 0, TWO_PI);
+        ctx.fill();
+    }
+    ctx.fillStyle = '#000';
+    for (const [ex, ey] of eyePositions) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, 3.5, 0, TWO_PI);
+        ctx.fill();
+    }
+
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(cx, cy + 18, 20, 0, Math.PI);
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 14 - 4, cy + 22);
+        ctx.lineTo(cx + i * 14 + 4, cy + 22);
+        ctx.lineTo(cx + i * 14, cy + 40);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    return canvas;
+}
+
+function drawStormwingAlpha(size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+
+    const WING = '#1a1438';
+    const WING_EDGE = '#3a2870';
+    const BODY = '#2c1c4a';
+    const FANG = '#fff';
+    const EYE = '#ff3060';
+    const LIGHTNING = '#90d8ff';
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 50, 56, 12, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = WING;
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy - 4);
+    ctx.quadraticCurveTo(cx - 60, cy - 52, cx - 88, cy - 6);
+    ctx.quadraticCurveTo(cx - 75, cy + 4, cx - 60, cy + 6);
+    ctx.quadraticCurveTo(cx - 80, cy + 22, cx - 55, cy + 30);
+    ctx.quadraticCurveTo(cx - 30, cy + 16, cx - 12, cy + 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = WING_EDGE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.fillStyle = WING;
+    ctx.beginPath();
+    ctx.moveTo(cx + 5, cy - 4);
+    ctx.quadraticCurveTo(cx + 60, cy - 52, cx + 88, cy - 6);
+    ctx.quadraticCurveTo(cx + 75, cy + 4, cx + 60, cy + 6);
+    ctx.quadraticCurveTo(cx + 80, cy + 22, cx + 55, cy + 30);
+    ctx.quadraticCurveTo(cx + 30, cy + 16, cx + 12, cy + 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = WING_EDGE;
+    ctx.stroke();
+
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 5, 30, 38, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(cx - 18, cy - 26);
+    ctx.lineTo(cx - 8, cy - 50);
+    ctx.lineTo(cx - 2, cy - 26);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 18, cy - 26);
+    ctx.lineTo(cx + 8, cy - 50);
+    ctx.lineTo(cx + 2, cy - 26);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx - 11, cy - 11, 7, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 11, cy - 11, 7, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = '#ffe4e8';
+    ctx.beginPath();
+    ctx.arc(cx - 9, cy - 13, 2.4, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 13, cy - 13, 2.4, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = FANG;
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy + 7);
+    ctx.lineTo(cx - 4, cy + 20);
+    ctx.lineTo(cx - 1, cy + 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 8, cy + 7);
+    ctx.lineTo(cx + 4, cy + 20);
+    ctx.lineTo(cx + 1, cy + 7);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = LIGHTNING;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 38, cy);
+    ctx.lineTo(cx - 30, cy + 6);
+    ctx.lineTo(cx - 34, cy + 14);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 38, cy - 4);
+    ctx.lineTo(cx + 30, cy + 2);
+    ctx.lineTo(cx + 34, cy + 10);
+    ctx.stroke();
+
+    return canvas;
+}
+
+function drawChest() {
+    const W = 96;
+    const H = 84;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    const WOOD = '#7a4920';
+    const WOOD_DARK = '#3a2410';
+    const WOOD_LIGHT = '#a06430';
+    const GOLD = '#ffd166';
+    const GOLD_DARK = '#a07530';
+
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath();
+    ctx.ellipse(W / 2, H - 6, W / 2 - 6, 5, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // Body
+    ctx.fillStyle = WOOD;
+    ctx.fillRect(6, 40, W - 12, H - 46);
+    ctx.fillStyle = WOOD_LIGHT;
+    ctx.fillRect(6, 40, 5, H - 46);
+    ctx.strokeStyle = WOOD_DARK;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(6, 40, W - 12, H - 46);
+
+    // Lid (curved top)
+    ctx.fillStyle = WOOD;
+    ctx.beginPath();
+    ctx.moveTo(6, 40);
+    ctx.lineTo(6, 22);
+    ctx.quadraticCurveTo(W / 2, 6, W - 6, 22);
+    ctx.lineTo(W - 6, 40);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = WOOD_DARK;
+    ctx.stroke();
+
+    ctx.strokeStyle = WOOD_LIGHT;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(10, 32);
+    ctx.quadraticCurveTo(W / 2, 16, W - 10, 32);
+    ctx.stroke();
+
+    // Gold horizontal band
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(6, 36, W - 12, 6);
+    ctx.strokeStyle = GOLD_DARK;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(6, 36, W - 12, 6);
+
+    // Gold vertical strap
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(W / 2 - 4, 12, 8, H - 18);
+    ctx.strokeStyle = GOLD_DARK;
+    ctx.strokeRect(W / 2 - 4, 12, 8, H - 18);
+
+    // Lock
+    ctx.fillStyle = GOLD;
+    ctx.beginPath();
+    ctx.arc(W / 2, 52, 7, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = GOLD_DARK;
+    ctx.stroke();
+    ctx.fillStyle = WOOD_DARK;
+    ctx.fillRect(W / 2 - 1.5, 50, 3, 6);
 
     return canvas;
 }

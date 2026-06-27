@@ -1,5 +1,12 @@
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, GAME_TITLE } from '../config/GameConfig.js';
+import {
+    INTERNAL_WIDTH,
+    INTERNAL_HEIGHT,
+    GAME_TITLE,
+    CHEST,
+} from '../config/GameConfig.js';
+import { TWO_PI } from '../core/MathUtils.js';
 import { roundRectPath } from '../render/DrawUtils.js';
+import { getChestSprite } from '../assets/ProceduralSprites.js';
 
 const DEBUG_BUTTON_SIZE = 96;
 const DEBUG_BUTTON_MARGIN = 20;
@@ -64,20 +71,142 @@ export class UISystem {
     draw(ctx, gameState) {
         this._drawTitle(ctx);
         this._drawWaveLabel(ctx, gameState);
+        this._drawBossHpBar(ctx, gameState);
         this._drawHpBar(ctx, gameState);
         this._drawXPBar(ctx, gameState);
         this._drawHUD(ctx, gameState);
         this._drawDebugToggleHint(ctx, gameState);
         // Announcement renders before overlays so the level-up / game-over
-        // overlays still cover it cleanly when both are visible.
-        if (!gameState.gameOver && !gameState.upgradeChoices) {
+        // / chest overlays still cover it cleanly when active.
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
             this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
         }
+        // Overlay priority: game-over > chest > level-up.
         if (gameState.gameOver) {
             this._drawGameOverOverlay(ctx, gameState);
+        } else if (gameState.chestReward) {
+            this._drawChestOverlay(ctx, gameState);
         } else if (gameState.upgradeChoices) {
             this._drawLevelUpOverlay(ctx, gameState);
         }
+    }
+
+    _drawBossHpBar(ctx, state) {
+        const boss = state.activeBoss;
+        if (!boss) return;
+        const sa = this.renderer.safeArea;
+        const padTop = sa.top + 116;
+        const barW = INTERNAL_WIDTH * 0.55;
+        const barH = 28;
+        const barX = (INTERNAL_WIDTH - barW) / 2;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#ff6b6b';
+        ctx.font = 'bold 26px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText(boss.name.toUpperCase(), INTERNAL_WIDTH / 2, padTop - 4);
+
+        ctx.fillStyle = 'rgba(30, 4, 4, 0.78)';
+        ctx.fillRect(barX, padTop, barW, barH);
+        ctx.strokeStyle = '#ff6b6b';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, padTop, barW, barH);
+
+        const pct = Math.max(0, Math.min(1, boss.hp / boss.maxHp));
+        const grad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+        grad.addColorStop(0, '#ff4757');
+        grad.addColorStop(1, '#ff8c40');
+        ctx.fillStyle = grad;
+        ctx.fillRect(barX + 2, padTop + 2, Math.max(0, (barW - 4) * pct), barH - 4);
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '20px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(
+            `${Math.ceil(boss.hp)} / ${Math.ceil(boss.maxHp)}`,
+            INTERNAL_WIDTH / 2,
+            padTop + barH / 2
+        );
+        ctx.restore();
+    }
+
+    _drawChestOverlay(ctx, state) {
+        const c = state.chestReward;
+        if (!c) return;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(10, 8, 4, 0.82)';
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd166';
+        ctx.font = 'bold 80px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.fillText('TREASURE!', INTERNAL_WIDTH / 2, 220);
+
+        const animDur = CHEST.openAnimationDuration;
+        const animT = Math.min(1, c.age / animDur);
+        const sprite = getChestSprite();
+        const scale = 4;
+        const chestX = INTERNAL_WIDTH / 2;
+        const chestY = INTERNAL_HEIGHT * 0.5;
+
+        // Light burst peaks around the end of the opening animation.
+        if (animT >= 0.5) {
+            const burstT = Math.min(1, (animT - 0.5) / 0.5);
+            const burstAlpha = 1 - burstT;
+            const burstR = 200 + burstT * 480;
+            const grad = ctx.createRadialGradient(chestX, chestY, 0, chestX, chestY, burstR);
+            grad.addColorStop(0, `rgba(255, 240, 180, ${burstAlpha * 0.7})`);
+            grad.addColorStop(1, 'rgba(255, 200, 50, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(chestX, chestY, burstR, 0, TWO_PI);
+            ctx.fill();
+        }
+
+        // Chest sprite — shakes during the opening animation, then settles.
+        const shakeMag = animT < 1 ? (1 - animT) * 14 : 0;
+        const shakeX = shakeMag ? (Math.random() - 0.5) * 2 * shakeMag : 0;
+        const shakeY = shakeMag ? (Math.random() - 0.5) * 2 * shakeMag : 0;
+        ctx.drawImage(
+            sprite,
+            chestX - (sprite.width * scale) / 2 + shakeX,
+            chestY - (sprite.height * scale) / 2 + shakeY,
+            sprite.width * scale,
+            sprite.height * scale
+        );
+
+        // Reward text fades in once the animation is past its midpoint.
+        const revealStart = animDur * 0.5;
+        if (c.age >= revealStart) {
+            const textAlpha = Math.min(1, (c.age - revealStart) / 0.25);
+            ctx.save();
+            ctx.globalAlpha = textAlpha;
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 48px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+            ctx.fillText(c.reward.text, INTERNAL_WIDTH / 2, INTERNAL_HEIGHT * 0.78);
+            ctx.restore();
+        }
+
+        // Continue prompt pulses gently once the animation finishes so the
+        // player can tell input is now expected.
+        if (c.age >= animDur) {
+            const pulse = 0.55 + 0.35 * ((Math.sin(c.age * 4) + 1) / 2);
+            ctx.save();
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.font = '28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+            ctx.fillText(
+                'Tap or press Space to continue',
+                INTERNAL_WIDTH / 2,
+                INTERNAL_HEIGHT - 80 - this.renderer.safeArea.bottom
+            );
+            ctx.restore();
+        }
+        ctx.restore();
     }
 
     _drawWaveLabel(ctx, state) {
@@ -275,6 +404,11 @@ export class UISystem {
             `cap     ${ws ? ws.maxAlive : '?'}`,
             `hp×spd× ${ws ? ws.healthMul.toFixed(2) : '?'} / ${ws ? ws.speedMul.toFixed(2) : '?'}`,
             `elite%  ${ws ? (ws.eliteChance * 100).toFixed(1) : '?'}%`,
+            ``,
+            `BOSS`,
+            `next    ${formatBossClock(state.nextBossTime)}`,
+            `active  ${state.activeBoss ? state.activeBoss.name : 'none'}`,
+            `chests  ${state.chestCount ?? 0}` + (state.pendingChests > 0 ? ` (+${state.pendingChests})` : ''),
             ``,
             `spawn   ${formatSpawn(state.spawnTimer, state.spawnInterval)}`,
             `player  (${Math.round(state.player.x)}, ${Math.round(state.player.y)})`,
@@ -486,6 +620,13 @@ function formatTime(seconds) {
 function formatSpawn(timer, interval) {
     if (interval == null) return `${timer.toFixed(2)}s`;
     return `${timer.toFixed(2)}s / ${interval.toFixed(2)}s`;
+}
+
+function formatBossClock(t) {
+    if (t == null) return '?';
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 function formatWeights(weights) {

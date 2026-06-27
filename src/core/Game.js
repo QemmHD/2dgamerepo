@@ -11,11 +11,16 @@ import {
     SCREEN_SHAKE,
     GEM,
     GEM_TIERS,
+    ENEMY,
+    BOSS,
+    CHEST,
 } from '../config/GameConfig.js';
-import { TWO_PI, pickWeighted, compactInPlace } from './MathUtils.js';
+import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Camera } from './Camera.js';
 import { Player } from '../entities/Player.js';
+import { Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
+import { Chest } from '../entities/Chest.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 import { Spawner } from '../systems/Spawner.js';
 import { WeaponSystem } from '../systems/WeaponSystem.js';
@@ -23,6 +28,8 @@ import { CollisionSystem } from '../systems/CollisionSystem.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
+import { BossDirector } from '../systems/BossDirector.js';
+import { rollChestReward } from '../systems/ChestRewards.js';
 import { UISystem } from '../systems/UISystem.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
@@ -51,6 +58,13 @@ export class Game {
                 if (e.code === 'KeyR' || e.code === 'Enter') {
                     e.preventDefault();
                     this.restart();
+                }
+                return;
+            }
+            if (this.chestReward) {
+                if (e.code === 'Space' || e.code === 'Enter') {
+                    e.preventDefault();
+                    this._dismissChestReward();
                 }
                 return;
             }
@@ -121,6 +135,12 @@ export class Game {
         };
 
         this.renderer.canvas.addEventListener('touchstart', (e) => {
+            // Any tap dismisses the chest overlay — checked first so a stray
+            // tap on the DBG/joystick zone can't slip through.
+            if (this.chestReward) {
+                this._dismissChestReward();
+                return;
+            }
             for (const t of e.changedTouches) {
                 if (this.gameOver) {
                     if (tryRestartAt(t.clientX, t.clientY)) return;
@@ -133,6 +153,10 @@ export class Game {
         }, { passive: false });
 
         this.renderer.canvas.addEventListener('mousedown', (e) => {
+            if (this.chestReward) {
+                this._dismissChestReward();
+                return;
+            }
             if (this.gameOver) {
                 tryRestartAt(e.clientX, e.clientY);
             } else if (this.upgradeChoices) {
@@ -158,9 +182,18 @@ export class Game {
         this.upgradeSystem = new UpgradeSystem();
         this.passiveSystem = new PassiveSystem();
         this.waveDirector = new WaveDirector();
+        this.bossDirector = new BossDirector();
         // Cache the current wave state so render can read it without
         // re-computing during the same frame.
         this.waveState = this.waveDirector.getState(0);
+
+        // Chest pickup pauses gameplay just like a level-up. pendingChests
+        // queues additional chests collected while the overlay is up.
+        this.chests = [];
+        this.chestReward = null;
+        this.pendingChests = 0;
+        // Cached reference to the strongest active boss for the boss HP bar.
+        this.activeBossRef = null;
 
         this.time = 0;
         this.kills = 0;
@@ -177,9 +210,15 @@ export class Game {
 
     setUpgradeChoices(choices) {
         this.upgradeChoices = choices;
-        if (this.input.touch) {
-            this.input.touch.setEnabled(choices === null && !this.gameOver);
-        }
+        this._updateJoystickEnabled();
+    }
+
+    // Joystick is disabled whenever ANY overlay is up so a stray drag can't
+    // start while the player is reading a card / chest reward / GAME OVER.
+    _updateJoystickEnabled() {
+        if (!this.input.touch) return;
+        const blocked = this.gameOver || !!this.upgradeChoices || !!this.chestReward;
+        this.input.touch.setEnabled(!blocked);
     }
 
     _presentLevelUp() {
@@ -195,14 +234,60 @@ export class Game {
         if (!upgrade) return;
         this.upgradeSystem.apply(upgrade, this);
         this.setUpgradeChoices(null);
+        // Drain pending level-ups first, then move on to any queued chests
+        // so the player isn't tossed between overlay types mid-stream.
         if (this.pendingLevelUps > 0) this._presentLevelUp();
+        else if (this.pendingChests > 0) this._presentChest();
+    }
+
+    _presentChest() {
+        if (this.pendingChests <= 0) return;
+        this.pendingChests -= 1;
+        const reward = rollChestReward(this);
+        // Apply the reward immediately so the in-game state already reflects
+        // what the overlay is announcing. The overlay is confirmation, not a
+        // commit step — closing it just resumes gameplay.
+        reward.apply(this);
+        this.chestReward = { reward, age: 0 };
+        this._updateJoystickEnabled();
+    }
+
+    _dismissChestReward() {
+        if (!this.chestReward) return;
+        this.chestReward = null;
+        this._updateJoystickEnabled();
+        if (this.pendingChests > 0) this._presentChest();
+        else if (this.pendingLevelUps > 0) this._presentLevelUp();
+    }
+
+    _spawnBoss(id) {
+        const def = ENEMY[id];
+        if (!def || !def.boss) return;
+        const angle = Math.random() * TWO_PI;
+        const dist = BOSS.spawnRingDistance;
+        const halfW = WORLD_WIDTH / 2 - 100;
+        const halfH = WORLD_HEIGHT / 2 - 100;
+        const x = clamp(this.player.x + Math.cos(angle) * dist, -halfW, halfW);
+        const y = clamp(this.player.y + Math.sin(angle) * dist, -halfH, halfH);
+        const boss = new Enemy(id, x, y, {
+            healthMul: this.waveState.healthMul,
+            speedMul: this.waveState.speedMul,
+        });
+        this.enemies.push(boss);
+        this.waveDirector.announce(`${def.bossName} approaches!`, 3.5);
+    }
+
+    _dropChest(x, y) {
+        this.chests.push(new Chest(x, y));
     }
 
     _enterGameOver() {
         this.gameOver = true;
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
-        if (this.input.touch) this.input.touch.setEnabled(false);
+        this.chestReward = null;
+        this.pendingChests = 0;
+        this._updateJoystickEnabled();
     }
 
     update(dt) {
@@ -214,11 +299,21 @@ export class Game {
             this.camera.update(dt);
             return;
         }
+        if (this.chestReward) {
+            // Tick the chest-overlay animation but freeze gameplay so the
+            // world behind it stays exactly as it was when the chest opened.
+            this.chestReward.age += dt;
+            this.camera.update(dt);
+            return;
+        }
 
         this.time += dt;
 
         this.waveDirector.update(dt, this.time);
         this.waveState = this.waveDirector.getState(this.time);
+
+        const bossesToSpawn = this.bossDirector.update(this.time);
+        for (const id of bossesToSpawn) this._spawnBoss(id);
 
         this.player.update(dt, this.input);
         this.spawner.update(dt, this.player, this.enemies, this.waveState);
@@ -259,7 +354,15 @@ export class Game {
 
         if (allKilled.length > 0) {
             this.kills += allKilled.length;
-            for (const e of allKilled) this._dropGem(e.x, e.y);
+            for (const e of allKilled) {
+                this._dropGem(e.x, e.y);
+                // Bosses always drop a chest. Elites have a small chance.
+                if (e.boss) {
+                    this._dropChest(e.x, e.y);
+                } else if (e.canDropChest && Math.random() < CHEST.eliteDropChance) {
+                    this._dropChest(e.x, e.y);
+                }
+            }
         }
         for (const hit of allHits) {
             this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, '#ffffff'));
@@ -278,10 +381,35 @@ export class Game {
             if (d.active) d.update(dt);
         }
 
+        // Chest pickup: chests sit until the player walks onto them, then
+        // queue a chest reward overlay. Multiple chests collected in the
+        // same tick are queued via pendingChests.
+        for (const c of this.chests) {
+            if (!c.active) continue;
+            if (c.update(dt, this.player)) {
+                this.pendingChests += 1;
+            }
+        }
+        if (this.pendingChests > 0 && !this.chestReward && !this.upgradeChoices) {
+            this._presentChest();
+        }
+
+        // Cache the strongest active boss for the UI HP bar. Picking by
+        // max HP means a fresh stronger boss takes the bar over from an
+        // older weaker one if they're alive at the same time.
+        this.activeBossRef = null;
+        for (const e of this.enemies) {
+            if (!e.active || !e.boss) continue;
+            if (!this.activeBossRef || e.maxHp > this.activeBossRef.maxHp) {
+                this.activeBossRef = e;
+            }
+        }
+
         compactInPlace(this.enemies);
         compactInPlace(this.projectiles);
         compactInPlace(this.gems);
         compactInPlace(this.damageNumbers);
+        compactInPlace(this.chests);
 
         this.camera.update(dt);
 
@@ -306,6 +434,7 @@ export class Game {
         this._drawWorldBounds(ctx, this.showDebug);
 
         for (const g of this.gems) g.draw(ctx);
+        for (const c of this.chests) c.draw(ctx);
         for (const e of this.enemies) {
             e.draw(ctx);
             e.drawHpBar(ctx);
@@ -324,6 +453,7 @@ export class Game {
         if (this.showDebug) {
             this.player.drawDebug(ctx);
             for (const g of this.gems) g.drawDebug(ctx);
+            for (const c of this.chests) c.drawDebug(ctx);
             for (const e of this.enemies) e.drawDebug(ctx);
             for (const p of this.projectiles) p.drawDebug(ctx);
         }
@@ -345,6 +475,15 @@ export class Game {
             chestLuck: this.player.chestLuck ?? 0,
             waveState: this.waveState,
             waveAnnouncement: this.waveDirector.announcement,
+            activeBoss: this.activeBossRef ? {
+                name: this.activeBossRef.name,
+                hp: this.activeBossRef.hp,
+                maxHp: this.activeBossRef.maxHp,
+            } : null,
+            chestCount: this.chests.length,
+            chestReward: this.chestReward,
+            pendingChests: this.pendingChests,
+            nextBossTime: this.bossDirector.getNextSpawnTime(),
             spawnTimer: this.spawner.timer,
             spawnInterval: this.spawner.nextInterval,
             inContact: this.collisionSystem.inContact,

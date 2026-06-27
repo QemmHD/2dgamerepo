@@ -43,6 +43,13 @@ export class WaveDirector {
         }
     }
 
+    // External callers (e.g. Game on boss spawn) can push their own
+    // transient announcement into the same channel the wave-change shout
+    // uses, so the UI doesn't need a separate render path.
+    announce(text, lifetime = ANNOUNCEMENT_LIFETIME) {
+        this.announcement = { text, age: 0, lifetime };
+    }
+
     getState(gameTime) {
         let wave = WAVES[0];
         for (const w of WAVES) {

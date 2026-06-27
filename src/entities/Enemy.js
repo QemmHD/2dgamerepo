@@ -12,6 +12,8 @@ import {
     getBatSprite,
     getBruteSprite,
     getCrawlerSprite,
+    getVinebackGoliathSprite,
+    getStormwingAlphaSprite,
 } from '../assets/ProceduralSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
@@ -20,6 +22,8 @@ const SPRITE_GETTERS = {
     bat: getBatSprite,
     brute: getBruteSprite,
     crawler: getCrawlerSprite,
+    vinebackGoliath: getVinebackGoliathSprite,
+    stormwingAlpha: getStormwingAlphaSprite,
 };
 
 // Construction-time options:
@@ -35,17 +39,23 @@ export class Enemy {
         const getSprite = SPRITE_GETTERS[type];
         if (!getSprite) throw new Error(`No sprite for enemy type: ${type}`);
 
-        const elite = !!opts.elite;
+        const isBoss = !!def.boss;
+        // Elite + boss don't stack — bosses already have their own scale and
+        // are guaranteed to drop a chest. If a spawn somehow asks for elite
+        // on a boss type, ignore the elite flag.
+        const elite = !!opts.elite && !isBoss;
         const waveHpMul = opts.healthMul ?? 1;
         const waveSpdMul = opts.speedMul ?? 1;
 
         const hpMul = elite ? ELITE.hpMul : 1;
-        const sizeMul = elite ? ELITE.sizeMul : 1;
+        const eliteSizeMul = elite ? ELITE.sizeMul : 1;
         const spdMul = elite ? ELITE.speedMul : 1;
         const dmgMul = elite ? ELITE.contactDamageMul : 1;
         const xpMul = elite ? ELITE.xpMul : 1;
+        const baseScale = def.visualScale ?? 1;
 
         this.type = type;
+        this.name = def.bossName ?? type;
         this.x = x;
         this.y = y;
         this.vx = 0;
@@ -53,13 +63,17 @@ export class Enemy {
         this.maxHp = def.hp * waveHpMul * hpMul;
         this.hp = this.maxHp;
         this.speed = def.speed * waveSpdMul * spdMul;
-        this.radius = def.radius * sizeMul;
+        // Elite grows the hitbox to match its bigger visual. Boss radius
+        // already comes from config at the right size, so eliteSizeMul is 1
+        // for bosses (elite is force-off for boss types above).
+        this.radius = def.radius * eliteSizeMul;
         this.contactDamage = def.contactDamage * dmgMul;
         this.xpValue = def.xpValue * xpMul;
 
         this.elite = elite;
-        this.canDropChest = elite;
-        this.visualScale = sizeMul;
+        this.boss = isBoss;
+        this.canDropChest = elite || isBoss;
+        this.visualScale = baseScale * eliteSizeMul;
 
         this.sprite = getSprite();
         this.spriteHalf = SPRITE_SIZE / 2;

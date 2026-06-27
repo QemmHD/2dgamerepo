@@ -62,6 +62,48 @@ export const ENEMY = {
         contactDamage: 7,
         xpValue: 1,
     },
+    // Bosses are still Enemy instances; the `boss: true` flag flips on the
+    // boss HP bar, chest drop on death, and lets the constructor pull in
+    // bossName + visualScale. They scale with wave just like other enemies.
+    vinebackGoliath: {
+        hp: 1500,
+        speed: 60,
+        radius: 105,
+        contactDamage: 25,
+        xpValue: 50,
+        boss: true,
+        bossName: 'Vineback Goliath',
+        visualScale: 1.85,
+    },
+    stormwingAlpha: {
+        hp: 900,
+        speed: 130,
+        radius: 80,
+        contactDamage: 18,
+        xpValue: 35,
+        boss: true,
+        bossName: 'Stormwing Alpha',
+        visualScale: 1.55,
+    },
+};
+
+// Boss spawn schedule + spawn placement.
+export const BOSS = {
+    spawnInterval: 120,
+    spawnRingDistance: 1100,
+    types: ['vinebackGoliath', 'stormwingAlpha'],
+};
+
+// Chest entity + reward weighting. luckUpgradeWeight is how much each unit
+// of player.chestLuck shifts the roll toward weapon/passive upgrades.
+export const CHEST = {
+    pickupRadius: 80,
+    openAnimationDuration: 0.55,
+    eliteDropChance: 0.15,
+    weights: { weapon: 3, passive: 3, coins: 2, heal: 2 },
+    luckUpgradeWeight: 4,
+    coinReward: { min: 50, max: 100, luckBonus: 80 },
+    healReward: { base: 35, luckBonus: 25 },
 };
 
 // Elite is a modifier applied to a base enemy type, not a separate type.
