@@ -1,0 +1,515 @@
+// Weapon definitions + behavior functions.
+//
+// Each weapon has:
+//   id            stable string used by save/upgrade/UI lookups
+//   name          shown on cards and HUD
+//   description   one-liner shown on cards
+//   kind          'projectile' | 'orbit' | 'pulse' | 'lightning' — picks behavior
+//   evolved       true on evolved variants; UpgradeSystem hides them from
+//                 the "new weapon" pool and the UI renders an EVOLVED label
+//   maxLevel      optional per-weapon cap; defaults to MAX_WEAPON_LEVEL
+//   perLevel      array indexed 1..maxLevel of stat objects
+//   initialState  optional () => state object stored on each owned entry
+//   update        (dt, owned, ctx) — runs every frame for each owned weapon
+//
+// `owned` is { id, level, timer, state } — owned by WeaponSystem.
+// `ctx`   is { player, enemies, projectiles, effects, hits, killed } —
+// behavior functions push damage hits / killed enemies / visual effects
+// into the arrays so Game can fan them out (gem drops, damage numbers,
+// screen shake, etc.) just like the existing CollisionSystem pipeline.
+//
+// Behaviors read their config via `WEAPONS[owned.id].perLevel[owned.level]`
+// so the same behavior function can power both a base weapon and an
+// evolved variant (e.g. orbitingBladeUpdate runs Celestial Blades too).
+
+import { TWO_PI, circleOverlap, distanceSq } from '../core/MathUtils.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KNOCKBACK } from '../config/GameConfig.js';
+import { Projectile } from '../entities/Projectile.js';
+
+export const WEAPONS = {
+    arcaneBolt: {
+        id: 'arcaneBolt',
+        name: 'Arcane Bolt',
+        description: 'Fires a magic bolt at the nearest foe.',
+        kind: 'projectile',
+        evolvesTo: null,
+        perLevel: [
+            null,
+            { damage: 12, cooldown: 0.60, projectileSpeed: 900,  pierce: 0, projectileRadius: 14 },
+            { damage: 15, cooldown: 0.55, projectileSpeed: 940,  pierce: 0, projectileRadius: 14 },
+            { damage: 18, cooldown: 0.50, projectileSpeed: 980,  pierce: 0, projectileRadius: 15 },
+            { damage: 21, cooldown: 0.46, projectileSpeed: 1020, pierce: 1, projectileRadius: 15 },
+            { damage: 24, cooldown: 0.42, projectileSpeed: 1060, pierce: 1, projectileRadius: 16 },
+            { damage: 28, cooldown: 0.38, projectileSpeed: 1120, pierce: 1, projectileRadius: 16 },
+            { damage: 32, cooldown: 0.34, projectileSpeed: 1180, pierce: 2, projectileRadius: 17 },
+            { damage: 38, cooldown: 0.30, projectileSpeed: 1260, pierce: 2, projectileRadius: 18 },
+        ],
+        update: arcaneBoltUpdate,
+    },
+
+    orbitingBlade: {
+        id: 'orbitingBlade',
+        name: 'Orbiting Blade',
+        description: 'Spinning blades that circle the monkey.',
+        kind: 'orbit',
+        evolvesTo: null,
+        perLevel: [
+            null,
+            { bladeCount: 1, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35 },
+            { bladeCount: 2, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35 },
+            { bladeCount: 2, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32 },
+            { bladeCount: 3, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32 },
+            { bladeCount: 3, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30 },
+            { bladeCount: 4, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30 },
+            { bladeCount: 4, damage: 16, orbitSpeed: 3.8, orbitRadius: 140, bladeRadius: 30, hitCooldown: 0.28 },
+            { bladeCount: 5, damage: 18, orbitSpeed: 4.0, orbitRadius: 145, bladeRadius: 32, hitCooldown: 0.26 },
+        ],
+        initialState() { return { baseAngle: 0, bladePositions: [] }; },
+        update: orbitingBladeUpdate,
+    },
+
+    holyPulse: {
+        id: 'holyPulse',
+        name: 'Holy Pulse',
+        description: 'A radiant burst hits everything around you.',
+        kind: 'pulse',
+        evolvesTo: null,
+        perLevel: [
+            null,
+            { radius: 220, damage: 10, cooldown: 3.0 },
+            { radius: 240, damage: 12, cooldown: 2.8 },
+            { radius: 260, damage: 14, cooldown: 2.6 },
+            { radius: 280, damage: 16, cooldown: 2.4 },
+            { radius: 310, damage: 18, cooldown: 2.2 },
+            { radius: 340, damage: 22, cooldown: 2.0 },
+            { radius: 380, damage: 26, cooldown: 1.8 },
+            { radius: 420, damage: 32, cooldown: 1.6 },
+        ],
+        update: holyPulseUpdate,
+    },
+
+    lightningMark: {
+        id: 'lightningMark',
+        name: 'Lightning Mark',
+        description: 'Lightning strikes random nearby foes.',
+        kind: 'lightning',
+        evolvesTo: 'thunderCrown',
+        perLevel: [
+            null,
+            { strikes: 1, damage: 18, cooldown: 2.4, range: 1100 },
+            { strikes: 2, damage: 18, cooldown: 2.4, range: 1100 },
+            { strikes: 2, damage: 22, cooldown: 2.2, range: 1150 },
+            { strikes: 3, damage: 22, cooldown: 2.0, range: 1150 },
+            { strikes: 3, damage: 26, cooldown: 1.8, range: 1200 },
+            { strikes: 4, damage: 28, cooldown: 1.6, range: 1200 },
+            { strikes: 5, damage: 32, cooldown: 1.5, range: 1250 },
+            { strikes: 6, damage: 38, cooldown: 1.4, range: 1300 },
+        ],
+        update: lightningMarkUpdate,
+    },
+
+    // ─── Evolved weapons (only reachable via treasure chest) ─────────
+    arcaneStorm: {
+        id: 'arcaneStorm',
+        name: 'Arcane Storm',
+        description: 'Twin bolts in a rapid magical barrage.',
+        kind: 'projectile',
+        evolved: true,
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                damage: 42, cooldown: 0.18, projectileSpeed: 1400,
+                pierce: 4, projectileRadius: 20, projectiles: 2, spread: 0.18,
+            },
+        ],
+        update: arcaneStormUpdate,
+    },
+    celestialBlades: {
+        id: 'celestialBlades',
+        name: 'Celestial Blades',
+        description: 'A ring of empowered orbiting blades.',
+        kind: 'orbit',
+        evolved: true,
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                bladeCount: 8, damage: 26, orbitSpeed: 4.5,
+                orbitRadius: 165, bladeRadius: 38, hitCooldown: 0.22,
+            },
+        ],
+        initialState() { return { baseAngle: 0, bladePositions: [] }; },
+        update: orbitingBladeUpdate,
+    },
+    divineNova: {
+        id: 'divineNova',
+        name: 'Divine Nova',
+        description: 'Vast holy burst that heals on every hit.',
+        kind: 'pulse',
+        evolved: true,
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                radius: 480, damage: 38, cooldown: 1.4,
+                healPerHit: 0.6, maxHealPerPulse: 14, visualLifetime: 0.7,
+            },
+        ],
+        update: divineNovaUpdate,
+    },
+    thunderCrown: {
+        id: 'thunderCrown',
+        name: 'Thunder Crown',
+        description: 'Chained lightning rains across the field.',
+        kind: 'lightning',
+        evolved: true,
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                strikes: 8, damage: 42, cooldown: 0.9, range: 1400,
+                chainCount: 2, chainChance: 0.8, chainRange: 280, chainDamage: 28,
+            },
+        ],
+        update: thunderCrownUpdate,
+    },
+};
+
+export const WEAPON_IDS = Object.keys(WEAPONS);
+
+// ─── Behavior functions ────────────────────────────────────────────────
+
+// Arcane Bolt: cooldown timer; on tick fire one Projectile at the nearest
+// active enemy. Holds the timer at 0 when there are no targets so the next
+// enemy to appear gets shot immediately instead of waiting a full cycle.
+function arcaneBoltUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+
+    const target = nearestEnemy(ctx.player, ctx.enemies);
+    if (!target) {
+        if (owned.timer < 0) owned.timer = 0;
+        return;
+    }
+
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const dx = target.x - ctx.player.x;
+    const dy = target.y - ctx.player.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const vx = (dx / len) * cfg.projectileSpeed;
+    const vy = (dy / len) * cfg.projectileSpeed;
+    ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
+        damage: cfg.damage * dmgMul,
+        radius: cfg.projectileRadius,
+        pierce: cfg.pierce,
+    }));
+    owned.timer = cfg.cooldown * cdMul;
+}
+
+// Orbiting Blade: advance shared base angle; recompute blade positions; for
+// each blade, damage any overlapping enemy whose weaponHitCooldown is 0.
+// Hit cooldown is stored on the enemy itself so multiple weapons share
+// fairness against the same target.
+function orbitingBladeUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.state.baseAngle += cfg.orbitSpeed * dt;
+    if (owned.state.baseAngle > TWO_PI) owned.state.baseAngle -= TWO_PI;
+
+    const positions = owned.state.bladePositions;
+    positions.length = 0;
+    for (let i = 0; i < cfg.bladeCount; i++) {
+        const angle = owned.state.baseAngle + (i * TWO_PI / cfg.bladeCount);
+        positions.push({
+            x: ctx.player.x + Math.cos(angle) * cfg.orbitRadius,
+            y: ctx.player.y + Math.sin(angle) * cfg.orbitRadius,
+            angle,
+        });
+    }
+
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const damage = cfg.damage * dmgMul;
+    const hitCooldown = cfg.hitCooldown * cdMul;
+
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        if (e.weaponHitCooldown > 0) continue;
+        for (const pos of positions) {
+            if (!circleOverlap(pos.x, pos.y, cfg.bladeRadius, e.x, e.y, e.radius)) continue;
+            const dx = e.x - ctx.player.x;
+            const dy = e.y - ctx.player.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const kx = (dx / len) * KNOCKBACK.strength * 0.45;
+            const ky = (dy / len) * KNOCKBACK.strength * 0.45;
+            e.takeDamage(damage, kx, ky);
+            ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
+            if (!e.active) ctx.killed.push(e);
+            e.weaponHitCooldown = hitCooldown;
+            break;
+        }
+    }
+}
+
+// Holy Pulse: on cooldown, damage every enemy within `radius` once, then
+// spawn a fading ring effect for visual feedback. Light radial knockback so
+// crowds get nudged outward.
+function holyPulseUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    owned.timer = cfg.cooldown * cdMul;
+    const damage = cfg.damage * dmgMul;
+
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        if (!circleOverlap(ctx.player.x, ctx.player.y, cfg.radius, e.x, e.y, e.radius)) continue;
+        const dx = e.x - ctx.player.x;
+        const dy = e.y - ctx.player.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const kx = (dx / len) * KNOCKBACK.strength * 0.35;
+        const ky = (dy / len) * KNOCKBACK.strength * 0.35;
+        e.takeDamage(damage, kx, ky);
+        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
+        if (!e.active) ctx.killed.push(e);
+    }
+
+    ctx.effects.push({
+        kind: 'pulse',
+        x: ctx.player.x,
+        y: ctx.player.y,
+        radius: cfg.radius,
+        age: 0,
+        lifetime: 0.45,
+        active: true,
+    });
+}
+
+// Lightning Mark: on cooldown, pick up to N random enemies within `range`
+// of the player and zap them. Waits if no valid targets are on screen.
+function lightningMarkUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+
+    const candidates = [];
+    const rsq = cfg.range * cfg.range;
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        const dx = e.x - ctx.player.x;
+        const dy = e.y - ctx.player.y;
+        if (dx * dx + dy * dy <= rsq) candidates.push(e);
+    }
+    if (candidates.length === 0) {
+        if (owned.timer < 0) owned.timer = 0;
+        return;
+    }
+
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const damage = cfg.damage * dmgMul;
+    const n = Math.min(cfg.strikes, candidates.length);
+    for (let i = 0; i < n; i++) {
+        const idx = Math.floor(Math.random() * candidates.length);
+        const target = candidates.splice(idx, 1)[0];
+        target.takeDamage(damage);
+        ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: damage });
+        if (!target.active) ctx.killed.push(target);
+        ctx.effects.push({
+            kind: 'lightning',
+            x: target.x,
+            y: target.y,
+            age: 0,
+            lifetime: 0.22,
+            active: true,
+        });
+    }
+    owned.timer = cfg.cooldown * cdMul;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────
+
+function nearestEnemy(player, enemies) {
+    let best = null;
+    let bestSq = Infinity;
+    for (const e of enemies) {
+        if (!e.active) continue;
+        const dx = e.x - player.x;
+        const dy = e.y - player.y;
+        const dsq = dx * dx + dy * dy;
+        if (dsq < bestSq) {
+            bestSq = dsq;
+            best = e;
+        }
+    }
+    return best;
+}
+
+// ─── Evolved behavior functions ──────────────────────────────────────
+
+// Arcane Storm: fires `projectiles` bolts in a small spread per cooldown.
+// Same nearest-target steering as Arcane Bolt, just multi-shot + faster.
+function arcaneStormUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+
+    const target = nearestEnemy(ctx.player, ctx.enemies);
+    if (!target) {
+        if (owned.timer < 0) owned.timer = 0;
+        return;
+    }
+
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const dx = target.x - ctx.player.x;
+    const dy = target.y - ctx.player.y;
+    const baseAngle = Math.atan2(dy, dx);
+    const count = cfg.projectiles ?? 1;
+    const spread = cfg.spread ?? 0;
+
+    for (let i = 0; i < count; i++) {
+        const offset = count > 1 ? (i - (count - 1) / 2) * spread : 0;
+        const a = baseAngle + offset;
+        const vx = Math.cos(a) * cfg.projectileSpeed;
+        const vy = Math.sin(a) * cfg.projectileSpeed;
+        ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
+            damage: cfg.damage * dmgMul,
+            radius: cfg.projectileRadius,
+            pierce: cfg.pierce,
+        }));
+    }
+    owned.timer = cfg.cooldown * cdMul;
+}
+
+// Divine Nova: bigger Holy Pulse with heal-on-hit. Heal per hit + total
+// heal per pulse are both capped so a packed room doesn't full-heal you.
+function divineNovaUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    owned.timer = cfg.cooldown * cdMul;
+    const damage = cfg.damage * dmgMul;
+
+    let hitCount = 0;
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        if (!circleOverlap(ctx.player.x, ctx.player.y, cfg.radius, e.x, e.y, e.radius)) continue;
+        const dx = e.x - ctx.player.x;
+        const dy = e.y - ctx.player.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const kx = (dx / len) * KNOCKBACK.strength * 0.4;
+        const ky = (dy / len) * KNOCKBACK.strength * 0.4;
+        e.takeDamage(damage, kx, ky);
+        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
+        if (!e.active) ctx.killed.push(e);
+        hitCount += 1;
+    }
+
+    if (hitCount > 0 && ctx.player.hp < ctx.player.maxHp) {
+        const wantedHeal = (cfg.healPerHit ?? 0) * hitCount;
+        const capped = Math.min(wantedHeal, cfg.maxHealPerPulse ?? wantedHeal);
+        const actual = Math.min(capped, ctx.player.maxHp - ctx.player.hp);
+        ctx.player.hp += actual;
+    }
+
+    ctx.effects.push({
+        kind: 'pulse',
+        x: ctx.player.x,
+        y: ctx.player.y,
+        radius: cfg.radius,
+        age: 0,
+        lifetime: cfg.visualLifetime ?? 0.6,
+        active: true,
+        evolved: true,
+    });
+}
+
+// Thunder Crown: more strikes than Lightning Mark, and each primary hit
+// can chain to nearby enemies inside chainRange (no double-hits within a
+// single pulse — `struck` tracks the set).
+function thunderCrownUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+
+    const candidates = [];
+    const rsq = cfg.range * cfg.range;
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        const dx = e.x - ctx.player.x;
+        const dy = e.y - ctx.player.y;
+        if (dx * dx + dy * dy <= rsq) candidates.push(e);
+    }
+    if (candidates.length === 0) {
+        if (owned.timer < 0) owned.timer = 0;
+        return;
+    }
+
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const damage = cfg.damage * dmgMul;
+    const chainDamage = (cfg.chainDamage ?? cfg.damage) * dmgMul;
+    const struck = new Set();
+
+    const n = Math.min(cfg.strikes, candidates.length);
+    for (let i = 0; i < n; i++) {
+        const idx = Math.floor(Math.random() * candidates.length);
+        const target = candidates.splice(idx, 1)[0];
+        if (struck.has(target) || !target.active) continue;
+        target.takeDamage(damage);
+        ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: damage });
+        if (!target.active) ctx.killed.push(target);
+        struck.add(target);
+        ctx.effects.push({
+            kind: 'lightning',
+            x: target.x,
+            y: target.y,
+            age: 0,
+            lifetime: 0.25,
+            active: true,
+            evolved: true,
+        });
+
+        // Chain to nearby unstruck enemies.
+        let chainSource = target;
+        for (let j = 0; j < (cfg.chainCount ?? 0); j++) {
+            if (Math.random() >= (cfg.chainChance ?? 1)) break;
+            const chainRangeSq = (cfg.chainRange ?? 0) * (cfg.chainRange ?? 0);
+            let nearest = null;
+            let nearestDsq = chainRangeSq;
+            for (const e of ctx.enemies) {
+                if (!e.active || struck.has(e)) continue;
+                const dsq = distanceSq(chainSource.x, chainSource.y, e.x, e.y);
+                if (dsq < nearestDsq) {
+                    nearest = e;
+                    nearestDsq = dsq;
+                }
+            }
+            if (!nearest) break;
+            nearest.takeDamage(chainDamage);
+            ctx.hits.push({ x: nearest.x, y: nearest.y - nearest.radius, amount: chainDamage });
+            if (!nearest.active) ctx.killed.push(nearest);
+            struck.add(nearest);
+            ctx.effects.push({
+                kind: 'lightning',
+                x: nearest.x,
+                y: nearest.y,
+                age: 0,
+                lifetime: 0.22,
+                active: true,
+                evolved: true,
+                chain: true,
+            });
+            chainSource = nearest;
+        }
+    }
+    owned.timer = cfg.cooldown * cdMul;
+}

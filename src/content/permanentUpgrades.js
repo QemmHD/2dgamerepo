@@ -1,0 +1,95 @@
+// Permanent upgrades purchased between runs and applied at run start.
+//
+// Each upgrade:
+//   id              save key
+//   name/description shown on shop cards
+//   maxLevel        cap on stacks
+//   costAt(level)   coin cost to buy the (level+1)-th stack
+//   apply(player, level)
+//                   called once at run start with the saved level
+//                   (no-op when level is 0)
+//
+// Add a new entry to expand the shop — no system changes required.
+
+export const PERMANENT_UPGRADES = [
+    {
+        id: 'maxHp',
+        name: 'Max HP',
+        description: '+5 max HP per level',
+        maxLevel: 20,
+        costAt(level) { return 8 + level * 4; },
+        apply(player, level) {
+            const bonus = 5 * level;
+            player.maxHp += bonus;
+            player.hp = player.maxHp;
+        },
+    },
+    {
+        id: 'damage',
+        name: 'Damage',
+        description: '+5% weapon damage per level',
+        maxLevel: 20,
+        costAt(level) { return 10 + level * 5; },
+        apply(player, level) {
+            player.damageMul *= 1 + 0.05 * level;
+        },
+    },
+    {
+        id: 'moveSpeed',
+        name: 'Move Speed',
+        description: '+3% movement speed per level',
+        maxLevel: 15,
+        costAt(level) { return 10 + level * 5; },
+        apply(player, level) {
+            player.speed *= 1 + 0.03 * level;
+        },
+    },
+    {
+        id: 'xpGain',
+        name: 'XP Gain',
+        description: '+5% XP from gems per level',
+        maxLevel: 20,
+        costAt(level) { return 12 + level * 6; },
+        apply(player, level) {
+            player.xpMultiplier *= 1 + 0.05 * level;
+        },
+    },
+    {
+        id: 'pickupRange',
+        name: 'Pickup Range',
+        description: '+5% gem pickup range per level',
+        maxLevel: 15,
+        costAt(level) { return 10 + level * 5; },
+        apply(player, level) {
+            player.pickupRange *= 1 + 0.05 * level;
+        },
+    },
+    {
+        id: 'startingCoins',
+        name: 'Starting Coins',
+        description: '+5 starting run coins per level',
+        maxLevel: 10,
+        costAt(level) { return 20 + level * 10; },
+        apply(player, level) {
+            player.coins = (player.coins ?? 0) + 5 * level;
+        },
+    },
+];
+
+// Apply every owned permanent upgrade exactly once to a freshly-built
+// Player. Called from Game._startRun after _initRunState.
+export function applyPermanentUpgrades(player, saveData) {
+    if (!saveData || !saveData.upgrades) return;
+    for (const u of PERMANENT_UPGRADES) {
+        const level = saveData.upgrades[u.id] ?? 0;
+        if (level > 0) u.apply(player, level);
+    }
+}
+
+// Cost for the NEXT purchase given the player's current level. Returns
+// Infinity once the upgrade is at max level (so the shop UI can render
+// "MAX" and refuse purchases).
+export function nextCost(upgrade, currentLevel) {
+    if (currentLevel >= upgrade.maxLevel) return Infinity;
+    return upgrade.costAt(currentLevel);
+}
