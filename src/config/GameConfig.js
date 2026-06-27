@@ -329,11 +329,77 @@ export const MAP = {
 
 // Soft corner darkening drawn AFTER the world but BEFORE the UI so the
 // edges of the play area fade away gently — kept low so gameplay
-// readability stays unaffected.
+// readability stays unaffected. (Fallback path only — when the lighting
+// buffer is active it bakes its own vignette into the darkness veil.)
 export const VIGNETTE = {
     strength: 0.5,
     innerRadius: 0.32,
     outerRadius: 0.85,
+};
+
+// ── Graphics / "Emberlight" overhaul ───────────────────────────────────
+// The world draws fully lit at full opacity, then a single dark veil
+// (one internal-res offscreen buffer) is laid on top with light-shaped
+// holes carved out by every emitter — so emissive things (staff, bolts,
+// gems, candles, boss eyes, explosions) appear to pierce the dark. A
+// pooled particle system + a screen-space additive spark layer (drawn
+// ABOVE the veil, so feedback never dims) supply the juice. All values
+// here are tunable; the FPS governor steps quality down on slow devices.
+export const GFX = {
+    darkness: {
+        enabled: true,
+        strength: 0.56,      // veil opacity at screen center (hard cap 0.62)
+        color: '#05070c',    // near-black, cool blue
+        vignetteBoost: 0.22, // extra darkness baked toward the corners
+    },
+    lighting: {
+        maxLights: 96,       // total light cutouts per frame
+        pickupLightCap: 40,  // gem/coin/chest lights capped separately
+        colorTint: true,     // faint warm/cool additive bloom in the holes
+        tintIntensity: 0.3,
+        playerRadius: 360,
+        playerIntensity: 1.0,
+        projectileRadius: 130,
+        gemRadius: 78,
+        coinRadius: 70,
+        chestRadius: 140,
+        candleRadius: 120,
+        enemyEyeRadius: 64,
+        bossRadius: 260,
+        effectRadius: 220,
+    },
+    particles: {
+        enabled: true,
+        max: 220,            // hard pool cap (preallocated, never grows)
+        emberRate: 7,        // ambient embers spawned per second near player
+        fog: true,
+        fogCount: 14,        // target drifting fog wisps near the player
+    },
+    // Adaptive quality: the GameLoop already measures fps. Sustained dips
+    // step quality down (fewer lights/particles, tint then fog off) and it
+    // recovers when fps climbs back. Player/pickup lights + combat sparks
+    // are never throttled.
+    governor: {
+        enabled: true,
+        downFps: 52,
+        upFps: 58,
+        sustainSeconds: 1.0,
+    },
+};
+
+// Light colors per emitter kind. Hex #rrggbb so the buffer can derive rgba.
+export const LIGHT_COLORS = {
+    player: '#ffe6b0',
+    projectile: '#ffd27a',
+    coin: '#ffd166',
+    chest: '#ffe08a',
+    candle: '#ff9a4a',
+    enemyEye: '#ff6a5a',
+    boss: '#ff8a5a',
+    effect: '#fff0c4',
+    gemSmall: '#4ec1ff',
+    gemMedium: '#5fe87a',
+    gemLarge: '#ff5566',
 };
 
 // ── UI / debug defaults ────────────────────────────────────────────────

@@ -32,12 +32,15 @@ import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
 import { BossDirector } from '../systems/BossDirector.js';
 import { MapRenderer } from '../systems/MapRenderer.js';
+import { LightingSystem } from '../systems/LightingSystem.js';
+import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
 import { UISystem } from '../systems/UISystem.js';
+import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
@@ -45,6 +48,24 @@ const DEBUG_BUTTON_TOUCH_SLOP = 24;
 // Anything whose center is farther than this from the view edge can't
 // contribute a visible pixel and is skipped at draw time.
 const CULL_MARGIN = 160;
+
+// Death-burst tint per enemy type (boss/elite handled separately).
+const DEATH_COLORS = {
+    slime: '#7be08a',
+    bat: '#b48cff',
+    crawler: '#9a7cff',
+    brute: '#d8a060',
+};
+function deathColor(e) {
+    if (e.boss) return '#ffd27a';
+    if (e.elite) return '#ffe08a';
+    return DEATH_COLORS[e.type] ?? '#ffcaa0';
+}
+function gemLightColor(tier) {
+    if (tier === 'large') return LIGHT_COLORS.gemLarge;
+    if (tier === 'medium') return LIGHT_COLORS.gemMedium;
+    return LIGHT_COLORS.gemSmall;
+}
 
 export class Game {
     constructor({ renderer, input, loop }) {
@@ -58,6 +79,14 @@ export class Game {
         // pattern and per-chunk decoration tables are world-static,
         // so they survive restarts intact (no need to rebuild).
         this.mapRenderer = new MapRenderer();
+        // Lighting buffer + particle pool are also world-static / pooled,
+        // so they live across runs (particles are cleared on run start).
+        this.lighting = new LightingSystem();
+        this.particles = new ParticleSystem();
+        // Adaptive graphics governor state. level 0 = full quality.
+        this._gfxLevel = 0;
+        this._gfxLowTimer = 0;
+        this._gfxHighTimer = 0;
 
         // Meta-progression flow: 'start' (title + shop) → 'gameplay' → 'gameOver'.
         // Boot lands on the start screen so the player can spend banked coins
@@ -288,6 +317,9 @@ export class Game {
 
         // A fresh run should never inherit a half-armed save-reset confirm.
         this.resetConfirming = false;
+
+        // Drop any particles left over from the previous run.
+        if (this.particles) this.particles.reset();
 
         if (this.input.touch) this.input.touch.setEnabled(true);
     }
@@ -567,13 +599,17 @@ export class Game {
         for (const g of this.gems) {
             if (!g.active) continue;
             const xp = g.update(dt, this.player);
-            if (xp > 0) xpCollected += xp;
+            if (xp > 0) {
+                xpCollected += xp;
+                this.particles.pickupSparkle(g.x, g.y, gemLightColor(g.tier));
+            }
         }
         if (xpCollected > 0) {
             const levels = this.player.gainXP(xpCollected);
             if (levels > 0) {
                 this.pendingLevelUps += levels;
                 this._pushFeedback('levelup', 0.5);
+                this.particles.levelUpBurst(this.player.x, this.player.y);
                 if (!this.upgradeChoices) this._presentLevelUp();
             }
         }
@@ -582,7 +618,10 @@ export class Game {
         for (const c of this.coins) {
             if (!c.active) continue;
             const got = c.update(dt, this.player);
-            if (got > 0) this.player.coins = (this.player.coins ?? 0) + got;
+            if (got > 0) {
+                this.player.coins = (this.player.coins ?? 0) + got;
+                this.particles.pickupSparkle(c.x, c.y, LIGHT_COLORS.coin);
+            }
         }
 
         const collisionResult = this.collisionSystem.resolve(
@@ -598,6 +637,7 @@ export class Game {
         if (allKilled.length > 0) {
             this.kills += allKilled.length;
             for (const e of allKilled) {
+                this.particles.deathBurst(e.x, e.y, deathColor(e));
                 this._dropGem(e.x, e.y);
                 if (e.boss) {
                     // Bosses always drop a chest + a coin burst.
@@ -621,8 +661,16 @@ export class Game {
                 }
             }
         }
+        // Hit sparks are bright but capped per frame so a wide AoE hit
+        // (pulse/orbit striking a crowd) can't drain the particle pool and
+        // starve death bursts.
+        let sparkBudget = 6;
         for (const hit of allHits) {
             this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, '#ffffff'));
+            if (sparkBudget > 0) {
+                this.particles.hitSpark(hit.x, hit.y);
+                sparkBudget--;
+            }
         }
         if (collisionResult.playerHit) {
             this.camera.shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
@@ -638,6 +686,10 @@ export class Game {
         for (const d of this.damageNumbers) {
             if (d.active) d.update(dt);
         }
+
+        // Advance particles (ambient embers + fog spawn around the player).
+        this.particles.update(dt, this.player);
+        this._updateGfxGovernor(dt);
 
         // Chest pickup: chests sit until the player walks onto them, then
         // queue a chest reward overlay. Multiple chests collected in the
@@ -703,38 +755,80 @@ export class Game {
             return;
         }
 
+        // "Emberlight" pipeline. The world draws fully lit; emitters
+        // register lights into the darkness buffer as they're drawn; the
+        // veil is composited in screen space afterward with bright sparks +
+        // damage numbers layered on top so feedback never dims.
+        const lightingOn = GFX.darkness.enabled && this.lighting.ok;
+        const L = lightingOn ? this.lighting : null;
+        if (L) L.beginFrame(this.camera);
+
         ctx.save();
         this.camera.apply(ctx);
-        // Order matters: ground → debug grid → decorations → bounds →
-        // entities. Decorations sit above the grid so the grid doesn't
-        // overdraw rocks/mushrooms when debug is on.
+
+        // Ground → grid(debug) → decorations (which register candle lights)
+        // → low fog (below entities) → bounds.
         this.mapRenderer.drawBackground(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         if (this.showDebug) this._drawGrid(ctx);
-        this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT, L);
+        this.particles.drawWorldFog(ctx, this.camera);
         this._drawWorldBounds(ctx, this.showDebug);
 
-        // Off-screen culling: only entities whose center is within the
-        // camera view (plus a margin for the sprite half-extent + shake)
-        // are worth a draw call. Enemies spawn ~1100-1350px out with the
-        // cap reaching 145, so most are off the 1920x1080 view on any given
-        // frame — skipping them makes render cost scale with VISIBLE count,
-        // not total alive count.
+        // Off-screen culling: only entities within the camera view (plus a
+        // sprite-half + shake margin) are worth a draw call (enemies spawn
+        // ~1100-1350px out, cap up to 145). Lights are registered in the
+        // SAME culled loops so light cost scales with visible emitters too.
         const cull = (e) => this._inView(e.x, e.y, CULL_MARGIN);
+        const Lc = GFX.lighting;
 
-        for (const g of this.gems) if (cull(g)) g.draw(ctx);
-        for (const c of this.coins) if (cull(c)) c.draw(ctx);
-        for (const c of this.chests) if (cull(c)) c.draw(ctx);
+        // Player light first (always kept, exempt from caps).
+        if (L) L.addLight(this.player.x, this.player.y, Lc.playerRadius, LIGHT_COLORS.player, Lc.playerIntensity, 0);
+
+        for (const g of this.gems) {
+            if (!cull(g)) continue;
+            g.draw(ctx);
+            if (L) L.addLight(g.x, g.y, Lc.gemRadius, gemLightColor(g.tier), 0.85, 1);
+        }
+        for (const c of this.coins) {
+            if (!cull(c)) continue;
+            c.draw(ctx);
+            if (L) L.addLight(c.x, c.y, Lc.coinRadius, LIGHT_COLORS.coin, 0.8, 1);
+        }
+        for (const c of this.chests) {
+            if (!cull(c)) continue;
+            c.draw(ctx);
+            if (L) L.addLight(c.x, c.y, Lc.chestRadius, LIGHT_COLORS.chest, 0.9, 1);
+        }
         for (const e of this.enemies) {
             if (!cull(e)) continue;
             e.draw(ctx);
             e.drawHpBar(ctx);
+            if (L) {
+                if (e.boss) L.addLight(e.x, e.y, Lc.bossRadius, LIGHT_COLORS.boss, 0.95, 0);
+                else L.addLight(e.x, e.y - e.radius * 0.3, Lc.enemyEyeRadius, LIGHT_COLORS.enemyEye, 0.7, 2);
+            }
         }
         this.player.draw(ctx);
         this.player.drawHpBar(ctx);
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
-        for (const p of this.projectiles) if (cull(p)) p.draw(ctx);
+        for (const p of this.projectiles) {
+            if (!cull(p)) continue;
+            p.draw(ctx);
+            if (L) L.addLight(p.x, p.y, Lc.projectileRadius, LIGHT_COLORS.projectile, 0.85, 0);
+        }
         this.weaponSystem.drawEffects(ctx);
-        for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
+        // Weapon effects (pulse/lightning) are bright emitters — carve light
+        // holes so the veil doesn't dim them.
+        if (L) {
+            for (const fx of this.weaponSystem.effects) {
+                if (!fx.active) continue;
+                L.addLight(fx.x, fx.y, Lc.effectRadius, LIGHT_COLORS.effect, 0.8, 0);
+            }
+        }
+
+        // Occludable additive particles (embers + death dust) — these sit
+        // above entities but BELOW the veil, so they read as ambient glow.
+        this.particles.drawWorldAdditive(ctx, this.camera);
 
         if (this.collisionSystem.contactFlash > 0) {
             this._drawContactFlash(ctx);
@@ -751,10 +845,22 @@ export class Game {
         }
         ctx.restore();
 
-        // Vignette darkens screen corners — drawn in screen space so it
-        // stays anchored to the viewport, then UI on top so HUD stays
-        // perfectly readable.
-        this.mapRenderer.drawVignette(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        // SCREEN SPACE. Composite the darkness veil (+ baked vignette +
+        // color tint) over the lit world, or fall back to the plain
+        // vignette if the lighting buffer is unavailable.
+        if (L) L.composite(ctx);
+        else this.mapRenderer.drawVignette(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+
+        // Always-bright sparks sit ABOVE the veil so kill/hit/pickup/level
+        // feedback never gets dimmed by the darkness.
+        this.particles.drawScreenAdditive(ctx, this.camera);
+
+        // Damage numbers also draw above the veil (world-positioned via a
+        // re-applied camera transform) so combat math stays fully legible.
+        ctx.save();
+        this.camera.apply(ctx);
+        for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
+        ctx.restore();
 
         this.ui.draw(ctx, this._buildUIState());
 
@@ -880,6 +986,48 @@ export class Game {
         ctx.strokeRect(-hw, -hh, WORLD_WIDTH, WORLD_HEIGHT);
         ctx.setLineDash([]);
         ctx.restore();
+    }
+
+    // Adaptive graphics quality. The GameLoop measures fps; a sustained
+    // dip steps quality down (fewer lights/particles, tint then fog off),
+    // and it recovers when fps climbs back. Player/pickup lights + combat
+    // sparks are never throttled (the lower levels only thin the extras).
+    _updateGfxGovernor(dt) {
+        if (!GFX.governor.enabled) return;
+        const fps = this.loop?.fps ?? 0;
+        if (fps <= 0) return; // not measured yet
+        const g = GFX.governor;
+        if (fps < g.downFps) { this._gfxLowTimer += dt; this._gfxHighTimer = 0; }
+        else if (fps > g.upFps) { this._gfxHighTimer += dt; this._gfxLowTimer = 0; }
+        else { this._gfxLowTimer = 0; this._gfxHighTimer = 0; }
+
+        if (this._gfxLowTimer >= g.sustainSeconds && this._gfxLevel < 2) {
+            this._gfxLevel++;
+            this._gfxLowTimer = 0;
+            this._applyGfxLevel();
+        } else if (this._gfxHighTimer >= g.sustainSeconds * 2 && this._gfxLevel > 0) {
+            this._gfxLevel--;
+            this._gfxHighTimer = 0;
+            this._applyGfxLevel();
+        }
+    }
+
+    _applyGfxLevel() {
+        const lvl = this._gfxLevel;
+        if (lvl === 0) {
+            this.lighting.setQuality({
+                maxLights: GFX.lighting.maxLights,
+                colorTint: GFX.lighting.colorTint,
+                strength: GFX.darkness.strength,
+            });
+            this.particles.setQuality({ max: GFX.particles.max, fog: GFX.particles.fog });
+        } else if (lvl === 1) {
+            this.lighting.setQuality({ maxLights: 64, colorTint: false });
+            this.particles.setQuality({ max: 140, fog: GFX.particles.fog });
+        } else {
+            this.lighting.setQuality({ maxLights: 44, colorTint: false });
+            this.particles.setQuality({ max: 90, fog: false });
+        }
     }
 
     // True when (x, y) is within the camera view plus `margin`. Used to

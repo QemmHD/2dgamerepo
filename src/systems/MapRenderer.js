@@ -15,7 +15,7 @@
 // Vignette is drawn in screen space (outside the camera transform) so it
 // stays anchored to the viewport corners, not the world.
 
-import { MAP, VIGNETTE, WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig.js';
+import { MAP, VIGNETTE, WORLD_WIDTH, WORLD_HEIGHT, GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import { getGroundTileSprite, getDecorationSprite } from '../assets/ProceduralSprites.js';
 
@@ -109,7 +109,9 @@ export class MapRenderer {
         return decs;
     }
 
-    drawDecorations(ctx, camera, viewW, viewH) {
+    // `lighting` (optional) is the LightingSystem; lit decorations (candles)
+    // register a warm light so they glow through the darkness veil.
+    drawDecorations(ctx, camera, viewW, viewH, lighting = null) {
         const left = camera.x - viewW / 2;
         const top = camera.y - viewH / 2;
         const right = left + viewW;
@@ -146,6 +148,12 @@ export class MapRenderer {
                         ctx.rotate(d.rot);
                         ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
                         ctx.restore();
+                    }
+                    // Candles cast warm light from their flame (near the top
+                    // of the sprite). Always-on (priority 0) — there are
+                    // few visible at once.
+                    if (lighting && d.type === 'candle') {
+                        lighting.addLight(d.x, d.y - h * 0.28, GFX.lighting.candleRadius, LIGHT_COLORS.candle, 0.8, 0);
                     }
                 }
             }

@@ -12,10 +12,29 @@
 // (182×182) — the visual is drawn inside that canvas so the world-space
 // half-extents stay constant across types.
 
-import { SPRITE_SIZE, MAP, GEM_TIERS } from '../config/GameConfig.js';
+import { SPRITE_SIZE, MAP, GEM_TIERS, LIGHT_COLORS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 
 const cache = new Map();
+
+// Soft white radial used as a light cutout (drawn with 'destination-out'
+// to carve holes in the darkness veil) and reused as a particle mask.
+export function getLightMaskSprite() {
+    if (cache.has('lightMask')) return cache.get('lightMask');
+    const sprite = drawLightMask(256);
+    cache.set('lightMask', sprite);
+    return sprite;
+}
+
+// Cached colored radial glow (color center → transparent), used for the
+// additive color-tint pass and for particles. Keyed by hex color.
+export function getGlowSprite(color) {
+    const key = `glow:${color}`;
+    if (cache.has(key)) return cache.get(key);
+    const sprite = drawGlow(128, color);
+    cache.set(key, sprite);
+    return sprite;
+}
 
 // Build every sprite up-front (called once at boot) so nothing rasterizes
 // mid-frame. Without this the first spawn of each enemy, the first coin,
@@ -36,7 +55,21 @@ export function prewarmSprites() {
     getGroundTileSprite();
     for (const tier of GEM_TIERS) getXPGemSprite(tier);
     for (const type of MAP.decorationTypes) getDecorationSprite(type);
+    // Lighting + particle masks/glows.
+    getLightMaskSprite();
+    for (const key in LIGHT_COLORS) getGlowSprite(LIGHT_COLORS[key]);
+    // Particle-specific glow colors not in LIGHT_COLORS.
+    for (const c of PARTICLE_GLOW_COLORS) getGlowSprite(c);
 }
+
+// Extra glow tints used by the particle system that aren't already in
+// LIGHT_COLORS — prewarmed so the first death/spark of each kind never
+// rasterizes a gradient mid-combat. (white spark, ash puff, the per-enemy
+// death-burst tints, and the elite tint.)
+export const PARTICLE_GLOW_COLORS = [
+    '#ffffff', '#3a2a22', '#ffcaa0',
+    '#7be08a', '#b48cff', '#9a7cff', '#d8a060', '#ffe08a',
+];
 
 // ── Ground tile ────────────────────────────────────────────────────────
 
@@ -1703,17 +1736,71 @@ function tileRng(seed) {
     };
 }
 
+// Soft white radial light mask. Center fully opaque (full reveal) with a
+// gentle plateau, falling to transparent at the edge.
+function drawLightMask(size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const r = size / 2;
+    const g = ctx.createRadialGradient(r, r, 1, r, r, r);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.45, 'rgba(255,255,255,0.82)');
+    g.addColorStop(0.8, 'rgba(255,255,255,0.28)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(r, r, r, 0, TWO_PI);
+    ctx.fill();
+    return canvas;
+}
+
+// Colored radial glow (opaque-ish color center → transparent). Drawn with
+// 'lighter' for additive bloom + particles; intensity comes from the
+// caller's globalAlpha so the same sprite serves every brightness.
+function drawGlow(size, color) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const r = size / 2;
+    const g = ctx.createRadialGradient(r, r, 1, r, r, r);
+    g.addColorStop(0, color);
+    g.addColorStop(0.4, hexToRgba(color, 0.55));
+    g.addColorStop(1, hexToRgba(color, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(r, r, r, 0, TWO_PI);
+    ctx.fill();
+    return canvas;
+}
+
+// #rrggbb (or #rgb) → rgba() string at the given alpha.
+function hexToRgba(hex, a) {
+    let h = hex.replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const n = parseInt(h, 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 function drawGroundTile(size) {
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
 
-    const BASE = '#13201a';
-    const BASE_LIGHT = '#1b2c22';
-    const SPECK = '#243a2c';
-    const SPECK_DARK = '#0a120d';
-    const MOSS = '#2c4a35';
+    // Regraded for the dark-fantasy dusk: deeper, slightly cooler base with
+    // a touch more contrast so lit areas pop under the darkness veil while
+    // unlit ground reads as near-black jungle floor.
+    const BASE = '#101b16';
+    const BASE_LIGHT = '#1a2b21';
+    const SPECK = '#27402f';
+    const SPECK_DARK = '#080f0b';
+    const MOSS = '#2f5037';
 
     ctx.fillStyle = BASE;
     ctx.fillRect(0, 0, size, size);
