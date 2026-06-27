@@ -128,6 +128,15 @@ export class Game {
                 }
                 return;
             }
+            // Pause toggle — gameplay only, never while a level-up/chest
+            // overlay is up (those already freeze the world).
+            if (!this.chestReward && !this.upgradeChoices &&
+                (e.code === 'KeyP' || e.code === 'Escape')) {
+                e.preventDefault();
+                this.togglePause();
+                return;
+            }
+            if (this.paused) return; // swallow other keys while paused
             if (this.chestReward) {
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault();
@@ -145,6 +154,9 @@ export class Game {
                 } else if (e.code === 'Digit3' || e.code === 'Numpad3') {
                     e.preventDefault();
                     this.selectUpgrade(2);
+                } else if (e.code === 'KeyR') {
+                    e.preventDefault();
+                    this.rerollChoices();
                 }
             }
         });
@@ -166,12 +178,27 @@ export class Game {
             return false;
         };
 
+        const inRect = (pos, r, slop = 20) =>
+            pos.x >= r.x - slop && pos.x <= r.x + r.w + slop &&
+            pos.y >= r.y - slop && pos.y <= r.y + r.h + slop;
+
         const tryPickUpgradeAt = (clientX, clientY) => {
             if (!this.upgradeChoices) return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
+            // Reroll button first.
+            if (this.rerolls > 0) {
+                const rr = this.ui.getRerollButtonRect();
+                if (inRect(pos, rr)) { this._pressFeedback('reroll'); this.rerollChoices(); return true; }
+            }
             const rects = this.ui.getLevelUpCardRects(this.upgradeChoices.length);
             for (let i = 0; i < rects.length; i++) {
                 const r = rects[i];
+                // A banish button sits inside each card — check it before the
+                // card body so banishing doesn't also pick the card.
+                if (this.banishes > 0) {
+                    const b = this.ui.getBanishButtonRect(r);
+                    if (inRect(pos, b, 0)) { this._pressFeedback('banish'); this.banishChoice(i); return true; }
+                }
                 if (
                     pos.x >= r.x &&
                     pos.x <= r.x + r.w &&
@@ -185,9 +212,23 @@ export class Game {
             return true;
         };
 
-        const inRect = (pos, r, slop = 20) =>
-            pos.x >= r.x - slop && pos.x <= r.x + r.w + slop &&
-            pos.y >= r.y - slop && pos.y <= r.y + r.h + slop;
+        // Pause overlay buttons (resume / restart / shop / shake toggle).
+        const tryPauseOverlayAt = (clientX, clientY) => {
+            if (!this.paused) return false;
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            if (inRect(pos, this.ui.getResumeButtonRect())) { this._pressFeedback('resume'); this.togglePause(); return true; }
+            if (inRect(pos, this.ui.getPauseRestartRect())) { this._pressFeedback('restart'); this.restart(); return true; }
+            if (inRect(pos, this.ui.getPauseShopRect())) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
+            if (inRect(pos, this.ui.getShakeToggleRect())) { this._pressFeedback('shake'); this.toggleScreenShake(); return true; }
+            return true; // consume all taps while paused
+        };
+
+        // The little HUD pause button (gameplay, no overlay).
+        const tryPauseButtonAt = (clientX, clientY) => {
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            if (inRect(pos, this.ui.getPauseButtonRect())) { this._pressFeedback('pause'); this.togglePause(); return true; }
+            return false;
+        };
 
         const tryRestartAt = (clientX, clientY) => {
             if (this.screen !== 'gameOver') return false;
@@ -239,8 +280,11 @@ export class Game {
                     if (tryRestartAt(t.clientX, t.clientY)) return;
                 } else if (this.upgradeChoices) {
                     if (tryPickUpgradeAt(t.clientX, t.clientY)) return;
-                } else if (tryToggleDebugAt(t.clientX, t.clientY)) {
-                    return;
+                } else if (this.paused) {
+                    if (tryPauseOverlayAt(t.clientX, t.clientY)) return;
+                } else {
+                    if (tryPauseButtonAt(t.clientX, t.clientY)) return;
+                    if (tryToggleDebugAt(t.clientX, t.clientY)) return;
                 }
             }
         }, { passive: false });
@@ -256,9 +300,27 @@ export class Game {
                 tryRestartAt(e.clientX, e.clientY);
             } else if (this.upgradeChoices) {
                 tryPickUpgradeAt(e.clientX, e.clientY);
+            } else if (this.paused) {
+                tryPauseOverlayAt(e.clientX, e.clientY);
             } else {
-                tryToggleDebugAt(e.clientX, e.clientY);
+                if (!tryPauseButtonAt(e.clientX, e.clientY)) {
+                    tryToggleDebugAt(e.clientX, e.clientY);
+                }
             }
+        });
+
+        // Auto-pause when the tab/window loses focus so a backgrounded run
+        // can't take unfair damage (the loop keeps stepping otherwise).
+        const autoPause = () => {
+            if (this.screen === 'gameplay' && !this.gameOver &&
+                !this.upgradeChoices && !this.chestReward && !this.paused) {
+                this.paused = true;
+                this._updateJoystickEnabled();
+            }
+        };
+        window.addEventListener('blur', autoPause);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) autoPause();
         });
     }
 
@@ -317,6 +379,12 @@ export class Game {
 
         // A fresh run should never inherit a half-armed save-reset confirm.
         this.resetConfirming = false;
+        this.paused = false;
+        // Level-up agency resources (granted from the shop in _startRun).
+        this.rerolls = 0;
+        this.banishes = 0;
+        // Records beaten this run (set at game-over for the NEW BEST banner).
+        this.newBest = null;
 
         // Drop any particles left over from the previous run.
         if (this.particles) this.particles.reset();
@@ -334,6 +402,12 @@ export class Game {
         // Remember how many coins the shop handed us so _enterGameOver can
         // bank only what was *earned* this run, not the granted seed.
         this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
+        // Level-up agency resources: 1 free reroll baseline so the feature
+        // is discoverable, plus whatever the shop granted onto the player.
+        this.rerolls = 1 + (this.player.rerolls ?? 0);
+        this.banishes = this.player.banishes ?? 0;
+        // Screen-shake preference (accessibility) read from the save.
+        this.shakeEnabled = this.saveSystem.getSetting('screenShake') !== false;
         this._lastHp = this.player.hp;
         this.screen = 'gameplay';
         // Reset the UI's per-run animation state (bar display values, boss
@@ -350,7 +424,48 @@ export class Game {
         this.screen = 'start';
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
+        this.paused = false;
         this._updateJoystickEnabled();
+    }
+
+    // Pause is only meaningful during live gameplay (overlays already
+    // freeze the world). Toggling re-enables/disables the joystick.
+    togglePause() {
+        if (this.screen !== 'gameplay' || this.gameOver ||
+            this.upgradeChoices || this.chestReward) return;
+        this.paused = !this.paused;
+        this._updateJoystickEnabled();
+    }
+
+    toggleScreenShake() {
+        this.shakeEnabled = !this.shakeEnabled;
+        this.saveSystem.setSetting('screenShake', this.shakeEnabled);
+    }
+
+    // Screen shake routed through here so the accessibility toggle can
+    // suppress it in one place.
+    _shake(intensity, duration) {
+        if (this.shakeEnabled) this.camera.shake(intensity, duration);
+    }
+
+    // Re-roll the current level-up offer (costs one reroll charge).
+    rerollChoices() {
+        if (!this.upgradeChoices || this.rerolls <= 0) return;
+        this.rerolls -= 1;
+        const choices = this.upgradeSystem.rollChoices(this, 3);
+        this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
+    }
+
+    // Banish the offered card at idx for the rest of the run, then re-roll
+    // the offer so the banished card is gone (costs one banish charge).
+    banishChoice(idx) {
+        if (!this.upgradeChoices || this.banishes <= 0) return;
+        const card = this.upgradeChoices[idx];
+        if (!card) return;
+        this.banishes -= 1;
+        this.upgradeSystem.banish(card.id);
+        const choices = this.upgradeSystem.rollChoices(this, 3);
+        this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
     }
 
     buyUpgrade(id) {
@@ -412,7 +527,8 @@ export class Game {
     // GAME OVER.
     _updateJoystickEnabled() {
         if (!this.input.touch) return;
-        const blocked = this.screen !== 'gameplay' || !!this.upgradeChoices || !!this.chestReward;
+        const blocked = this.screen !== 'gameplay' || this.paused ||
+            !!this.upgradeChoices || !!this.chestReward;
         this.input.touch.setEnabled(!blocked);
     }
 
@@ -471,7 +587,7 @@ export class Game {
         this.enemies.push(boss);
         this.waveDirector.announce(`${def.bossName} approaches!`, 3.5);
         // A heavier, longer shake than a normal hit to telegraph the arrival.
-        this.camera.shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
+        this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
     }
 
     _dropChest(x, y) {
@@ -530,6 +646,10 @@ export class Game {
                 .map((w) => WEAPONS[w.id].name),
         };
 
+        // Fold the run into lifetime/best records; capture which bests were
+        // beaten so the game-over summary can flag them.
+        this.newBest = this.saveSystem.recordRun(this.runSummary);
+
         this._updateJoystickEnabled();
     }
 
@@ -570,6 +690,11 @@ export class Game {
             // Tick the chest-overlay animation but freeze gameplay so the
             // world behind it stays exactly as it was when the chest opened.
             this.chestReward.age += dt;
+            this.camera.update(dt);
+            return;
+        }
+        if (this.paused) {
+            // Frozen world; only the camera settles.
             this.camera.update(dt);
             return;
         }
@@ -673,7 +798,7 @@ export class Game {
             }
         }
         if (collisionResult.playerHit) {
-            this.camera.shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+            this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
             this._pushFeedback('hit', 0.32);
             this.damageNumbers.push(new DamageNumber(
                 this.player.x,
@@ -883,6 +1008,7 @@ export class Game {
         if (this.screen === 'start') {
             base.resetConfirming = this.resetConfirming;
             base.resetConfirmTimer = this.resetConfirmTimer;
+            base.stats = this.saveSystem.data.stats;
             base.permanentUpgrades = PERMANENT_UPGRADES.map((u) => {
                 const level = this.saveSystem.getUpgradeLevel(u.id);
                 return {
@@ -937,6 +1063,11 @@ export class Game {
         base.gameOverAge = this.gameOverAge;
         base.bossesDefeated = this.bossesDefeated;
         base.runSummary = this.runSummary;
+        base.newBest = this.newBest;
+        base.paused = this.paused;
+        base.shakeEnabled = this.shakeEnabled;
+        base.rerolls = this.rerolls;
+        base.banishes = this.banishes;
         return base;
     }
 

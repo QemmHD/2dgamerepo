@@ -142,10 +142,17 @@ const WEIGHT_PASSIVE_UPGRADE = 1.05;
 export class UpgradeSystem {
     constructor() {
         this.appliedCounts = Object.create(null);
+        // Card ids banished for the rest of the run (never offered again).
+        this.banished = new Set();
+    }
+
+    // Remove a card id from the offer pool for the rest of the run.
+    banish(id) {
+        if (id) this.banished.add(id);
     }
 
     rollChoices(game, count = 3) {
-        const pool = this._buildPool(game);
+        const pool = this._buildPool(game).filter((c) => !this.banished.has(c.id));
 
         const choices = [];
         const remaining = pool.slice();

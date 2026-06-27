@@ -156,6 +156,36 @@ export class UISystem {
         return rects;
     }
 
+    // Small HUD pause button, just left of the DBG button.
+    getPauseButtonRect() {
+        const dbg = this.getDebugButtonRect();
+        return { x: dbg.x - DEBUG_BUTTON_SIZE - 16, y: dbg.y, w: DEBUG_BUTTON_SIZE, h: DEBUG_BUTTON_SIZE };
+    }
+
+    // Pause overlay buttons (stacked, centered).
+    getResumeButtonRect() {
+        return { x: INTERNAL_WIDTH / 2 - 240, y: INTERNAL_HEIGHT / 2 - 70, w: 480, h: 100 };
+    }
+    getPauseRestartRect() {
+        return { x: INTERNAL_WIDTH / 2 - 244, y: INTERNAL_HEIGHT / 2 + 54, w: 234, h: 84 };
+    }
+    getPauseShopRect() {
+        return { x: INTERNAL_WIDTH / 2 + 10, y: INTERNAL_HEIGHT / 2 + 54, w: 234, h: 84 };
+    }
+    getShakeToggleRect() {
+        return { x: INTERNAL_WIDTH / 2 - 240, y: INTERNAL_HEIGHT / 2 + 162, w: 480, h: 64 };
+    }
+
+    // Level-up reroll button (below the cards) + a per-card banish button.
+    getRerollButtonRect() {
+        const sa = this.renderer.safeArea;
+        return { x: INTERNAL_WIDTH / 2 - 180, y: INTERNAL_HEIGHT - 150 - sa.bottom, w: 360, h: 68 };
+    }
+    getBanishButtonRect(cardRect) {
+        const s = 44;
+        return { x: cardRect.x + cardRect.w - s - 14, y: cardRect.y + 14, w: s, h: s };
+    }
+
     // ── Press feedback helper ──────────────────────────────────────────
     // Returns 0..1 "just pressed" intensity for a control id (fades over
     // ~0.22s). Used to scale-down + brighten a tapped surface.
@@ -180,6 +210,9 @@ export class UISystem {
         this._drawXPBar(ctx, gameState);
         this._drawDebugPanel(ctx, gameState);
         this._drawDebugButton(ctx, gameState);
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
+            this._drawPauseButton(ctx, gameState);
+        }
         this._drawControlHint(ctx, gameState);
 
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
@@ -194,13 +227,15 @@ export class UISystem {
             if (hpRatio > 0 && hpRatio < 0.3) this._drawLowHpVignette(ctx, hpRatio);
         }
 
-        // Overlay priority: game-over > chest > level-up.
+        // Overlay priority: game-over > chest > level-up > pause.
         if (gameState.gameOver) {
             this._drawGameOverOverlay(ctx, gameState);
         } else if (gameState.chestReward) {
             this._drawChestOverlay(ctx, gameState);
         } else if (gameState.upgradeChoices) {
             this._drawLevelUpOverlay(ctx, gameState);
+        } else if (gameState.paused) {
+            this._drawPauseOverlay(ctx, gameState);
         }
 
         // Transient hit/heal/level-up screen flashes paint last so they
@@ -735,8 +770,91 @@ export class UISystem {
         ctx.restore();
     }
 
+    _drawPauseButton(ctx, state) {
+        const { x, y, w, h } = this.getPauseButtonRect();
+        const press = this._pressAmt(state, 'pause');
+        const s = 1 - 0.05 * press;
+        ctx.save();
+        ctx.translate(x + w / 2, y + h / 2);
+        ctx.scale(s, s);
+        ctx.translate(-(x + w / 2), -(y + h / 2));
+        ctx.fillStyle = 'rgba(255,255,255,0.16)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 2;
+        roundRectPath(ctx, x, y, w, h, 14);
+        ctx.fill();
+        ctx.stroke();
+        // Two pause bars.
+        ctx.fillStyle = '#fff';
+        const bw = 12, bh = 40, gap = 12;
+        roundRectPath(ctx, x + w / 2 - gap / 2 - bw, y + h / 2 - bh / 2, bw, bh, 3);
+        ctx.fill();
+        roundRectPath(ctx, x + w / 2 + gap / 2, y + h / 2 - bh / 2, bw, bh, 3);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    _drawPauseOverlay(ctx, state) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(6, 10, 18, 0.82)';
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd166';
+        ctx.font = `bold 96px ${FONT}`;
+        ctx.fillText('PAUSED', INTERNAL_WIDTH / 2, INTERNAL_HEIGHT / 2 - 180);
+
+        const resume = this.getResumeButtonRect();
+        this._drawSummaryButton(ctx, resume, 'RESUME', '#5fe87a',
+            'rgba(95, 232, 122, 0.3)', this._pressAmt(state, 'resume'), true);
+
+        const restart = this.getPauseRestartRect();
+        const shop = this.getPauseShopRect();
+        this._drawSummaryButton(ctx, restart, 'RESTART', '#ffd166',
+            'rgba(255, 209, 102, 0.14)', this._pressAmt(state, 'restart'), false);
+        this._drawSummaryButton(ctx, shop, 'SHOP', '#5fc7ff',
+            'rgba(95, 199, 255, 0.12)', this._pressAmt(state, 'returnShop'), false);
+
+        // Screen-shake accessibility toggle.
+        const tg = this.getShakeToggleRect();
+        const on = state.shakeEnabled !== false;
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 2;
+        roundRectPath(ctx, tg.x, tg.y, tg.w, tg.h, 14);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = `26px ${FONT}`;
+        ctx.textAlign = 'left';
+        ctx.fillText('Screen shake', tg.x + 24, tg.y + tg.h / 2);
+        // Pill switch on the right.
+        const pillW = 84, pillH = 40;
+        const px = tg.x + tg.w - pillW - 20;
+        const py = tg.y + (tg.h - pillH) / 2;
+        roundRectPath(ctx, px, py, pillW, pillH, pillH / 2);
+        ctx.fillStyle = on ? '#5fe87a' : 'rgba(255,255,255,0.2)';
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(on ? px + pillW - pillH / 2 : px + pillH / 2, py + pillH / 2, pillH / 2 - 5, 0, TWO_PI);
+        ctx.fill();
+        ctx.fillStyle = on ? '#0a1a10' : 'rgba(255,255,255,0.7)';
+        ctx.font = `bold 18px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(on ? 'ON' : 'OFF', px + pillW / 2, py - 0 + pillH / 2);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.font = `22px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('P / Esc to resume', INTERNAL_WIDTH / 2, INTERNAL_HEIGHT - 60 - this.renderer.safeArea.bottom);
+        ctx.restore();
+    }
+
     _drawControlHint(ctx, state) {
-        if (state.upgradeChoices || state.gameOver || state.chestReward) return;
+        if (state.upgradeChoices || state.gameOver || state.chestReward || state.paused) return;
         const sa = this.renderer.safeArea;
         ctx.save();
         ctx.textAlign = 'center';
@@ -837,6 +955,7 @@ export class UISystem {
 
         const rects = this.getLevelUpCardRects(choices.length);
         const counts = state.upgradeCounts ?? {};
+        const banishes = state.banishes ?? 0;
         for (let i = 0; i < rects.length; i++) {
             // Stagger each card's entrance.
             const cardT = easeOutBack(clamp01((age - i * 0.06) / 0.32));
@@ -854,7 +973,18 @@ export class UISystem {
             ctx.scale(scale, scale);
             ctx.translate(-cxp, -cyp);
             this._drawUpgradeCard(ctx, r, choices[i], i, counts);
+            if (banishes > 0) this._drawBanishButton(ctx, r);
             ctx.restore();
+        }
+
+        // Reroll button + remaining charges (only when the player has them).
+        ctx.globalAlpha = bg;
+        const rerolls = state.rerolls ?? 0;
+        if (rerolls > 0) {
+            const rr = this.getRerollButtonRect();
+            const press = this._pressAmt(state, 'reroll');
+            this._drawSummaryButton(ctx, rr, `REROLL  (${rerolls})`, '#c97bff',
+                'rgba(201, 123, 255, 0.18)', press, false);
         }
 
         ctx.globalAlpha = bg;
@@ -862,12 +992,37 @@ export class UISystem {
         ctx.textBaseline = 'bottom';
         ctx.fillStyle = 'rgba(255,255,255,0.65)';
         ctx.font = `24px ${FONT}`;
+        let hint = 'Tap a card  •  1 / 2 / 3';
+        if (rerolls > 0) hint += '  •  R reroll';
+        if (banishes > 0) hint += `  •  ✕ banish (${banishes})`;
         ctx.fillText(
-            'Tap a card  •  or press 1 / 2 / 3',
+            hint,
             INTERNAL_WIDTH / 2,
-            INTERNAL_HEIGHT - 60 - this.renderer.safeArea.bottom
+            INTERNAL_HEIGHT - 56 - this.renderer.safeArea.bottom
         );
 
+        ctx.restore();
+    }
+
+    _drawBanishButton(ctx, cardRect) {
+        const b = this.getBanishButtonRect(cardRect);
+        ctx.save();
+        roundRectPath(ctx, b.x, b.y, b.w, b.h, 10);
+        ctx.fillStyle = 'rgba(255, 71, 87, 0.22)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 120, 130, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = '#ff8c95';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        const pad = 13;
+        ctx.beginPath();
+        ctx.moveTo(b.x + pad, b.y + pad);
+        ctx.lineTo(b.x + b.w - pad, b.y + b.h - pad);
+        ctx.moveTo(b.x + b.w - pad, b.y + pad);
+        ctx.lineTo(b.x + pad, b.y + b.h - pad);
+        ctx.stroke();
         ctx.restore();
     }
 
@@ -919,12 +1074,13 @@ export class UISystem {
         ctx.textBaseline = 'middle';
         ctx.fillText(`${index + 1}`, r.x + 20 + kc / 2, r.y + 20 + kc / 2 + 1);
 
-        // Rarity label, top-right.
+        // Card label, centered at the top (the top-right corner is reserved
+        // for the optional banish button).
         ctx.fillStyle = colors.accent;
         ctx.font = `bold 22px ${FONT}`;
-        ctx.textAlign = 'right';
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText(label, r.x + r.w - 24, r.y + 30);
+        ctx.fillText(label, r.x + r.w / 2, r.y + 32);
 
         // Name.
         ctx.fillStyle = '#fff';
@@ -975,6 +1131,23 @@ export class UISystem {
         ctx.font = `bold 112px ${FONT}`;
         ctx.fillText('GAME OVER', 0, 0);
         ctx.restore();
+
+        // NEW BEST! ribbon — appears once the title has settled, pulsing.
+        const nb = state.newBest;
+        if (nb && (nb.time || nb.wave || nb.level || nb.kills) && age > 0.4) {
+            const beaten = [];
+            if (nb.time) beaten.push('TIME');
+            if (nb.wave) beaten.push('WAVE');
+            if (nb.level) beaten.push('LEVEL');
+            if (nb.kills) beaten.push('KILLS');
+            const pulse = 0.7 + 0.3 * ((Math.sin(age * 6) + 1) / 2);
+            ctx.save();
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = '#ffd166';
+            ctx.font = `bold 40px ${FONT}`;
+            ctx.fillText(`★ NEW BEST!  ${beaten.join(' · ')} ★`, INTERNAL_WIDTH / 2, 196 + sa.top);
+            ctx.restore();
+        }
 
         if (!summary) {
             ctx.restore();
@@ -1133,6 +1306,21 @@ export class UISystem {
             INTERNAL_WIDTH / 2,
             210 + sa.top
         );
+
+        // Best-run record ribbon (only once a run has been recorded).
+        const stats = state.stats;
+        if (stats && stats.runs > 0) {
+            const parts = [
+                `Best Time ${formatTime(stats.bestTime)}`,
+                `Wave ${stats.bestWave}`,
+                `Lv ${stats.bestLevel}`,
+                `${stats.bestKills} kills`,
+                `${stats.runs} runs`,
+            ];
+            ctx.fillStyle = 'rgba(95, 199, 255, 0.85)';
+            ctx.font = `bold 22px ${FONT}`;
+            ctx.fillText(parts.join('   •   '), INTERNAL_WIDTH / 2, 234 + sa.top);
+        }
 
         const upgrades = state.permanentUpgrades ?? [];
         const rects = this.getShopUpgradeRects(upgrades.length);
