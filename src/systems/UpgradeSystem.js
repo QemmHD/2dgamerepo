@@ -25,12 +25,12 @@ const STAT_UPGRADES = [
         kind: 'stat',
         cardLabel: 'STAT',
         name: 'Quick Feet',
-        description: '+15% movement speed',
+        description: '+18% movement speed',
         rarity: 'common',
         weight: 1.0,
         maxStacks: 5,
         apply(game) {
-            game.player.speed *= 1.15;
+            game.player.speed *= 1.18;
         },
     },
     {
@@ -51,13 +51,13 @@ const STAT_UPGRADES = [
         kind: 'stat',
         cardLabel: 'STAT',
         name: 'Hearty',
-        description: '+20 max HP',
+        description: '+25 max HP',
         rarity: 'common',
         weight: 0.9,
         maxStacks: 6,
         apply(game) {
-            game.player.maxHp += 20;
-            game.player.hp = Math.min(game.player.hp + 20, game.player.maxHp);
+            game.player.maxHp += 25;
+            game.player.hp = Math.min(game.player.hp + 25, game.player.maxHp);
         },
     },
     {
@@ -65,12 +65,12 @@ const STAT_UPGRADES = [
         kind: 'stat',
         cardLabel: 'STAT',
         name: 'Embersage',
-        description: '+10% XP from gems',
+        description: '+15% XP from gems',
         rarity: 'uncommon',
         weight: 0.7,
         maxStacks: 6,
         apply(game) {
-            game.player.xpMultiplier *= 1.1;
+            game.player.xpMultiplier *= 1.15;
         },
     },
     {

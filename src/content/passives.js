@@ -24,10 +24,10 @@ export const PASSIVES = {
     spellbook: {
         id: 'spellbook',
         name: 'Quickwick',
-        description: '-9% weapon cooldowns per level.',
+        description: '-10% weapon cooldowns per level.',
         maxLevel: 5,
         apply(player) {
-            player.cooldownMul *= 0.91;
+            player.cooldownMul *= 0.90;
         },
     },
 

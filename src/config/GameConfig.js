@@ -40,12 +40,15 @@ export const RENDER = { maxDpr: 3, maxBackingPx: 3840 * 2160, maxCoverCrop: 0.22
 // ── Player ─────────────────────────────────────────────────────────────
 export const PLAYER = {
     radius: 50,
-    speed: 420,
+    // Power-feel pass: base move speed 420 → 460 (~+9.5%, responsive but well
+    // under the camera/collision-safe ceiling). i-frames 0.70 → 0.80s so fast
+    // enemies can't melt the player on contact. maxHp stays 100.
+    speed: 460,
     startX: 0,
     startY: 0,
     pickupRange: 120,
     maxHp: 100,
-    invincibilityDuration: 0.7,
+    invincibilityDuration: 0.8,
     hitFlashDuration: 0.18,
 };
 
@@ -375,8 +378,11 @@ export const WAVE_LIMITS = {
 // Leveling curve. Lowered + flattened so early level-ups come fast (hooks the
 // player) and the ramp stays gentle. L1→2 needs `base`; each later level adds
 // `perLevel`. base 8 / perLevel 4 gives 8,12,16,20,24,… (was 10 / 6).
+// Power-feel pass: base 8 → 6 front-loads the first 2-3 level-ups (~25%
+// faster first level) while the unchanged +4 slope keeps LATE leveling
+// identical: 6,10,14,18,22,… (was 8,12,16,20,24,…).
 export const XP_CURVE = {
-    base: 8,
+    base: 6,
     perLevel: 4,
 };
 
