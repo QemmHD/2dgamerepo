@@ -24,20 +24,20 @@ export const PASSIVES = {
     spellbook: {
         id: 'spellbook',
         name: 'Quickwick',
-        description: '-9% weapon cooldowns per level.',
+        description: '-12% weapon cooldowns per level.',
         maxLevel: 5,
         apply(player) {
-            player.cooldownMul *= 0.91;
+            player.cooldownMul *= 0.88;
         },
     },
 
     powerStone: {
         id: 'powerStone',
         name: 'Brightstone',
-        description: '+12% weapon damage per level.',
+        description: '+14% weapon damage per level.',
         maxLevel: 5,
         apply(player) {
-            player.damageMul *= 1.12;
+            player.damageMul *= 1.14;
         },
     },
 

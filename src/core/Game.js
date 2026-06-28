@@ -944,8 +944,11 @@ export class Game {
         this.waveDirector.update(dt, this.time);
         this.waveState = this.waveDirector.getState(this.time);
 
-        const bossesToSpawn = this.bossDirector.update(this.time);
-        for (const id of bossesToSpawn) this._spawnBoss(id);
+        // One boss at a time: gate the scheduler on a live "is any boss alive"
+        // check so a scheduled spawn is held (not stacked) while one is active.
+        const bossAlive = this.enemies.some((e) => e.active && e.boss);
+        const bossId = this.bossDirector.update(this.time, bossAlive);
+        if (bossId) this._spawnBoss(bossId);
 
         this.player.update(dt, this.input);
         // Slide the player out of any wall they walked into (tangential motion
@@ -1106,6 +1109,9 @@ export class Game {
                 if (e.boss) {
                     // Bosses always drop a chest + a coin burst.
                     this.bossesDefeated += 1;
+                    // Arm the post-death cooldown so the next boss doesn't
+                    // chain in immediately after a late kill.
+                    this.bossDirector.notifyBossDefeated(this.time);
                     this._dropChest(e.x, e.y);
                     this._dropCoinBurst(e.x, e.y, COIN.bossCoinCount, COIN.bossCoinValue);
                 } else if (e.elite) {
@@ -1504,6 +1510,16 @@ export class Game {
         base.chestReward = this.chestReward;
         base.pendingChests = this.pendingChests;
         base.nextBossTime = this.bossDirector.getNextSpawnTime();
+        // Boss scheduler state for the debug panel: live count + why a spawn
+        // is/ isn't happening + when the next one is eligible.
+        const bossAliveNow = this.enemies.some((e) => e.active && e.boss);
+        base.bossActiveCount = this.enemies.reduce((n, e) => n + (e.active && e.boss ? 1 : 0), 0);
+        base.bossStatus = this.bossDirector.getStatus(this.time, bossAliveNow);
+        // Player power multipliers (debug): show the run's effective scaling.
+        base.playerDamageMul = this.player.damageMul;
+        base.playerCooldownMul = this.player.cooldownMul;
+        base.playerSpeed = this.player.speed;
+        base.playerXpMul = this.player.xpMultiplier;
         // Only the debug panel shows this, and the scan walks every
         // evolution every frame — so only pay for it when debug is on.
         base.eligibleEvolutionCount = this.showDebug ? findEligibleEvolutions(this).length : 0;

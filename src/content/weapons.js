@@ -39,8 +39,8 @@ export const WEAPONS = {
         // with level so it reads as an escalating chain-reaction sniper.
         perLevel: [
             null,
-            { damage: 16, cooldown: 0.55, projectileSpeed: 900,  pierce: 0, projectileRadius: 14, ricochet: 0, ricochetRange: 360 },
-            { damage: 20, cooldown: 0.52, projectileSpeed: 940,  pierce: 0, projectileRadius: 14, ricochet: 0, ricochetRange: 360 },
+            { damage: 17, cooldown: 0.52, projectileSpeed: 935,  pierce: 0, projectileRadius: 15, ricochet: 0, ricochetRange: 360 },
+            { damage: 20, cooldown: 0.50, projectileSpeed: 940,  pierce: 0, projectileRadius: 15, ricochet: 0, ricochetRange: 360 },
             { damage: 24, cooldown: 0.48, projectileSpeed: 980,  pierce: 1, projectileRadius: 15, ricochet: 0, ricochetRange: 360 },
             { damage: 29, cooldown: 0.44, projectileSpeed: 1020, pierce: 1, projectileRadius: 15, ricochet: 1, ricochetRange: 360 },
             { damage: 34, cooldown: 0.40, projectileSpeed: 1060, pierce: 1, projectileRadius: 16, ricochet: 1, ricochetRange: 360 },
