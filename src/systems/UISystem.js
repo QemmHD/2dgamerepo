@@ -748,8 +748,12 @@ export class UISystem {
             `hp×spd× ${ws ? ws.healthMul.toFixed(2) : '?'} / ${ws ? ws.speedMul.toFixed(2) : '?'}`,
             `elite%  ${ws ? (ws.eliteChance * 100).toFixed(1) : '?'}`,
             ``,
-            `boss    ${formatBossClock(state.nextBossTime)}` +
+            `boss#   ${state.bossActiveCount ?? 0}` +
                 (state.activeBoss ? `  ${state.activeBoss.name}` : ''),
+            `boss=>  ${state.bossStatus ? state.bossStatus.state.toUpperCase() : '?'}` +
+                (state.bossStatus ? `  in ${state.bossStatus.secondsUntil.toFixed(0)}s` : ''),
+            `dmg×    ${(state.playerDamageMul ?? 1).toFixed(2)}   cd× ${(state.playerCooldownMul ?? 1).toFixed(2)}`,
+            `spd     ${Math.round(state.playerSpeed ?? 0)}   xp× ${(state.playerXpMul ?? 1).toFixed(2)}`,
             `chests  ${state.chestCount ?? 0}` + (state.pendingChests > 0 ? ` +${state.pendingChests}` : ''),
             `evos    ${state.eligibleEvolutionCount ?? 0}`,
             `spawn   ${formatSpawn(state.spawnTimer, state.spawnInterval)}`,

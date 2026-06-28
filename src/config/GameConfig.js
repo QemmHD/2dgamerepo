@@ -152,6 +152,10 @@ export const ENEMY = {
 // Boss spawn schedule + spawn placement.
 export const BOSS = {
     spawnInterval: 120,
+    // Only ONE boss is ever alive; a scheduled spawn waits while one lives.
+    // After a boss dies, the next can't appear for postDeathCooldown seconds
+    // (prevents back-to-back bosses when a boss is killed late).
+    postDeathCooldown: 35,
     spawnRingDistance: 1100,
     types: ['vinebackGoliath', 'stormwingAlpha'],
 };
