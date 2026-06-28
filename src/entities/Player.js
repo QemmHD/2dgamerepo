@@ -130,14 +130,14 @@ export class Player {
         ctx.globalAlpha = alpha;
         ctx.translate(this.x, this.y + bobY);
         if (this.facingX < 0) ctx.scale(-1, 1);
-        ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf);
+        ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         // Hit flash via an additive re-draw of the sprite (no ctx.filter —
         // see Enemy.draw for the iOS rationale).
         if (this.hitFlashTimer > 0) {
             const t = this.hitFlashTimer / PLAYER.hitFlashDuration;
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = alpha * Math.min(1, t);
-            ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf);
+            ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         }
         ctx.restore();
     }

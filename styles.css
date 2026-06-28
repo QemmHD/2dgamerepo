@@ -44,3 +44,35 @@ canvas#game {
     image-rendering: auto;
     touch-action: none;
 }
+
+/* Portrait on a touch device: rotate the landscape game 90° about its center
+   so it fills the screen. The canvas stays flex-centered inside the rotated
+   box, so a pure 90° rotation needs no width/height swap. */
+#stage.rotated {
+    transform: rotate(90deg);
+    transform-origin: center center;
+}
+
+/* "Rotate your device" courtesy hint — a screen-space sibling (NOT inside the
+   rotated stage), so it reads upright in portrait. Shown briefly then fades.
+   Gameplay continues underneath (the game already fills the screen rotated). */
+#rotate-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: calc(var(--sai-top) + 16px) calc(var(--sai-right) + 16px)
+        calc(var(--sai-bottom) + 16px) calc(var(--sai-left) + 16px);
+    background: rgba(5, 7, 12, 0.82);
+    color: #cdd6e2;
+    font-weight: 600;
+    font-size: 5vw;
+    line-height: 1.4;
+    transition: opacity 0.45s ease;
+    pointer-events: none;
+}
+#rotate-hint.show { display: flex; }
+#rotate-hint.hidden { opacity: 0; }

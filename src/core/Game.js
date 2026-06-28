@@ -1433,12 +1433,17 @@ export class Game {
                 strength: GFX.darkness.strength,
             });
             this.particles.setQuality({ max: GFX.particles.max, fog: GFX.particles.fog });
+            this.renderer.setDprCap?.(3);
         } else if (lvl === 1) {
             this.lighting.setQuality({ maxLights: 64, colorTint: false });
             this.particles.setQuality({ max: 140, fog: GFX.particles.fog });
+            this.renderer.setDprCap?.(3);
         } else {
             this.lighting.setQuality({ maxLights: 44, colorTint: false });
             this.particles.setQuality({ max: 90, fog: false });
+            // Sustained low fps: also shed backing-store fill cost by halving
+            // the DPR ceiling (the supersampled sprites still keep edges clean).
+            this.renderer.setDprCap?.(2);
         }
     }
 

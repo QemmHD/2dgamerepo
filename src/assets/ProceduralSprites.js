@@ -12,7 +12,7 @@
 // (182×182) — the visual is drawn inside that canvas so the world-space
 // half-extents stay constant across types.
 
-import { SPRITE_SIZE, MAP, GEM_TIERS, LIGHT_COLORS } from '../config/GameConfig.js';
+import { SPRITE_SIZE, SPRITE_SS, MAP, GEM_TIERS, LIGHT_COLORS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 
 const cache = new Map();
@@ -192,11 +192,24 @@ export function getEmberWispSprite() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function newSpriteCanvas(size) {
+// Supersampled offscreen canvas: backing store is `logical × SPRITE_SS` px,
+// but the 2D context is pre-scaled by SPRITE_SS so all the hand-tuned drawer
+// coordinates author in LOGICAL units (cx = size/2, lineWidth = 14, …) yet
+// rasterize into a denser canvas — crisp when magnified on big/retina
+// displays. getContext('2d') is idempotent, so a drawer re-fetching the
+// context still sees this pre-applied scale. Consumers draw the result at
+// logical size (sprite.width / SPRITE_SS) to keep the world footprint.
+function ssCanvas(wLogical, hLogical) {
     const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+    canvas.width = Math.round(wLogical * SPRITE_SS);
+    canvas.height = Math.round(hLogical * SPRITE_SS);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(SPRITE_SS, SPRITE_SS);
     return canvas;
+}
+
+function newSpriteCanvas(size) {
+    return ssCanvas(size, size);
 }
 
 function softShadow(ctx, cx, cy, rx, ry, alpha = 0.35) {
@@ -1577,9 +1590,7 @@ function drawStormwingAlpha(size, frame, count) {
 function drawChest(frame) {
     const W = 96;
     const H = 96;
-    const canvas = document.createElement('canvas');
-    canvas.width = W;
-    canvas.height = H;
+    const canvas = ssCanvas(W, H);
     const ctx = canvas.getContext('2d');
 
     const WOOD = '#7a4920';
@@ -1710,9 +1721,7 @@ function drawChest(frame) {
 
 function drawCoin(frame, count) {
     const W = 32;
-    const canvas = document.createElement('canvas');
-    canvas.width = W;
-    canvas.height = W;
+    const canvas = ssCanvas(W, W);
     const ctx = canvas.getContext('2d');
     const cx = W / 2;
     const cy = W / 2;
@@ -1777,9 +1786,7 @@ function drawCoin(frame, count) {
 function drawProjectile() {
     const W = 56;
     const H = 28;
-    const canvas = document.createElement('canvas');
-    canvas.width = W;
-    canvas.height = H;
+    const canvas = ssCanvas(W, H);
     const ctx = canvas.getContext('2d');
 
     // Outer aura
@@ -1828,9 +1835,7 @@ function drawProjectile() {
 function drawEmberWisp() {
     const W = 56;
     const H = 28;
-    const canvas = document.createElement('canvas');
-    canvas.width = W;
-    canvas.height = H;
+    const canvas = ssCanvas(W, H);
     const ctx = canvas.getContext('2d');
 
     // Outer fire aura.
@@ -1875,9 +1880,7 @@ function drawXPGem(tier) {
     const size = SIZES[tier] ?? SIZES.small;
     const c = COLORS[tier] ?? COLORS.small;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+    const canvas = ssCanvas(size, size);
     const ctx = canvas.getContext('2d');
     const cx = size / 2;
     const cy = size / 2;
@@ -2089,10 +2092,7 @@ function drawDecoration(type) {
 }
 
 function newDecCanvas(w, h) {
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    return canvas;
+    return ssCanvas(w, h);
 }
 
 function drawRock() {

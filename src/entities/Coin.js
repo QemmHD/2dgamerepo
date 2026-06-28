@@ -3,7 +3,7 @@
 // awards run coins instead of XP. Game banks player.coins → total on
 // game over.
 
-import { MAGNET } from '../config/GameConfig.js';
+import { MAGNET, SPRITE_SS } from '../config/GameConfig.js';
 import { TWO_PI, circleOverlap } from '../core/MathUtils.js';
 import { getCoinFrames } from '../assets/ProceduralSprites.js';
 
@@ -74,8 +74,9 @@ export class Coin {
             : 1;
         const idx = Math.floor((this.age + this.spinOffset) * SPIN_HZ) % this.frames.length;
         const sprite = this.frames[idx];
-        const w = sprite.width * popScale;
-        const h = sprite.height * popScale;
+        // Source is supersampled (SPRITE_SS×); draw at logical world size.
+        const w = (sprite.width / SPRITE_SS) * popScale;
+        const h = (sprite.height / SPRITE_SS) * popScale;
         ctx.drawImage(sprite, this.x - w / 2, this.y - h / 2 + bobY, w, h);
     }
 

@@ -20,6 +20,21 @@ function boot() {
     const touch = new TouchJoystick(renderer);
     const input = new Input({ keyboard, touch });
 
+    // Orientation lock must be requested from a user gesture; try once on the
+    // first interaction (succeeds on Android / installed PWA, harmless no-op
+    // on iOS Safari where the CSS-rotate-when-portrait fallback fills instead).
+    const tryLock = () => {
+        renderer.tryLockLandscape();
+        window.removeEventListener('touchstart', tryLock);
+        window.removeEventListener('pointerdown', tryLock);
+    };
+    window.addEventListener('touchstart', tryLock, { passive: true });
+    window.addEventListener('pointerdown', tryLock, { passive: true });
+
+    // Drop an in-progress joystick drag if the screen rotation flips, so a
+    // stale touch origin can't produce a bogus steer across the convention.
+    renderer.onOrientationChange = () => touch.reset();
+
     let game;
     const loop = new GameLoop({
         update: (dt) => game.update(dt),
