@@ -378,9 +378,10 @@ export const WAVE_LIMITS = {
 // Leveling curve. Lowered + flattened so early level-ups come fast (hooks the
 // player) and the ramp stays gentle. L1→2 needs `base`; each later level adds
 // `perLevel`. base 8 / perLevel 4 gives 8,12,16,20,24,… (was 10 / 6).
-// Power-feel pass: base 8 → 6 front-loads the first 2-3 level-ups (~25%
-// faster first level) while the unchanged +4 slope keeps LATE leveling
-// identical: 6,10,14,18,22,… (was 8,12,16,20,24,…).
+// Power-feel pass: base 8 → 6 lowers every threshold by a flat 2 XP
+// (6,10,14,18,22,… vs 8,12,16,20,24,…). The effect is heavily front-loaded —
+// ~25% faster at the first level-up but only ~2% by L25 — and the +4 per-level
+// slope is unchanged, so late leveling pace is effectively the same.
 export const XP_CURVE = {
     base: 6,
     perLevel: 4,

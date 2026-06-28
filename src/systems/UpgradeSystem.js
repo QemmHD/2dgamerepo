@@ -38,12 +38,12 @@ const STAT_UPGRADES = [
         kind: 'stat',
         cardLabel: 'STAT',
         name: 'Lure Light',
-        description: '+30% gem pickup range',
+        description: '+40% gem pickup range',
         rarity: 'common',
         weight: 1.0,
         maxStacks: 5,
         apply(game) {
-            game.player.pickupRange *= 1.3;
+            game.player.pickupRange *= 1.4;
         },
     },
     {
