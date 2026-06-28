@@ -14,7 +14,7 @@
 export const PERMANENT_UPGRADES = [
     {
         id: 'maxHp',
-        name: 'Max HP',
+        name: 'Greater Ember',
         description: '+5 max HP per level',
         maxLevel: 20,
         costAt(level) { return 8 + level * 4; },
@@ -26,7 +26,7 @@ export const PERMANENT_UPGRADES = [
     },
     {
         id: 'damage',
-        name: 'Damage',
+        name: 'Brighter Burn',
         description: '+5% weapon damage per level',
         maxLevel: 20,
         costAt(level) { return 10 + level * 5; },
@@ -36,7 +36,7 @@ export const PERMANENT_UPGRADES = [
     },
     {
         id: 'moveSpeed',
-        name: 'Move Speed',
+        name: 'Quickstep',
         description: '+3% movement speed per level',
         maxLevel: 15,
         costAt(level) { return 10 + level * 5; },
@@ -46,7 +46,7 @@ export const PERMANENT_UPGRADES = [
     },
     {
         id: 'xpGain',
-        name: 'XP Gain',
+        name: 'Soulgleam',
         description: '+5% XP from gems per level',
         maxLevel: 20,
         costAt(level) { return 12 + level * 6; },
@@ -56,7 +56,7 @@ export const PERMANENT_UPGRADES = [
     },
     {
         id: 'pickupRange',
-        name: 'Pickup Range',
+        name: 'Wider Glow',
         description: '+5% gem pickup range per level',
         maxLevel: 15,
         costAt(level) { return 10 + level * 5; },
@@ -66,7 +66,7 @@ export const PERMANENT_UPGRADES = [
     },
     {
         id: 'startingCoins',
-        name: 'Starting Coins',
+        name: 'Heirloom Cinders',
         description: '+5 starting run coins per level',
         maxLevel: 10,
         costAt(level) { return 20 + level * 10; },
@@ -76,7 +76,7 @@ export const PERMANENT_UPGRADES = [
     },
     {
         id: 'rerolls',
-        name: 'Rerolls',
+        name: 'Second Sight',
         description: '+1 level-up reroll per run, per level',
         maxLevel: 5,
         costAt(level) { return 25 + level * 15; },
@@ -86,7 +86,7 @@ export const PERMANENT_UPGRADES = [
     },
     {
         id: 'banish',
-        name: 'Banish',
+        name: 'Forsake',
         description: '+1 banish (remove an offered card) per run, per level',
         maxLevel: 3,
         costAt(level) { return 40 + level * 25; },

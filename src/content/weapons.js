@@ -30,8 +30,8 @@ import { getEmberWispSprite } from '../assets/ProceduralSprites.js';
 export const WEAPONS = {
     arcaneBolt: {
         id: 'arcaneBolt',
-        name: 'Arcane Bolt',
-        description: 'Fires a magic bolt at the nearest foe.',
+        name: 'Cinderbolt',
+        description: 'Flings a living cinder at the nearest husk.',
         kind: 'projectile',
         evolvesTo: null,
         // Signature: ricochet-on-kill — a lethal bolt leaps to the next
@@ -53,8 +53,8 @@ export const WEAPONS = {
 
     orbitingBlade: {
         id: 'orbitingBlade',
-        name: 'Orbiting Blade',
-        description: 'Spinning blades that circle the monkey.',
+        name: 'Frostmotes',
+        description: 'Frozen motes orbit you, chilling what they touch.',
         kind: 'orbit',
         evolvesTo: null,
         element: 'frost',
@@ -79,8 +79,8 @@ export const WEAPONS = {
 
     holyPulse: {
         id: 'holyPulse',
-        name: 'Holy Pulse',
-        description: 'A radiant burst hits everything around you.',
+        name: 'Beacon Pulse',
+        description: 'A pulse of beacon-light scours everything near.',
         kind: 'pulse',
         evolvesTo: null,
         // Signature: stacking armor-shred LOCAL to Holy Pulse — each pulse
@@ -102,8 +102,8 @@ export const WEAPONS = {
 
     lightningMark: {
         id: 'lightningMark',
-        name: 'Lightning Mark',
-        description: 'Lightning strikes random nearby foes.',
+        name: 'Stormbrand',
+        description: 'Storm-light brands nearby husks at random.',
         kind: 'lightning',
         evolvesTo: 'thunderCrown',
         element: 'shock',
@@ -126,8 +126,8 @@ export const WEAPONS = {
 
     emberWisp: {
         id: 'emberWisp',
-        name: 'Ember Wisp',
-        description: 'Slow ember bolts that set foes ablaze.',
+        name: 'Pyre Wisp',
+        description: 'Slow pyre-bolts that set husks ablaze.',
         kind: 'projectile',
         evolvesTo: 'infernoStorm',
         element: 'fire',
@@ -151,8 +151,8 @@ export const WEAPONS = {
     // ─── Evolved weapons (only reachable via treasure chest) ─────────
     arcaneStorm: {
         id: 'arcaneStorm',
-        name: 'Arcane Storm',
-        description: 'Twin bolts in a rapid magical barrage.',
+        name: 'Cinderstorm',
+        description: 'Twin cinders in a relentless barrage.',
         kind: 'projectile',
         evolved: true,
         maxLevel: 1,
@@ -168,8 +168,8 @@ export const WEAPONS = {
     },
     celestialBlades: {
         id: 'celestialBlades',
-        name: 'Celestial Blades',
-        description: 'A ring of empowered orbiting blades.',
+        name: 'Glacial Halo',
+        description: 'A ring of glacial motes that freeze and shatter.',
         kind: 'orbit',
         evolved: true,
         element: 'frost',
@@ -189,8 +189,8 @@ export const WEAPONS = {
     },
     divineNova: {
         id: 'divineNova',
-        name: 'Divine Nova',
-        description: 'Vast holy burst that heals on every hit.',
+        name: 'Dawnbreaker',
+        description: 'A burst of dawn that heals with every strike.',
         kind: 'pulse',
         evolved: true,
         maxLevel: 1,
@@ -206,8 +206,8 @@ export const WEAPONS = {
     },
     infernoStorm: {
         id: 'infernoStorm',
-        name: 'Inferno Storm',
-        description: 'Twin ember bolts that leave a raging blaze.',
+        name: 'Wildpyre',
+        description: 'Twin pyre-bolts that leave a raging blaze.',
         kind: 'projectile',
         evolved: true,
         element: 'fire',
@@ -224,8 +224,8 @@ export const WEAPONS = {
     },
     thunderCrown: {
         id: 'thunderCrown',
-        name: 'Thunder Crown',
-        description: 'Chained lightning rains across the field.',
+        name: 'Stormcrown',
+        description: 'Chained storm-light rains across the vigil.',
         kind: 'lightning',
         evolved: true,
         element: 'shock',

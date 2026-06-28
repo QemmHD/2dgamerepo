@@ -247,7 +247,9 @@ function drawMonkey(size, frame) {
     const BELT = '#3c2210';
     const GOLD = '#ffd166';
     const STAFF = '#3a2412';
-    const STAFF_TIP = '#7be0ff';
+    // The Last Ember on the Wick-Keeper's lantern-staff: warm, living flame
+    // (re-themed from cold arcane cyan for EMBERWAKE).
+    const STAFF_TIP = '#ffb24a';
 
     softShadow(ctx, cx, cy + 60, 50, 9, 0.4);
 

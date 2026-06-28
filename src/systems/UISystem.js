@@ -1335,7 +1335,7 @@ export class UISystem {
         ctx.fillStyle = 'rgba(255,255,255,0.55)';
         ctx.font = `22px ${FONT}`;
         ctx.fillText(
-            'Permanent upgrades — applied at the start of every run.',
+            'The Gloam ate the world. Kindle blessings — they burn on into every vigil.',
             INTERNAL_WIDTH / 2,
             210 + sa.top
         );

@@ -4,7 +4,7 @@
 // only the constants you need.
 
 // ── Identity / window ──────────────────────────────────────────────────
-export const GAME_TITLE = 'Monkey Survivor — Prototype';
+export const GAME_TITLE = 'EMBERWAKE — Hold the Last Light';
 
 // ── Internal canvas resolution + 16:9 scaling ──────────────────────────
 export const INTERNAL_WIDTH = 1920;
@@ -118,7 +118,7 @@ export const ENEMY = {
         contactDamage: 25,
         xpValue: 50,
         boss: true,
-        bossName: 'Vineback Goliath',
+        bossName: 'Gravemaw',
         visualScale: 1.85,
         // Apex boss: telegraphed ground shockwave + phase-2 enrage at 50% HP.
         behavior: 'apexBoss',
@@ -135,7 +135,7 @@ export const ENEMY = {
         contactDamage: 18,
         xpValue: 35,
         boss: true,
-        bossName: 'Stormwing Alpha',
+        bossName: 'Vesperwing',
         visualScale: 1.55,
         // Apex boss: telegraphed radial projectile fan + phase-2 enrage.
         behavior: 'apexBoss',
@@ -277,8 +277,8 @@ export const WAVES = [
     {
         index: 0,
         startTime: 0,
-        name: 'Jungle Stirring',
-        announcement: 'Wave 1: Jungle Stirring',
+        name: 'First Vigil',
+        announcement: 'Vigil 1: The Gloam Stirs',
         spawnIntervalMul: 1.0,
         maxAlive: 60,
         typeWeights: { slime: 100 },
@@ -289,8 +289,8 @@ export const WAVES = [
     {
         index: 1,
         startTime: 60,
-        name: 'Wing Trouble',
-        announcement: 'Wave 2: Wing Trouble — Bats join in',
+        name: 'Duskwings Wake',
+        announcement: 'Vigil 2: Duskwings Wake — winged Hollow take flight',
         spawnIntervalMul: 0.85,
         maxAlive: 75,
         typeWeights: { slime: 70, bat: 30 },
@@ -301,8 +301,8 @@ export const WAVES = [
     {
         index: 2,
         startTime: 120,
-        name: 'Fast Swarm',
-        announcement: 'Wave 3: Fast Swarm — Crawlers skitter in',
+        name: 'Skittering Dark',
+        announcement: 'Vigil 3: Skittering Dark — Skitterlings swarm',
         spawnIntervalMul: 0.72,
         maxAlive: 90,
         typeWeights: { slime: 45, bat: 25, crawler: 30, spitter: 15 },
@@ -313,8 +313,8 @@ export const WAVES = [
     {
         index: 3,
         startTime: 180,
-        name: 'Thick Horde',
-        announcement: 'Wave 4: Thick Horde — Pressure rises',
+        name: 'Gathering Hollow',
+        announcement: 'Vigil 4: Gathering Hollow — the dark presses in',
         spawnIntervalMul: 0.60,
         maxAlive: 110,
         typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12 },
@@ -325,8 +325,8 @@ export const WAVES = [
     {
         index: 4,
         startTime: 240,
-        name: 'Heavy Steps',
-        announcement: 'Wave 5: Heavy Steps — Brutes arrive',
+        name: 'Direhusks March',
+        announcement: 'Vigil 5: Direhusks March — the heavy Hollow arrive',
         spawnIntervalMul: 0.52,
         maxAlive: 125,
         typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18 },
@@ -337,8 +337,8 @@ export const WAVES = [
     {
         index: 5,
         startTime: 300,
-        name: 'Endless Swarm',
-        announcement: 'Wave 6: Endless Swarm — Survive!',
+        name: 'The Long Dark',
+        announcement: 'Vigil 6: The Long Dark — hold the light!',
         spawnIntervalMul: 0.44,
         maxAlive: 145,
         typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20 },
