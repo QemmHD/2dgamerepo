@@ -53,6 +53,7 @@ export class PassiveSystem {
                 level: p.level,
                 maxLevel: max,
                 isMax: p.level >= max,
+                element: def?.element ?? null,
             };
         });
     }

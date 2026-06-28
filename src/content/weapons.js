@@ -23,8 +23,9 @@
 // evolved variant (e.g. orbitingBladeUpdate runs Celestial Blades too).
 
 import { TWO_PI, circleOverlap, distanceSq } from '../core/MathUtils.js';
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KNOCKBACK } from '../config/GameConfig.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KNOCKBACK, SHOCK_CFG } from '../config/GameConfig.js';
 import { Projectile } from '../entities/Projectile.js';
+import { getEmberWispSprite } from '../assets/ProceduralSprites.js';
 
 export const WEAPONS = {
     arcaneBolt: {
@@ -56,19 +57,21 @@ export const WEAPONS = {
         description: 'Spinning blades that circle the monkey.',
         kind: 'orbit',
         evolvesTo: null,
-        // Signature: every blade strike stamps a slow on the enemy, turning
-        // the orbit ring into a moving zone of chilled foes. Deeper slow at
-        // higher levels; refresh-based so duration stays flat.
+        element: 'frost',
+        // Signature: every blade strike stamps BOTH a slow and a FROST chill
+        // (separate channels) — the orbit ring becomes a moving zone of
+        // chilled foes. Deeper chill at higher levels; refresh-based so
+        // duration stays flat. (Freeze procs only on the evolved blades.)
         perLevel: [
             null,
-            { bladeCount: 1, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35, slowMul: 0.78, slowDuration: 1.0 },
-            { bladeCount: 2, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35, slowMul: 0.78, slowDuration: 1.0 },
-            { bladeCount: 2, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32, slowMul: 0.74, slowDuration: 1.0 },
-            { bladeCount: 3, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32, slowMul: 0.74, slowDuration: 1.0 },
-            { bladeCount: 3, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30, slowMul: 0.70, slowDuration: 1.0 },
-            { bladeCount: 4, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30, slowMul: 0.70, slowDuration: 1.0 },
-            { bladeCount: 4, damage: 16, orbitSpeed: 3.8, orbitRadius: 140, bladeRadius: 30, hitCooldown: 0.28, slowMul: 0.66, slowDuration: 1.0 },
-            { bladeCount: 5, damage: 18, orbitSpeed: 4.0, orbitRadius: 145, bladeRadius: 32, hitCooldown: 0.26, slowMul: 0.62, slowDuration: 1.0 },
+            { bladeCount: 1, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35, slowMul: 0.78, slowDuration: 1.0, chillMul: 0.78, chillDuration: 1.0 },
+            { bladeCount: 2, damage: 10, orbitSpeed: 3.2, orbitRadius: 110, bladeRadius: 24, hitCooldown: 0.35, slowMul: 0.78, slowDuration: 1.0, chillMul: 0.78, chillDuration: 1.0 },
+            { bladeCount: 2, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32, slowMul: 0.74, slowDuration: 1.0, chillMul: 0.74, chillDuration: 1.0 },
+            { bladeCount: 3, damage: 12, orbitSpeed: 3.4, orbitRadius: 120, bladeRadius: 26, hitCooldown: 0.32, slowMul: 0.74, slowDuration: 1.0, chillMul: 0.74, chillDuration: 1.0 },
+            { bladeCount: 3, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30, slowMul: 0.70, slowDuration: 1.0, chillMul: 0.70, chillDuration: 1.0 },
+            { bladeCount: 4, damage: 14, orbitSpeed: 3.6, orbitRadius: 130, bladeRadius: 28, hitCooldown: 0.30, slowMul: 0.70, slowDuration: 1.0, chillMul: 0.70, chillDuration: 1.0 },
+            { bladeCount: 4, damage: 16, orbitSpeed: 3.8, orbitRadius: 140, bladeRadius: 30, hitCooldown: 0.28, slowMul: 0.66, slowDuration: 1.0, chillMul: 0.66, chillDuration: 1.0 },
+            { bladeCount: 5, damage: 18, orbitSpeed: 4.0, orbitRadius: 145, bladeRadius: 32, hitCooldown: 0.26, slowMul: 0.62, slowDuration: 1.0, chillMul: 0.62, chillDuration: 1.0 },
         ],
         initialState() { return { baseAngle: 0, bladePositions: [] }; },
         update: orbitingBladeUpdate,
@@ -103,18 +106,46 @@ export const WEAPONS = {
         description: 'Lightning strikes random nearby foes.',
         kind: 'lightning',
         evolvesTo: 'thunderCrown',
+        element: 'shock',
+        // Signature: SHOCK — each strike stacks a damage-amp debuff (read at
+        // hit time) and DETONATES any burn already on the target. Pairs with
+        // the anti-boss priority targeting below for a boss-melt identity.
         perLevel: [
             null,
-            { strikes: 1, damage: 18, cooldown: 2.4, range: 1100 },
-            { strikes: 2, damage: 18, cooldown: 2.4, range: 1100 },
-            { strikes: 2, damage: 22, cooldown: 2.2, range: 1150 },
-            { strikes: 3, damage: 22, cooldown: 2.0, range: 1150 },
-            { strikes: 3, damage: 26, cooldown: 1.8, range: 1200 },
-            { strikes: 4, damage: 28, cooldown: 1.6, range: 1200 },
-            { strikes: 5, damage: 32, cooldown: 1.5, range: 1250 },
-            { strikes: 6, damage: 38, cooldown: 1.4, range: 1300 },
+            { strikes: 1, damage: 18, cooldown: 2.4, range: 1100, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { strikes: 2, damage: 18, cooldown: 2.4, range: 1100, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { strikes: 2, damage: 22, cooldown: 2.2, range: 1150, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { strikes: 3, damage: 22, cooldown: 2.0, range: 1150, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { strikes: 3, damage: 26, cooldown: 1.8, range: 1200, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { strikes: 4, damage: 28, cooldown: 1.6, range: 1200, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { strikes: 5, damage: 32, cooldown: 1.5, range: 1250, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { strikes: 6, damage: 38, cooldown: 1.4, range: 1300, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
         ],
         update: lightningMarkUpdate,
+    },
+
+    emberWisp: {
+        id: 'emberWisp',
+        name: 'Ember Wisp',
+        description: 'Slow ember bolts that set foes ablaze.',
+        kind: 'projectile',
+        evolvesTo: 'infernoStorm',
+        element: 'fire',
+        // Signature: FIRE — modest direct damage, but every bolt carries a
+        // burn DoT that re-applies on each pierce/ricochet hop. The thing a
+        // SHOCK build detonates.
+        perLevel: [
+            null,
+            { damage: 6,  cooldown: 1.10, projectileSpeed: 760, projectileRadius: 16, pierce: 0, burnDps: 8,  burnDuration: 3.0 },
+            { damage: 7,  cooldown: 1.05, projectileSpeed: 760, projectileRadius: 16, pierce: 0, burnDps: 9,  burnDuration: 3.0 },
+            { damage: 8,  cooldown: 1.00, projectileSpeed: 760, projectileRadius: 16, pierce: 1, burnDps: 10, burnDuration: 3.0 },
+            { damage: 9,  cooldown: 0.95, projectileSpeed: 760, projectileRadius: 16, pierce: 1, burnDps: 12, burnDuration: 3.0 },
+            { damage: 10, cooldown: 0.90, projectileSpeed: 760, projectileRadius: 16, pierce: 1, burnDps: 14, burnDuration: 3.0 },
+            { damage: 11, cooldown: 0.85, projectileSpeed: 760, projectileRadius: 16, pierce: 2, burnDps: 16, burnDuration: 3.0 },
+            { damage: 12, cooldown: 0.80, projectileSpeed: 760, projectileRadius: 16, pierce: 2, burnDps: 18, burnDuration: 3.0 },
+            { damage: 14, cooldown: 0.75, projectileSpeed: 760, projectileRadius: 16, pierce: 2, burnDps: 20, burnDuration: 3.0 },
+        ],
+        update: emberWispUpdate,
     },
 
     // ─── Evolved weapons (only reachable via treasure chest) ─────────
@@ -141,6 +172,7 @@ export const WEAPONS = {
         description: 'A ring of empowered orbiting blades.',
         kind: 'orbit',
         evolved: true,
+        element: 'frost',
         maxLevel: 1,
         perLevel: [
             null,
@@ -148,6 +180,8 @@ export const WEAPONS = {
                 bladeCount: 8, damage: 26, orbitSpeed: 4.5,
                 orbitRadius: 165, bladeRadius: 38, hitCooldown: 0.22,
                 slowMul: 0.55, slowDuration: 1.4,
+                chillMul: 0.55, chillDuration: 1.4,
+                freezeChance: 0.10, freezeDuration: 0.5,
             },
         ],
         initialState() { return { baseAngle: 0, bladePositions: [] }; },
@@ -170,18 +204,38 @@ export const WEAPONS = {
         ],
         update: divineNovaUpdate,
     },
+    infernoStorm: {
+        id: 'infernoStorm',
+        name: 'Inferno Storm',
+        description: 'Twin ember bolts that leave a raging blaze.',
+        kind: 'projectile',
+        evolved: true,
+        element: 'fire',
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                damage: 16, cooldown: 0.5, projectileSpeed: 900,
+                projectileRadius: 20, projectiles: 2, spread: 0.18, pierce: 4,
+                burnDps: 34, burnDuration: 5.0,
+            },
+        ],
+        update: infernoStormUpdate,
+    },
     thunderCrown: {
         id: 'thunderCrown',
         name: 'Thunder Crown',
         description: 'Chained lightning rains across the field.',
         kind: 'lightning',
         evolved: true,
+        element: 'shock',
         maxLevel: 1,
         perLevel: [
             null,
             {
                 strikes: 8, damage: 42, cooldown: 0.9, range: 1400,
                 chainCount: 2, chainChance: 0.8, chainRange: 280, chainDamage: 28,
+                shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0,
             },
         ],
         update: thunderCrownUpdate,
@@ -264,6 +318,16 @@ function orbitingBladeUpdate(dt, owned, ctx) {
             e.weaponHitCooldown = hitCooldown;
             // Signature slow stamp (rate-limited by the hit cooldown above).
             if (cfg.slowMul) e.applySlow(cfg.slowMul, cfg.slowDuration);
+            // FROST chill (own channel) — Frostbite Core deepens it (clamped)
+            // and adds freeze-proc chance to the evolved blades.
+            if (cfg.chillMul) {
+                const chill = Math.max(0.30, cfg.chillMul - (ctx.player.chillStrength || 0));
+                e.applyChill(chill, cfg.chillDuration);
+            }
+            const freezeChance = (cfg.freezeChance || 0) + (ctx.player.freezeChanceBonus || 0);
+            if (freezeChance > 0 && Math.random() < freezeChance) {
+                e.applyFreeze(cfg.freezeDuration ?? 0.5);
+            }
             break;
         }
     }
@@ -351,9 +415,7 @@ function lightningMarkUpdate(dt, owned, ctx) {
             idx = Math.floor(Math.random() * candidates.length);
         }
         const target = candidates.splice(idx, 1)[0];
-        target.takeDamage(damage);
-        ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: damage });
-        if (!target.active) ctx.killed.push(target);
+        shockStrike(target, damage, cfg, ctx);
         ctx.effects.push({
             kind: 'lightning',
             x: target.x,
@@ -367,6 +429,31 @@ function lightningMarkUpdate(dt, owned, ctx) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
+
+// SHOCK on-hit, shared by Lightning Mark + Thunder Crown (primary + chain).
+// Reads the stacks ALREADY on the target to amplify, deals + reports that
+// truthful amount, THEN adds a stack (ramp is across hits, never a same-frame
+// spike — same discipline as Holy Pulse shred). Finally DETONATES any burn:
+// a shock hit on a burning enemy consumes the remaining burn for an instant
+// detonateMul × burnDps burst, then clears it. All kills route through
+// ctx.killed so gems/coins/kill-count fire normally.
+function shockStrike(target, baseDamage, cfg, ctx) {
+    const amp = 1 + (target.shockStacks || 0) * (cfg.shockPerStack ?? 0);
+    const dmg = baseDamage * amp;
+    target.takeDamage(dmg);
+    ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: dmg });
+    if (!target.active) { ctx.killed.push(target); }
+    if (cfg.maxShockStacks) target.applyShock(cfg.maxShockStacks, cfg.shockDuration);
+    if (target.active && target.burnTimer > 0) {
+        const burst = target.burnDps * SHOCK_CFG.detonateMul;
+        target.takeDamage(burst);
+        ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: burst });
+        target.burnTimer = 0;
+        target.burnDps = 0;
+        target.burnTickAccum = 0;
+        if (!target.active) ctx.killed.push(target);
+    }
+}
 
 function nearestEnemy(player, enemies) {
     let best = null;
@@ -418,6 +505,77 @@ function arcaneStormUpdate(dt, owned, ctx) {
             pierce: cfg.pierce,
             ricochet: cfg.ricochet ?? 0,
             ricochetRange: cfg.ricochetRange ?? 0,
+        }));
+    }
+    owned.timer = cfg.cooldown * cdMul;
+}
+
+// Ember Wisp: like Arcane Bolt but the bolt carries a burn DoT (stamped by
+// CollisionSystem on every enemy it touches) and uses a warm ember sprite.
+function emberWispUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+
+    const target = nearestEnemy(ctx.player, ctx.enemies);
+    if (!target) {
+        if (owned.timer < 0) owned.timer = 0;
+        return;
+    }
+
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const dx = target.x - ctx.player.x;
+    const dy = target.y - ctx.player.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const vx = (dx / len) * cfg.projectileSpeed;
+    const vy = (dy / len) * cfg.projectileSpeed;
+    ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
+        damage: cfg.damage * dmgMul,
+        radius: cfg.projectileRadius,
+        pierce: cfg.pierce,
+        element: 'fire',
+        burnDps: cfg.burnDps,
+        burnDuration: cfg.burnDuration,
+        sprite: getEmberWispSprite(),
+    }));
+    owned.timer = cfg.cooldown * cdMul;
+}
+
+// Inferno Storm: evolved Ember Wisp — twin ember bolts in a small spread,
+// heavier burn, deep pierce. Same multi-shot steering as Arcane Storm.
+function infernoStormUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+
+    const target = nearestEnemy(ctx.player, ctx.enemies);
+    if (!target) {
+        if (owned.timer < 0) owned.timer = 0;
+        return;
+    }
+
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const dx = target.x - ctx.player.x;
+    const dy = target.y - ctx.player.y;
+    const baseAngle = Math.atan2(dy, dx);
+    const count = cfg.projectiles ?? 1;
+    const spread = cfg.spread ?? 0;
+
+    for (let i = 0; i < count; i++) {
+        const offset = count > 1 ? (i - (count - 1) / 2) * spread : 0;
+        const a = baseAngle + offset;
+        const vx = Math.cos(a) * cfg.projectileSpeed;
+        const vy = Math.sin(a) * cfg.projectileSpeed;
+        ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
+            damage: cfg.damage * dmgMul,
+            radius: cfg.projectileRadius,
+            pierce: cfg.pierce,
+            element: 'fire',
+            burnDps: cfg.burnDps,
+            burnDuration: cfg.burnDuration,
+            sprite: getEmberWispSprite(),
         }));
     }
     owned.timer = cfg.cooldown * cdMul;
@@ -525,9 +683,7 @@ function thunderCrownUpdate(dt, owned, ctx) {
             idx = Math.floor(Math.random() * candidates.length);
         }
         const target = candidates.splice(idx, 1)[0];
-        target.takeDamage(damage);
-        ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: damage });
-        if (!target.active) ctx.killed.push(target);
+        shockStrike(target, damage, cfg, ctx);
         struck.add(target);
         ctx.effects.push({
             kind: 'lightning',
@@ -555,9 +711,7 @@ function thunderCrownUpdate(dt, owned, ctx) {
                 }
             }
             if (!nearest) break;
-            nearest.takeDamage(chainDamage);
-            ctx.hits.push({ x: nearest.x, y: nearest.y - nearest.radius, amount: chainDamage });
-            if (!nearest.active) ctx.killed.push(nearest);
+            shockStrike(nearest, chainDamage, cfg, ctx);
             struck.add(nearest);
             ctx.effects.push({
                 kind: 'lightning',

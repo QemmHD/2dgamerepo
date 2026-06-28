@@ -44,6 +44,15 @@ export const EVOLUTIONS = [
         catalystName: 'Clover Coin',
         chestRewardText: 'Thunder Crown crackles overhead.',
     },
+    {
+        id: 'infernoStorm',
+        baseWeaponId: 'emberWisp',
+        evolvedWeaponId: 'infernoStorm',
+        requiredPassiveId: 'powerStone',
+        evolvedName: 'Inferno Storm',
+        catalystName: 'Power Stone',
+        chestRewardText: 'Inferno Storm erupts.',
+    },
 ];
 
 // Returns the subset of EVOLUTIONS the player is currently eligible for:

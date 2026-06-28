@@ -344,14 +344,23 @@ export class UISystem {
         const weaponTheme = { fill: 'rgba(40,30,12,0.7)', border: 'rgba(255,209,102,0.7)', lv: '#ffd166' };
         const evolvedTheme = { fill: 'rgba(40,18,46,0.7)', border: 'rgba(216,140,255,0.8)', lv: '#ffd6f5' };
         const passiveTheme = { fill: 'rgba(14,30,40,0.7)', border: 'rgba(95,199,255,0.65)', lv: '#9fe0ff' };
+        // Element-tinted chip themes so a fire/frost/shock build reads at a
+        // glance on the HUD.
+        const elementThemes = {
+            fire:  { fill: 'rgba(46,22,10,0.72)', border: 'rgba(255,122,51,0.85)', lv: '#ffb27a' },
+            frost: { fill: 'rgba(12,32,44,0.72)', border: 'rgba(127,224,255,0.85)', lv: '#bdeeff' },
+            shock: { fill: 'rgba(44,40,10,0.72)', border: 'rgba(255,224,102,0.85)', lv: '#ffe89a' },
+        };
 
         for (const w of state.ownedWeapons ?? []) {
             const lv = w.evolved ? 'EVO' : (w.isMax ? 'MAX' : `${w.level}`);
-            chip(w.name, lv, w.evolved ? evolvedTheme : weaponTheme);
+            const theme = elementThemes[w.element] ?? (w.evolved ? evolvedTheme : weaponTheme);
+            chip(w.name, lv, theme);
         }
         for (const p of state.ownedPassives ?? []) {
             const lv = p.isMax ? 'MAX' : `${p.level}`;
-            chip(p.name, lv, passiveTheme);
+            const theme = elementThemes[p.element] ?? passiveTheme;
+            chip(p.name, lv, theme);
         }
         ctx.restore();
     }
@@ -384,25 +393,29 @@ export class UISystem {
             ? pct
             : lerp(this.dispBossRatio, pct, 0.12);
 
+        const enraged = !!boss.enraged;
         ctx.save();
         ctx.globalAlpha = easeOutCubic(this.bossSlideT);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillStyle = '#ff6b6b';
+        // Enrage retints the name + appends an ENRAGED tag so the phase-2
+        // setpiece reads clearly even before the player notices faster attacks.
+        ctx.fillStyle = enraged ? '#ff3326' : '#ff6b6b';
         ctx.font = `bold 26px ${FONT}`;
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        ctx.shadowBlur = 6;
-        ctx.fillText(boss.name.toUpperCase(), INTERNAL_WIDTH / 2, padTop - 6);
+        ctx.shadowColor = enraged ? 'rgba(255,60,40,0.6)' : 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = enraged ? 12 : 6;
+        const label = enraged ? `${boss.name.toUpperCase()} — ENRAGED` : boss.name.toUpperCase();
+        ctx.fillText(label, INTERNAL_WIDTH / 2, padTop - 6);
         ctx.shadowBlur = 0;
 
         drawStatBar(ctx, barX, padTop, barW, barH, pct,
-            { from: '#ff4757', to: '#ff8c40' },
+            enraged ? { from: '#ff2a1e', to: '#ffae3c' } : { from: '#ff4757', to: '#ff8c40' },
             {
                 radius: 8,
                 track: 'rgba(30, 4, 4, 0.8)',
                 chip: this.dispBossRatio,
                 chipColor: 'rgba(255,180,120,0.6)',
-                border: '#ff6b6b',
+                border: enraged ? '#ff3326' : '#ff6b6b',
                 borderWidth: 2,
             });
 

@@ -49,6 +49,14 @@ export class Player {
         this.regenPerSecond = 0;
         this.thornsReflect = 0;
 
+        // Elemental passive modifiers (read by weapons / the burn DoT pass).
+        // Neutral defaults so apply() can never produce NaN before a passive
+        // bumps them. Pyromancer's Tinder scales burn; Frostbite Core deepens
+        // chill and adds freeze-proc chance to frost weapons.
+        this.burnDamageMul = 1;
+        this.chillStrength = 0;
+        this.freezeChanceBonus = 0;
+
         // Forward-looking stash for the chest stage.
         this.chestLuck = 0;
         this.coins = 0;

@@ -41,6 +41,10 @@ export class CollisionSystem {
                 e.takeDamage(p.damage, kx, ky);
                 hits.push({ x: e.x, y: e.y - e.radius, amount: p.damage });
                 p.hitEnemies.add(e);
+                // FIRE payload: stamp a burn. Re-applies on every pierce pass
+                // and on each ricochet hop for free (same projectile object),
+                // which is the intended "ember bolt keeps things burning" feel.
+                if (p.burnDps > 0) e.applyBurn(p.burnDps, p.burnDuration);
                 const lethal = !e.active;
                 if (lethal) killed.push(e);
 
