@@ -1,4 +1,4 @@
-import { WEAPON, WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig.js';
+import { WEAPON, WORLD_WIDTH, WORLD_HEIGHT, SPRITE_SS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import { getProjectileSprite } from '../assets/ProceduralSprites.js';
 
@@ -56,7 +56,10 @@ export class Projectile {
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
-        ctx.drawImage(this.sprite, -this.sprite.width / 2, -this.sprite.height / 2);
+        // Source is supersampled (SPRITE_SS×); draw at logical world size.
+        const w = this.sprite.width / SPRITE_SS;
+        const h = this.sprite.height / SPRITE_SS;
+        ctx.drawImage(this.sprite, -w / 2, -h / 2, w, h);
         ctx.restore();
     }
 

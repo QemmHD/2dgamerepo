@@ -16,9 +16,20 @@ export const FIXED_DT = 1 / 60;
 export const MAX_FRAME_DT = 0.1;
 
 // ── Sprite + world ─────────────────────────────────────────────────────
+// SPRITE_SIZE is the WORLD draw size (collision/HUD offsets read it — never
+// change it for resolution). SPRITE_SS supersamples the procedural source
+// canvases: art is authored in SPRITE_SIZE units but rasterized into a
+// SPRITE_SIZE×SPRITE_SS canvas, so it stays crisp when magnified on big /
+// retina displays. Draw calls pass explicit world w/h to keep the footprint.
 export const SPRITE_SIZE = 182;
+export const SPRITE_SS = 2;
 export const WORLD_WIDTH = 4800;
 export const WORLD_HEIGHT = 2700;
+
+// Display/backing-store tunables. maxDpr lifts the old hard cap of 2 so
+// retina/4K render at true device pixels; maxBackingPx (4K = 3840×2160)
+// bounds worst-case full-screen fill cost + guards iOS canvas-area limits.
+export const RENDER = { maxDpr: 3, maxBackingPx: 3840 * 2160 };
 
 // ── Player ─────────────────────────────────────────────────────────────
 export const PLAYER = {

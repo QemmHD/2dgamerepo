@@ -15,7 +15,7 @@
 // Vignette is drawn in screen space (outside the camera transform) so it
 // stays anchored to the viewport corners, not the world.
 
-import { MAP, VIGNETTE, WORLD_WIDTH, WORLD_HEIGHT, GFX, LIGHT_COLORS } from '../config/GameConfig.js';
+import { MAP, VIGNETTE, WORLD_WIDTH, WORLD_HEIGHT, GFX, LIGHT_COLORS, SPRITE_SS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import { getGroundTileSprite, getDecorationSprite } from '../assets/ProceduralSprites.js';
 
@@ -134,8 +134,10 @@ export class MapRenderer {
                     if (d.x < -halfW || d.x > halfW || d.y < -halfH || d.y > halfH) continue;
                     const sprite = getDecorationSprite(d.type);
                     if (!sprite) continue;
-                    const w = sprite.width * d.scale;
-                    const h = sprite.height * d.scale;
+                    // Decoration sources are supersampled (SPRITE_SS×); draw
+                    // at logical world size so the footprint + cull stay right.
+                    const w = (sprite.width / SPRITE_SS) * d.scale;
+                    const h = (sprite.height / SPRITE_SS) * d.scale;
                     // Cull anything fully off-screen so big sprites
                     // (ruin/branch) don't pay the cost when out of view.
                     if (d.x + w / 2 < left || d.x - w / 2 > right) continue;

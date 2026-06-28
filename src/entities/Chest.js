@@ -2,7 +2,7 @@
 // pickup it flips `active = false` and Game opens the chest-reward overlay.
 // No magnet, no timeout — chests wait politely for the player.
 
-import { CHEST } from '../config/GameConfig.js';
+import { CHEST, SPRITE_SS } from '../config/GameConfig.js';
 import { TWO_PI, circleOverlap } from '../core/MathUtils.js';
 import { getChestSprite } from '../assets/ProceduralSprites.js';
 
@@ -38,11 +38,10 @@ export class Chest {
         ctx.beginPath();
         ctx.arc(this.x, this.y + bobY, 70, 0, TWO_PI);
         ctx.fill();
-        ctx.drawImage(
-            this.sprite,
-            this.x - this.sprite.width / 2,
-            this.y + bobY - this.sprite.height / 2
-        );
+        // Source is supersampled (SPRITE_SS×); draw at logical world size.
+        const w = this.sprite.width / SPRITE_SS;
+        const h = this.sprite.height / SPRITE_SS;
+        ctx.drawImage(this.sprite, this.x - w / 2, this.y + bobY - h / 2, w, h);
         ctx.restore();
     }
 

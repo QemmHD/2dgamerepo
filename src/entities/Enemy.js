@@ -452,7 +452,7 @@ export class Enemy {
 
         const idx = Math.floor(this.animTimer * this.frameHz) % this.frames.length;
         const frame = this.frames[idx];
-        ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+        ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
 
         // Elite shimmer + hit flash use additive 'lighter' re-draws of the
         // sprite itself rather than ctx.filter. ctx.filter forces an
@@ -464,7 +464,7 @@ export class Enemy {
         if (this.elite) {
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = 0.18;
-            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         }
         // Status brightening via additive frame redraws (can't tint a
         // drawImage without ctx.filter, so we brighten the sprite's own
@@ -473,24 +473,24 @@ export class Enemy {
         if (this.burnTimer > 0) {
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = 0.15;
-            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         }
         if (this.freezeTimer > 0) {
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = 0.14;
-            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         }
         if (this.phase2Entered) {
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = 0.18;
-            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         }
         if (this.hitFlashTimer > 0) {
             const t = this.hitFlashTimer / HIT_FLASH_DURATION;
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = Math.min(1, 0.9 * t);
-            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
-            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         }
         ctx.restore();
     }

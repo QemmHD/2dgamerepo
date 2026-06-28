@@ -1,4 +1,4 @@
-import { GEM, MAGNET } from '../config/GameConfig.js';
+import { GEM, MAGNET, SPRITE_SS } from '../config/GameConfig.js';
 import { TWO_PI, circleOverlap } from '../core/MathUtils.js';
 import { getXPGemSprite } from '../assets/ProceduralSprites.js';
 
@@ -67,8 +67,9 @@ export class XPGem {
         const popScale = this.bounceTimer < BOUNCE_DURATION
             ? 0.6 + (this.bounceTimer / BOUNCE_DURATION) * 0.4
             : 1;
-        const w = this.sprite.width * popScale;
-        const h = this.sprite.height * popScale;
+        // Source is supersampled (SPRITE_SS×); draw at logical world size.
+        const w = (this.sprite.width / SPRITE_SS) * popScale;
+        const h = (this.sprite.height / SPRITE_SS) * popScale;
         ctx.drawImage(this.sprite, this.x - w / 2, this.y - h / 2 + bobY, w, h);
     }
 

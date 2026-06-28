@@ -3,6 +3,7 @@ import {
     INTERNAL_HEIGHT,
     GAME_TITLE,
     CHEST,
+    SPRITE_SS,
 } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import {
@@ -278,7 +279,10 @@ export class UISystem {
         ctx.fillStyle = '#ffd166';
         ctx.textAlign = 'left';
         ctx.fillText(coinText, cx + 40, sa.top + 78);
-        ctx.drawImage(coinSprite, cx + 16 - coinSprite.width / 2, sa.top + 78 + 2);
+        // Coin source is supersampled (SPRITE_SS×) — draw at logical size.
+        const coinW = coinSprite.width / SPRITE_SS;
+        const coinH = coinSprite.height / SPRITE_SS;
+        ctx.drawImage(coinSprite, cx + 16 - coinW / 2, sa.top + 78 + 2, coinW, coinH);
         ctx.restore();
     }
 
@@ -498,12 +502,16 @@ export class UISystem {
         const shakeMag = animT < 1 ? (1 - animT) * shakeBase : 0;
         const shakeX = shakeMag ? (Math.random() - 0.5) * 2 * shakeMag : 0;
         const shakeY = shakeMag ? (Math.random() - 0.5) * 2 * shakeMag : 0;
+        // Chest source is supersampled (SPRITE_SS×) — derive logical size so
+        // the overlay sprite isn't drawn 2× too big.
+        const chestW = (sprite.width / SPRITE_SS) * scale;
+        const chestH = (sprite.height / SPRITE_SS) * scale;
         ctx.drawImage(
             sprite,
-            chestX - (sprite.width * scale) / 2 + shakeX,
-            chestY - (sprite.height * scale) / 2 + shakeY,
-            sprite.width * scale,
-            sprite.height * scale
+            chestX - chestW / 2 + shakeX,
+            chestY - chestH / 2 + shakeY,
+            chestW,
+            chestH
         );
 
         const revealStart = animDur * 0.5;
@@ -1311,11 +1319,14 @@ export class UISystem {
         const textW = ctx.measureText(totalLabel).width;
         const iconY = 170 + sa.top;
         const iconX = (INTERNAL_WIDTH - textW) / 2 - 26;
-        ctx.drawImage(coinSprite, iconX, iconY - coinSprite.height / 2);
+        // Coin source is supersampled (SPRITE_SS×) — draw at logical size.
+        const cW = coinSprite.width / SPRITE_SS;
+        const cH = coinSprite.height / SPRITE_SS;
+        ctx.drawImage(coinSprite, iconX, iconY - cH / 2, cW, cH);
         ctx.fillStyle = '#fff';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(totalLabel, iconX + coinSprite.width + 6, iconY);
+        ctx.fillText(totalLabel, iconX + cW + 6, iconY);
 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -1477,7 +1488,10 @@ export class UISystem {
             const costText = `${upgrade.cost}`;
             ctx.fillText(costText, r.x + r.w - 44, r.y + r.h / 2 - 14);
             const cw = ctx.measureText(costText).width;
-            ctx.drawImage(coinSprite, r.x + r.w - 38, r.y + r.h / 2 - 14 - coinSprite.height / 2);
+            // Coin source is supersampled (SPRITE_SS×) — draw at logical size.
+            const csW = coinSprite.width / SPRITE_SS;
+            const csH = coinSprite.height / SPRITE_SS;
+            ctx.drawImage(coinSprite, r.x + r.w - 38, r.y + r.h / 2 - 14 - csH / 2, csW, csH);
             ctx.fillStyle = 'rgba(255,255,255,0.5)';
             ctx.font = `18px ${FONT}`;
             ctx.fillText(canAfford ? 'Tap to buy' : 'Not enough', r.x + r.w - 24, r.y + r.h / 2 + 20);

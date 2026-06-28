@@ -46,6 +46,12 @@ export class TouchJoystick {
         this.touchId = null;
     }
 
+    // Public: drop any in-progress drag (e.g. when the screen rotation flips
+    // mid-touch, so a stale origin can't produce a bogus full-magnitude steer).
+    reset() {
+        this._reset();
+    }
+
     setEnabled(enabled) {
         this.enabled = !!enabled;
         if (!this.enabled) this._reset();
