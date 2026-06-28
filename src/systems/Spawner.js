@@ -31,7 +31,7 @@ export class Spawner {
         this.spawnsTotal = 0;
     }
 
-    update(dt, player, enemies, waveState) {
+    update(dt, player, enemies, waveState, obstacleSystem = null) {
         this.timer += dt;
         if (this.timer < this.nextInterval) return;
         if (this._countAlive(enemies) >= waveState.maxAlive) {
@@ -42,10 +42,10 @@ export class Spawner {
         }
         this.timer -= this.nextInterval;
         this.nextInterval = this._rollInterval(waveState.spawnIntervalMul);
-        this._spawnOne(player, enemies, waveState);
+        this._spawnOne(player, enemies, waveState, obstacleSystem);
     }
 
-    _spawnOne(player, enemies, waveState) {
+    _spawnOne(player, enemies, waveState, obstacleSystem) {
         const type = pickWeightedType(waveState.typeWeights);
         if (!type) return;
         const elite = Math.random() < (waveState.eliteChance ?? 0);
@@ -60,6 +60,8 @@ export class Spawner {
             const x = clamp(player.x + Math.cos(angle) * dist, -halfW, halfW);
             const y = clamp(player.y + Math.sin(angle) * dist, -halfH, halfH);
             if (distanceSq(x, y, player.x, player.y) < minDistSq) continue;
+            // Never spawn an enemy inside a wall/building — retry another spot.
+            if (obstacleSystem && obstacleSystem.isBlocked(x, y, 46)) continue;
             enemies.push(new Enemy(type, x, y, {
                 healthMul: waveState.healthMul,
                 speedMul: waveState.speedMul,

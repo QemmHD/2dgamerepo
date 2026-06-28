@@ -16,6 +16,7 @@ import {
     easeOutQuad,
 } from '../render/DrawUtils.js';
 import { getChestSprite, getCoinSprite } from '../assets/ProceduralSprites.js';
+import { MenuRenderer } from './MenuRenderer.js';
 
 const DEBUG_BUTTON_SIZE = 96;
 const DEBUG_BUTTON_MARGIN = 20;
@@ -56,6 +57,10 @@ export class UISystem {
         this.dispBossRatio = 1;
         this.bossName = null;
         this.bossSlideT = 0;
+
+        // The redesigned tabbed main menu. Owns its own clickable hotspots,
+        // which Game's pointer handler reads to dispatch menu actions.
+        this.menu = new MenuRenderer(renderer);
     }
 
     // Called by Game at the start of each run so bar display values + boss
@@ -202,9 +207,11 @@ export class UISystem {
     }
 
     draw(ctx, gameState) {
-        // Start / shop screen replaces the regular HUD entirely.
+        // Start / shop screen replaces the regular HUD entirely — now the
+        // redesigned tabbed main menu (Play/Skills/Loadout/Character/Shop/
+        // Battle Pass/Settings) drawn by MenuRenderer.
         if (gameState.screen === 'start') {
-            this._drawStartScreen(ctx, gameState);
+            this.menu.draw(ctx, gameState);
             return;
         }
 

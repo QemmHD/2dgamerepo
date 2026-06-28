@@ -25,6 +25,11 @@ export class Player {
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
         this.moving = false;
+        // Cosmetic trail: recent positions, drawn as a fading wake.
+        this.trailPositions = [];
+        this._trailTick = 0;
+        // Lazily-built fur-tinted sprite frames (keyed by color).
+        this._tintCache = { color: null, frames: null };
 
         this.level = 1;
         this.xp = 0;
@@ -60,6 +65,11 @@ export class Player {
         // Forward-looking stash for the chest stage.
         this.chestLuck = 0;
         this.coins = 0;
+        // Coin-gain multiplier from loadout gear/charms (applied at banking).
+        this.coinMul = 1;
+        // Appearance from equipped cosmetics; set at run start. Defaults keep
+        // the base monkey look if no cosmetics are wired.
+        this.appearance = null;
     }
 
     gainXP(amount) {
@@ -109,8 +119,45 @@ export class Player {
         if (this.moving) this.bobTimer += dt;
         if (move.x !== 0) this.facingX = move.x < 0 ? -1 : 1;
 
+        // Record a sparse trail (cosmetic only) while moving.
+        if (this.appearance && this.appearance.trailColor) {
+            this._trailTick += dt;
+            if (this.moving && this._trailTick >= 0.05) {
+                this._trailTick = 0;
+                this.trailPositions.push({ x: this.x, y: this.y, age: 0 });
+                if (this.trailPositions.length > 10) this.trailPositions.shift();
+            }
+            for (const t of this.trailPositions) t.age += dt;
+            while (this.trailPositions.length && this.trailPositions[0].age > 0.6) this.trailPositions.shift();
+        }
+
         if (this.invincibleTimer > 0) this.invincibleTimer = Math.max(0, this.invincibleTimer - dt);
         if (this.hitFlashTimer > 0) this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
+    }
+
+    // Build fur-tinted copies of the sprite frames once per fur color. Uses an
+    // offscreen canvas + 'source-atop' so only the sprite pixels are tinted
+    // (transparent background stays clear). Falls back to untinted on failure
+    // (e.g. headless render harness without a real canvas).
+    _tintedFrames(color) {
+        if (this._tintCache.color === color) return this._tintCache.frames || this.frames;
+        let out = null;
+        try {
+            out = this.frames.map((f) => {
+                const c = document.createElement('canvas');
+                c.width = f.width; c.height = f.height;
+                const cx = c.getContext('2d');
+                if (!cx) throw new Error('no ctx');
+                cx.drawImage(f, 0, 0);
+                cx.globalCompositeOperation = 'source-atop';
+                cx.globalAlpha = 0.42;
+                cx.fillStyle = color;
+                cx.fillRect(0, 0, c.width, c.height);
+                return c;
+            });
+        } catch (e) { out = null; }
+        this._tintCache = { color, frames: out };
+        return out || this.frames;
     }
 
     draw(ctx) {
@@ -120,15 +167,55 @@ export class Player {
             alpha = 0.45 + pulse * 0.5;
         }
 
+        const ap = this.appearance || {};
         const bobY = this.moving ? Math.sin(this.bobTimer * 12) * 3 : 0;
+
+        // Cosmetic trail (world space, behind everything).
+        if (ap.trailColor && this.trailPositions.length) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            for (const t of this.trailPositions) {
+                const k = Math.max(0, 1 - t.age / 0.6);
+                ctx.globalAlpha = k * 0.4;
+                ctx.fillStyle = ap.trailColor;
+                ctx.beginPath();
+                ctx.arc(t.x, t.y + bobY, 16 * k + 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        // Aura glow (world space, behind sprite).
+        if (ap.auraColor) {
+            const ar = this.spriteHalf * 1.35;
+            const g = ctx.createRadialGradient(this.x, this.y + bobY, ar * 0.2, this.x, this.y + bobY, ar);
+            g.addColorStop(0, ap.auraColor);
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.35;
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y + bobY, ar, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
         // 3 walk frames cycled at ~6 Hz, idle when standing still.
         const walkIdx = this.moving
             ? 1 + (Math.floor(this.bobTimer * 6) % 3)
             : 0;
-        const sprite = this.frames[walkIdx] ?? this.frames[0];
+        const frames = ap.furColor ? this._tintedFrames(ap.furColor) : this.frames;
+        const sprite = frames[walkIdx] ?? frames[0];
+
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.translate(this.x, this.y + bobY);
+
+        // Cloak draped behind the body (symmetric → drawn unflipped).
+        if (ap.cloakColor) this._drawCloak(ctx, ap.cloakColor);
+
+        ctx.save();
         if (this.facingX < 0) ctx.scale(-1, 1);
         ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         // Hit flash via an additive re-draw of the sprite (no ctx.filter —
@@ -138,6 +225,65 @@ export class Player {
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = alpha * Math.min(1, t);
             ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
+        }
+        ctx.restore();
+
+        // Accessory on the head (symmetric → drawn unflipped, on top).
+        if (ap.hatShape && ap.hatShape !== 'none') this._drawHat(ctx, ap.hatShape, ap.hatColor);
+        ctx.restore();
+    }
+
+    _drawCloak(ctx, color) {
+        const h = this.spriteHalf;
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(-h * 0.42, -h * 0.18);
+        ctx.lineTo(h * 0.42, -h * 0.18);
+        ctx.lineTo(h * 0.6, h * 0.62);
+        ctx.lineTo(0, h * 0.78);
+        ctx.lineTo(-h * 0.6, h * 0.62);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    }
+
+    _drawHat(ctx, shape, color) {
+        const h = this.spriteHalf;
+        const topY = -h * 0.62;
+        ctx.save();
+        ctx.fillStyle = color || '#ffd35a';
+        if (shape === 'cap') {
+            ctx.beginPath();
+            ctx.arc(0, topY, h * 0.32, Math.PI, 0);
+            ctx.fill();
+            ctx.fillRect(-h * 0.34, topY - 2, h * 0.68, 6);
+        } else if (shape === 'candle') {
+            ctx.fillStyle = '#e8e2cf';
+            ctx.fillRect(-h * 0.07, topY - h * 0.28, h * 0.14, h * 0.3);
+            ctx.fillStyle = '#ffb24a';
+            ctx.beginPath();
+            ctx.ellipse(0, topY - h * 0.3, h * 0.06, h * 0.11, 0, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (shape === 'horns') {
+            ctx.strokeStyle = color || '#9a6cff';
+            ctx.lineWidth = 8; ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-h * 0.22, topY + 6); ctx.quadraticCurveTo(-h * 0.5, topY - h * 0.2, -h * 0.32, topY - h * 0.4);
+            ctx.moveTo(h * 0.22, topY + 6); ctx.quadraticCurveTo(h * 0.5, topY - h * 0.2, h * 0.32, topY - h * 0.4);
+            ctx.stroke();
+        } else if (shape === 'crown') {
+            ctx.beginPath();
+            const cw = h * 0.5, cy = topY;
+            ctx.moveTo(-cw, cy);
+            ctx.lineTo(-cw, cy - h * 0.16);
+            ctx.lineTo(-cw * 0.5, cy - h * 0.04);
+            ctx.lineTo(0, cy - h * 0.22);
+            ctx.lineTo(cw * 0.5, cy - h * 0.04);
+            ctx.lineTo(cw, cy - h * 0.16);
+            ctx.lineTo(cw, cy);
+            ctx.closePath();
+            ctx.fill();
         }
         ctx.restore();
     }

@@ -35,10 +35,15 @@ import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
 import { BossDirector } from '../systems/BossDirector.js';
 import { MapRenderer } from '../systems/MapRenderer.js';
+import { ObstacleSystem } from '../systems/ObstacleSystem.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
+import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
+import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
+import { openCase } from '../systems/CaseSystem.js';
+import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
@@ -85,6 +90,10 @@ export class Game {
         // pattern and per-chunk decoration tables are world-static,
         // so they survive restarts intact (no need to rebuild).
         this.mapRenderer = new MapRenderer();
+        // Obstacles are world-static (deterministic placement), so generate
+        // them once here and reuse across runs — same layout every load.
+        this.obstacleSystem = new ObstacleSystem();
+        this.obstacleSystem.generate(WORLD_WIDTH, WORLD_HEIGHT);
         // Lighting buffer + particle pool are also world-static / pooled,
         // so they live across runs (particles are cleared on run start).
         this.lighting = new LightingSystem();
@@ -101,6 +110,13 @@ export class Game {
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
 
+        // Main-menu state: active tab + transient case-opening animation +
+        // a short-lived toast for claim/case feedback.
+        this.menuTab = 'play';
+        this.caseAnim = null;
+        this.menuToast = null;
+        this.menuToastTimer = 0;
+
         // Transient "this control was just tapped" feedback for the UI to
         // render a brief press state. { id, age } or null.
         this.pressFx = null;
@@ -114,7 +130,11 @@ export class Game {
         const touchPrimary = typeof window.matchMedia === 'function'
             ? window.matchMedia('(pointer: coarse)').matches
             : ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-        this.showDebug = DEBUG_DEFAULT_ON && !touchPrimary;
+        this.showDebug = (DEBUG_DEFAULT_ON && !touchPrimary) || this.saveSystem.getSetting('debug') === true;
+        // Performance/accessibility render flags (re-read at each run start).
+        this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
+        this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
+        this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
 
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Backquote' || e.code === 'F2') {
@@ -122,6 +142,10 @@ export class Game {
                 return;
             }
             if (this.screen === 'start') {
+                if (this.caseAnim) {
+                    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this._dismissCase(); }
+                    return;
+                }
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault();
                     this._startRun();
@@ -262,27 +286,15 @@ export class Game {
 
         const tryStartScreenAt = (clientX, clientY) => {
             if (this.screen !== 'start') return false;
+            // The case-opening overlay owns input while it's up: any tap continues.
+            if (this.caseAnim) { this._dismissCase(); return true; }
             const pos = this.renderer.clientToInternal(clientX, clientY);
-            const rStart = this.ui.getStartRunButtonRect();
-            if (inRect(pos, rStart)) { this._pressFeedback('start'); this._startRun(); return true; }
-            const rReset = this.ui.getResetSaveButtonRect();
-            if (inRect(pos, rReset)) {
-                this._pressFeedback('reset');
-                this.requestResetSave();
-                return true;
+            // Dispatch against the menu's clickable regions (topmost wins).
+            const hs = this.ui.menu.hotspots;
+            for (let i = hs.length - 1; i >= 0; i--) {
+                const r = hs[i];
+                if (inRect(pos, r, 0)) { this._menuAction(r.action, r.arg); return true; }
             }
-            // Tap an upgrade card to buy it.
-            const cards = this.ui.getShopUpgradeRects(PERMANENT_UPGRADES.length);
-            for (let i = 0; i < cards.length; i++) {
-                if (inRect(pos, cards[i], 0)) {
-                    this._pressFeedback(`shop:${PERMANENT_UPGRADES[i].id}`);
-                    this.buyUpgrade(PERMANENT_UPGRADES[i].id);
-                    return true;
-                }
-            }
-            // Tap anywhere else cancels a pending reset confirmation so it
-            // can't silently linger.
-            this.resetConfirming = false;
             return true;
         };
 
@@ -358,7 +370,9 @@ export class Game {
         this.damageNumbers = [];
 
         this.spawner = new Spawner();
-        this.weaponSystem = new WeaponSystem();
+        // The run begins with the weapon chosen in the loadout (defaults to the
+        // Cinderbolt). Other weapons still appear as level-up choices.
+        this.weaponSystem = new WeaponSystem(resolveStartingWeapon(this.saveSystem.data));
         this.collisionSystem = new CollisionSystem();
         this.upgradeSystem = new UpgradeSystem();
         this.passiveSystem = new PassiveSystem();
@@ -373,6 +387,7 @@ export class Game {
         this.chests = [];
         this.chestReward = null;
         this.pendingChests = 0;
+        this.chestsOpened = 0;
         this.coins = [];
         // Cached reference to the strongest active boss for the boss HP bar.
         this.activeBossRef = null;
@@ -423,6 +438,10 @@ export class Game {
         this._initRunState();
         const coinsBefore = this.player.coins ?? 0;
         applyPermanentUpgrades(this.player, this.saveSystem.data);
+        // Loadout gear buffs stack ON TOP of permanent upgrades (applied after
+        // so multipliers compound). Cosmetics drive the player's appearance.
+        applyLoadout(this.player, this.saveSystem.data);
+        this.player.appearance = resolveAppearance(this.saveSystem.getEquippedCosmetics());
         // Remember how many coins the shop handed us so _enterGameOver can
         // bank only what was *earned* this run, not the granted seed.
         this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
@@ -432,6 +451,10 @@ export class Game {
         this.banishes = this.player.banishes ?? 0;
         // Screen-shake preference (accessibility) read from the save.
         this.shakeEnabled = this.saveSystem.getSetting('screenShake') !== false;
+        // Performance / accessibility toggles read once per run.
+        this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
+        this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
+        this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
         this._lastHp = this.player.hp;
         this.screen = 'gameplay';
         // Reset the UI's per-run animation state (bar display values, boss
@@ -461,10 +484,10 @@ export class Game {
     // amount banked (0 if already banked).
     _bankRunCoins() {
         if (this.bankedThisRun) return 0;
-        const earned = Math.max(
-            0,
-            Math.floor((this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0))
-        );
+        // Coin-gain gear/charms boost the BANKED total (player.coinMul, 1 by
+        // default). Applied here so the in-run HUD stays a clean integer.
+        const raw = Math.max(0, (this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0));
+        const earned = Math.floor(raw * (this.player.coinMul ?? 1));
         if (earned > 0) this.saveSystem.addCoins(earned);
         this.bankedThisRun = true;
         return earned;
@@ -536,6 +559,58 @@ export class Game {
         return false;
     }
 
+    // Dispatch a click on a main-menu hotspot (see MenuRenderer). Any action
+    // other than RESET cancels a pending reset confirmation.
+    _menuAction(action, arg) {
+        if (action !== 'resetSave' && action !== 'tab') this.resetConfirming = false;
+        switch (action) {
+            case 'tab': this.menuTab = arg; this.resetConfirming = false; break;
+            case 'startRun': this._pressFeedback('start'); this._startRun(); break;
+            case 'buyUpgrade': this._pressFeedback(`shop:${arg}`); this.buyUpgrade(arg); break;
+            case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
+            case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); break;
+            case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); break;
+            case 'toggleSetting': this._toggleSetting(arg); break;
+            case 'volUp': this._adjustVolume(arg, 0.1); break;
+            case 'volDown': this._adjustVolume(arg, -0.1); break;
+            case 'openCase': this._openCaseFlow(arg); break;
+            case 'claimBP': {
+                const r = claimBattlePass(this.saveSystem, arg);
+                this._setToast(r.ok ? `Claimed: ${r.label}` : 'Cannot claim');
+                break;
+            }
+            case 'claimAllBP': {
+                const n = claimAllBattlePass(this.saveSystem);
+                this._setToast(n > 0 ? `Claimed ${n} reward${n > 1 ? 's' : ''}` : 'Nothing to claim');
+                break;
+            }
+            case 'caseContinue': this._dismissCase(); break;
+            default: break;
+        }
+    }
+
+    _toggleSetting(key) {
+        const cur = this.saveSystem.getSetting(key) === true;
+        this.saveSystem.setSetting(key, !cur);
+        if (key === 'debug') this.showDebug = !cur;
+    }
+
+    _adjustVolume(key, delta) {
+        const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;
+        this.saveSystem.setSetting(key, clamp(cur + delta, 0, 1));
+    }
+
+    _openCaseFlow(caseType) {
+        const res = openCase(this.saveSystem, caseType);
+        if (!res.ok) { this._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
+        // The reward is already applied to the save; the overlay just presents it.
+        this.caseAnim = { caseType, result: res, age: 0 };
+    }
+
+    _dismissCase() { this.caseAnim = null; }
+
+    _setToast(msg) { this.menuToast = msg; this.menuToastTimer = 2.5; }
+
     setUpgradeChoices(choices) {
         this.upgradeChoices = choices;
         if (choices) this.levelUpAge = 0;
@@ -599,6 +674,7 @@ export class Game {
     _presentChest() {
         if (this.pendingChests <= 0) return;
         this.pendingChests -= 1;
+        this.chestsOpened = (this.chestsOpened ?? 0) + 1;
         const reward = rollChestReward(this);
         // Apply the reward immediately so the in-game state already reflects
         // what the overlay is announcing. The overlay is confirmation, not a
@@ -616,6 +692,25 @@ export class Game {
         else if (this.pendingLevelUps > 0) this._presentLevelUp();
     }
 
+    // Nudge a desired spawn point to the nearest spot not inside an obstacle.
+    // Used for bosses/chests/pickups so nothing spawns trapped in a wall.
+    _clearSpot(x, y, clearance) {
+        const halfW = WORLD_WIDTH / 2 - clearance;
+        const halfH = WORLD_HEIGHT / 2 - clearance;
+        const cx = clamp(x, -halfW, halfW);
+        const cy = clamp(y, -halfH, halfH);
+        if (!this.obstacleSystem.isBlocked(cx, cy, clearance)) return { x: cx, y: cy };
+        for (let step = 1; step <= 6; step++) {
+            const rad = step * (clearance + 40);
+            for (let a = 0; a < TWO_PI; a += Math.PI / 4) {
+                const nx = clamp(cx + Math.cos(a) * rad, -halfW, halfW);
+                const ny = clamp(cy + Math.sin(a) * rad, -halfH, halfH);
+                if (!this.obstacleSystem.isBlocked(nx, ny, clearance)) return { x: nx, y: ny };
+            }
+        }
+        return { x: cx, y: cy };
+    }
+
     _spawnBoss(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
@@ -623,8 +718,9 @@ export class Game {
         const dist = BOSS.spawnRingDistance;
         const halfW = WORLD_WIDTH / 2 - 100;
         const halfH = WORLD_HEIGHT / 2 - 100;
-        const x = clamp(this.player.x + Math.cos(angle) * dist, -halfW, halfW);
-        const y = clamp(this.player.y + Math.sin(angle) * dist, -halfH, halfH);
+        let x = clamp(this.player.x + Math.cos(angle) * dist, -halfW, halfW);
+        let y = clamp(this.player.y + Math.sin(angle) * dist, -halfH, halfH);
+        ({ x, y } = this._clearSpot(x, y, def.radius ?? 90));
         const boss = new Enemy(id, x, y, {
             healthMul: this.waveState.healthMul,
             speedMul: this.waveState.speedMul,
@@ -641,10 +737,12 @@ export class Game {
     }
 
     _dropChest(x, y) {
-        this.chests.push(new Chest(x, y));
+        const s = this._clearSpot(x, y, 40);
+        this.chests.push(new Chest(s.x, s.y));
     }
 
     _dropCoin(x, y, value = 1) {
+        if (this.obstacleSystem.isBlocked(x, y, 18)) { const s = this._clearSpot(x, y, 18); x = s.x; y = s.y; }
         this.coins.push(new Coin(x, y, value));
     }
 
@@ -775,6 +873,7 @@ export class Game {
             totalCoins: this.saveSystem.data.totalCoins,
             finalWave: (this.waveState?.index ?? 0) + 1,
             finalWaveName: this.waveState?.name ?? '',
+            chestsOpened: this.chestsOpened ?? 0,
             weapons: this.weaponSystem.snapshotForUI(),
             passives: this.passiveSystem.snapshotForUI(),
             evolutions: this.weaponSystem.owned
@@ -785,6 +884,9 @@ export class Game {
         // Fold the run into lifetime/best records; capture which bests were
         // beaten so the game-over summary can flag them.
         this.newBest = this.saveSystem.recordRun(this.runSummary);
+        // Award battle-pass (vigil) XP from the run and surface the gain on the
+        // game-over screen.
+        this.bpResult = awardBattlePassRun(this.saveSystem, this.runSummary);
 
         this._updateJoystickEnabled();
     }
@@ -810,6 +912,8 @@ export class Game {
                 this.resetConfirmTimer -= dt;
                 if (this.resetConfirmTimer <= 0) this.resetConfirming = false;
             }
+            if (this.caseAnim) this.caseAnim.age += dt;
+            if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
             return;
         }
         if (this.screen === 'gameOver') {
@@ -844,13 +948,28 @@ export class Game {
         for (const id of bossesToSpawn) this._spawnBoss(id);
 
         this.player.update(dt, this.input);
-        this.spawner.update(dt, this.player, this.enemies, this.waveState);
+        // Slide the player out of any wall they walked into (tangential motion
+        // is preserved by resolveCircle, so they glide along obstacles).
+        {
+            const r = this.obstacleSystem.resolveCircle(this.player.x, this.player.y, this.player.radius);
+            this.player.x = r.x; this.player.y = r.y;
+        }
+        this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem);
         const weaponResult = this.weaponSystem.update(
-            dt, this.player, this.enemies, this.projectiles
+            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem
         );
 
         for (const e of this.enemies) {
-            if (e.active) e.update(dt, this.player, this.enemyProjectiles);
+            if (!e.active) continue;
+            e.update(dt, this.player, this.enemyProjectiles);
+            // Enemies (including elites + bosses) can't walk through walls.
+            // Resolving after their move keeps them chasing while sliding along
+            // obstacles instead of clipping through or stacking inside them.
+            const r = this.obstacleSystem.resolveCircle(e.x, e.y, e.radius);
+            // Clamp to world bounds too (Enemy.update doesn't, unlike Player) so
+            // a wall push-out near an edge can't drift an enemy off the map.
+            e.x = clamp(r.x, -WORLD_WIDTH / 2 + e.radius, WORLD_WIDTH / 2 - e.radius);
+            e.y = clamp(r.y, -WORLD_HEIGHT / 2 + e.radius, WORLD_HEIGHT / 2 - e.radius);
         }
         // Elemental DoT (burn) is applied here, NOT in Enemy.update, because
         // a burn kill must route through the same reward pipeline as any
@@ -870,14 +989,28 @@ export class Game {
         }
 
         for (const p of this.projectiles) {
-            if (p.active) p.update(dt);
+            if (!p.active) continue;
+            const px = p.x, py = p.y;
+            p.update(dt);
+            // Projectiles collide with walls: if the step crossed an obstacle,
+            // burst on impact instead of passing through.
+            if (p.active && this.obstacleSystem.segmentBlocked(px, py, p.x, p.y)) {
+                p.active = false;
+                this.particles.pickupSparkle(p.x, p.y, LIGHT_COLORS.projectile);
+            }
         }
         // Enemy bolts (Spitters + boss volleys). Each can hit the player once;
         // a landed hit drives the same shake + flash + damage number as
         // contact damage.
         for (const ep of this.enemyProjectiles) {
             if (!ep.active) continue;
+            const epx = ep.x, epy = ep.y;
             const dealt = ep.update(dt, this.player);
+            // Enemy/boss bolts also collide with walls — no damage through cover.
+            if (ep.active && this.obstacleSystem.segmentBlocked(epx, epy, ep.x, ep.y)) {
+                ep.active = false;
+                continue;
+            }
             if (dealt > 0) {
                 this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
                 this._pushFeedback('hit', 0.32);
@@ -904,7 +1037,10 @@ export class Game {
             hz.r += hz.growth * dt;
             if (!hz.hitPlayer) {
                 const d = Math.hypot(this.player.x - hz.x, this.player.y - hz.y);
-                if (d >= hz.r - hz.band && d <= hz.r + hz.band) {
+                // A wall between the boss's shockwave origin and the player
+                // shields them — bosses can't damage through cover.
+                if (d >= hz.r - hz.band && d <= hz.r + hz.band &&
+                    this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
                     const dealt = this.player.takeDamage(hz.damage);
                     if (dealt > 0) {
                         hz.hitPlayer = true;
@@ -1094,6 +1230,7 @@ export class Game {
 
     _dropGem(x, y) {
         const tier = pickWeighted(GEM_TIERS, (t) => GEM[t].dropWeight) ?? 'small';
+        if (this.obstacleSystem.isBlocked(x, y, 16)) { const s = this._clearSpot(x, y, 16); x = s.x; y = s.y; }
         this.gems.push(new XPGem(x, y, tier));
     }
 
@@ -1128,8 +1265,17 @@ export class Game {
         this.mapRenderer.drawBackground(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         if (this.showDebug) this._drawGrid(ctx);
         this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT, L);
-        this.particles.drawWorldFog(ctx, this.camera);
+        if (this.particlesEnabled && !this.reducedEffects) this.particles.drawWorldFog(ctx, this.camera);
         this._drawWorldBounds(ctx, this.showDebug);
+
+        // Obstacles are painter's-ordered against the player: those whose feet
+        // line sits ABOVE the player draw now (behind entities); those below
+        // the player draw after the player so they correctly occlude them.
+        const playerBaseY = this.player.y + this.player.radius;
+        this.obstacleSystem.forVisible(
+            this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
+            (ob) => ob.draw(ctx), (ob) => ob.baseY <= playerBaseY
+        );
 
         // Off-screen culling: only entities within the camera view (plus a
         // sprite-half + shake margin) are worth a draw call (enemies spawn
@@ -1188,6 +1334,12 @@ export class Game {
         }
         this.player.draw(ctx);
         this.player.drawHpBar(ctx);
+        // Obstacles whose feet sit below the player draw on top of them, so the
+        // player is occluded when standing behind a wall/building.
+        this.obstacleSystem.forVisible(
+            this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
+            (ob) => ob.draw(ctx), (ob) => ob.baseY > playerBaseY
+        );
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
         for (const p of this.projectiles) {
             if (!cull(p)) continue;
@@ -1237,7 +1389,7 @@ export class Game {
 
         // Occludable additive particles (embers + death dust) — these sit
         // above entities but BELOW the veil, so they read as ambient glow.
-        this.particles.drawWorldAdditive(ctx, this.camera);
+        if (this.particlesEnabled) this.particles.drawWorldAdditive(ctx, this.camera);
 
         if (this.collisionSystem.contactFlash > 0) {
             this._drawContactFlash(ctx);
@@ -1245,6 +1397,8 @@ export class Game {
 
         if (this.showDebug) {
             this.mapRenderer.drawDebug(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+            // Obstacle footprints (red = blocks sight, amber = passable LOS).
+            this.obstacleSystem.drawDebug(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
             this.player.drawDebug(ctx);
             for (const g of this.gems) if (cull(g)) g.drawDebug(ctx);
             for (const c of this.coins) if (cull(c)) c.drawDebug(ctx);
@@ -1252,6 +1406,20 @@ export class Game {
             for (const e of this.enemies) if (cull(e)) e.drawDebug(ctx);
             for (const p of this.projectiles) if (cull(p)) p.drawDebug(ctx);
             for (const ep of this.enemyProjectiles) if (cull(ep)) ep.drawDebug(ctx);
+            // Line-of-sight rays from the player to nearby enemies: green when
+            // clear, red when a wall blocks the shot.
+            ctx.save();
+            ctx.lineWidth = 1.5;
+            for (const e of this.enemies) {
+                if (!e.active || !cull(e)) continue;
+                const clear = this.obstacleSystem.hasLineOfSight(this.player.x, this.player.y, e.x, e.y);
+                ctx.strokeStyle = clear ? 'rgba(90,230,120,0.5)' : 'rgba(255,70,70,0.8)';
+                ctx.beginPath();
+                ctx.moveTo(this.player.x, this.player.y);
+                ctx.lineTo(e.x, e.y);
+                ctx.stroke();
+            }
+            ctx.restore();
         }
         ctx.restore();
 
@@ -1263,14 +1431,16 @@ export class Game {
 
         // Always-bright sparks sit ABOVE the veil so kill/hit/pickup/level
         // feedback never gets dimmed by the darkness.
-        this.particles.drawScreenAdditive(ctx, this.camera);
+        if (this.particlesEnabled) this.particles.drawScreenAdditive(ctx, this.camera);
 
         // Damage numbers also draw above the veil (world-positioned via a
         // re-applied camera transform) so combat math stays fully legible.
-        ctx.save();
-        this.camera.apply(ctx);
-        for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
-        ctx.restore();
+        if (this.damageNumbersEnabled) {
+            ctx.save();
+            this.camera.apply(ctx);
+            for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
+            ctx.restore();
+        }
 
         this.ui.draw(ctx, this._buildUIState());
 
@@ -1294,18 +1464,10 @@ export class Game {
             base.resetConfirming = this.resetConfirming;
             base.resetConfirmTimer = this.resetConfirmTimer;
             base.stats = this.saveSystem.data.stats;
-            base.permanentUpgrades = PERMANENT_UPGRADES.map((u) => {
-                const level = this.saveSystem.getUpgradeLevel(u.id);
-                return {
-                    id: u.id,
-                    name: u.name,
-                    description: u.description,
-                    level,
-                    maxLevel: u.maxLevel,
-                    cost: nextCost(u, level),
-                    isMax: level >= u.maxLevel,
-                };
-            });
+            // Menu state consumed by MenuRenderer.
+            base.menuTab = this.menuTab;
+            base.caseAnim = this.caseAnim;
+            base.menuToast = this.menuToastTimer > 0 ? this.menuToast : null;
             return base;
         }
 

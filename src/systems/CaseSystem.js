@@ -1,0 +1,109 @@
+// CaseSystem — coin-only loot cases. No real money, ever.
+//
+// Opening a case: validate coins → spend → roll a rarity from the case's odds
+// → roll a reward of that rarity (a gear/cosmetic item, or a coin/battle-pass
+// fallback). A rolled item the player already owns is a DUPLICATE and converts
+// to coins (rarityDust) instead. Everything persists through SaveSystem.
+//
+// Cases are pure data (CASES) so the shop UI can render costs + odds directly.
+
+import { GEAR_LIST } from '../content/gear.js';
+import { COSMETIC_LIST } from '../content/cosmetics.js';
+import { RARITY_ORDER, rarityDust, rarityName } from '../content/rarities.js';
+
+export const CASES = {
+    basic: {
+        id: 'basic', name: 'Basic Case', cost: 60,
+        odds: { common: 0.65, uncommon: 0.25, rare: 0.09, epic: 0.01 },
+    },
+    mystic: {
+        id: 'mystic', name: 'Mystic Case', cost: 180,
+        odds: { common: 0.35, uncommon: 0.35, rare: 0.20, epic: 0.08, legendary: 0.02 },
+    },
+    royal: {
+        id: 'royal', name: 'Royal Case', cost: 450,
+        odds: { uncommon: 0.30, rare: 0.35, epic: 0.23, legendary: 0.10, mythic: 0.02 },
+    },
+};
+
+export const CASE_ORDER = ['basic', 'mystic', 'royal'];
+
+// One flat index of everything a case can award, tagged by kind + rarity.
+const ITEM_POOL = [
+    ...GEAR_LIST.map((g) => ({ kind: 'gear', id: g.id, rarity: g.rarity, name: g.name, category: g.category })),
+    ...COSMETIC_LIST.map((c) => ({ kind: 'cosmetic', id: c.id, rarity: c.rarity, name: c.name, category: c.category })),
+];
+
+function poolByRarity(rarity) {
+    return ITEM_POOL.filter((i) => i.rarity === rarity);
+}
+
+// Pick a rarity from a case's odds. Falls back to the lowest listed rarity if
+// the odds don't sum to 1 (defensive — they do).
+function rollRarity(odds) {
+    let r = Math.random();
+    for (const rarity of RARITY_ORDER) {
+        const p = odds[rarity];
+        if (!p) continue;
+        if (r < p) return rarity;
+        r -= p;
+    }
+    // Remainder → highest listed rarity.
+    const listed = RARITY_ORDER.filter((x) => odds[x]);
+    return listed[listed.length - 1] ?? 'common';
+}
+
+// Returns a reward descriptor (and applies its effects to the save):
+//   { ok, kind: 'gear'|'cosmetic'|'coins'|'duplicate', rarity, id?, name?,
+//     category?, amount?, label }
+// or { ok: false, reason: 'cost'|'unknown' } when it can't be opened.
+export function openCase(save, caseType, opts = {}) {
+    const def = CASES[caseType];
+    if (!def) return { ok: false, reason: 'unknown' };
+
+    const free = !!opts.free;
+    if (!free) {
+        if (save.data.totalCoins < def.cost) return { ok: false, reason: 'cost' };
+        save.spendCoins(def.cost);
+    }
+    save.incrementStat('casesOpened', 1);
+
+    const rarity = rollRarity(def.odds);
+    const pool = poolByRarity(rarity);
+
+    // 82% of the time, the prize is an item of the rolled rarity; otherwise a
+    // coin/battle-pass consolation so cases always feel rewarding.
+    if (pool.length && Math.random() < 0.82) {
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        const owned = pick.kind === 'gear' ? save.isGearUnlocked(pick.id) : save.isCosmeticUnlocked(pick.id);
+        if (owned) {
+            const amount = rarityDust(rarity);
+            save.addCoins(amount);
+            return { ok: true, kind: 'duplicate', rarity, id: pick.id, name: pick.name,
+                category: pick.category, amount, label: `Duplicate ${pick.name} → ${amount} coins` };
+        }
+        if (pick.kind === 'gear') save.unlockGear(pick.id);
+        else save.unlockCosmetic(pick.id);
+        return { ok: true, kind: pick.kind, rarity, id: pick.id, name: pick.name,
+            category: pick.category, label: `${rarityName(rarity)} ${pick.name}` };
+    }
+
+    // Consolation: coins (most of the time) or battle-pass XP.
+    if (Math.random() < 0.6) {
+        const amount = Math.round(rarityDust(rarity) * 1.5);
+        save.addCoins(amount);
+        return { ok: true, kind: 'coins', rarity, amount, label: `${amount} coins` };
+    }
+    const amount = 50 + RARITY_ORDER.indexOf(rarity) * 40;
+    save.addBattlePassXp(amount);
+    return { ok: true, kind: 'bpxp', rarity, amount, label: `${amount} vigil XP` };
+}
+
+// Odds as display rows (high→low) for the shop UI.
+export function caseOddsRows(caseType) {
+    const def = CASES[caseType];
+    if (!def) return [];
+    return RARITY_ORDER.filter((r) => def.odds[r])
+        .map((r) => ({ rarity: r, pct: Math.round(def.odds[r] * 100) }))
+        .reverse();
+}
