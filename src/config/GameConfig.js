@@ -23,8 +23,10 @@ export const MAX_FRAME_DT = 0.1;
 // retina displays. Draw calls pass explicit world w/h to keep the footprint.
 export const SPRITE_SIZE = 182;
 export const SPRITE_SS = 2;
-export const WORLD_WIDTH = 4800;
-export const WORLD_HEIGHT = 2700;
+// World grew (was 4800×2700) for a more explorable map seeded with buildings
+// and obstacles. Kept at 16:9 so spawn-ring/camera math stays proportional.
+export const WORLD_WIDTH = 7200;
+export const WORLD_HEIGHT = 4050;
 
 // Display/backing-store tunables. maxDpr lifts the old hard cap of 2 so
 // retina/4K render at true device pixels; maxBackingPx (4K = 3840×2160)

@@ -305,6 +305,8 @@ function orbitingBladeUpdate(dt, owned, ctx) {
     for (const e of ctx.enemies) {
         if (!e.active) continue;
         if (e.weaponHitCooldown > 0) continue;
+        // Walls block the blades: skip enemies the player can't see.
+        if (ctx.los && !ctx.los(e.x, e.y)) continue;
         for (const pos of positions) {
             if (!circleOverlap(pos.x, pos.y, cfg.bladeRadius, e.x, e.y, e.radius)) continue;
             const dx = e.x - ctx.player.x;
@@ -348,6 +350,8 @@ function holyPulseUpdate(dt, owned, ctx) {
     for (const e of ctx.enemies) {
         if (!e.active) continue;
         if (!circleOverlap(ctx.player.x, ctx.player.y, cfg.radius, e.x, e.y, e.radius)) continue;
+        // Don't pulse through walls.
+        if (ctx.los && !ctx.los(e.x, e.y)) continue;
         const dx = e.x - ctx.player.x;
         const dy = e.y - ctx.player.y;
         const len = Math.hypot(dx, dy) || 1;
@@ -389,7 +393,8 @@ function lightningMarkUpdate(dt, owned, ctx) {
         if (!e.active) continue;
         const dx = e.x - ctx.player.x;
         const dy = e.y - ctx.player.y;
-        if (dx * dx + dy * dy <= rsq) candidates.push(e);
+        // Only mark enemies in clear line of sight (walls block the bolt).
+        if (dx * dx + dy * dy <= rsq && (!ctx.los || ctx.los(e.x, e.y))) candidates.push(e);
     }
     if (candidates.length === 0) {
         if (owned.timer < 0) owned.timer = 0;
@@ -602,6 +607,8 @@ function divineNovaUpdate(dt, owned, ctx) {
         const len = Math.hypot(dx, dy) || 1;
         const kx = (dx / len) * KNOCKBACK.strength * 0.4;
         const ky = (dy / len) * KNOCKBACK.strength * 0.4;
+        // Don't nova through walls.
+        if (ctx.los && !ctx.los(e.x, e.y)) continue;
         const amp = 1 + (e.shredStacks || 0) * (cfg.shredPerStack ?? 0);
         const dmg = damage * amp;
         e.takeDamage(dmg, kx, ky);
@@ -644,7 +651,8 @@ function thunderCrownUpdate(dt, owned, ctx) {
         if (!e.active) continue;
         const dx = e.x - ctx.player.x;
         const dy = e.y - ctx.player.y;
-        if (dx * dx + dy * dy <= rsq) candidates.push(e);
+        // Primary strikes need clear line of sight; chains below may arc on.
+        if (dx * dx + dy * dy <= rsq && (!ctx.los || ctx.los(e.x, e.y))) candidates.push(e);
     }
     if (candidates.length === 0) {
         if (owned.timer < 0) owned.timer = 0;

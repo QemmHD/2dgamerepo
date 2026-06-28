@@ -17,10 +17,12 @@ function weaponMaxLevel(def) {
 }
 
 export class WeaponSystem {
-    constructor() {
+    constructor(startingWeaponId = 'arcaneBolt') {
         this.owned = [];
         this.effects = [];
-        this.addWeapon('arcaneBolt');
+        // The run's starting weapon comes from the equipped loadout gear; falls
+        // back to the Cinderbolt if the id is missing/unknown.
+        this.addWeapon(WEAPONS[startingWeaponId] ? startingWeaponId : 'arcaneBolt');
     }
 
     addWeapon(id) {
@@ -61,9 +63,15 @@ export class WeaponSystem {
         return w.level >= weaponMaxLevel(def);
     }
 
-    update(dt, player, enemies, projectiles) {
+    update(dt, player, enemies, projectiles, obstacleSystem = null) {
         const hits = [];
         const killed = [];
+        // los(ex, ey) → can the player "see" that point? Walls block melee
+        // (orbit), pulse, and lightning weapons. Projectiles handle walls
+        // themselves (they despawn on impact in Game's projectile loop).
+        const los = obstacleSystem
+            ? (ex, ey) => obstacleSystem.hasLineOfSight(player.x, player.y, ex, ey)
+            : () => true;
         const ctx = {
             player,
             enemies,
@@ -71,6 +79,7 @@ export class WeaponSystem {
             effects: this.effects,
             hits,
             killed,
+            los,
         };
         for (const w of this.owned) {
             const def = WEAPONS[w.id];

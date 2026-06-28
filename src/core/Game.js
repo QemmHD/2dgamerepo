@@ -35,6 +35,7 @@ import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
 import { BossDirector } from '../systems/BossDirector.js';
 import { MapRenderer } from '../systems/MapRenderer.js';
+import { ObstacleSystem } from '../systems/ObstacleSystem.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
@@ -85,6 +86,10 @@ export class Game {
         // pattern and per-chunk decoration tables are world-static,
         // so they survive restarts intact (no need to rebuild).
         this.mapRenderer = new MapRenderer();
+        // Obstacles are world-static (deterministic placement), so generate
+        // them once here and reuse across runs — same layout every load.
+        this.obstacleSystem = new ObstacleSystem();
+        this.obstacleSystem.generate(WORLD_WIDTH, WORLD_HEIGHT);
         // Lighting buffer + particle pool are also world-static / pooled,
         // so they live across runs (particles are cleared on run start).
         this.lighting = new LightingSystem();
@@ -616,6 +621,25 @@ export class Game {
         else if (this.pendingLevelUps > 0) this._presentLevelUp();
     }
 
+    // Nudge a desired spawn point to the nearest spot not inside an obstacle.
+    // Used for bosses/chests/pickups so nothing spawns trapped in a wall.
+    _clearSpot(x, y, clearance) {
+        const halfW = WORLD_WIDTH / 2 - clearance;
+        const halfH = WORLD_HEIGHT / 2 - clearance;
+        const cx = clamp(x, -halfW, halfW);
+        const cy = clamp(y, -halfH, halfH);
+        if (!this.obstacleSystem.isBlocked(cx, cy, clearance)) return { x: cx, y: cy };
+        for (let step = 1; step <= 6; step++) {
+            const rad = step * (clearance + 40);
+            for (let a = 0; a < TWO_PI; a += Math.PI / 4) {
+                const nx = clamp(cx + Math.cos(a) * rad, -halfW, halfW);
+                const ny = clamp(cy + Math.sin(a) * rad, -halfH, halfH);
+                if (!this.obstacleSystem.isBlocked(nx, ny, clearance)) return { x: nx, y: ny };
+            }
+        }
+        return { x: cx, y: cy };
+    }
+
     _spawnBoss(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
@@ -623,8 +647,9 @@ export class Game {
         const dist = BOSS.spawnRingDistance;
         const halfW = WORLD_WIDTH / 2 - 100;
         const halfH = WORLD_HEIGHT / 2 - 100;
-        const x = clamp(this.player.x + Math.cos(angle) * dist, -halfW, halfW);
-        const y = clamp(this.player.y + Math.sin(angle) * dist, -halfH, halfH);
+        let x = clamp(this.player.x + Math.cos(angle) * dist, -halfW, halfW);
+        let y = clamp(this.player.y + Math.sin(angle) * dist, -halfH, halfH);
+        ({ x, y } = this._clearSpot(x, y, def.radius ?? 90));
         const boss = new Enemy(id, x, y, {
             healthMul: this.waveState.healthMul,
             speedMul: this.waveState.speedMul,
@@ -641,10 +666,12 @@ export class Game {
     }
 
     _dropChest(x, y) {
-        this.chests.push(new Chest(x, y));
+        const s = this._clearSpot(x, y, 40);
+        this.chests.push(new Chest(s.x, s.y));
     }
 
     _dropCoin(x, y, value = 1) {
+        if (this.obstacleSystem.isBlocked(x, y, 18)) { const s = this._clearSpot(x, y, 18); x = s.x; y = s.y; }
         this.coins.push(new Coin(x, y, value));
     }
 
@@ -844,13 +871,25 @@ export class Game {
         for (const id of bossesToSpawn) this._spawnBoss(id);
 
         this.player.update(dt, this.input);
-        this.spawner.update(dt, this.player, this.enemies, this.waveState);
+        // Slide the player out of any wall they walked into (tangential motion
+        // is preserved by resolveCircle, so they glide along obstacles).
+        {
+            const r = this.obstacleSystem.resolveCircle(this.player.x, this.player.y, this.player.radius);
+            this.player.x = r.x; this.player.y = r.y;
+        }
+        this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem);
         const weaponResult = this.weaponSystem.update(
-            dt, this.player, this.enemies, this.projectiles
+            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem
         );
 
         for (const e of this.enemies) {
-            if (e.active) e.update(dt, this.player, this.enemyProjectiles);
+            if (!e.active) continue;
+            e.update(dt, this.player, this.enemyProjectiles);
+            // Enemies (including elites + bosses) can't walk through walls.
+            // Resolving after their move keeps them chasing while sliding along
+            // obstacles instead of clipping through or stacking inside them.
+            const r = this.obstacleSystem.resolveCircle(e.x, e.y, e.radius);
+            e.x = r.x; e.y = r.y;
         }
         // Elemental DoT (burn) is applied here, NOT in Enemy.update, because
         // a burn kill must route through the same reward pipeline as any
@@ -870,14 +909,28 @@ export class Game {
         }
 
         for (const p of this.projectiles) {
-            if (p.active) p.update(dt);
+            if (!p.active) continue;
+            const px = p.x, py = p.y;
+            p.update(dt);
+            // Projectiles collide with walls: if the step crossed an obstacle,
+            // burst on impact instead of passing through.
+            if (p.active && this.obstacleSystem.segmentBlocked(px, py, p.x, p.y)) {
+                p.active = false;
+                this.particles.pickupSparkle(p.x, p.y, LIGHT_COLORS.projectile);
+            }
         }
         // Enemy bolts (Spitters + boss volleys). Each can hit the player once;
         // a landed hit drives the same shake + flash + damage number as
         // contact damage.
         for (const ep of this.enemyProjectiles) {
             if (!ep.active) continue;
+            const epx = ep.x, epy = ep.y;
             const dealt = ep.update(dt, this.player);
+            // Enemy/boss bolts also collide with walls — no damage through cover.
+            if (ep.active && this.obstacleSystem.segmentBlocked(epx, epy, ep.x, ep.y)) {
+                ep.active = false;
+                continue;
+            }
             if (dealt > 0) {
                 this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
                 this._pushFeedback('hit', 0.32);
@@ -904,7 +957,10 @@ export class Game {
             hz.r += hz.growth * dt;
             if (!hz.hitPlayer) {
                 const d = Math.hypot(this.player.x - hz.x, this.player.y - hz.y);
-                if (d >= hz.r - hz.band && d <= hz.r + hz.band) {
+                // A wall between the boss's shockwave origin and the player
+                // shields them — bosses can't damage through cover.
+                if (d >= hz.r - hz.band && d <= hz.r + hz.band &&
+                    this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
                     const dealt = this.player.takeDamage(hz.damage);
                     if (dealt > 0) {
                         hz.hitPlayer = true;
@@ -1094,6 +1150,7 @@ export class Game {
 
     _dropGem(x, y) {
         const tier = pickWeighted(GEM_TIERS, (t) => GEM[t].dropWeight) ?? 'small';
+        if (this.obstacleSystem.isBlocked(x, y, 16)) { const s = this._clearSpot(x, y, 16); x = s.x; y = s.y; }
         this.gems.push(new XPGem(x, y, tier));
     }
 
@@ -1130,6 +1187,15 @@ export class Game {
         this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT, L);
         this.particles.drawWorldFog(ctx, this.camera);
         this._drawWorldBounds(ctx, this.showDebug);
+
+        // Obstacles are painter's-ordered against the player: those whose feet
+        // line sits ABOVE the player draw now (behind entities); those below
+        // the player draw after the player so they correctly occlude them.
+        const playerBaseY = this.player.y + this.player.radius;
+        this.obstacleSystem.forVisible(
+            this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
+            (ob) => ob.draw(ctx), (ob) => ob.baseY <= playerBaseY
+        );
 
         // Off-screen culling: only entities within the camera view (plus a
         // sprite-half + shake margin) are worth a draw call (enemies spawn
@@ -1188,6 +1254,12 @@ export class Game {
         }
         this.player.draw(ctx);
         this.player.drawHpBar(ctx);
+        // Obstacles whose feet sit below the player draw on top of them, so the
+        // player is occluded when standing behind a wall/building.
+        this.obstacleSystem.forVisible(
+            this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
+            (ob) => ob.draw(ctx), (ob) => ob.baseY > playerBaseY
+        );
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
         for (const p of this.projectiles) {
             if (!cull(p)) continue;
@@ -1245,6 +1317,8 @@ export class Game {
 
         if (this.showDebug) {
             this.mapRenderer.drawDebug(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+            // Obstacle footprints (red = blocks sight, amber = passable LOS).
+            this.obstacleSystem.drawDebug(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
             this.player.drawDebug(ctx);
             for (const g of this.gems) if (cull(g)) g.drawDebug(ctx);
             for (const c of this.coins) if (cull(c)) c.drawDebug(ctx);
@@ -1252,6 +1326,20 @@ export class Game {
             for (const e of this.enemies) if (cull(e)) e.drawDebug(ctx);
             for (const p of this.projectiles) if (cull(p)) p.drawDebug(ctx);
             for (const ep of this.enemyProjectiles) if (cull(ep)) ep.drawDebug(ctx);
+            // Line-of-sight rays from the player to nearby enemies: green when
+            // clear, red when a wall blocks the shot.
+            ctx.save();
+            ctx.lineWidth = 1.5;
+            for (const e of this.enemies) {
+                if (!e.active || !cull(e)) continue;
+                const clear = this.obstacleSystem.hasLineOfSight(this.player.x, this.player.y, e.x, e.y);
+                ctx.strokeStyle = clear ? 'rgba(90,230,120,0.5)' : 'rgba(255,70,70,0.8)';
+                ctx.beginPath();
+                ctx.moveTo(this.player.x, this.player.y);
+                ctx.lineTo(e.x, e.y);
+                ctx.stroke();
+            }
+            ctx.restore();
         }
         ctx.restore();
 
