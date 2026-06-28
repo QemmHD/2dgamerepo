@@ -70,15 +70,26 @@ export class Renderer {
         const fitW = this.rotated ? winH : winW;
         const fitH = this.rotated ? winW : winH;
 
+        // Fit the 16:9 game to the available space. CONTAIN (letterbox) shows
+        // everything; COVER (fill, crop a little) fills the screen. We prefer
+        // COVER when its crop stays under RENDER.maxCoverCrop — so a tall
+        // phone (e.g. 19.5:9 iPhone) goes edge-to-edge instead of bar-boxed,
+        // while ultrawide displays still letterbox. The cropped game edges are
+        // folded into safeArea so the HUD never falls off-screen.
         const targetRatio = this.internalWidth / this.internalHeight;
-        let cssW, cssH;
-        if (fitW / fitH > targetRatio) {
-            cssH = fitH;
-            cssW = cssH * targetRatio;
+        const wide = fitW / fitH > targetRatio;
+        let containW, containH, coverW, coverH;
+        if (wide) {
+            containH = fitH; containW = containH * targetRatio;
+            coverW = fitW;   coverH = coverW / targetRatio;
         } else {
-            cssW = fitW;
-            cssH = cssW / targetRatio;
+            containW = fitW; containH = containW / targetRatio;
+            coverH = fitH;   coverW = coverH * targetRatio;
         }
+        const cropFrac = wide ? (coverH - fitH) / coverH : (coverW - fitW) / coverW;
+        let cssW, cssH;
+        if (cropFrac <= RENDER.maxCoverCrop) { cssW = coverW; cssH = coverH; }
+        else { cssW = containW; cssH = containH; }
         this.cssWidth = cssW;
         this.cssHeight = cssH;
 
@@ -137,8 +148,11 @@ export class Renderer {
             // left→bottom (matches the clientToInternal unrotation below).
             // The canvas-width axis lies along the screen's height (winH); the
             // canvas-height axis along the screen's width (winW).
-            const gapW = Math.max(0, (winH - this.cssWidth) / 2);
-            const gapH = Math.max(0, (winW - this.cssHeight) / 2);
+            // Gaps may be NEGATIVE under cover-fit (canvas larger than the
+            // screen on that axis); the negative folds the cropped overflow
+            // into the inset so the HUD stays on-screen.
+            const gapW = (winH - this.cssWidth) / 2;
+            const gapH = (winW - this.cssHeight) / 2;
             const padLeftCss = Math.max(0, insetTop - gapW);
             const padRightCss = Math.max(0, insetBottom - gapW);
             const padTopCss = Math.max(0, insetRight - gapH);
