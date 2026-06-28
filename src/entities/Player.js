@@ -43,6 +43,12 @@ export class Player {
         this.damageMul = 1;
         this.cooldownMul = 1;
 
+        // Defensive passives: damage taken multiplier (Thick Hide), out-of-
+        // combat regen (Second Wind), and contact-damage reflect (Thorns).
+        this.damageTakenMul = 1;
+        this.regenPerSecond = 0;
+        this.thornsReflect = 0;
+
         // Forward-looking stash for the chest stage.
         this.chestLuck = 0;
         this.coins = 0;
@@ -63,7 +69,10 @@ export class Player {
 
     takeDamage(amount) {
         if (this.invincibleTimer > 0 || this.hp <= 0) return 0;
-        const dealt = Math.min(amount, this.hp);
+        // Thick Hide reduces all incoming damage uniformly (contact, enemy
+        // bolts, boss) since every source routes through here.
+        const incoming = amount * (this.damageTakenMul ?? 1);
+        const dealt = Math.min(incoming, this.hp);
         this.hp -= dealt;
         if (this.hp < 0) this.hp = 0;
         this.invincibleTimer = PLAYER.invincibilityDuration;

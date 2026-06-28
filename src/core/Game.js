@@ -23,6 +23,7 @@ import { Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
 import { Chest } from '../entities/Chest.js';
 import { Coin } from '../entities/Coin.js';
+import { EnemyProjectile } from '../entities/EnemyProjectile.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 import { Spawner } from '../systems/Spawner.js';
 import { WeaponSystem } from '../systems/WeaponSystem.js';
@@ -48,6 +49,9 @@ const DEBUG_BUTTON_TOUCH_SLOP = 24;
 // Anything whose center is farther than this from the view edge can't
 // contribute a visible pixel and is skipped at draw time.
 const CULL_MARGIN = 160;
+
+// Second Wind only regenerates when no enemy is within this radius.
+const SECOND_WIND_RADIUS = 340;
 
 // Death-burst tint per enemy type (boss/elite handled separately).
 const DEATH_COLORS = {
@@ -344,6 +348,7 @@ export class Game {
 
         this.enemies = [];
         this.projectiles = [];
+        this.enemyProjectiles = [];
         this.gems = [];
         this.damageNumbers = [];
 
@@ -641,6 +646,54 @@ export class Game {
         }
     }
 
+    // Elite affix on-death effects. Volatile detonates an AoE; Splitting
+    // bursts into a few crawlers (non-elite, so no recursive splitting).
+    _applyAffixDeath(e) {
+        const def = e.affixDef;
+        if (!def) return;
+        if (e.affix === 'volatile') {
+            const r2 = def.explodeRadius * def.explodeRadius;
+            for (const other of this.enemies) {
+                if (!other.active || other === e) continue;
+                const dx = other.x - e.x;
+                const dy = other.y - e.y;
+                if (dx * dx + dy * dy > r2) continue;
+                other.takeDamage(def.explodeDamage);
+                this.damageNumbers.push(new DamageNumber(
+                    other.x, other.y - other.radius, def.explodeDamage, '#ffae66'
+                ));
+                // A blast kill must flow through the normal reward path or the
+                // explosion silently eats the XP/kill-count for everything it
+                // wipes. We route gem + burst + tally here (NOT a recursive
+                // affix death, so a clump of volatiles can't chain-detonate).
+                if (!other.active) {
+                    this.kills += 1;
+                    this.particles.deathBurst(other.x, other.y, deathColor(other));
+                    this._dropGem(other.x, other.y);
+                }
+            }
+            // AoE ring + ember burst + a light kick so the blast reads.
+            this.weaponSystem.effects.push({
+                kind: 'pulse', x: e.x, y: e.y, radius: def.explodeRadius,
+                age: 0, lifetime: 0.4, active: true,
+            });
+            this.particles.deathBurst(e.x, e.y, def.tint);
+            this._shake(SCREEN_SHAKE.intensity * 0.6, 0.25);
+        } else if (e.affix === 'splitting') {
+            const count = def.spawnCount ?? 2;
+            const type = def.spawnType ?? 'crawler';
+            for (let i = 0; i < count; i++) {
+                const a = (i / count) * TWO_PI + Math.random() * 0.5;
+                const ox = e.x + Math.cos(a) * 40;
+                const oy = e.y + Math.sin(a) * 40;
+                this.enemies.push(new Enemy(type, ox, oy, {
+                    healthMul: this.waveState.healthMul,
+                    speedMul: this.waveState.speedMul,
+                }));
+            }
+        }
+    }
+
     _enterGameOver() {
         if (this.gameOver) return;
         this.gameOver = true;
@@ -739,10 +792,23 @@ export class Game {
         );
 
         for (const e of this.enemies) {
-            if (e.active) e.update(dt, this.player);
+            if (e.active) e.update(dt, this.player, this.enemyProjectiles);
         }
         for (const p of this.projectiles) {
             if (p.active) p.update(dt);
+        }
+        // Enemy bolts (Spitters). Each can hit the player once; a landed hit
+        // drives the same shake + flash + damage number as contact damage.
+        for (const ep of this.enemyProjectiles) {
+            if (!ep.active) continue;
+            const dealt = ep.update(dt, this.player);
+            if (dealt > 0) {
+                this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+                this._pushFeedback('hit', 0.32);
+                this.damageNumbers.push(new DamageNumber(
+                    this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'
+                ));
+            }
         }
 
         let xpCollected = 0;
@@ -788,6 +854,7 @@ export class Game {
             this.kills += allKilled.length;
             for (const e of allKilled) {
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
+                if (e.affix) this._applyAffixDeath(e);
                 this._dropGem(e.x, e.y);
                 if (e.boss) {
                     // Bosses always drop a chest + a coin burst.
@@ -867,6 +934,7 @@ export class Game {
 
         compactInPlace(this.enemies);
         compactInPlace(this.projectiles);
+        compactInPlace(this.enemyProjectiles);
         compactInPlace(this.gems);
         compactInPlace(this.damageNumbers);
         compactInPlace(this.chests);
@@ -877,6 +945,27 @@ export class Game {
         // reward code doesn't each need to remember to trigger it.
         if (this.player.hp > this._lastHp + 0.5) this._pushFeedback('heal', 0.4);
         this._lastHp = this.player.hp;
+
+        // Second Wind: trickle HP back while no enemy is within the safe
+        // radius. Applied after the heal-flash check so the tiny per-frame
+        // tick doesn't spam the green flash.
+        if (this.player.regenPerSecond > 0 && this.player.hp < this.player.maxHp) {
+            const sr2 = SECOND_WIND_RADIUS * SECOND_WIND_RADIUS;
+            let safe = true;
+            for (const e of this.enemies) {
+                if (!e.active) continue;
+                const ex = e.x - this.player.x;
+                const ey = e.y - this.player.y;
+                if (ex * ex + ey * ey < sr2) { safe = false; break; }
+            }
+            if (safe) {
+                this.player.hp = Math.min(
+                    this.player.maxHp,
+                    this.player.hp + this.player.regenPerSecond * dt
+                );
+                this._lastHp = this.player.hp;
+            }
+        }
 
         this.camera.update(dt);
 
@@ -966,6 +1055,13 @@ export class Game {
             p.draw(ctx);
             if (L) L.addLight(p.x, p.y, Lc.projectileRadius, LIGHT_COLORS.projectile, 0.85, 0);
         }
+        // Enemy bolts — drawn above player projectiles; each carves a small
+        // hostile-purple light so they read against the dark.
+        for (const ep of this.enemyProjectiles) {
+            if (!cull(ep)) continue;
+            ep.draw(ctx);
+            if (L) L.addLight(ep.x, ep.y, 110, '#c97bff', 0.8, 0);
+        }
         this.weaponSystem.drawEffects(ctx);
         // Weapon effects (pulse/lightning) are bright emitters — carve light
         // holes so the veil doesn't dim them.
@@ -992,6 +1088,7 @@ export class Game {
             for (const c of this.chests) if (cull(c)) c.drawDebug(ctx);
             for (const e of this.enemies) if (cull(e)) e.drawDebug(ctx);
             for (const p of this.projectiles) if (cull(p)) p.drawDebug(ctx);
+            for (const ep of this.enemyProjectiles) if (cull(ep)) ep.drawDebug(ctx);
         }
         ctx.restore();
 

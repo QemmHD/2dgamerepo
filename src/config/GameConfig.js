@@ -62,6 +62,37 @@ export const ENEMY = {
         contactDamage: 7,
         xpValue: 1,
     },
+    // Ranged threat: a slow drifter that keeps its distance and lobs a
+    // telegraphed bolt the player must sidestep.
+    spitter: {
+        hp: 30,
+        speed: 95,
+        radius: 44,
+        contactDamage: 6,
+        xpValue: 2,
+        behavior: 'spitter',
+        keepDistance: 430,   // tries to hold this gap from the player
+        fireInterval: 2.6,   // seconds between shots
+        windup: 0.5,         // telegraph time before a shot leaves
+        fireRange: 820,      // won't fire beyond this
+        projectileSpeed: 430,
+        projectileDamage: 10,
+    },
+    // Burst threat: stalks slowly, then winds up and dashes through the
+    // player's last position — punishes standing still.
+    charger: {
+        hp: 50,
+        speed: 70,
+        radius: 50,
+        contactDamage: 9,
+        xpValue: 2,
+        behavior: 'charger',
+        chargeInterval: 3.4, // seconds between dashes
+        windup: 0.55,        // telegraph time before the dash
+        triggerRange: 620,   // starts a charge when within this range
+        dashSpeed: 760,
+        dashDuration: 0.4,
+    },
     // Bosses are still Enemy instances; the `boss: true` flag flips on the
     // boss HP bar, chest drop on death, and lets the constructor pull in
     // bossName + visualScale. They scale with wave just like other enemies.
@@ -125,6 +156,26 @@ export const ELITE = {
     speedMul: 0.85,
     contactDamageMul: 1.5,
     xpMul: 5,
+};
+
+// Rolled affixes layered onto an elite for visible variety + a death/while-
+// alive twist. Each elite picks one at random. Colors tint the elite glow.
+export const ELITE_AFFIXES = ['swift', 'volatile', 'splitting'];
+export const AFFIX = {
+    // Cancels the elite speed penalty and then some — a fast, evasive elite.
+    swift: { tint: '#7fe0ff', speedMul: 1.7 },
+    // Detonates on death, dealing AoE to everything nearby.
+    volatile: { tint: '#ff9a4a', explodeRadius: 210, explodeDamage: 26 },
+    // Bursts into a few crawlers on death.
+    splitting: { tint: '#b48cff', spawnType: 'crawler', spawnCount: 3 },
+};
+
+// Straight-flying enemy bolt (Spitter). Damages the player on contact and
+// respects i-frames just like contact damage.
+export const ENEMY_PROJECTILE = {
+    radius: 16,
+    lifetime: 3.2,
+    color: '#c97bff',
 };
 
 // ── Weapons ────────────────────────────────────────────────────────────
@@ -196,7 +247,7 @@ export const WAVES = [
         announcement: 'Wave 3: Fast Swarm — Crawlers skitter in',
         spawnIntervalMul: 0.72,
         maxAlive: 90,
-        typeWeights: { slime: 45, bat: 25, crawler: 30 },
+        typeWeights: { slime: 45, bat: 25, crawler: 30, spitter: 15 },
         eliteChance: 0,
         healthMul: 1.2,
         speedMul: 1.10,
@@ -208,7 +259,7 @@ export const WAVES = [
         announcement: 'Wave 4: Thick Horde — Pressure rises',
         spawnIntervalMul: 0.60,
         maxAlive: 110,
-        typeWeights: { slime: 35, bat: 25, crawler: 40 },
+        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12 },
         eliteChance: 0.015,
         healthMul: 1.35,
         speedMul: 1.15,
@@ -220,7 +271,7 @@ export const WAVES = [
         announcement: 'Wave 5: Heavy Steps — Brutes arrive',
         spawnIntervalMul: 0.52,
         maxAlive: 125,
-        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25 },
+        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18 },
         eliteChance: 0.03,
         healthMul: 1.5,
         speedMul: 1.20,
@@ -232,7 +283,7 @@ export const WAVES = [
         announcement: 'Wave 6: Endless Swarm — Survive!',
         spawnIntervalMul: 0.44,
         maxAlive: 145,
-        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30 },
+        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20 },
         eliteChance: 0.06,
         healthMul: 1.7,
         speedMul: 1.25,

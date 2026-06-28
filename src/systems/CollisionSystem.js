@@ -97,6 +97,7 @@ export class CollisionSystem {
         // a swarm genuinely hurts while a single touch is unchanged.
         let contact = false;
         let strongest = 0;
+        let strongestEnemy = null;
         let rest = 0;
         for (const e of enemies) {
             if (!e.active) continue;
@@ -105,6 +106,7 @@ export class CollisionSystem {
             if (e.contactDamage > strongest) {
                 rest += strongest;
                 strongest = e.contactDamage;
+                strongestEnemy = e;
             } else {
                 rest += e.contactDamage;
             }
@@ -125,6 +127,20 @@ export class CollisionSystem {
                 if (dealt > 0) {
                     playerHit = true;
                     playerDamageTaken = dealt;
+                    // Thorns: reflect a fraction of the (pre-mitigation)
+                    // contact damage back to the strongest attacker. Routes
+                    // its hit/kill through the same arrays so gem drops +
+                    // damage numbers fire normally.
+                    const reflect = (player.thornsReflect ?? 0) * contactDamage;
+                    if (reflect > 0 && strongestEnemy && strongestEnemy.active) {
+                        strongestEnemy.takeDamage(reflect);
+                        hits.push({
+                            x: strongestEnemy.x,
+                            y: strongestEnemy.y - strongestEnemy.radius,
+                            amount: reflect,
+                        });
+                        if (!strongestEnemy.active) killed.push(strongestEnemy);
+                    }
                 }
             }
         } else if (this.contactFlash > 0) {

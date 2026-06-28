@@ -1,6 +1,8 @@
 import {
     ENEMY,
     ELITE,
+    ELITE_AFFIXES,
+    AFFIX,
     SPRITE_SIZE,
     HIT_FLASH_DURATION,
     KNOCKBACK,
@@ -14,7 +16,10 @@ import {
     getCrawlerFrames,
     getVinebackGoliathFrames,
     getStormwingAlphaFrames,
+    getSpitterFrames,
+    getChargerFrames,
 } from '../assets/ProceduralSprites.js';
+import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 // Frame getters all return a pre-cached array of canvases. Per-type
@@ -24,6 +29,8 @@ const FRAMES_BY_TYPE = {
     bat:             { get: getBatFrames,             hz: 10 },
     brute:           { get: getBruteFrames,           hz: 1.4 },
     crawler:         { get: getCrawlerFrames,         hz: 9 },
+    spitter:         { get: getSpitterFrames,         hz: 4 },
+    charger:         { get: getChargerFrames,         hz: 3 },
     vinebackGoliath: { get: getVinebackGoliathFrames, hz: 1.6 },
     stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 7 },
 };
@@ -77,6 +84,31 @@ export class Enemy {
         this.canDropChest = elite || isBoss;
         this.visualScale = baseScale * eliteSizeMul;
 
+        // Behavior (ranged Spitter / dashing Charger). Plain chasers leave
+        // this null and run the default chase. def is kept for behavior
+        // params. Attack timers start randomized so a wave doesn't fire in
+        // unison.
+        this.def = def;
+        this.behavior = def.behavior ?? null;
+        const baseInterval = def.fireInterval ?? def.chargeInterval ?? 2;
+        this.attackTimer = this.behavior ? Math.random() * baseInterval : 0;
+        this.windupTimer = 0;
+        this.dashTimer = 0;
+        this.dashDirX = 0;
+        this.dashDirY = 0;
+        // Spitter bolt damage carries the elite contact-damage scaling.
+        this.projectileDamage = (def.projectileDamage ?? 0) * dmgMul;
+
+        // Elite affix (rolled only on elites). Swift bumps speed; volatile /
+        // splitting are handled by Game at the death site.
+        this.affix = null;
+        this.affixDef = null;
+        if (elite) {
+            this.affix = ELITE_AFFIXES[Math.floor(Math.random() * ELITE_AFFIXES.length)];
+            this.affixDef = AFFIX[this.affix] ?? null;
+            if (this.affix === 'swift' && this.affixDef) this.speed *= this.affixDef.speedMul;
+        }
+
         this.frames = frameSpec.get();
         this.frameHz = frameSpec.hz;
         // Random phase so adjacent enemies don't animate in lockstep —
@@ -117,19 +149,70 @@ export class Enemy {
         this.shredTimer = dur;
     }
 
-    update(dt, player) {
+    update(dt, player, enemyProjectiles) {
         const dx = player.x - this.x;
         const dy = player.y - this.y;
-        const len = Math.hypot(dx, dy);
-        if (len > 0.001) {
-            // Apply slow transiently via a local scalar — never mutate
-            // this.speed (so wave/elite scaling stays intact and the slow
-            // fully reverses on decay).
-            const spd = this.slowTimer > 0 ? this.speed * this.slowMul : this.speed;
-            this.vx = (dx / len) * spd;
-            this.vy = (dy / len) * spd;
+        const len = Math.hypot(dx, dy) || 0.0001;
+        const nx = dx / len;
+        const ny = dy / len;
+
+        // Slow applies transiently via a local scalar — never mutate
+        // this.speed (so wave/elite scaling stays intact and slow reverses).
+        const slowK = this.slowTimer > 0 ? this.slowMul : 1;
+        let moveX = nx;        // default plain chase
+        let moveY = ny;
+        let spd = this.speed * slowK;
+
+        if (this.behavior === 'spitter') {
+            // Hold a firing gap: retreat if too close, approach if too far.
+            const kd = this.def.keepDistance;
+            if (len < kd - 40) { moveX = -nx; moveY = -ny; }
+            else if (len > kd + 80) { moveX = nx; moveY = ny; }
+            else { moveX = 0; moveY = 0; }
+
+            this.attackTimer -= dt;
+            if (this.windupTimer > 0) {
+                this.windupTimer -= dt;
+                moveX = 0; moveY = 0; // brace + telegraph while charging a shot
+                if (this.windupTimer <= 0 && enemyProjectiles) {
+                    const ps = this.def.projectileSpeed;
+                    enemyProjectiles.push(
+                        new EnemyProjectile(this.x, this.y, nx * ps, ny * ps, this.projectileDamage)
+                    );
+                }
+            } else if (this.attackTimer <= 0 && len <= this.def.fireRange) {
+                this.windupTimer = this.def.windup;
+                this.attackTimer = this.def.fireInterval;
+            }
+        } else if (this.behavior === 'charger') {
+            this.attackTimer -= dt;
+            if (this.dashTimer > 0) {
+                // Mid-dash: travel along the locked direction at dash speed.
+                this.dashTimer -= dt;
+                moveX = this.dashDirX; moveY = this.dashDirY;
+                spd = this.def.dashSpeed * slowK;
+            } else if (this.windupTimer > 0) {
+                this.windupTimer -= dt;
+                moveX = 0; moveY = 0; // brace before the lunge
+                if (this.windupTimer <= 0) {
+                    this.dashDirX = nx;  // lock aim at dash start, then commit
+                    this.dashDirY = ny;
+                    this.dashTimer = this.def.dashDuration;
+                }
+            } else if (this.attackTimer <= 0 && len <= this.def.triggerRange) {
+                this.windupTimer = this.def.windup;
+                this.attackTimer = this.def.chargeInterval;
+            }
+        }
+
+        if (moveX !== 0 || moveY !== 0) {
+            this.vx = moveX * spd;
+            this.vy = moveY * spd;
             this.x += this.vx * dt;
             this.y += this.vy * dt;
+        } else {
+            this.vx = 0;
+            this.vy = 0;
         }
 
         if (this.knockbackVx !== 0 || this.knockbackVy !== 0) {
@@ -175,8 +258,15 @@ export class Enemy {
         if (this.elite) {
             const haloR = this.spriteHalf * this.visualScale * 0.75;
             const grad = ctx.createRadialGradient(0, 0, haloR * 0.25, 0, 0, haloR);
-            grad.addColorStop(0, 'rgba(255, 215, 90, 0.5)');
-            grad.addColorStop(1, 'rgba(255, 200, 50, 0)');
+            // Affix tints the halo so the elite's flavor reads at a glance;
+            // plain elites keep the classic gold.
+            if (this.affixDef) {
+                grad.addColorStop(0, hexToHalo(this.affixDef.tint, 0.55));
+                grad.addColorStop(1, hexToHalo(this.affixDef.tint, 0));
+            } else {
+                grad.addColorStop(0, 'rgba(255, 215, 90, 0.5)');
+                grad.addColorStop(1, 'rgba(255, 200, 50, 0)');
+            }
             ctx.fillStyle = grad;
             ctx.beginPath();
             ctx.arc(0, 0, haloR, 0, TWO_PI);
@@ -246,4 +336,12 @@ export class Enemy {
         ctx.stroke();
         ctx.restore();
     }
+}
+
+// #rrggbb → rgba() at the given alpha (for the affix-tinted halo).
+function hexToHalo(hex, a) {
+    let h = hex.replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const n = parseInt(h, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
