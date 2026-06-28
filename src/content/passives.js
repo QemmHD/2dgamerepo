@@ -23,7 +23,7 @@
 export const PASSIVES = {
     spellbook: {
         id: 'spellbook',
-        name: 'Spellbook',
+        name: 'Quickwick',
         description: '-9% weapon cooldowns per level.',
         maxLevel: 5,
         apply(player) {
@@ -33,7 +33,7 @@ export const PASSIVES = {
 
     powerStone: {
         id: 'powerStone',
-        name: 'Power Stone',
+        name: 'Brightstone',
         description: '+12% weapon damage per level.',
         maxLevel: 5,
         apply(player) {
@@ -43,7 +43,7 @@ export const PASSIVES = {
 
     windBoots: {
         id: 'windBoots',
-        name: 'Wind Boots',
+        name: 'Emberstride',
         description: '+10% movement speed per level.',
         maxLevel: 5,
         apply(player) {
@@ -53,7 +53,7 @@ export const PASSIVES = {
 
     magnetCharm: {
         id: 'magnetCharm',
-        name: 'Magnet Charm',
+        name: 'Gleamcharm',
         description: '+20% gem pickup range per level.',
         maxLevel: 5,
         apply(player) {
@@ -63,7 +63,7 @@ export const PASSIVES = {
 
     ironHeart: {
         id: 'ironHeart',
-        name: 'Iron Heart',
+        name: 'Hearthcore',
         description: '+25 max HP per level (also heals).',
         maxLevel: 5,
         apply(player) {
@@ -75,7 +75,7 @@ export const PASSIVES = {
 
     cloverCoin: {
         id: 'cloverCoin',
-        name: 'Clover Coin',
+        name: 'Wishing Cinder',
         description: '+15% chest reward luck per level.',
         maxLevel: 5,
         apply(player) {
@@ -86,7 +86,7 @@ export const PASSIVES = {
     // ── Defensive passives ──────────────────────────────────────────
     thickHide: {
         id: 'thickHide',
-        name: 'Thick Hide',
+        name: 'Ashhide',
         description: '-8% damage taken per level.',
         maxLevel: 5,
         apply(player) {
@@ -96,7 +96,7 @@ export const PASSIVES = {
 
     secondWind: {
         id: 'secondWind',
-        name: 'Second Wind',
+        name: 'Rekindle',
         description: 'Regenerate +1.2 HP/s when no enemy is near, per level.',
         maxLevel: 5,
         apply(player) {
@@ -106,7 +106,7 @@ export const PASSIVES = {
 
     thorns: {
         id: 'thorns',
-        name: 'Thorns',
+        name: 'Backdraft',
         description: 'Reflect +25% of contact damage back per level.',
         maxLevel: 5,
         apply(player) {
@@ -117,7 +117,7 @@ export const PASSIVES = {
     // ── Elemental passives ──────────────────────────────────────────
     pyromancersTinder: {
         id: 'pyromancersTinder',
-        name: "Pyromancer's Tinder",
+        name: 'Tinderheart',
         description: '+18% burn damage per level.',
         maxLevel: 5,
         element: 'fire',
@@ -128,7 +128,7 @@ export const PASSIVES = {
 
     frostbiteCore: {
         id: 'frostbiteCore',
-        name: 'Frostbite Core',
+        name: 'Rimecore',
         description: 'Deepen chill & +4% freeze chance per level.',
         maxLevel: 5,
         element: 'frost',
