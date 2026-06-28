@@ -20,13 +20,21 @@ export class Projectile {
         // KILL (independent of pierce). ricochetRange caps the redirect hop.
         this.ricochet = opts.ricochet ?? 0;
         this.ricochetRange = opts.ricochetRange ?? 0;
+        // Elemental payload. A FIRE bolt carries a burn that CollisionSystem
+        // stamps on every enemy it touches — so it re-applies for free on each
+        // pierce pass and on every ricochet hop (same object, same payload).
+        this.element = opts.element ?? null;
+        this.burnDps = opts.burnDps ?? 0;
+        this.burnDuration = opts.burnDuration ?? 0;
         // Tracks enemies already damaged so a single piercing projectile
         // doesn't double-hit the same target while passing through.
         this.hitEnemies = new Set();
         this.age = 0;
         this.active = true;
         this.angle = Math.atan2(vy, vx);
-        this.sprite = getProjectileSprite();
+        // Weapons may supply a tinted sprite (e.g. the ember bolt); default is
+        // the arcane bolt art.
+        this.sprite = opts.sprite ?? getProjectileSprite();
     }
 
     update(dt) {

@@ -54,6 +54,7 @@ export function prewarmSprites() {
     getChestFrames();
     getCoinFrames();
     getProjectileSprite();
+    getEmberWispSprite();
     getGroundTileSprite();
     for (const tier of GEM_TIERS) getXPGemSprite(tier);
     for (const type of MAP.decorationTypes) getDecorationSprite(type);
@@ -72,6 +73,10 @@ export const PARTICLE_GLOW_COLORS = [
     '#ffffff', '#3a2a22', '#ffcaa0',
     '#7be08a', '#b48cff', '#9a7cff', '#d8a060', '#ffe08a',
     '#c97bff', // enemy bolt (Spitter)
+    // Elemental status + telegraph/hazard glows (fire/shock/frost/freeze +
+    // the boss telegraph + shockwave-light tints) so the first proc of each
+    // never rasterizes a gradient mid-combat.
+    '#ff7a33', '#ffe066', '#7fe0ff', '#bfe8ff', '#ff5a3c', '#ff7a4a',
 ];
 
 // ── Ground tile ────────────────────────────────────────────────────────
@@ -175,6 +180,13 @@ export function getProjectileSprite() {
     if (cache.has('projectile')) return cache.get('projectile');
     const sprite = drawProjectile();
     cache.set('projectile', sprite);
+    return sprite;
+}
+
+export function getEmberWispSprite() {
+    if (cache.has('emberWisp')) return cache.get('emberWisp');
+    const sprite = drawEmberWisp();
+    cache.set('emberWisp', sprite);
     return sprite;
 }
 
@@ -1806,6 +1818,47 @@ function drawProjectile() {
     ctx.moveTo(W / 2 + 16, H / 2 + 5);
     ctx.lineTo(W / 2 + 12, H / 2 + 9);
     ctx.stroke();
+
+    return canvas;
+}
+
+// Ember Wisp bolt: a warm orange flame-mote with a trailing ember tail.
+// Same canvas shape/orientation as the arcane bolt (points +x) so it rotates
+// the same way in Projectile.draw.
+function drawEmberWisp() {
+    const W = 56;
+    const H = 28;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    // Outer fire aura.
+    const aura = ctx.createRadialGradient(W / 2, H / 2, 2, W / 2, H / 2, W / 2);
+    aura.addColorStop(0, 'rgba(255, 230, 150, 1)');
+    aura.addColorStop(0.4, 'rgba(255, 122, 51, 0.7)');
+    aura.addColorStop(1, 'rgba(200, 40, 0, 0)');
+    ctx.fillStyle = aura;
+    ctx.fillRect(0, 0, W, H);
+
+    // Trailing ember tail (left side).
+    const trail = ctx.createLinearGradient(0, H / 2, W / 2, H / 2);
+    trail.addColorStop(0, 'rgba(255, 90, 0, 0)');
+    trail.addColorStop(1, 'rgba(255, 150, 60, 0.6)');
+    ctx.fillStyle = trail;
+    ctx.beginPath();
+    ctx.ellipse(W / 2 - 12, H / 2, 20, 5, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // Bright core.
+    ctx.fillStyle = '#ffd9a0';
+    ctx.beginPath();
+    ctx.ellipse(W / 2 + 4, H / 2, 11, 6, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = '#fff4dc';
+    ctx.beginPath();
+    ctx.ellipse(W / 2 + 6, H / 2, 5, 3, 0, 0, TWO_PI);
+    ctx.fill();
 
     return canvas;
 }

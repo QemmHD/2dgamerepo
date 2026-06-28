@@ -122,6 +122,7 @@ export class WeaponSystem {
                 maxLevel: max,
                 isMax: w.level >= max,
                 evolved: !!def?.evolved,
+                element: def?.element ?? null,
             };
         });
     }

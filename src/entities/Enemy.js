@@ -3,6 +3,8 @@ import {
     ELITE,
     ELITE_AFFIXES,
     AFFIX,
+    ELEMENT,
+    BOSS_ATTACK,
     SPRITE_SIZE,
     HIT_FLASH_DURATION,
     KNOCKBACK,
@@ -18,6 +20,7 @@ import {
     getStormwingAlphaFrames,
     getSpitterFrames,
     getChargerFrames,
+    getGlowSprite,
 } from '../assets/ProceduralSprites.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
@@ -130,6 +133,38 @@ export class Enemy {
         this.slowMul = 1;
         this.shredTimer = 0;
         this.shredStacks = 0;
+
+        // Elemental statuses (all neutral = identical to pre-element
+        // behavior). Kept as flat scalars on every enemy so the hidden class
+        // stays monomorphic. FIRE burn is a DoT (damage applied by Game's
+        // status pass, not here); FROST chill is a SEPARATE slow channel from
+        // slowMul; freeze is a hard stop; SHOCK is a damage-amp read at hit.
+        this.burnTimer = 0;
+        this.burnDps = 0;
+        this.burnTickAccum = 0;
+        this.chillTimer = 0;
+        this.chillMul = 1;
+        this.freezeTimer = 0;
+        this.shockTimer = 0;
+        this.shockStacks = 0;
+
+        // Apex-boss state machine (only bosses carry it). Phase-2 latches at
+        // def.phase2HpFraction; attackTimers are seeded randomly so a fresh
+        // boss doesn't fire instantly and two bosses desync.
+        if (isBoss) {
+            this.phase = 1;
+            this.phase2Entered = false;
+            this.enrageShouted = false;
+            this.bossWindupTimer = 0;
+            this.activeAttack = null;
+            this.attackTimers = {};
+            this._bossOut = null;
+            if (Array.isArray(def.attacks)) {
+                for (const a of def.attacks) {
+                    this.attackTimers[a.id] = Math.random() * a.cooldown;
+                }
+            }
+        }
     }
 
     // Orbiting Blade stamp. Deepest slow wins; longest duration refreshes
@@ -149,6 +184,36 @@ export class Enemy {
         this.shredTimer = dur;
     }
 
+    // ── Elemental status stamps ──────────────────────────────────────────
+    // FROST chill: own slow channel (never touches slowMul). Deepest wins,
+    // longest refreshes. Bosses are floored so they're only nudged.
+    applyChill(mul, dur) {
+        const m = this.boss ? Math.max(mul, 0.80) : mul;
+        if (this.chillTimer <= 0 || m < this.chillMul) this.chillMul = m;
+        if (dur > this.chillTimer) this.chillTimer = dur;
+    }
+
+    // FROST freeze: hard stop. Bosses are freeze-EXEMPT (no permafreeze).
+    applyFreeze(dur) {
+        if (this.boss) return;
+        if (dur > this.freezeTimer) this.freezeTimer = dur;
+    }
+
+    // SHOCK: stacking damage-amp (applyShred clone). Read at hit time, so it
+    // auto-floors on bosses without any CC. Refreshes the decay timer.
+    applyShock(maxStacks, dur) {
+        if (this.shockStacks < maxStacks) this.shockStacks += 1;
+        this.shockTimer = dur;
+    }
+
+    // FIRE burn: refresh-deepest-dps-wins, longest refreshes, never additive
+    // (so repeated stamps can't runaway). Damage itself is applied by Game's
+    // status pass, which owns the tick accumulator.
+    applyBurn(dps, dur) {
+        if (dps > this.burnDps || this.burnTimer <= 0) this.burnDps = dps;
+        if (dur > this.burnTimer) this.burnTimer = dur;
+    }
+
     update(dt, player, enemyProjectiles) {
         const dx = player.x - this.x;
         const dy = player.y - this.y;
@@ -156,14 +221,23 @@ export class Enemy {
         const nx = dx / len;
         const ny = dy / len;
 
-        // Slow applies transiently via a local scalar — never mutate
-        // this.speed (so wave/elite scaling stays intact and slow reverses).
+        // Slow + chill are two independent transient channels, both folded
+        // into a local scalar — never mutate this.speed (so wave/elite scaling
+        // stays intact and the debuffs reverse cleanly). Deepest-per-channel
+        // wins within each; the product is the move speed.
         const slowK = this.slowTimer > 0 ? this.slowMul : 1;
+        const chillK = this.chillTimer > 0 ? this.chillMul : 1;
         let moveX = nx;        // default plain chase
         let moveY = ny;
-        let spd = this.speed * slowK;
+        let spd = this.speed * slowK * chillK;
 
-        if (this.behavior === 'spitter') {
+        // FROST freeze is the only hard stop: zero movement AND gate every
+        // behavior branch so a frozen enemy can't advance an attack timer,
+        // fire mid-windup, finish a dash, or commit a boss special.
+        const frozen = this.freezeTimer > 0;
+        if (frozen) { moveX = 0; moveY = 0; spd = 0; }
+
+        if (!frozen && this.behavior === 'spitter') {
             // Hold a firing gap: retreat if too close, approach if too far.
             const kd = this.def.keepDistance;
             if (len < kd - 40) { moveX = -nx; moveY = -ny; }
@@ -184,13 +258,13 @@ export class Enemy {
                 this.windupTimer = this.def.windup;
                 this.attackTimer = this.def.fireInterval;
             }
-        } else if (this.behavior === 'charger') {
+        } else if (!frozen && this.behavior === 'charger') {
             this.attackTimer -= dt;
             if (this.dashTimer > 0) {
                 // Mid-dash: travel along the locked direction at dash speed.
                 this.dashTimer -= dt;
                 moveX = this.dashDirX; moveY = this.dashDirY;
-                spd = this.def.dashSpeed * slowK;
+                spd = this.def.dashSpeed * slowK * chillK;
             } else if (this.windupTimer > 0) {
                 this.windupTimer -= dt;
                 moveX = 0; moveY = 0; // brace before the lunge
@@ -203,6 +277,12 @@ export class Enemy {
                 this.windupTimer = this.def.windup;
                 this.attackTimer = this.def.chargeInterval;
             }
+        } else if (!frozen && this.behavior === 'apexBoss') {
+            // Telegraphed special attacks + phase-2 enrage. The boss chases by
+            // default (moveX/moveY already = nx/ny); runBossAI drives windups
+            // and commits. Brace (stand still) while a windup is charging.
+            runBossAI(this, dt, player, this._bossOut);
+            if (this.bossWindupTimer > 0 || this.activeAttack) { moveX = 0; moveY = 0; }
         }
 
         if (moveX !== 0 || moveY !== 0) {
@@ -215,7 +295,16 @@ export class Enemy {
             this.vy = 0;
         }
 
-        if (this.knockbackVx !== 0 || this.knockbackVy !== 0) {
+        // A boss winding up / committing a telegraphed attack is planted: it
+        // ignores knockback so the player's chip damage can't drift it off the
+        // ground telegraph it already painted (the shockwave commits at the
+        // boss's live position, so drift would desync the warning ring). The
+        // impulse is dropped, not banked, so it doesn't snap on release.
+        const bossPlanted = this.boss && (this.bossWindupTimer > 0 || this.activeAttack);
+        if (bossPlanted) {
+            this.knockbackVx = 0;
+            this.knockbackVy = 0;
+        } else if (this.knockbackVx !== 0 || this.knockbackVy !== 0) {
             this.x += this.knockbackVx * dt;
             this.y += this.knockbackVy * dt;
             const decay = Math.exp(-dt / KNOCKBACK.timeConstant);
@@ -234,6 +323,30 @@ export class Enemy {
         if (this.shredTimer > 0) {
             this.shredTimer -= dt;
             if (this.shredTimer <= 0) { this.shredTimer = 0; this.shredStacks = 0; }
+        }
+        // Elemental status decay. Chill/shock reset their companion scalar on
+        // expiry. Burn only ACCUMULATES here (the Game status pass owns the
+        // tick → damage conversion); on expiry we zero everything so a stale
+        // accumulator can't leak into the next burn.
+        if (this.chillTimer > 0) {
+            this.chillTimer -= dt;
+            if (this.chillTimer <= 0) { this.chillTimer = 0; this.chillMul = 1; }
+        }
+        if (this.freezeTimer > 0) {
+            this.freezeTimer -= dt;
+            if (this.freezeTimer <= 0) this.freezeTimer = 0;
+        }
+        if (this.shockTimer > 0) {
+            this.shockTimer -= dt;
+            if (this.shockTimer <= 0) { this.shockTimer = 0; this.shockStacks = 0; }
+        }
+        if (this.burnTimer > 0) {
+            this.burnTimer -= dt;
+            this.burnTickAccum += dt;
+            // Only clamp the timer here; the burn-tick accumulator and burnDps
+            // are owned + flushed by Game._tickStatuses so the final partial
+            // interval of damage is never silently dropped on expiry.
+            if (this.burnTimer < 0) this.burnTimer = 0;
         }
         this.animTimer += dt;
     }
@@ -284,6 +397,57 @@ export class Enemy {
             ctx.stroke();
         }
 
+        // Elemental status tells (all timer-gated, all pre-scale world space,
+        // all procedural — no ctx.filter). FROST chill = thin cyan ring;
+        // FREEZE = denser frosted double-ring; FIRE burn = warm pulsing halo;
+        // SHOCK = yellow crackle arcs near the top.
+        const baseR = this.spriteHalf * this.visualScale;
+        if (this.chillTimer > 0) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = hexToHalo(ELEMENT.frost.tint, 0.5);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, baseR * 0.72, 0, TWO_PI);
+            ctx.stroke();
+        }
+        if (this.freezeTimer > 0) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = hexToHalo(ELEMENT.freeze.tint, 0.6);
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, baseR * 0.78, 0, TWO_PI);
+            ctx.stroke();
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, baseR * 0.66, 0, TWO_PI);
+            ctx.stroke();
+        }
+        if (this.burnTimer > 0) {
+            // Use the CACHED fire glow sprite (drawn at animated alpha) rather
+            // than building a radial gradient every frame — a whole burning
+            // swarm would otherwise allocate a gradient per enemy per frame,
+            // exactly the iOS hazard the particle/lighting systems avoid.
+            const haloR = baseR * 0.8;
+            const a = 0.3 + 0.2 * Math.sin(this.animTimer * 10);
+            const glow = getGlowSprite(ELEMENT.fire.tint);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = a;
+            ctx.drawImage(glow, -haloR, -haloR, haloR * 2, haloR * 2);
+            ctx.globalAlpha = 1;
+        }
+        if (this.shockTimer > 0) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = hexToHalo(ELEMENT.shock.tint, 0.6 + 0.25 * Math.min(1, this.shockStacks / 5));
+            ctx.lineWidth = 2;
+            const top = -baseR * 0.6;
+            ctx.beginPath();
+            ctx.moveTo(-baseR * 0.4, top);
+            ctx.lineTo(-baseR * 0.18, top + baseR * 0.18);
+            ctx.lineTo(baseR * 0.04, top - baseR * 0.06);
+            ctx.lineTo(baseR * 0.3, top + baseR * 0.16);
+            ctx.stroke();
+        }
+
         if (this.visualScale !== 1) ctx.scale(this.visualScale, this.visualScale);
 
         const idx = Math.floor(this.animTimer * this.frameHz) % this.frames.length;
@@ -298,6 +462,25 @@ export class Enemy {
         // for a fraction of the cost. globalAlpha/compositeOp reset on
         // restore().
         if (this.elite) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.18;
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+        }
+        // Status brightening via additive frame redraws (can't tint a
+        // drawImage without ctx.filter, so we brighten the sprite's own
+        // pixels — burn reads warm, freeze reads as a pale ice sheen, phase-2
+        // enrage reads hot alongside the ENRAGED HP-bar tint).
+        if (this.burnTimer > 0) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.15;
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+        }
+        if (this.freezeTimer > 0) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.14;
+            ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
+        }
+        if (this.phase2Entered) {
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = 0.18;
             ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf);
@@ -344,4 +527,93 @@ function hexToHalo(hex, a) {
     if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
     const n = parseInt(h, 16);
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+// ── Apex-boss AI ────────────────────────────────────────────────────────
+// Free function (keeps Enemy.update readable). Drives the phase-2 latch,
+// attack-cooldown ticking, telegraph windups, and commits. `out` is the
+// boss's stashed { enemyProjectiles, hazards } channel (set in Game._spawnBoss).
+// Mirrors the spitter/charger timer + windup idiom. One attack winds up at a
+// time. Movement is the default chase handled by Enemy.update; this only
+// drives specials. The caller braces the boss (stand still) while a windup is
+// active so the telegraph reads clearly.
+function runBossAI(e, dt, player, out) {
+    const def = e.def;
+
+    // Phase-2 latch: polled (there is no onDamage hook). The one-shot enrage
+    // announce/retint is driven by Game off the phase2Entered flag.
+    if (!e.phase2Entered && e.maxHp > 0 && e.hp / e.maxHp <= (def.phase2HpFraction ?? 0)) {
+        e.phase2Entered = true;
+        e.phase = 2;
+    }
+
+    // A windup in progress: count it down and commit on expiry.
+    if (e.bossWindupTimer > 0) {
+        e.bossWindupTimer -= dt;
+        if (e.bossWindupTimer <= 0) {
+            e.bossWindupTimer = 0;
+            commitBossAttack(e, e.activeAttack, player, out);
+            e.activeAttack = null;
+        }
+        return;
+    }
+
+    const attacks = def.attacks;
+    if (!attacks || !out) return;
+
+    // Tick every attack's cooldown; start the first that comes ready. Phase 2
+    // shortens the reset so specials fire more often.
+    for (const atk of attacks) {
+        if (e.attackTimers[atk.id] == null) e.attackTimers[atk.id] = atk.cooldown;
+        e.attackTimers[atk.id] -= dt;
+        if (e.attackTimers[atk.id] <= 0) {
+            e.activeAttack = atk;
+            e.bossWindupTimer = atk.windup;
+            const cadence = e.phase === 2 ? (BOSS_ATTACK.phase2CadenceMul ?? 1) : 1;
+            e.attackTimers[atk.id] = atk.cooldown * cadence;
+            // Ground-decal telegraph that expands across the windup, centered
+            // on the boss (it braces in place while charging, so this stays put).
+            if (out.hazards) {
+                if (atk.kind === 'shockwave') {
+                    out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: atk.rMax, age: 0, lifetime: atk.windup, active: true });
+                } else if (atk.kind === 'fan') {
+                    out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 140, age: 0, lifetime: atk.windup, active: true, fan: true });
+                }
+            }
+            break; // only one windup at a time
+        }
+    }
+}
+
+// Fire the committed special. Shockwave pushes an expanding damaging ring
+// into the hazard pool (centered on the boss); fan pushes a radial burst of
+// EnemyProjectiles into the existing enemy-bolt loop (no new damage path).
+function commitBossAttack(e, atk, player, out) {
+    if (!atk || !out) return;
+    if (atk.kind === 'shockwave' && out.hazards) {
+        out.hazards.push({
+            kind: 'shockwave',
+            x: e.x, y: e.y,
+            r: 0, rMax: atk.rMax,
+            growth: atk.growth, band: atk.band, damage: atk.damage,
+            hitPlayer: false,
+            age: 0, lifetime: atk.rMax / atk.growth + 0.1,
+            active: true,
+        });
+    } else if (atk.kind === 'fan' && out.enemyProjectiles) {
+        const base = Math.atan2(player.y - e.y, player.x - e.x);
+        const count = atk.count ?? 1;
+        const full = (atk.spread ?? 0) >= 6.28; // full-circle radial volley
+        for (let i = 0; i < count; i++) {
+            const a = full
+                ? base + (i / count) * TWO_PI
+                : base + (count > 1 ? (i / (count - 1) - 0.5) * atk.spread : 0);
+            out.enemyProjectiles.push(new EnemyProjectile(
+                e.x, e.y,
+                Math.cos(a) * atk.projectileSpeed,
+                Math.sin(a) * atk.projectileSpeed,
+                atk.projectileDamage
+            ));
+        }
+    }
 }

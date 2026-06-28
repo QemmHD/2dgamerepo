@@ -151,6 +151,63 @@ export class ParticleSystem {
         }
     }
 
+    // ── Elemental emitters ───────────────────────────────────────────
+    // Burn: small orange embers rising off a burning enemy. WORLD_ADD so the
+    // veil dims them into ambient glow. Fired per DoT tick (budgeted by the
+    // caller), so the count stays low.
+    burnEmbers(x, y) {
+        if (!this.enabled) return;
+        const n = 4;
+        for (let i = 0; i < n; i++) {
+            const p = this._spawn();
+            if (!p) return;
+            p.x = x + (Math.random() - 0.5) * 24;
+            p.y = y + (Math.random() - 0.5) * 16;
+            p.vx = (Math.random() - 0.5) * 30;
+            p.vy = -30 - Math.random() * 40;
+            p.age = 0; p.life = 0.3 + Math.random() * 0.25;
+            p.size0 = 14 + Math.random() * 8; p.size1 = 2;
+            p.color = '#ff7a33'; p.layer = WORLD_ADD; p.drag = 1.5; p.grav = -8; p.maxAlpha = 0.7;
+        }
+    }
+
+    // Frost shatter: pale-cyan shards. SCREEN_ADD so a freeze/shatter reads
+    // crisply above the veil.
+    frostShards(x, y) {
+        if (!this.enabled) return;
+        const n = 5;
+        for (let i = 0; i < n; i++) {
+            const p = this._spawn();
+            if (!p) return;
+            const a = Math.random() * TWO_PI;
+            const sp = 120 + Math.random() * 200;
+            p.x = x; p.y = y;
+            p.vx = Math.cos(a) * sp;
+            p.vy = Math.sin(a) * sp;
+            p.age = 0; p.life = 0.25 + Math.random() * 0.18;
+            p.size0 = 18 + Math.random() * 8; p.size1 = 2;
+            p.color = '#7fe0ff'; p.layer = SCREEN_ADD; p.drag = 5; p.grav = 0; p.maxAlpha = 1;
+        }
+    }
+
+    // Shock crackle: yellow sparks (a hue-shifted hitSpark) on a shock stamp.
+    shockSparks(x, y) {
+        if (!this.enabled) return;
+        const n = 5;
+        for (let i = 0; i < n; i++) {
+            const p = this._spawn();
+            if (!p) return;
+            const a = Math.random() * TWO_PI;
+            const sp = 180 + Math.random() * 260;
+            p.x = x; p.y = y;
+            p.vx = Math.cos(a) * sp;
+            p.vy = Math.sin(a) * sp;
+            p.age = 0; p.life = 0.16 + Math.random() * 0.16;
+            p.size0 = 20 + Math.random() * 10; p.size1 = 2;
+            p.color = '#ffe066'; p.layer = SCREEN_ADD; p.drag = 6; p.grav = 0; p.maxAlpha = 1;
+        }
+    }
+
     _ember(x, y) {
         const p = this._spawn();
         if (!p) return;

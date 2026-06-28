@@ -105,6 +105,13 @@ export const ENEMY = {
         boss: true,
         bossName: 'Vineback Goliath',
         visualScale: 1.85,
+        // Apex boss: telegraphed ground shockwave + phase-2 enrage at 50% HP.
+        behavior: 'apexBoss',
+        phase2HpFraction: 0.5,
+        attacks: [
+            { id: 'slam', kind: 'shockwave', cooldown: 6.0, windup: 0.8, damage: 30, growth: 700, rMax: 520, band: 90 },
+        ],
+        phase2Attacks: ['slam'],
     },
     stormwingAlpha: {
         hp: 900,
@@ -115,6 +122,13 @@ export const ENEMY = {
         boss: true,
         bossName: 'Stormwing Alpha',
         visualScale: 1.55,
+        // Apex boss: telegraphed radial projectile fan + phase-2 enrage.
+        behavior: 'apexBoss',
+        phase2HpFraction: 0.5,
+        attacks: [
+            { id: 'volley', kind: 'fan', cooldown: 5.0, windup: 0.6, count: 12, spread: 6.2832 /* TWO_PI: full-circle radial */, projectileSpeed: 380, projectileDamage: 14 },
+        ],
+        phase2Attacks: ['volley'],
     },
 };
 
@@ -170,12 +184,41 @@ export const AFFIX = {
     splitting: { tint: '#b48cff', spawnType: 'crawler', spawnCount: 3 },
 };
 
-// Straight-flying enemy bolt (Spitter). Damages the player on contact and
-// respects i-frames just like contact damage.
+// Straight-flying enemy bolt (Spitter + boss volley). Damages the player on
+// contact and respects i-frames just like contact damage.
 export const ENEMY_PROJECTILE = {
     radius: 16,
     lifetime: 3.2,
     color: '#c97bff',
+};
+
+// ── Elemental status system ────────────────────────────────────────────
+// Weapons tag themselves with an element and stamp a status on hit. Tints
+// are read by the procedural status tells (mirrors how AFFIX tints drive the
+// elite halo). Only FIRE ticks over time — tickInterval lives there alone.
+//   FROST: chill (soft slow, own channel) that can proc a short hard freeze.
+//   FIRE:  burn damage-over-time carried on the projectile.
+//   SHOCK: stacking damage-amp read at hit time; also detonates burn.
+export const ELEMENT = {
+    fire:   { tint: '#ff7a33', tickInterval: 0.25 },
+    frost:  { tint: '#7fe0ff' },
+    freeze: { tint: '#bfe8ff' },
+    shock:  { tint: '#ffe066' },
+};
+
+// A shock hit on a burning enemy consumes the remaining burn for an instant
+// burst of detonateMul × current burnDps, then clears the burn.
+export const SHOCK_CFG = { detonateMul: 2.5 };
+
+// ── Apex boss state machine ─────────────────────────────────────────────
+// Bosses with behavior:'apexBoss' run telegraphed special attacks and a
+// latched phase-2 enrage at phase2HpFraction. These shared constants tune
+// the telegraph look + the phase-2 ramp; per-attack data lives on the boss
+// def's `attacks` array.
+export const BOSS_ATTACK = {
+    telegraphColor: '#ff5a3c',  // ground warning ring during a windup
+    phase2CadenceMul: 0.6,      // attacks fire 40% faster after enrage
+    enrageRetintColor: '#ff5a3c',
 };
 
 // ── Weapons ────────────────────────────────────────────────────────────
@@ -418,6 +461,8 @@ export const GFX = {
         enemyEyeRadius: 64,
         bossRadius: 260,
         effectRadius: 220,
+        burnRadius: 90,      // warm glow under a burning enemy
+        hazardRadius: 200,   // boss shockwave ring light
     },
     particles: {
         enabled: true,
@@ -451,6 +496,11 @@ export const LIGHT_COLORS = {
     gemSmall: '#4ec1ff',
     gemMedium: '#5fe87a',
     gemLarge: '#ff5566',
+    // Elemental + hazard light tints.
+    fire: '#ff7a33',
+    frost: '#7fe0ff',
+    shock: '#ffe066',
+    hazard: '#ff7a4a',
 };
 
 // ── UI / debug defaults ────────────────────────────────────────────────

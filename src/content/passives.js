@@ -113,6 +113,30 @@ export const PASSIVES = {
             player.thornsReflect += 0.25;
         },
     },
+
+    // ── Elemental passives ──────────────────────────────────────────
+    pyromancersTinder: {
+        id: 'pyromancersTinder',
+        name: "Pyromancer's Tinder",
+        description: '+18% burn damage per level.',
+        maxLevel: 5,
+        element: 'fire',
+        apply(player) {
+            player.burnDamageMul *= 1.18;
+        },
+    },
+
+    frostbiteCore: {
+        id: 'frostbiteCore',
+        name: 'Frostbite Core',
+        description: 'Deepen chill & +4% freeze chance per level.',
+        maxLevel: 5,
+        element: 'frost',
+        apply(player) {
+            player.chillStrength += 0.04;
+            player.freezeChanceBonus += 0.04;
+        },
+    },
 };
 
 export const PASSIVE_IDS = Object.keys(PASSIVES);

@@ -15,6 +15,8 @@ import {
     BOSS,
     CHEST,
     COIN,
+    ELEMENT,
+    BOSS_ATTACK,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Camera } from './Camera.js';
@@ -349,6 +351,9 @@ export class Game {
         this.enemies = [];
         this.projectiles = [];
         this.enemyProjectiles = [];
+        // Damaging area hazards (boss shockwaves) + their telegraph decals.
+        // Game-owned pool; cleared here so a restart never inherits one.
+        this.hazards = [];
         this.gems = [];
         this.damageNumbers = [];
 
@@ -624,6 +629,11 @@ export class Game {
             healthMul: this.waveState.healthMul,
             speedMul: this.waveState.speedMul,
         });
+        // Stash the stable output channels the apex-boss AI writes into
+        // (radial volleys go to the enemy-bolt loop; shockwaves to the hazard
+        // pool). Both arrays are created once in _initRunState, so this
+        // reference stays valid for the boss's whole life.
+        boss._bossOut = { enemyProjectiles: this.enemyProjectiles, hazards: this.hazards };
         this.enemies.push(boss);
         this.waveDirector.announce(`${def.bossName} approaches!`, 3.5);
         // A heavier, longer shake than a normal hit to telegraph the arrival.
@@ -644,6 +654,54 @@ export class Game {
             const oy = y + (Math.random() - 0.5) * 36;
             this._dropCoin(ox, oy, value);
         }
+    }
+
+    // Elemental DoT pass — applies FIRE burn to every burning enemy on a
+    // fixed tick. Returns { killed, hits } so the caller can route burn kills
+    // through the normal reward pipeline (gems/coins/kills/affix death). Burn
+    // damage numbers are pushed here, tinted, under their OWN per-frame budget
+    // so a burning crowd can't flood the floating-number pool. _tickStatuses
+    // is the sole owner of the burn-tick accumulator drain (Enemy.update only
+    // accumulates), so a tick is never double-spent.
+    _tickStatuses(dt) {
+        const killed = [];
+        const hits = [];
+        const interval = ELEMENT.fire.tickInterval;
+        const burnMul = this.player.burnDamageMul ?? 1;
+        let numberBudget = 6;
+        for (const e of this.enemies) {
+            // Process any enemy that still carries burn DPS (burnTimer may have
+            // just hit 0 — we still owe it the final partial tick below).
+            if (!e.active || e.burnDps <= 0) continue;
+            let guard = 0;
+            while (e.burnTickAccum >= interval && guard < 8) {
+                e.burnTickAccum -= interval;
+                guard++;
+                const amt = e.burnDps * interval * burnMul;
+                e.takeDamage(amt);
+                if (numberBudget > 0) {
+                    this.damageNumbers.push(new DamageNumber(
+                        e.x, e.y - e.radius, amt, ELEMENT.fire.tint
+                    ));
+                    numberBudget--;
+                }
+                this.particles.burnEmbers(e.x, e.y);
+                if (!e.active) { killed.push(e); break; }
+            }
+            // Burn has run out: flush the sub-interval remainder as a final
+            // partial tick (so a clean N-second burn delivers its full nominal
+            // damage, not floor(N/interval) ticks) and clear the state.
+            if (e.active && e.burnTimer <= 0) {
+                if (e.burnTickAccum > 0) {
+                    const amt = e.burnDps * e.burnTickAccum * burnMul;
+                    e.takeDamage(amt);
+                    if (!e.active) killed.push(e);
+                }
+                e.burnDps = 0;
+                e.burnTickAccum = 0;
+            }
+        }
+        return { killed, hits };
     }
 
     // Elite affix on-death effects. Volatile detonates an AoE; Splitting
@@ -794,11 +852,29 @@ export class Game {
         for (const e of this.enemies) {
             if (e.active) e.update(dt, this.player, this.enemyProjectiles);
         }
+        // Elemental DoT (burn) is applied here, NOT in Enemy.update, because
+        // a burn kill must route through the same reward pipeline as any
+        // other kill (gems/coins/affix-death/kill-count). statusResult.killed
+        // is merged into allKilled below.
+        const statusResult = this._tickStatuses(dt);
+
+        // Phase-2 enrage: a boss that just crossed its HP threshold announces
+        // + shakes exactly once (latched by enrageShouted). The phase flip
+        // itself happens inside the boss AI; this only fires the one-shot FX.
+        for (const e of this.enemies) {
+            if (e.active && e.boss && e.phase2Entered && !e.enrageShouted) {
+                e.enrageShouted = true;
+                this.waveDirector.announce('ENRAGED!', 1.2);
+                this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
+            }
+        }
+
         for (const p of this.projectiles) {
             if (p.active) p.update(dt);
         }
-        // Enemy bolts (Spitters). Each can hit the player once; a landed hit
-        // drives the same shake + flash + damage number as contact damage.
+        // Enemy bolts (Spitters + boss volleys). Each can hit the player once;
+        // a landed hit drives the same shake + flash + damage number as
+        // contact damage.
         for (const ep of this.enemyProjectiles) {
             if (!ep.active) continue;
             const dealt = ep.update(dt, this.player);
@@ -809,6 +885,38 @@ export class Game {
                     this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'
                 ));
             }
+        }
+
+        // Boss area hazards (expanding shockwaves) + their telegraph decals.
+        // Runs BEFORE the Second Wind regen check so HP/i-frames stay
+        // consistent within the frame. A shockwave damages the player once,
+        // when its expanding band first crosses them (i-frames handle the rest).
+        for (const hz of this.hazards) {
+            if (!hz.active) continue;
+            hz.age += dt;
+            if (hz.kind === 'bossTelegraph') {
+                hz.r = hz.rMax * Math.min(1, hz.age / hz.lifetime);
+                if (hz.age >= hz.lifetime) hz.active = false;
+                continue;
+            }
+            // shockwave: expand and damage the player once when the ring band
+            // sweeps across them.
+            hz.r += hz.growth * dt;
+            if (!hz.hitPlayer) {
+                const d = Math.hypot(this.player.x - hz.x, this.player.y - hz.y);
+                if (d >= hz.r - hz.band && d <= hz.r + hz.band) {
+                    const dealt = this.player.takeDamage(hz.damage);
+                    if (dealt > 0) {
+                        hz.hitPlayer = true;
+                        this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+                        this._pushFeedback('hit', 0.32);
+                        this.damageNumbers.push(new DamageNumber(
+                            this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'
+                        ));
+                    }
+                }
+            }
+            if (hz.r >= hz.rMax) hz.active = false;
         }
 
         let xpCollected = 0;
@@ -844,10 +952,13 @@ export class Game {
             dt, this.player, this.enemies, this.projectiles
         );
 
-        // Merge weapon-system hits/kills (orbit blades, pulse, lightning) with
-        // projectile-collision results so gem drops, kill count, and damage
-        // numbers all flow through the same downstream path.
-        const allKilled = collisionResult.killed.concat(weaponResult.killed);
+        // Merge weapon-system hits/kills (orbit blades, pulse, lightning),
+        // projectile-collision results, and burn-DoT kills so gem drops, kill
+        // count, affix deaths, and damage numbers all flow through the same
+        // downstream path. (Burn damage numbers are already pushed, tinted,
+        // inside _tickStatuses — so only its killed list is merged here.)
+        const allKilled = collisionResult.killed
+            .concat(weaponResult.killed, statusResult.killed);
         const allHits = collisionResult.hits.concat(weaponResult.hits);
 
         if (allKilled.length > 0) {
@@ -935,6 +1046,7 @@ export class Game {
         compactInPlace(this.enemies);
         compactInPlace(this.projectiles);
         compactInPlace(this.enemyProjectiles);
+        compactInPlace(this.hazards);
         compactInPlace(this.gems);
         compactInPlace(this.damageNumbers);
         compactInPlace(this.chests);
@@ -1020,6 +1132,23 @@ export class Game {
         const cull = (e) => this._inView(e.x, e.y, CULL_MARGIN);
         const Lc = GFX.lighting;
 
+        // Boss telegraph decals — drawn on the GROUND, below entities, so the
+        // boss paints over them. A warning ring that fills in across the
+        // windup; no light (it reads as a warning, not a glow).
+        for (const hz of this.hazards) {
+            if (!hz.active || hz.kind !== 'bossTelegraph') continue;
+            if (!this._inView(hz.x, hz.y, hz.rMax + CULL_MARGIN)) continue;
+            const t = Math.min(1, hz.age / hz.lifetime);
+            ctx.save();
+            ctx.globalAlpha = 0.2 + 0.6 * t;
+            ctx.strokeStyle = BOSS_ATTACK.telegraphColor;
+            ctx.lineWidth = hz.fan ? 4 : 5;
+            ctx.beginPath();
+            ctx.arc(hz.x, hz.y, Math.max(2, hz.r), 0, TWO_PI);
+            ctx.stroke();
+            ctx.restore();
+        }
+
         // Player light first (always kept, exempt from caps).
         if (L) L.addLight(this.player.x, this.player.y, Lc.playerRadius, LIGHT_COLORS.player, Lc.playerIntensity, 0);
 
@@ -1045,6 +1174,10 @@ export class Game {
             if (L) {
                 if (e.boss) L.addLight(e.x, e.y, Lc.bossRadius, LIGHT_COLORS.boss, 0.95, 0);
                 else L.addLight(e.x, e.y - e.radius * 0.3, Lc.enemyEyeRadius, LIGHT_COLORS.enemyEye, 0.7, 2);
+                // A burning enemy casts a warm glow. Priority 2 (low tier,
+                // shares the global maxLights budget like the enemy-eye light)
+                // — NOT priority 1, which is the separate pickup-light cap.
+                if (e.burnTimer > 0) L.addLight(e.x, e.y, Lc.burnRadius, LIGHT_COLORS.fire, 0.7, 2);
             }
         }
         this.player.draw(ctx);
@@ -1062,6 +1195,30 @@ export class Game {
             ep.draw(ctx);
             if (L) L.addLight(ep.x, ep.y, 110, '#c97bff', 0.8, 0);
         }
+        // Boss shockwaves — bright expanding rings (above entities). Each
+        // carves a hazard-tinted light so the danger reads against the dark.
+        for (const hz of this.hazards) {
+            if (!hz.active || hz.kind !== 'shockwave') continue;
+            if (!this._inView(hz.x, hz.y, hz.rMax + CULL_MARGIN)) continue;
+            const fade = 1 - Math.min(1, hz.r / hz.rMax);
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.35 + 0.45 * fade;
+            ctx.strokeStyle = '#ffd0a0';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI);
+            ctx.stroke();
+            ctx.globalAlpha = 0.2 + 0.3 * fade;
+            ctx.strokeStyle = LIGHT_COLORS.hazard;
+            ctx.lineWidth = 18;
+            ctx.beginPath();
+            ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI);
+            ctx.stroke();
+            ctx.restore();
+            if (L) L.addLight(hz.x, hz.y, Lc.hazardRadius, LIGHT_COLORS.hazard, 0.8, 0);
+        }
+
         this.weaponSystem.drawEffects(ctx);
         // Weapon effects (pulse/lightning) are bright emitters — carve light
         // holes so the veil doesn't dim them.
@@ -1166,6 +1323,8 @@ export class Game {
             name: this.activeBossRef.name,
             hp: this.activeBossRef.hp,
             maxHp: this.activeBossRef.maxHp,
+            phase: this.activeBossRef.phase ?? 1,
+            enraged: !!this.activeBossRef.phase2Entered,
         } : null;
         base.chestCount = this.chests.length;
         base.chestReward = this.chestReward;
