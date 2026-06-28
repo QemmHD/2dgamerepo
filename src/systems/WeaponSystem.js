@@ -72,6 +72,12 @@ export class WeaponSystem {
         const los = obstacleSystem
             ? (ex, ey) => obstacleSystem.hasLineOfSight(player.x, player.y, ex, ey)
             : () => true;
+        // solidBlocked(ax,ay,bx,by) → does ANY solid obstacle (incl. non-
+        // sight-blockers like fences/graves) sit on the segment? Shadow Dash
+        // uses this so it never blinks the player into a solid footprint.
+        const solidBlocked = obstacleSystem
+            ? (ax, ay, bx, by) => obstacleSystem.segmentBlocked(ax, ay, bx, by)
+            : () => false;
         const ctx = {
             player,
             enemies,
@@ -80,6 +86,7 @@ export class WeaponSystem {
             hits,
             killed,
             los,
+            solidBlocked,
         };
         for (const w of this.owned) {
             const def = WEAPONS[w.id];

@@ -807,13 +807,15 @@ function shadowDashUpdate(dt, owned, ctx) {
     if (len < 1) { dx = (p.facingX ?? 1) >= 0 ? 1 : -1; dy = 0; len = 1; }
     const nx = dx / len, ny = dy / len;
 
-    // Pick the farthest dash that stays in clear line of sight (no wall-phasing).
+    // Pick the farthest dash whose path crosses no SOLID obstacle (fences and
+    // graves block the dash too, not just sight-blockers) — never blink into a
+    // wall. blocked() is solid-aware with an LOS fallback for safety.
+    const blocked = (bx, by) => (ctx.solidBlocked ? ctx.solidBlocked(p.x, p.y, bx, by)
+        : (ctx.los ? !ctx.los(bx, by) : false));
     let dist = cfg.dashDistance;
-    const fullX = p.x + nx * dist, fullY = p.y + ny * dist;
-    if (ctx.los && !ctx.los(fullX, fullY)) {
+    if (blocked(p.x + nx * dist, p.y + ny * dist)) {
         dist *= 0.5;
-        const halfX = p.x + nx * dist, halfY = p.y + ny * dist;
-        if (ctx.los && !ctx.los(halfX, halfY)) { owned.timer = 0.3; return; }
+        if (blocked(p.x + nx * dist, p.y + ny * dist)) { owned.timer = 0.3; return; }
     }
 
     const destX = p.x + nx * dist, destY = p.y + ny * dist;

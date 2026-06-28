@@ -966,7 +966,10 @@ export class Game {
             // Resolving after their move keeps them chasing while sliding along
             // obstacles instead of clipping through or stacking inside them.
             const r = this.obstacleSystem.resolveCircle(e.x, e.y, e.radius);
-            e.x = r.x; e.y = r.y;
+            // Clamp to world bounds too (Enemy.update doesn't, unlike Player) so
+            // a wall push-out near an edge can't drift an enemy off the map.
+            e.x = clamp(r.x, -WORLD_WIDTH / 2 + e.radius, WORLD_WIDTH / 2 - e.radius);
+            e.y = clamp(r.y, -WORLD_HEIGHT / 2 + e.radius, WORLD_HEIGHT / 2 - e.radius);
         }
         // Elemental DoT (burn) is applied here, NOT in Enemy.update, because
         // a burn kill must route through the same reward pipeline as any
