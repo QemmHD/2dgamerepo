@@ -82,6 +82,37 @@ export const PASSIVES = {
             player.chestLuck += 0.15;
         },
     },
+
+    // ── Defensive passives ──────────────────────────────────────────
+    thickHide: {
+        id: 'thickHide',
+        name: 'Thick Hide',
+        description: '-8% damage taken per level.',
+        maxLevel: 5,
+        apply(player) {
+            player.damageTakenMul *= 0.92;
+        },
+    },
+
+    secondWind: {
+        id: 'secondWind',
+        name: 'Second Wind',
+        description: 'Regenerate +1.2 HP/s when no enemy is near, per level.',
+        maxLevel: 5,
+        apply(player) {
+            player.regenPerSecond += 1.2;
+        },
+    },
+
+    thorns: {
+        id: 'thorns',
+        name: 'Thorns',
+        description: 'Reflect +25% of contact damage back per level.',
+        maxLevel: 5,
+        apply(player) {
+            player.thornsReflect += 0.25;
+        },
+    },
 };
 
 export const PASSIVE_IDS = Object.keys(PASSIVES);

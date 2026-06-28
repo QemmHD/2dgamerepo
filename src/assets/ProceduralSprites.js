@@ -49,6 +49,8 @@ export function prewarmSprites() {
     getCrawlerFrames();
     getVinebackGoliathFrames();
     getStormwingAlphaFrames();
+    getSpitterFrames();
+    getChargerFrames();
     getChestFrames();
     getCoinFrames();
     getProjectileSprite();
@@ -69,6 +71,7 @@ export function prewarmSprites() {
 export const PARTICLE_GLOW_COLORS = [
     '#ffffff', '#3a2a22', '#ffcaa0',
     '#7be08a', '#b48cff', '#9a7cff', '#d8a060', '#ffe08a',
+    '#c97bff', // enemy bolt (Spitter)
 ];
 
 // ── Ground tile ────────────────────────────────────────────────────────
@@ -126,6 +129,8 @@ export const getBruteFrames = makeFrameGetter('bruteFrames', 2, drawBrute);
 export const getCrawlerFrames = makeFrameGetter('crawlerFrames', 4, drawCrawler);
 export const getVinebackGoliathFrames = makeFrameGetter('vinebackFrames', 2, drawVinebackGoliath);
 export const getStormwingAlphaFrames = makeFrameGetter('stormwingFrames', 4, drawStormwingAlpha);
+export const getSpitterFrames = makeFrameGetter('spitterFrames', 4, drawSpitter);
+export const getChargerFrames = makeFrameGetter('chargerFrames', 2, drawCharger);
 
 // Back-compat: idle frames for legacy callers.
 export function getSlimeSprite() { return getSlimeFrames()[0]; }
@@ -134,6 +139,8 @@ export function getBruteSprite() { return getBruteFrames()[0]; }
 export function getCrawlerSprite() { return getCrawlerFrames()[0]; }
 export function getVinebackGoliathSprite() { return getVinebackGoliathFrames()[0]; }
 export function getStormwingAlphaSprite() { return getStormwingAlphaFrames()[0]; }
+export function getSpitterSprite() { return getSpitterFrames()[0]; }
+export function getChargerSprite() { return getChargerFrames()[0]; }
 
 // ── Pickups ────────────────────────────────────────────────────────────
 
@@ -982,6 +989,173 @@ function drawCrawler(size, frame, count) {
         ctx.arc(ex, ey, 1.4, 0, TWO_PI);
         ctx.fill();
     }
+
+    return canvas;
+}
+
+// ─── Spitter (ranged) ─────────────────────────────────────────────────
+// A bulbous purple sac with a puckered mouth + a charge dot that pulses
+// across frames (telegraph-ish flavor).
+function drawSpitter(size, frame, count) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const phase = (frame / count) * TWO_PI;
+    const pulse = (Math.sin(phase) + 1) / 2;
+
+    const BODY = '#6a3d8f';
+    const BODY_DARK = '#3a1f52';
+    const BODY_LIGHT = '#9a5ec4';
+    const SAC = '#c479ff';
+    const EYE = '#23103a';
+    const MOUTH = '#1a0a28';
+    const GLOW = '#d7a3ff';
+
+    softShadow(ctx, cx, cy + 52, 50, 10, 0.3);
+
+    // Body sac.
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 6, 54, 50, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 16, cy - 12, 24, 16, -0.3, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 6, 54, 50, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    // Venom blotches.
+    ctx.fillStyle = SAC;
+    ctx.beginPath();
+    ctx.arc(cx + 22, cy + 18, 10, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx - 26, cy + 22, 7, 0, TWO_PI);
+    ctx.fill();
+
+    // Eyes.
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx - 15, cy - 4, 7, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 15, cy - 4, 7, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = '#e7c9ff';
+    ctx.beginPath();
+    ctx.arc(cx - 13, cy - 6, 2.4, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 17, cy - 6, 2.4, 0, TWO_PI);
+    ctx.fill();
+
+    // Puckered mouth with a pulsing charge bead.
+    ctx.fillStyle = MOUTH;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 24, 12, 8, 0, 0, TWO_PI);
+    ctx.fill();
+    const bead = 3 + pulse * 5;
+    const g = ctx.createRadialGradient(cx, cy + 24, 1, cx, cy + 24, bead + 3);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.5, GLOW);
+    g.addColorStop(1, 'rgba(199,121,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy + 24, bead + 3, 0, TWO_PI);
+    ctx.fill();
+
+    return canvas;
+}
+
+// ─── Charger (dash) ───────────────────────────────────────────────────
+// A low, armored ram with horns + braced legs. 2 frames: braced / lunging.
+function drawCharger(size, frame) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const lunge = frame === 1 ? 8 : 0;
+
+    const BODY = '#8a4a2a';
+    const BODY_DARK = '#4a2410';
+    const BODY_LIGHT = '#b06a38';
+    const PLATE = '#3c352c';
+    const PLATE_LIGHT = '#6e6354';
+    const HORN = '#e6dcc4';
+    const EYE = '#ff6a3a';
+
+    softShadow(ctx, cx, cy + 58, 64, 12, 0.36);
+
+    // Hind legs braced back.
+    ctx.fillStyle = BODY_DARK;
+    ctx.beginPath();
+    ctx.ellipse(cx - 36, cy + 44, 12, 16, 0.3, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 30, cy + 46, 12, 16, -0.2, 0, TWO_PI);
+    ctx.fill();
+
+    // Low heavy body, leaning forward when lunging.
+    ctx.save();
+    ctx.translate(lunge, 0);
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 8, 60, 44, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 14, cy - 8, 28, 14, -0.2, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 8, 60, 44, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    // Armored brow plate.
+    ctx.fillStyle = PLATE;
+    ctx.beginPath();
+    ctx.moveTo(cx + 18, cy - 22);
+    ctx.lineTo(cx + 58, cy - 14);
+    ctx.lineTo(cx + 58, cy + 8);
+    ctx.lineTo(cx + 20, cy + 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = PLATE_LIGHT;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Forward-swept horns.
+    ctx.fillStyle = HORN;
+    ctx.beginPath();
+    ctx.moveTo(cx + 50, cy - 12);
+    ctx.lineTo(cx + 84, cy - 24);
+    ctx.lineTo(cx + 60, cy - 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 52, cy + 6);
+    ctx.lineTo(cx + 86, cy + 4);
+    ctx.lineTo(cx + 60, cy + 14);
+    ctx.closePath();
+    ctx.fill();
+
+    // Glaring eye.
+    const eyeGlow = ctx.createRadialGradient(cx + 40, cy - 6, 1, cx + 40, cy - 6, 16);
+    eyeGlow.addColorStop(0, 'rgba(255,120,60,0.6)');
+    eyeGlow.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.fillRect(cx + 26, cy - 20, 28, 28);
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx + 40, cy - 6, 5, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
 
     return canvas;
 }
