@@ -41,7 +41,8 @@ import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
-import { awardRun as awardBattlePassRun } from '../systems/BattlePassSystem.js';
+import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
+import { openCase } from '../systems/CaseSystem.js';
 import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS } from '../content/weapons.js';
@@ -109,6 +110,13 @@ export class Game {
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
 
+        // Main-menu state: active tab + transient case-opening animation +
+        // a short-lived toast for claim/case feedback.
+        this.menuTab = 'play';
+        this.caseAnim = null;
+        this.menuToast = null;
+        this.menuToastTimer = 0;
+
         // Transient "this control was just tapped" feedback for the UI to
         // render a brief press state. { id, age } or null.
         this.pressFx = null;
@@ -122,7 +130,11 @@ export class Game {
         const touchPrimary = typeof window.matchMedia === 'function'
             ? window.matchMedia('(pointer: coarse)').matches
             : ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-        this.showDebug = DEBUG_DEFAULT_ON && !touchPrimary;
+        this.showDebug = (DEBUG_DEFAULT_ON && !touchPrimary) || this.saveSystem.getSetting('debug') === true;
+        // Performance/accessibility render flags (re-read at each run start).
+        this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
+        this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
+        this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
 
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Backquote' || e.code === 'F2') {
@@ -130,6 +142,10 @@ export class Game {
                 return;
             }
             if (this.screen === 'start') {
+                if (this.caseAnim) {
+                    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this._dismissCase(); }
+                    return;
+                }
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault();
                     this._startRun();
@@ -270,27 +286,15 @@ export class Game {
 
         const tryStartScreenAt = (clientX, clientY) => {
             if (this.screen !== 'start') return false;
+            // The case-opening overlay owns input while it's up: any tap continues.
+            if (this.caseAnim) { this._dismissCase(); return true; }
             const pos = this.renderer.clientToInternal(clientX, clientY);
-            const rStart = this.ui.getStartRunButtonRect();
-            if (inRect(pos, rStart)) { this._pressFeedback('start'); this._startRun(); return true; }
-            const rReset = this.ui.getResetSaveButtonRect();
-            if (inRect(pos, rReset)) {
-                this._pressFeedback('reset');
-                this.requestResetSave();
-                return true;
+            // Dispatch against the menu's clickable regions (topmost wins).
+            const hs = this.ui.menu.hotspots;
+            for (let i = hs.length - 1; i >= 0; i--) {
+                const r = hs[i];
+                if (inRect(pos, r, 0)) { this._menuAction(r.action, r.arg); return true; }
             }
-            // Tap an upgrade card to buy it.
-            const cards = this.ui.getShopUpgradeRects(PERMANENT_UPGRADES.length);
-            for (let i = 0; i < cards.length; i++) {
-                if (inRect(pos, cards[i], 0)) {
-                    this._pressFeedback(`shop:${PERMANENT_UPGRADES[i].id}`);
-                    this.buyUpgrade(PERMANENT_UPGRADES[i].id);
-                    return true;
-                }
-            }
-            // Tap anywhere else cancels a pending reset confirmation so it
-            // can't silently linger.
-            this.resetConfirming = false;
             return true;
         };
 
@@ -447,6 +451,10 @@ export class Game {
         this.banishes = this.player.banishes ?? 0;
         // Screen-shake preference (accessibility) read from the save.
         this.shakeEnabled = this.saveSystem.getSetting('screenShake') !== false;
+        // Performance / accessibility toggles read once per run.
+        this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
+        this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
+        this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
         this._lastHp = this.player.hp;
         this.screen = 'gameplay';
         // Reset the UI's per-run animation state (bar display values, boss
@@ -550,6 +558,58 @@ export class Game {
         this.resetConfirmTimer = 3;
         return false;
     }
+
+    // Dispatch a click on a main-menu hotspot (see MenuRenderer). Any action
+    // other than RESET cancels a pending reset confirmation.
+    _menuAction(action, arg) {
+        if (action !== 'resetSave' && action !== 'tab') this.resetConfirming = false;
+        switch (action) {
+            case 'tab': this.menuTab = arg; this.resetConfirming = false; break;
+            case 'startRun': this._pressFeedback('start'); this._startRun(); break;
+            case 'buyUpgrade': this._pressFeedback(`shop:${arg}`); this.buyUpgrade(arg); break;
+            case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
+            case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); break;
+            case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); break;
+            case 'toggleSetting': this._toggleSetting(arg); break;
+            case 'volUp': this._adjustVolume(arg, 0.1); break;
+            case 'volDown': this._adjustVolume(arg, -0.1); break;
+            case 'openCase': this._openCaseFlow(arg); break;
+            case 'claimBP': {
+                const r = claimBattlePass(this.saveSystem, arg);
+                this._setToast(r.ok ? `Claimed: ${r.label}` : 'Cannot claim');
+                break;
+            }
+            case 'claimAllBP': {
+                const n = claimAllBattlePass(this.saveSystem);
+                this._setToast(n > 0 ? `Claimed ${n} reward${n > 1 ? 's' : ''}` : 'Nothing to claim');
+                break;
+            }
+            case 'caseContinue': this._dismissCase(); break;
+            default: break;
+        }
+    }
+
+    _toggleSetting(key) {
+        const cur = this.saveSystem.getSetting(key) === true;
+        this.saveSystem.setSetting(key, !cur);
+        if (key === 'debug') this.showDebug = !cur;
+    }
+
+    _adjustVolume(key, delta) {
+        const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;
+        this.saveSystem.setSetting(key, clamp(cur + delta, 0, 1));
+    }
+
+    _openCaseFlow(caseType) {
+        const res = openCase(this.saveSystem, caseType);
+        if (!res.ok) { this._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
+        // The reward is already applied to the save; the overlay just presents it.
+        this.caseAnim = { caseType, result: res, age: 0 };
+    }
+
+    _dismissCase() { this.caseAnim = null; }
+
+    _setToast(msg) { this.menuToast = msg; this.menuToastTimer = 2.5; }
 
     setUpgradeChoices(choices) {
         this.upgradeChoices = choices;
@@ -852,6 +912,8 @@ export class Game {
                 this.resetConfirmTimer -= dt;
                 if (this.resetConfirmTimer <= 0) this.resetConfirming = false;
             }
+            if (this.caseAnim) this.caseAnim.age += dt;
+            if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
             return;
         }
         if (this.screen === 'gameOver') {
@@ -1200,7 +1262,7 @@ export class Game {
         this.mapRenderer.drawBackground(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         if (this.showDebug) this._drawGrid(ctx);
         this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT, L);
-        this.particles.drawWorldFog(ctx, this.camera);
+        if (this.particlesEnabled && !this.reducedEffects) this.particles.drawWorldFog(ctx, this.camera);
         this._drawWorldBounds(ctx, this.showDebug);
 
         // Obstacles are painter's-ordered against the player: those whose feet
@@ -1324,7 +1386,7 @@ export class Game {
 
         // Occludable additive particles (embers + death dust) — these sit
         // above entities but BELOW the veil, so they read as ambient glow.
-        this.particles.drawWorldAdditive(ctx, this.camera);
+        if (this.particlesEnabled) this.particles.drawWorldAdditive(ctx, this.camera);
 
         if (this.collisionSystem.contactFlash > 0) {
             this._drawContactFlash(ctx);
@@ -1366,14 +1428,16 @@ export class Game {
 
         // Always-bright sparks sit ABOVE the veil so kill/hit/pickup/level
         // feedback never gets dimmed by the darkness.
-        this.particles.drawScreenAdditive(ctx, this.camera);
+        if (this.particlesEnabled) this.particles.drawScreenAdditive(ctx, this.camera);
 
         // Damage numbers also draw above the veil (world-positioned via a
         // re-applied camera transform) so combat math stays fully legible.
-        ctx.save();
-        this.camera.apply(ctx);
-        for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
-        ctx.restore();
+        if (this.damageNumbersEnabled) {
+            ctx.save();
+            this.camera.apply(ctx);
+            for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
+            ctx.restore();
+        }
 
         this.ui.draw(ctx, this._buildUIState());
 
@@ -1397,18 +1461,10 @@ export class Game {
             base.resetConfirming = this.resetConfirming;
             base.resetConfirmTimer = this.resetConfirmTimer;
             base.stats = this.saveSystem.data.stats;
-            base.permanentUpgrades = PERMANENT_UPGRADES.map((u) => {
-                const level = this.saveSystem.getUpgradeLevel(u.id);
-                return {
-                    id: u.id,
-                    name: u.name,
-                    description: u.description,
-                    level,
-                    maxLevel: u.maxLevel,
-                    cost: nextCost(u, level),
-                    isMax: level >= u.maxLevel,
-                };
-            });
+            // Menu state consumed by MenuRenderer.
+            base.menuTab = this.menuTab;
+            base.caseAnim = this.caseAnim;
+            base.menuToast = this.menuToastTimer > 0 ? this.menuToast : null;
             return base;
         }
 
