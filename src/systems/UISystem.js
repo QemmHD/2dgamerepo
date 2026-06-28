@@ -722,8 +722,10 @@ export class UISystem {
             `TIME    ${formatTime(state.time)}`,
             `KILLS   ${state.kills}`,
             `ENEMIES ${state.enemyCount}`,
-            `BOLTS   ${state.projectileCount}`,
-            `GEMS    ${state.gemCount}`,
+            `BOLTS   ${state.projectileCount} +${state.enemyProjectileCount ?? 0}e`,
+            `PARTICLE ${state.particleCount ?? 0}`,
+            `PICKUPS ${state.pickupCount ?? 0}`,
+            `HAZARDS ${state.hazardCount ?? 0}`,
             `COINS   ${state.runCoins ?? 0}`,
             ``,
             `hp      ${Math.ceil(state.player.hp)}/${state.player.maxHp}` +

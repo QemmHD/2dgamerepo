@@ -29,7 +29,11 @@ export const WORLD_HEIGHT = 2700;
 // Display/backing-store tunables. maxDpr lifts the old hard cap of 2 so
 // retina/4K render at true device pixels; maxBackingPx (4K = 3840×2160)
 // bounds worst-case full-screen fill cost + guards iOS canvas-area limits.
-export const RENDER = { maxDpr: 3, maxBackingPx: 3840 * 2160 };
+// maxCoverCrop: when fitting the 16:9 game to a different-aspect screen
+// (e.g. a 19.5:9 iPhone), prefer COVER (fill the screen, crop a little) over
+// CONTAIN (letterbox bars) as long as the crop stays under this fraction.
+// Keeps tall phones edge-to-edge; ultrawide displays still letterbox.
+export const RENDER = { maxDpr: 3, maxBackingPx: 3840 * 2160, maxCoverCrop: 0.22 };
 
 // ── Player ─────────────────────────────────────────────────────────────
 export const PLAYER = {
@@ -49,7 +53,7 @@ export const ENEMY = {
         hp: 30,
         speed: 110,
         radius: 55,
-        contactDamage: 8,
+        contactDamage: 7,
         xpValue: 1,
     },
     bat: {
@@ -63,7 +67,7 @@ export const ENEMY = {
         hp: 80,
         speed: 80,
         radius: 70,
-        contactDamage: 14,
+        contactDamage: 12,
         xpValue: 3,
     },
     crawler: {
@@ -108,7 +112,7 @@ export const ENEMY = {
     // boss HP bar, chest drop on death, and lets the constructor pull in
     // bossName + visualScale. They scale with wave just like other enemies.
     vinebackGoliath: {
-        hp: 1500,
+        hp: 1250,
         speed: 60,
         radius: 105,
         contactDamage: 25,
@@ -125,7 +129,7 @@ export const ENEMY = {
         phase2Attacks: ['slam'],
     },
     stormwingAlpha: {
-        hp: 900,
+        hp: 780,
         speed: 130,
         radius: 80,
         contactDamage: 18,
@@ -170,7 +174,7 @@ export const CHEST = {
     weights: { weapon: 3, passive: 3, coins: 2, heal: 2 },
     luckUpgradeWeight: 4,
     coinReward: { min: 50, max: 100, luckBonus: 80 },
-    healReward: { base: 35, luckBonus: 25 },
+    healReward: { base: 45, luckBonus: 25 },
 };
 
 // Elite is a modifier applied to a base enemy type, not a separate type.
@@ -362,9 +366,12 @@ export const WAVE_LIMITS = {
 };
 
 // ── XP / progression / gems ────────────────────────────────────────────
+// Leveling curve. Lowered + flattened so early level-ups come fast (hooks the
+// player) and the ramp stays gentle. L1→2 needs `base`; each later level adds
+// `perLevel`. base 8 / perLevel 4 gives 8,12,16,20,24,… (was 10 / 6).
 export const XP_CURVE = {
-    base: 10,
-    perLevel: 6,
+    base: 8,
+    perLevel: 4,
 };
 
 // XP needed to advance from `level` → `level + 1`.
@@ -372,10 +379,12 @@ export function xpRequired(level) {
     return XP_CURVE.base + Math.max(0, level - 1) * XP_CURVE.perLevel;
 }
 
+// Slightly more medium/large gems so XP pickups feel juicy and frequent
+// (was 92/7/1). XP values per tier unchanged.
 export const GEM = {
-    small:  { xp: 1,  radius: 12, bounceSpeed: 200, dropWeight: 92 },
-    medium: { xp: 5,  radius: 16, bounceSpeed: 180, dropWeight: 7 },
-    large:  { xp: 10, radius: 20, bounceSpeed: 160, dropWeight: 1 },
+    small:  { xp: 1,  radius: 12, bounceSpeed: 200, dropWeight: 86 },
+    medium: { xp: 5,  radius: 16, bounceSpeed: 180, dropWeight: 11 },
+    large:  { xp: 10, radius: 20, bounceSpeed: 160, dropWeight: 3 },
 };
 
 export const GEM_TIERS = ['small', 'medium', 'large'];

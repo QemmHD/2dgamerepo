@@ -989,12 +989,18 @@ export class Game {
                 }
             }
         }
-        // Hit sparks are bright but capped per frame so a wide AoE hit
-        // (pulse/orbit striking a crowd) can't drain the particle pool and
-        // starve death bursts.
+        // Hit sparks + floating numbers are both capped per frame so a wide
+        // AoE hit (pulse/orbit/lightning striking a big crowd) can't drain the
+        // particle pool or flood the damage-number array — a real perf + GC
+        // win in dense fights, with negligible readability loss (you can't
+        // read 80 overlapping numbers anyway). Damage is unaffected.
         let sparkBudget = 6;
+        let numberBudget = 14;
         for (const hit of allHits) {
-            this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, '#ffffff'));
+            if (numberBudget > 0) {
+                this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, '#ffffff'));
+                numberBudget--;
+            }
             if (sparkBudget > 0) {
                 this.particles.hitSpark(hit.x, hit.y);
                 sparkBudget--;
@@ -1313,6 +1319,12 @@ export class Game {
         base.gemCount = this.gems.length;
         base.coinCount = this.coins.length;
         base.effectCount = this.weaponSystem.effects.length;
+        // Perf-HUD counters (only computed when the debug panel is open, since
+        // activeCount scans the particle pool).
+        base.enemyProjectileCount = this.enemyProjectiles.length;
+        base.hazardCount = this.hazards.length;
+        base.pickupCount = this.gems.length + this.coins.length + this.chests.length;
+        base.particleCount = this.showDebug ? this.particles.activeCount() : 0;
         base.ownedWeapons = this.weaponSystem.snapshotForUI();
         base.ownedPassives = this.passiveSystem.snapshotForUI();
         base.runCoins = this.player.coins ?? 0;

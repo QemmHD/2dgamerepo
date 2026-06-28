@@ -58,6 +58,14 @@ export class ParticleSystem {
         if (q.fog != null) this.fogEnabled = q.fog;
     }
 
+    // Live particle count (for the debug perf HUD). Cheap O(pool) scan; only
+    // called when the debug panel is open.
+    activeCount() {
+        let n = 0;
+        for (const p of this.pool) if (p.active) n++;
+        return n;
+    }
+
     _spawn() {
         const lim = this.max;
         for (let i = 0; i < lim; i++) {
