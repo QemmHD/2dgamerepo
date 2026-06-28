@@ -240,6 +240,61 @@ export const WEAPONS = {
         ],
         update: thunderCrownUpdate,
     },
+
+    // ── Abilities ───────────────────────────────────────────────────────
+    // Data-driven, movement-only. They appear in the level-up pool like any
+    // other weapon. None require manual aiming.
+
+    // Shadow Dash: periodically blink a short distance along your movement,
+    // slashing enemies on the path. Won't dash through walls (LOS-gated).
+    shadowDash: {
+        id: 'shadowDash', name: 'Shadow Dash', kind: 'special',
+        description: 'Periodically dash forward, cutting through foes.',
+        maxLevel: 5,
+        perLevel: [
+            null,
+            { cooldown: 5.0, dashDistance: 280, damage: 18, width: 80 },
+            { cooldown: 4.5, dashDistance: 300, damage: 24, width: 86 },
+            { cooldown: 4.0, dashDistance: 320, damage: 30, width: 92 },
+            { cooldown: 3.5, dashDistance: 340, damage: 35, width: 98 },
+            { cooldown: 3.0, dashDistance: 360, damage: 42, width: 104 },
+        ],
+        update: shadowDashUpdate,
+    },
+
+    // Cinder Aura (the "Thorn Aura" ability): a small, constant ring of heat
+    // around you. Weaker than Beacon Pulse but always on.
+    cinderAura: {
+        id: 'cinderAura', name: 'Cinder Aura', kind: 'pulse', element: 'fire',
+        description: 'A constant ring of cinders burns nearby foes.',
+        maxLevel: 5,
+        perLevel: [
+            null,
+            { cooldown: 0.7, radius: 150, damage: 7 },
+            { cooldown: 0.66, radius: 165, damage: 9 },
+            { cooldown: 0.62, radius: 180, damage: 12 },
+            { cooldown: 0.58, radius: 195, damage: 15 },
+            { cooldown: 0.5, radius: 210, damage: 19 },
+        ],
+        update: cinderAuraUpdate,
+    },
+
+    // Hearth Totem (the "Banana Totem" ability): periodically emits a
+    // restorative pulse that heals you a little. Kept modest for balance.
+    hearthTotem: {
+        id: 'hearthTotem', name: 'Hearth Totem', kind: 'special',
+        description: 'Periodically drops a warm ember that mends you.',
+        maxLevel: 5,
+        perLevel: [
+            null,
+            { cooldown: 6.0, heal: 6 },
+            { cooldown: 5.5, heal: 8 },
+            { cooldown: 5.0, heal: 10 },
+            { cooldown: 4.5, heal: 12 },
+            { cooldown: 4.0, heal: 15 },
+        ],
+        update: hearthTotemUpdate,
+    },
 };
 
 export const WEAPON_IDS = Object.keys(WEAPONS);
@@ -735,4 +790,88 @@ function thunderCrownUpdate(dt, owned, ctx) {
         }
     }
     owned.timer = cfg.cooldown * cdMul;
+}
+
+// ─── Ability behaviors ─────────────────────────────────────────────────
+
+// Shadow Dash: on cooldown, blink along the player's movement direction
+// (facing if idle), damaging foes near the dash line. Won't cross walls.
+function shadowDashUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    const p = ctx.player;
+
+    let dx = p.vx ?? 0, dy = p.vy ?? 0;
+    let len = Math.hypot(dx, dy);
+    if (len < 1) { dx = (p.facingX ?? 1) >= 0 ? 1 : -1; dy = 0; len = 1; }
+    const nx = dx / len, ny = dy / len;
+
+    // Pick the farthest dash that stays in clear line of sight (no wall-phasing).
+    let dist = cfg.dashDistance;
+    const fullX = p.x + nx * dist, fullY = p.y + ny * dist;
+    if (ctx.los && !ctx.los(fullX, fullY)) {
+        dist *= 0.5;
+        const halfX = p.x + nx * dist, halfY = p.y + ny * dist;
+        if (ctx.los && !ctx.los(halfX, halfY)) { owned.timer = 0.3; return; }
+    }
+
+    const destX = p.x + nx * dist, destY = p.y + ny * dist;
+    const dmg = cfg.damage * (p.damageMul ?? 1);
+    // Damage enemies within `width` of the dash segment.
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        const t = Math.max(0, Math.min(1, ((e.x - p.x) * nx + (e.y - p.y) * ny) / dist));
+        const cx = p.x + nx * dist * t, cy = p.y + ny * dist * t;
+        if ((e.x - cx) ** 2 + (e.y - cy) ** 2 <= (cfg.width + e.radius) ** 2) {
+            e.takeDamage(dmg, nx * KNOCKBACK.strength * 0.5, ny * KNOCKBACK.strength * 0.5);
+            ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
+            if (!e.active) ctx.killed.push(e);
+        }
+    }
+
+    p.x = destX; p.y = destY;
+    ctx.effects.push({ kind: 'pulse', x: destX, y: destY, radius: 70, age: 0, lifetime: 0.3, active: true });
+    owned.timer = cfg.cooldown * (p.cooldownMul ?? 1);
+}
+
+// Cinder Aura: small constant burn ring around the player (LOS-gated, no
+// shred). Reuses the pulse visual but with a tighter, faster cadence.
+function cinderAuraUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    const dmgMul = ctx.player.damageMul ?? 1;
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    owned.timer = cfg.cooldown * cdMul;
+    const damage = cfg.damage * dmgMul;
+
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        if (!circleOverlap(ctx.player.x, ctx.player.y, cfg.radius, e.x, e.y, e.radius)) continue;
+        if (ctx.los && !ctx.los(e.x, e.y)) continue;
+        e.takeDamage(damage);
+        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
+        if (!e.active) ctx.killed.push(e);
+    }
+
+    ctx.effects.push({
+        kind: 'pulse', x: ctx.player.x, y: ctx.player.y, radius: cfg.radius,
+        age: 0, lifetime: 0.3, active: true,
+    });
+}
+
+// Hearth Totem: periodic restorative pulse that mends the player a little.
+// No targeting/aiming; balanced via a long cooldown + small heal.
+function hearthTotemUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    owned.timer = cfg.cooldown * (ctx.player.cooldownMul ?? 1);
+
+    const p = ctx.player;
+    if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + cfg.heal);
+    ctx.effects.push({
+        kind: 'pulse', x: p.x, y: p.y, radius: 120, age: 0, lifetime: 0.5, active: true, evolved: true,
+    });
 }

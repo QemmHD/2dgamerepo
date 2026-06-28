@@ -40,6 +40,9 @@ import { LightingSystem } from '../systems/LightingSystem.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
+import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
+import { awardRun as awardBattlePassRun } from '../systems/BattlePassSystem.js';
+import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
@@ -363,7 +366,9 @@ export class Game {
         this.damageNumbers = [];
 
         this.spawner = new Spawner();
-        this.weaponSystem = new WeaponSystem();
+        // The run begins with the weapon chosen in the loadout (defaults to the
+        // Cinderbolt). Other weapons still appear as level-up choices.
+        this.weaponSystem = new WeaponSystem(resolveStartingWeapon(this.saveSystem.data));
         this.collisionSystem = new CollisionSystem();
         this.upgradeSystem = new UpgradeSystem();
         this.passiveSystem = new PassiveSystem();
@@ -378,6 +383,7 @@ export class Game {
         this.chests = [];
         this.chestReward = null;
         this.pendingChests = 0;
+        this.chestsOpened = 0;
         this.coins = [];
         // Cached reference to the strongest active boss for the boss HP bar.
         this.activeBossRef = null;
@@ -428,6 +434,10 @@ export class Game {
         this._initRunState();
         const coinsBefore = this.player.coins ?? 0;
         applyPermanentUpgrades(this.player, this.saveSystem.data);
+        // Loadout gear buffs stack ON TOP of permanent upgrades (applied after
+        // so multipliers compound). Cosmetics drive the player's appearance.
+        applyLoadout(this.player, this.saveSystem.data);
+        this.player.appearance = resolveAppearance(this.saveSystem.getEquippedCosmetics());
         // Remember how many coins the shop handed us so _enterGameOver can
         // bank only what was *earned* this run, not the granted seed.
         this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
@@ -466,10 +476,10 @@ export class Game {
     // amount banked (0 if already banked).
     _bankRunCoins() {
         if (this.bankedThisRun) return 0;
-        const earned = Math.max(
-            0,
-            Math.floor((this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0))
-        );
+        // Coin-gain gear/charms boost the BANKED total (player.coinMul, 1 by
+        // default). Applied here so the in-run HUD stays a clean integer.
+        const raw = Math.max(0, (this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0));
+        const earned = Math.floor(raw * (this.player.coinMul ?? 1));
         if (earned > 0) this.saveSystem.addCoins(earned);
         this.bankedThisRun = true;
         return earned;
@@ -604,6 +614,7 @@ export class Game {
     _presentChest() {
         if (this.pendingChests <= 0) return;
         this.pendingChests -= 1;
+        this.chestsOpened = (this.chestsOpened ?? 0) + 1;
         const reward = rollChestReward(this);
         // Apply the reward immediately so the in-game state already reflects
         // what the overlay is announcing. The overlay is confirmation, not a
@@ -802,6 +813,7 @@ export class Game {
             totalCoins: this.saveSystem.data.totalCoins,
             finalWave: (this.waveState?.index ?? 0) + 1,
             finalWaveName: this.waveState?.name ?? '',
+            chestsOpened: this.chestsOpened ?? 0,
             weapons: this.weaponSystem.snapshotForUI(),
             passives: this.passiveSystem.snapshotForUI(),
             evolutions: this.weaponSystem.owned
@@ -812,6 +824,9 @@ export class Game {
         // Fold the run into lifetime/best records; capture which bests were
         // beaten so the game-over summary can flag them.
         this.newBest = this.saveSystem.recordRun(this.runSummary);
+        // Award battle-pass (vigil) XP from the run and surface the gain on the
+        // game-over screen.
+        this.bpResult = awardBattlePassRun(this.saveSystem, this.runSummary);
 
         this._updateJoystickEnabled();
     }

@@ -60,6 +60,11 @@ export class Player {
         // Forward-looking stash for the chest stage.
         this.chestLuck = 0;
         this.coins = 0;
+        // Coin-gain multiplier from loadout gear/charms (applied at banking).
+        this.coinMul = 1;
+        // Appearance from equipped cosmetics; set at run start. Defaults keep
+        // the base monkey look if no cosmetics are wired.
+        this.appearance = null;
     }
 
     gainXP(amount) {
