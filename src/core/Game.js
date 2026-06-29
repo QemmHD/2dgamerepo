@@ -104,10 +104,12 @@ export class Game {
         // pattern and per-chunk decoration tables are world-static,
         // so they survive restarts intact (no need to rebuild).
         this.mapRenderer = new MapRenderer();
-        // Obstacles are world-static (deterministic placement), so generate
-        // them once here and reuse across runs — same layout every load.
+        // Obstacles are deterministic per biome; generate a default layout now
+        // and re-theme to the selected biome at run start (tracked by
+        // _obstacleBiome so we only regenerate when the biome actually changes).
         this.obstacleSystem = new ObstacleSystem();
         this.obstacleSystem.generate(WORLD_WIDTH, WORLD_HEIGHT);
+        this._obstacleBiome = 'emberwood';
         // Lighting buffer + particle pool are also world-static / pooled,
         // so they live across runs (particles are cleared on run start).
         this.lighting = new LightingSystem();
@@ -629,6 +631,14 @@ export class Game {
         // Apply the selected biome's color grade + per-map darkness for this run.
         const biome = getMap(this.saveSystem.getSelectedMap());
         this.mapRenderer.theme = biome;
+        // Regenerate the world's obstacles/buildings themed to this biome (each
+        // biome is a distinct, deterministic layout with its own prop set,
+        // colour tint, and building styles). Cheap + seeded, so same biome →
+        // same world every run.
+        if (this._obstacleBiome !== biome.id) {
+            this.obstacleSystem.generate(WORLD_WIDTH, WORLD_HEIGHT, biome.id);
+            this._obstacleBiome = biome.id;
+        }
         // Per-map darkness multiplier on the Emberlight veil (day ≈ 0.5 bright,
         // night = 1.0 darkest). Routed through the governor below so an FPS
         // quality change can't reset it back to the global strength.

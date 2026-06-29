@@ -15,10 +15,13 @@
 //   drawDebug(ctx, cam, vw, vh)
 
 import { Obstacle } from '../entities/Obstacle.js';
-import { MAP_OBJECT_LIST, OBSTACLE_PLACEMENT, footprintDepth } from '../content/mapObjects.js';
+import {
+    MAP_OBJECTS, MAP_OBJECT_LIST, OBSTACLE_PLACEMENT, footprintDepth,
+    BIOME_THEME, DEFAULT_BIOME_THEME, MAP_STRUCTURES, STRUCTURE_PLACEMENT,
+} from '../content/mapObjects.js';
 
 const GRID_CELL = 320;
-const MAX_OBSTACLES = 220;
+const MAX_OBSTACLES = 240;
 
 function mulberry32(seed) {
     let a = seed >>> 0;
@@ -30,26 +33,76 @@ function mulberry32(seed) {
     };
 }
 
+// Small FNV-ish string hash so a biome id perturbs the placement seed —
+// different biomes get different (but each individually deterministic) layouts.
+function strHash(s) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return h >>> 0;
+}
+
+// ── Biome colour tinting ─────────────────────────────────────────────────
+function hexToRgb(h) {
+    h = h.replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const n = parseInt(h, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHex(r, g, b) {
+    const c = (v) => Math.max(0, Math.min(255, v | 0)).toString(16).padStart(2, '0');
+    return '#' + c(r) + c(g) + c(b);
+}
+function hexLerp(a, b, t) {
+    const A = hexToRgb(a), B = hexToRgb(b);
+    return rgbToHex(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t);
+}
+// Lerp a {base,top,edge} palette toward the biome tint colour (edge less, to
+// keep silhouette definition). Returns a fresh palette object.
+function tintPalette(p, tint) {
+    if (!tint || !tint.amt) return { base: p.base, top: p.top, edge: p.edge };
+    const t = tint.amt, c = tint.color;
+    return { base: hexLerp(p.base, c, t), top: hexLerp(p.top, c, t), edge: hexLerp(p.edge, c, t * 0.7) };
+}
+
 export class ObstacleSystem {
     constructor() {
         this.obstacles = [];
         this.grid = new Map();     // 'gx,gy' → [obstacle, ...]
         this.worldW = 0;
         this.worldH = 0;
-        this._totalWeight = MAP_OBJECT_LIST.reduce((s, d) => s + (d.weight ?? 1), 0);
     }
 
-    generate(worldW, worldH) {
+    // biomeId selects the per-biome prop set, building styles, and colour tint
+    // (BIOME_THEME). It also perturbs the seed so each biome is a distinct —
+    // but individually deterministic — world layout.
+    generate(worldW, worldH, biomeId = DEFAULT_BIOME_THEME) {
         this.worldW = worldW;
         this.worldH = worldH;
         this.obstacles = [];
         this.grid.clear();
 
+        const theme = BIOME_THEME[biomeId] || BIOME_THEME[DEFAULT_BIOME_THEME];
+        const tint = theme.tint;
+        // Pre-tint each prop palette once per generate, keyed by type.
+        this._tintByType = {};
+        for (const type of Object.keys(theme.props)) {
+            const def = MAP_OBJECTS[type];
+            if (def) this._tintByType[type] = tintPalette(def.palette, tint);
+        }
+        // Build the biome's weighted prop list.
+        this._propEntries = Object.entries(theme.props)
+            .map(([type, weight]) => ({ def: MAP_OBJECTS[type], weight }))
+            .filter((e) => e.def);
+        this._propTotalWeight = this._propEntries.reduce((s, e) => s + e.weight, 0) || 1;
+
         const P = OBSTACLE_PLACEMENT;
-        const rng = mulberry32(P.seed ^ (worldW * 73856093) ^ (worldH * 19349663));
+        const rng = mulberry32(P.seed ^ strHash(biomeId) ^ (worldW * 73856093) ^ (worldH * 19349663));
         const halfW = worldW / 2;
         const halfH = worldH / 2;
         const clearSq = P.clearRadius * P.clearRadius;
+
+        // Buildings first — sparse landmarks props then avoid (via _tooClose).
+        this._placeStructures(rng, theme, tint);
 
         for (let cy = -halfH + P.cellSize / 2; cy < halfH; cy += P.cellSize) {
             for (let cx = -halfW + P.cellSize / 2; cx < halfW; cx += P.cellSize) {
@@ -67,6 +120,7 @@ export class ObstacleSystem {
 
                 const def = this._pickType(rng);
                 const ob = new Obstacle(def, x, y);
+                ob.palette = this._tintByType[def.type] || def.palette;
 
                 // Don't let footprints overlap (keeps walkable gaps open).
                 if (this._tooClose(ob)) continue;
@@ -81,12 +135,92 @@ export class ObstacleSystem {
     }
 
     _pickType(rng) {
-        let r = rng() * this._totalWeight;
-        for (const def of MAP_OBJECT_LIST) {
-            r -= def.weight ?? 1;
-            if (r <= 0) return def;
+        const entries = this._propEntries;
+        if (!entries || !entries.length) return MAP_OBJECT_LIST[0];
+        let r = rng() * this._propTotalWeight;
+        for (const e of entries) {
+            r -= e.weight;
+            if (r <= 0) return e.def;
         }
-        return MAP_OBJECT_LIST[0];
+        return entries[0].def;
+    }
+
+    // ── Buildings (enterable structures) ─────────────────────────────────
+    // Expand each placed blueprint into wall-segment obstacles forming a ring
+    // with a doorway gap. Placed before props; the doorway faces the world
+    // origin so a player running outward from spawn meets the entrance.
+    _placeStructures(rng, theme, tint) {
+        const styles = theme.structures || [];
+        if (!styles.length) return;
+        const SP = STRUCTURE_PLACEMENT;
+        const halfW = this.worldW / 2, halfH = this.worldH / 2;
+        const clearSq = SP.clearRadius * SP.clearRadius;
+        let placed = 0;
+        for (let a = 0; a < SP.attempts && placed < SP.count; a++) {
+            const style = MAP_STRUCTURES[styles[(rng() * styles.length) | 0]];
+            if (!style) continue;
+            const outHW = style.interiorW / 2 + style.wall;
+            const outHH = style.interiorH / 2 + style.wall;
+            const x = (rng() * 2 - 1) * (halfW - SP.edgeMargin - outHW);
+            const y = (rng() * 2 - 1) * (halfH - SP.edgeMargin - outHH);
+            if (x * x + y * y < clearSq) continue;
+            // Footprint (plus gap) must be free of already-placed buildings.
+            if (this._areaBlocked(x - outHW - SP.gap, y - outHH - SP.gap,
+                                  x + outHW + SP.gap, y + outHH + SP.gap)) continue;
+            const doorSide = Math.abs(x) > Math.abs(y)
+                ? (x > 0 ? 'left' : 'right')
+                : (y > 0 ? 'top' : 'bottom');
+            this._addBuilding(style, x, y, doorSide, tintPalette(style.palette, tint));
+            placed++;
+        }
+    }
+
+    _addBuilding(style, cx, cy, doorSide, palette) {
+        const iHW = style.interiorW / 2, iHH = style.interiorH / 2;
+        const T = style.wall, H = style.wallH, half = T / 2;
+        const spanHW = iHW + T;       // horizontal walls cover the corners
+        const dHalf = style.door / 2;
+
+        const addWall = (x, y, hw, hh) => {
+            if (hw <= 4 || hh <= 2) return;
+            const def = {
+                type: 'buildingWall', shape: 'rect',
+                col: { hw, hh }, size: { w: hw * 2, h: H },
+                blocksLOS: true, palette,
+            };
+            const ob = new Obstacle(def, x, y);
+            ob.palette = palette;
+            this.obstacles.push(ob);
+        };
+        // Horizontal walls (top = back, bottom = front), each spanning full width.
+        const addH = (wy, isDoor) => {
+            if (!isDoor) { addWall(cx, wy, spanHW, half); return; }
+            const segHW = (spanHW - dHalf) / 2;
+            addWall(cx - (dHalf + spanHW) / 2, wy, segHW, half);
+            addWall(cx + (dHalf + spanHW) / 2, wy, segHW, half);
+        };
+        // Vertical walls (left/right), spanning the interior height.
+        const addV = (wx, isDoor) => {
+            if (!isDoor) { addWall(wx, cy, half, iHH); return; }
+            const segHH = (iHH - dHalf) / 2;
+            addWall(wx, cy - (dHalf + iHH) / 2, half, segHH);
+            addWall(wx, cy + (dHalf + iHH) / 2, half, segHH);
+        };
+        addH(cy - iHH - half, doorSide === 'top');
+        addH(cy + iHH + half, doorSide === 'bottom');
+        addV(cx - iHW - half, doorSide === 'left');
+        addV(cx + iHW + half, doorSide === 'right');
+    }
+
+    // True if any already-placed obstacle's footprint overlaps the bbox. Used
+    // during building placement (grid not built yet, so scans the list).
+    _areaBlocked(minX, minY, maxX, maxY) {
+        for (const ob of this.obstacles) {
+            const b = ob.bounds();
+            if (b.maxX < minX || b.minX > maxX || b.maxY < minY || b.minY > maxY) continue;
+            return true;
+        }
+        return false;
     }
 
     _radiusOf(ob) {
