@@ -95,6 +95,17 @@ export class MapRenderer {
             ctx.restore();
         }
 
+        // Biome ground recolour: a translucent biome colour painted OVER the
+        // tile (source-over, so it can lighten toward snow/sand as well as
+        // darken) — the main cue that each map is a different surface type.
+        if (theme && theme.groundFill && theme.groundFillAlpha > 0) {
+            ctx.save();
+            ctx.globalAlpha = theme.groundFillAlpha;
+            ctx.fillStyle = theme.groundFill;
+            ctx.fillRect(left, top, viewW, viewH);
+            ctx.restore();
+        }
+
         // Biome color grade: a translucent tint multiplied over the ground so
         // an alternate map reads as a different place without new sprite art.
         if (theme && theme.grade && theme.gradeAlpha > 0) {

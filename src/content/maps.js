@@ -1,47 +1,76 @@
 // Playable maps / biomes. The world geometry is shared (same procedural
-// obstacle + decoration layout), but each map applies a distinct COLOR GRADE +
-// background so it reads as a different place. A grade is a translucent tint
-// multiplied over the ground (MapRenderer.drawBackground), which is cheap and
-// needs no new sprite art. `unlockBosses` gates a map behind lifetime boss
-// kills — the second biome opens after clearing 3 bosses on the first map.
+// obstacle + decoration layout), but each biome is its own DISTINCT TYPE — a
+// day glade, a frozen waste, a sunless night crypt, and a sandy desert — made
+// to read very differently via four cheap, art-free levers (no new sprites):
+//   groundFill   a translucent biome COLOUR painted over the ground tile
+//                (source-over, so it can LIGHTEN toward snow/sand, not just
+//                darken like a multiply grade). The main "different surface" cue.
+//   grade        an optional extra multiply tint for mood (over groundFill).
+//   darkness     a per-map multiplier on the Emberlight veil strength — the
+//                big DAY↔NIGHT lever (day ≈ 0.5 = bright, night = 1.0 = darkest).
+//   weather      'embers' (warm rising motes) | 'snow' (pale falling flecks).
+// `unlockBosses` gates a biome behind lifetime boss kills.
 
 export const MAPS = {
     emberwood: {
         id: 'emberwood',
         name: 'Emberwood',
-        subtitle: 'The Last Vigil',
-        bg: '#0c1410',
-        grade: null,            // default warm dusk — no extra grade
-        gradeAlpha: 0,
+        subtitle: 'Daybreak Glade',
+        bg: '#16180e',
+        groundFill: '#6f7a36',  // warm green-gold meadow
+        groundFillAlpha: 0.34,
+        grade: '#ffd27a',       // soft golden daylight wash
+        gradeAlpha: 0.10,
+        darkness: 0.52,         // DAY — bright, the veil barely closes in
         unlockBosses: 0,
-        accent: '#ffb24a',
-        weather: 'embers',      // warm motes drifting upward
+        accent: '#ffd27a',
+        weather: 'embers',      // warm drifting pollen/embers
     },
     hollowreach: {
         id: 'hollowreach',
         name: 'Hollow Reach',
-        subtitle: 'The Frozen Vigil',
-        bg: '#0a0f18',
-        grade: '#5a86c8',       // cold blue grade for a frozen biome
-        gradeAlpha: 0.26,
-        unlockBosses: 3,        // unlocked after 3 lifetime boss kills
-        accent: '#7fd0ff',
-        weather: 'snow',        // cool flecks falling
+        subtitle: 'The Frozen Waste',
+        bg: '#0e141c',
+        groundFill: '#cdddf0',  // pale blue-white snowfield (lightens the ground)
+        groundFillAlpha: 0.46,
+        grade: '#7aa0d0',       // cold overcast
+        gradeAlpha: 0.12,
+        darkness: 0.72,         // SNOW — bright overcast, mid veil
+        unlockBosses: 3,
+        accent: '#bfe3ff',
+        weather: 'snow',        // falling flecks
     },
     crypts: {
         id: 'crypts',
         name: 'The Crypts',
-        subtitle: 'The Sunless Deep',
-        bg: '#08080e',
-        grade: '#4a4663',       // cold violet-grey sepulchral grade
-        gradeAlpha: 0.34,
-        unlockBosses: 6,        // a deeper biome gated behind 6 lifetime bosses
+        subtitle: 'The Sunless Night',
+        bg: '#06060c',
+        groundFill: '#16131f',  // near-black violet stone (darkens hard)
+        groundFillAlpha: 0.52,
+        grade: '#2e2a4a',       // cold sepulchral violet
+        gradeAlpha: 0.30,
+        darkness: 1.0,          // NIGHT — darkest; the veil presses in fully
+        unlockBosses: 6,
         accent: '#b9a8e0',
         weather: 'snow',        // pale motes read as drifting crypt-dust
     },
+    dunes: {
+        id: 'dunes',
+        name: 'The Dunes',
+        subtitle: 'Sunscorch Expanse',
+        bg: '#1a1308',
+        groundFill: '#c8a55c',  // warm tan sand (lightens to desert)
+        groundFillAlpha: 0.50,
+        grade: '#d8a648',       // ochre heat haze
+        gradeAlpha: 0.12,
+        darkness: 0.46,         // SANDY — bright scorching daylight
+        unlockBosses: 9,
+        accent: '#ffdf9a',
+        weather: 'embers',      // shimmering heat / blown sand motes
+    },
 };
 
-export const MAP_ORDER = ['emberwood', 'hollowreach', 'crypts'];
+export const MAP_ORDER = ['emberwood', 'hollowreach', 'crypts', 'dunes'];
 export const DEFAULT_MAP = 'emberwood';
 
 export function getMap(id) {

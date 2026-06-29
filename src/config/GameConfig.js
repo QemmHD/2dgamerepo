@@ -371,8 +371,14 @@ export const BOSS = {
     // while 30 min lands exactly on the 7× ceiling.
     hpPerMinute: 0.20,
     maxHpMul: 7.0,
-    resistPerMinute: 0.012,
-    maxResist: 0.35,
+    // Damage RESISTANCE is the one stat that directly cancels a player's
+    // damage investment — so a heavily-geared/grinded build feels like it "got
+    // nothing" if the boss just soaks more. Kept LOW (was 0.012/min → 0.35 cap)
+    // so gear + permanent upgrades visibly shred bosses faster; the fight stays
+    // challenging through HP scaling (which in-run leveling AND gear both beat),
+    // never through nullifying damage. Now ~half: 30m boss soaks 18%, not 35%.
+    resistPerMinute: 0.006,
+    maxResist: 0.18,
     // A boss is a telegraphed EVENT: a warning window (BOSS INCOMING) lets the
     // player reposition before it lands. It arrives with a themed opening
     // group, and crossing 75 / 50 / 25% HP each fires ONE support wave + ramps
