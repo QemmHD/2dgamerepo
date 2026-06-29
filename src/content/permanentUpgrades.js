@@ -45,6 +45,16 @@ export const PERMANENT_UPGRADES = [
         },
     },
     {
+        id: 'critChance',
+        name: 'Keen Ember',
+        description: '+1.5% critical strike chance per level',
+        maxLevel: 12,
+        costAt(level) { return 14 + level * 7; },
+        apply(player, level) {
+            player.critChance = Math.min(0.8, (player.critChance ?? 0) + 0.015 * level);
+        },
+    },
+    {
         id: 'xpGain',
         name: 'Soulgleam',
         description: '+5% XP from gems per level',

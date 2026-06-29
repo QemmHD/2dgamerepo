@@ -1262,7 +1262,7 @@ export class Game {
 
         for (const e of this.enemies) {
             if (!e.active) continue;
-            e.update(dt, this.player, this.enemyProjectiles);
+            e.update(dt, this.player, this.enemyProjectiles, this.obstacleSystem);
             // Enemies (including elites + bosses) can't walk through walls.
             // Resolving after their move keeps them chasing while sliding along
             // obstacles instead of clipping through or stacking inside them.

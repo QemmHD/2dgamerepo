@@ -404,7 +404,11 @@ function drawMonkey(size, frame, opts = {}) {
     ctx.quadraticCurveTo(cx + 60, bodyY + 28, cx + 46, bodyY - 16);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = CLOAK;
+    const cloakGrad = ctx.createLinearGradient(cx, bodyY - 16, cx, bodyY + 52);
+    cloakGrad.addColorStop(0, CLOAK_LIGHT);
+    cloakGrad.addColorStop(0.5, CLOAK);
+    cloakGrad.addColorStop(1, CLOAK_DARK);
+    ctx.fillStyle = cloakGrad;
     ctx.beginPath();
     ctx.moveTo(cx - 42, bodyY - 14);
     ctx.quadraticCurveTo(cx - 56, bodyY + 24, cx - 28, bodyY + 50);
@@ -423,12 +427,32 @@ function drawMonkey(size, frame, opts = {}) {
     ctx.fill();
 
     // ── Body ──────────────────────────────────────────────────────────
-    ctx.fillStyle = FUR;
+    // Volumetric shading: a radial gradient seats the light up-and-left and
+    // rolls the form into shadow on the lower-right, so the torso reads as a
+    // rounded mass instead of a flat blob. Built from the character palette so
+    // every recolored hero keeps its own tones.
+    const bodyGrad = ctx.createRadialGradient(cx - 13, bodyY - 14, 5, cx + 4, bodyY + 12, 56);
+    bodyGrad.addColorStop(0, FUR_LIGHT);
+    bodyGrad.addColorStop(0.5, FUR);
+    bodyGrad.addColorStop(1, FUR_DARK);
+    ctx.fillStyle = bodyGrad;
     ctx.beginPath();
     ctx.ellipse(cx, bodyY + 4, 36, 42, 0, 0, TWO_PI);
     ctx.fill();
-    // Belly
-    ctx.fillStyle = FACE;
+    // Soft rim light along the upper-left silhouette for a sculpted edge.
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = FUR_LIGHT;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(cx, bodyY + 4, 33, 39, 0, Math.PI * 1.05, Math.PI * 1.75);
+    ctx.stroke();
+    ctx.restore();
+    // Belly — a gentle vertical gradient gives it depth rather than a flat patch.
+    const bellyGrad = ctx.createLinearGradient(cx, bodyY - 6, cx, bodyY + 36);
+    bellyGrad.addColorStop(0, FACE);
+    bellyGrad.addColorStop(1, FUR_LIGHT);
+    ctx.fillStyle = bellyGrad;
     ctx.beginPath();
     ctx.ellipse(cx, bodyY + 14, 18, 22, 0, 0, TWO_PI);
     ctx.fill();
@@ -541,6 +565,15 @@ function drawMonkey(size, frame, opts = {}) {
 
     // ── Head (front of body) ─────────────────────────────────────────
     const headY = bodyY - 44;
+    // Ambient-occlusion shadow where the head seats into the shoulders, so the
+    // head reads as resting ON the body rather than floating beside it.
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = FUR_DARK;
+    ctx.beginPath();
+    ctx.ellipse(cx, headY + 33, 25, 11, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
     // Ears outer
     ctx.fillStyle = FUR_DARK;
     ctx.beginPath();
@@ -557,8 +590,12 @@ function drawMonkey(size, frame, opts = {}) {
     ctx.arc(cx + 36, headY - 6, 8, 0, TWO_PI);
     ctx.fill();
 
-    // Skull
-    ctx.fillStyle = FUR;
+    // Skull — radial gradient gives the head a rounded, lit volume.
+    const headGrad = ctx.createRadialGradient(cx - 12, headY - 14, 4, cx + 2, headY + 8, 46);
+    headGrad.addColorStop(0, FUR_LIGHT);
+    headGrad.addColorStop(0.55, FUR);
+    headGrad.addColorStop(1, FUR_DARK);
+    ctx.fillStyle = headGrad;
     ctx.beginPath();
     ctx.arc(cx, headY, 38, 0, TWO_PI);
     ctx.fill();
@@ -567,6 +604,16 @@ function drawMonkey(size, frame, opts = {}) {
     ctx.beginPath();
     ctx.ellipse(cx, headY + 6, 25, 26, 0, 0, TWO_PI);
     ctx.fill();
+    // Soft contour shadow around the muzzle so the face sits inside the fur
+    // rather than reading as a pasted-on disc.
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = FUR_DARK;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, headY + 6, 25, 26, 0, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+    ctx.restore();
     // Hair tuft
     ctx.fillStyle = FUR_LIGHT;
     ctx.beginPath();

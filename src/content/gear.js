@@ -63,7 +63,7 @@ export const GEAR = {
     },
     t_kindlesigil: {
         id: 't_kindlesigil', name: 'Kindle Sigil', category: 'trinket', rarity: 'epic',
-        description: 'Quickens every spark.', buffs: { damagePct: 0.06, cooldownPct: 0.04 },
+        description: 'Quickens every spark.', buffs: { damagePct: 0.06, cooldownPct: 0.04, critChancePct: 0.05 },
     },
     t_phoenixtear: {
         id: 't_phoenixtear', name: 'Phoenix Tear', category: 'trinket', rarity: 'legendary',
@@ -71,7 +71,7 @@ export const GEAR = {
     },
     t_eternalember: {
         id: 't_eternalember', name: 'Eternal Ember', category: 'trinket', rarity: 'mythic',
-        description: 'It has burned since the first vigil.', buffs: { damagePct: 0.08, cooldownPct: 0.05, xpPct: 0.06 },
+        description: 'It has burned since the first vigil.', buffs: { damagePct: 0.08, cooldownPct: 0.05, xpPct: 0.06, critChancePct: 0.08 },
     },
 
     // ── Armor ───────────────────────────────────────────────────────────
@@ -156,6 +156,7 @@ const BUFF_LABELS = {
     chestLuck:       (v) => `+${Math.round(v * 100)}% chest luck`,
     cooldownPct:     (v) => `-${Math.round(v * 100)}% cooldowns`,
     damageTakenPct:  (v) => `-${Math.round(v * 100)}% damage taken`,
+    critChancePct:   (v) => `+${Math.round(v * 100)}% crit chance`,
     startCoins:      (v) => `+${v} starting coins`,
 };
 
@@ -182,5 +183,6 @@ export function applyBuffs(player, buffs) {
     if (buffs.chestLuck)      player.chestLuck += buffs.chestLuck;
     if (buffs.cooldownPct)    player.cooldownMul *= 1 - buffs.cooldownPct;
     if (buffs.damageTakenPct) player.damageTakenMul *= 1 - buffs.damageTakenPct;
+    if (buffs.critChancePct)  player.critChance = Math.min(0.8, (player.critChance ?? 0) + buffs.critChancePct);
     if (buffs.startCoins)     player.coins = (player.coins ?? 0) + buffs.startCoins;
 }

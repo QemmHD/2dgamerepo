@@ -137,6 +137,50 @@ export const PASSIVES = {
             player.freezeChanceBonus += 0.04;
         },
     },
+
+    // ── Offensive (crit) passives ───────────────────────────────────────
+    emberzeal: {
+        id: 'emberzeal',
+        name: 'Emberzeal',
+        description: '+6% critical strike chance per level.',
+        maxLevel: 5,
+        apply(player) {
+            player.critChance = Math.min(0.8, (player.critChance ?? 0) + 0.06);
+        },
+    },
+
+    executioner: {
+        id: 'executioner',
+        name: 'Executioner',
+        description: '+35% critical strike damage per level.',
+        maxLevel: 4,
+        apply(player) {
+            player.critMul = (player.critMul ?? 2) + 0.35;
+        },
+    },
+
+    lastLight: {
+        id: 'lastLight',
+        name: 'Last Light',
+        description: 'Below 35% HP, deal +14% damage per level — burn brightest.',
+        maxLevel: 4,
+        apply(player) {
+            player.lowHpDamageBonus = (player.lowHpDamageBonus ?? 0) + 0.14;
+        },
+    },
+
+    // ── Hybrid bulwark ──────────────────────────────────────────────────
+    stoneheart: {
+        id: 'stoneheart',
+        name: 'Stoneheart',
+        description: '+16 max HP and −4% damage taken per level.',
+        maxLevel: 5,
+        apply(player) {
+            player.maxHp += 16;
+            player.hp = Math.min(player.hp + 16, player.maxHp);
+            player.damageTakenMul *= 0.96;
+        },
+    },
 };
 
 export const PASSIVE_IDS = Object.keys(PASSIVES);
