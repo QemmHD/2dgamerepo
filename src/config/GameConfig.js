@@ -618,6 +618,34 @@ export const WAVE_LIMITS = {
     maxEliteChance: 0.4,
 };
 
+// ── Difficulty tiers (pre-run pick) ──────────────────────────────────────
+// A flat multiplier layer folded INTO the wave state each frame (after the
+// endless/pressure scaling) + applied to boss HP. Hard grants bonus battle-
+// pass XP. Stored as a validated string in the save (NOT in settings{}).
+export const DIFFICULTY = {
+    easy:   { id: 'easy',   label: 'Recruit', color: '#7fe0a0', hp: 0.70, speed: 0.90, damage: 0.70, elite: 0.6, xpBonus: 0,    desc: 'Gentler foes. For a relaxed run.' },
+    normal: { id: 'normal', label: 'Vigil',   color: '#cdd6e2', hp: 1.00, speed: 1.00, damage: 1.00, elite: 1.0, xpBonus: 0,    desc: 'The intended challenge.' },
+    hard:   { id: 'hard',   label: 'Nightmare', color: '#ff6a4a', hp: 1.55, speed: 1.12, damage: 1.40, elite: 1.6, xpBonus: 0.5, desc: 'Tougher, faster, more elites. +50% Pass XP.' },
+};
+export const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
+
+// ── Run modifiers / "Trials" (pre-run toggles) ───────────────────────────
+// Transient run-only choices (never saved). Each multiplies a wave/player
+// scalar and adds a battle-pass-XP + coin bonus as the reward for the extra
+// challenge. Combined bonus is capped in Game so stacks can't runaway.
+//   wave-side: hp/speed/damage/elite/cap/interval (fold into waveState)
+//   player-side: playerDamage / playerPickup / playerIncoming (applied at run start)
+export const RUN_MODIFIERS = [
+    { id: 'doubleElite', name: 'Elite Hunt',    desc: 'Elites spawn far more often.',        elite: 2.2,        xpBonus: 0.20, coinBonus: 0.15 },
+    { id: 'swarm',       name: 'Endless Swarm',  desc: '+35% enemy cap, faster spawns.',      cap: 1.35, interval: 0.78, xpBonus: 0.25, coinBonus: 0.15 },
+    { id: 'frenzy',      name: 'Frenzy',         desc: 'Enemies move 20% faster.',            speed: 1.20,       xpBonus: 0.20, coinBonus: 0.10 },
+    { id: 'enfeebled',   name: 'Enfeebled',      desc: 'Your weapons deal 15% less damage.',  playerDamage: 0.85, xpBonus: 0.20, coinBonus: 0.15 },
+    { id: 'fragile',     name: 'Glass',          desc: 'You take 30% more damage.',           playerIncoming: 1.30, xpBonus: 0.25, coinBonus: 0.15 },
+    { id: 'tunnel',      name: 'Tunnel Vision',  desc: 'Pickup range halved.',                playerPickup: 0.5,  xpBonus: 0.15, coinBonus: 0.10 },
+];
+// Cap on the total run-XP/coin bonus from stacked modifiers (×difficulty).
+export const RUN_MODIFIER_MAX_BONUS = 1.0;
+
 // Pressure layers ON TOP of the time-based wave tiers to make a wave feel like
 // a thing you must CLEAR, not just outlast. Pressure rises while the field
 // fills up and you're NOT thinning it, and falls as you rack up kills — so a

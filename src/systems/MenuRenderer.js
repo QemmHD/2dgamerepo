@@ -9,7 +9,7 @@
 // one place (here) and is never duplicated for hit-testing.
 
 import { roundRectPath, clamp01, easeOutCubic } from '../render/DrawUtils.js';
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS } from '../config/GameConfig.js';
 import { rarityColor, rarityName, RARITIES } from '../content/rarities.js';
 import {
     GEAR, GEAR_CATEGORIES, GEAR_CATEGORY_LABELS, gearByCategory, buffSummary,
@@ -40,6 +40,7 @@ export const MENU_TABS = [
     { id: 'character', label: 'CHARACTER', accent: '#c08bff' },
     { id: 'shop', label: 'SHOP', accent: '#ff9a4a' },
     { id: 'battlepass', label: 'BATTLE PASS', accent: '#ff5a8a' },
+    { id: 'stats', label: 'STATS', accent: '#a8d5f7' },
     { id: 'settings', label: 'SETTINGS', accent: '#9fb0c4' },
 ];
 
@@ -128,6 +129,7 @@ export class MenuRenderer {
         else if (tab === 'character') this._drawCharacter(ctx, state);
         else if (tab === 'shop') this._drawShop(ctx, state);
         else if (tab === 'battlepass') this._drawBattlePass(ctx, state);
+        else if (tab === 'stats') this._drawStats(ctx, state);
         else if (tab === 'settings') this._drawSettings(ctx, state);
 
         // Toast (transient result message, e.g. claim / case errors).
@@ -304,9 +306,86 @@ export class MenuRenderer {
             ctx.globalAlpha = 1;
             this._hot(bx, by, bw, 64, 'selectMap', { id: m.id });
         }
+        // ── Difficulty + Trials (pre-run "shape your run") ─────────────────
+        const startBtn = { x: rx + 28, y: c.y + c.h - 96, w: rw - 56, h: 78 };
+        const curDiff = state.difficulty || 'normal';
+        const activeMods = state.selectedModifiers || [];
+        // Difficulty row (3 tiers).
+        const dRowY = ly + 118;
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 20px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText('Difficulty', rx + 28, dRowY - 10);
+        const dW = (rw - 56 - 20) / 3;
+        for (let i = 0; i < DIFFICULTY_ORDER.length; i++) {
+            const d = DIFFICULTY[DIFFICULTY_ORDER[i]];
+            const dx = rx + 28 + i * (dW + 10), dy = dRowY;
+            const sel = curDiff === d.id;
+            roundRectPath(ctx, dx, dy, dW, 50, 9);
+            ctx.fillStyle = sel ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)'; ctx.fill();
+            ctx.strokeStyle = sel ? d.color : 'rgba(255,255,255,0.14)'; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+            ctx.fillStyle = sel ? d.color : '#fff'; ctx.font = `700 18px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(d.label, dx + dW / 2, dy + 25);
+            this._hot(dx, dy, dW, 50, 'setDifficulty', d.id);
+        }
+        // Trials toggles (6 chips, 3×2). Active ones glow + show the reward %.
+        const tY = dRowY + 64;
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 20px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        const bonusPct = Math.round(activeMods.reduce((a, id) => {
+            const m = RUN_MODIFIERS.find((x) => x.id === id); return a + (m ? (m.xpBonus || 0) : 0);
+        }, 0) * 100);
+        ctx.fillText(`Trials${bonusPct > 0 ? `  (+${bonusPct}% Pass XP)` : ''}`, rx + 28, tY - 10);
+        const tcols = 3, tgap = 8;
+        const tW = (rw - 56 - tgap * (tcols - 1)) / tcols;
+        for (let i = 0; i < RUN_MODIFIERS.length; i++) {
+            const m = RUN_MODIFIERS[i];
+            const col = i % tcols, row = Math.floor(i / tcols);
+            const mx = rx + 28 + col * (tW + tgap), my = tY + row * 44;
+            const on = activeMods.includes(m.id);
+            roundRectPath(ctx, mx, my, tW, 38, 8);
+            ctx.fillStyle = on ? 'rgba(255,206,84,0.16)' : 'rgba(255,255,255,0.03)'; ctx.fill();
+            ctx.strokeStyle = on ? '#ffce54' : 'rgba(255,255,255,0.12)'; ctx.lineWidth = on ? 3 : 2; ctx.stroke();
+            ctx.fillStyle = on ? '#ffce54' : '#cdd6e2'; ctx.font = `700 15px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(m.name, mx + tW / 2, my + 19);
+            this._hot(mx, my, tW, 38, 'toggleModifier', m.id);
+        }
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+
         // START RUN.
-        const btn = { x: rx + 28, y: c.y + c.h - 110, w: rw - 56, h: 84 };
-        this._button(ctx, btn, 'START RUN', { primary: true, fontSize: 38, sub: 'Space / Enter', action: 'startRun' });
+        this._button(ctx, startBtn, 'START RUN', { primary: true, fontSize: 34, sub: 'Space / Enter', action: 'startRun' });
+    }
+
+    // Lifetime stats showcase — surfaces what the save has always tracked.
+    _drawStats(ctx, state) {
+        const c = this._contentRect();
+        this._panel(ctx, c.x, c.y, c.w, c.h);
+        const s = (state.saveData && state.saveData.stats) || {};
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#a8d5f7'; ctx.font = `800 34px ${FONT}`;
+        ctx.fillText('Lifetime Vigil', c.x + 34, c.y + 50);
+        const fmtTime = (sec) => { sec = Math.floor(sec || 0); const m = Math.floor(sec / 60), ss = sec % 60; return `${m}:${String(ss).padStart(2, '0')}`; };
+        const rows = [
+            ['Runs', s.runs || 0], ['Total kills', s.totalKills || 0],
+            ['Bosses felled', s.totalBosses || 0], ['Coins earned', s.totalCoinsEarned || 0],
+            ['Cases opened', s.casesOpened || 0], ['Playtime', fmtTime(s.playtimeSec)],
+            ['Best survival', fmtTime(s.bestTime)], ['Best wave', s.bestWave || 0],
+            ['Best level', s.bestLevel || 0], ['Best kills (run)', s.bestKills || 0],
+            ['Best Gauntlet score', s.bestGauntletScore || 0], ['Gauntlet runs', s.gauntletRuns || 0],
+            ['Nightmare wins', s.hardWins || 0], ['Nightmare bosses', s.eliteBossesDefeated || 0],
+        ];
+        const cols = 2, gap = 24;
+        const colW = (c.w - 68 - gap) / cols;
+        const rowH = 46;
+        const top = c.y + 86;
+        for (let i = 0; i < rows.length; i++) {
+            const col = i % cols, row = Math.floor(i / cols);
+            const x = c.x + 34 + col * (colW + gap), y = top + row * rowH;
+            roundRectPath(ctx, x, y, colW, rowH - 8, 8);
+            ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `600 18px ${FONT}`; ctx.textAlign = 'left';
+            ctx.fillText(rows[i][0], x + 16, y + 25);
+            ctx.fillStyle = '#fff'; ctx.font = `800 22px ${FONT}`; ctx.textAlign = 'right';
+            ctx.fillText(String(rows[i][1]), x + colW - 16, y + 26);
+        }
+        ctx.textAlign = 'left';
     }
 
     // Avatar honoring aura/fur/cloak/hat cosmetics. When `sprite` (the real
