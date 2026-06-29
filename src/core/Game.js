@@ -427,6 +427,8 @@ export class Game {
         this.coins = [];
         // Cached reference to the strongest active boss for the boss HP bar.
         this.activeBossRef = null;
+        // Boss arena confinement ({ x, y, r } while a boss fight is sealed; null otherwise).
+        this.arena = null;
         this.bossesDefeated = 0;
         this.runSummary = null;
 
@@ -685,6 +687,7 @@ export class Game {
         if (!res.ok) { this._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
         // The reward is already applied to the save; the overlay presents it
         // with a scrolling reel that decelerates onto the won item.
+        this.audio.caseOpen();
         const { reel, landingIndex } = buildCaseReel(caseType, res);
         this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime: 2.6 };
     }
@@ -898,6 +901,16 @@ export class Game {
         return { x: cx, y: cy };
     }
 
+    // Pull an entity back inside the active boss arena ring (no-op if no arena).
+    _confineToArena(ent, margin = 0) {
+        const a = this.arena;
+        if (!a) return;
+        const dx = ent.x - a.x, dy = ent.y - a.y;
+        const d = Math.hypot(dx, dy);
+        const max = a.r - margin;
+        if (d > max && d > 0) { ent.x = a.x + (dx / d) * max; ent.y = a.y + (dy / d) * max; }
+    }
+
     _spawnBoss(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
@@ -910,8 +923,12 @@ export class Game {
                 if (this._inView(e.x, e.y, 0)) this.particles.deathBurst(e.x, e.y, '#6a7a9a');
             }
         }
+        // Seal the fight into an arena centered on the player — both the player
+        // and the boss are confined to it (see the per-frame clamps), so you
+        // can't run away and plink; you have to dodge it up close.
+        this.arena = { x: this.player.x, y: this.player.y, r: BOSS.arenaRadius };
         const angle = Math.random() * TWO_PI;
-        const dist = BOSS.spawnRingDistance;
+        const dist = BOSS.arenaSpawnDistance; // inside the arena ring
         const halfW = WORLD_WIDTH / 2 - 100;
         const halfH = WORLD_HEIGHT / 2 - 100;
         let x = clamp(this.player.x + Math.cos(angle) * dist, -halfW, halfW);
@@ -926,9 +943,12 @@ export class Game {
         // index (0 = first). Time-scaling is capped first, then the encounter
         // tier multiplies on top.
         const encounter = this.bossesDefeated;
-        const tierMul = 1 + encounter * 0.6;        // 1×, 1.6×, 2.2× …
+        // Player out-scales bosses by mid-run, so each successive boss is a big
+        // HP step up (1× / 1.8× / 2.6× …) to stay a real fight; damage ramps
+        // only mildly (the boss already hits hard enough).
+        const tierMul = 1 + encounter * 0.8;
         const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul;
-        const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.18);
+        const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.12);
         const boss = new Enemy(id, x, y, {
             healthMul: bossHpMul,
             speedMul: this.waveState.speedMul * (1 + encounter * 0.05),
@@ -1286,7 +1306,12 @@ export class Game {
                 this.resetConfirmTimer -= dt;
                 if (this.resetConfirmTimer <= 0) this.resetConfirming = false;
             }
-            if (this.caseAnim) this.caseAnim.age += dt;
+            if (this.caseAnim) {
+                const wasSpinning = this.caseAnim.age < (this.caseAnim.spinTime ?? 2.6);
+                this.caseAnim.age += dt;
+                // Fire the reveal chime the instant the reel settles on the prize.
+                if (wasSpinning && this.caseAnim.age >= (this.caseAnim.spinTime ?? 2.6)) this.audio.reveal();
+            }
             if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
             return;
         }
@@ -1364,6 +1389,8 @@ export class Game {
             const r = this.obstacleSystem.resolveCircle(this.player.x, this.player.y, this.player.radius);
             this.player.x = r.x; this.player.y = r.y;
         }
+        // Boss arena: confine the player inside the ring (can't flee the fight).
+        if (this.arena) this._confineToArena(this.player, this.player.radius);
         // Boss = main event: while a boss is incoming or alive, halt the normal
         // trash spawner so the fight is the player vs. the boss (and only the
         // boss's own themed adds), not a swarm. Normal spawns resume once the
@@ -1387,6 +1414,8 @@ export class Game {
             // a wall push-out near an edge can't drift an enemy off the map.
             e.x = clamp(r.x, -WORLD_WIDTH / 2 + e.radius, WORLD_WIDTH / 2 - e.radius);
             e.y = clamp(r.y, -WORLD_HEIGHT / 2 + e.radius, WORLD_HEIGHT / 2 - e.radius);
+            // Keep the boss inside its own arena so it can't be kited out of it.
+            if (this.arena && e.boss) this._confineToArena(e, e.radius);
         }
         // Soft enemy-vs-enemy separation so a swarm doesn't collapse onto one
         // pixel (runs after movement + obstacle resolve so it can't shove an
@@ -1549,8 +1578,9 @@ export class Game {
                     this.waveDirector.announce(`${e.name.toUpperCase()} DEFEATED!`, 3.0, '#ff6a4a');
                     this.particles.bossDeathBurst(e.x, e.y, '#ff8c4a');
                     this._shake(SCREEN_SHAKE.intensity * 1.1, 0.5);
-                    // Back to the driving theme once the duel ends.
+                    // Back to the driving theme once the duel ends; lift the arena.
                     this.audio.playMusic('gameplay');
+                    this.arena = null;
                 } else if (e.elite) {
                     // Elites: chance at a chest, chance at a coin burst.
                     if (Math.random() < CHEST.eliteDropChance) {
@@ -1631,6 +1661,9 @@ export class Game {
                 this.activeBossRef = e;
             }
         }
+        // Safety net: if a boss arena is up but no boss is alive (defeated by
+        // any means), lift the arena so the player isn't trapped.
+        if (this.arena && !this.activeBossRef) this.arena = null;
 
         compactInPlace(this.enemies);
         compactInPlace(this.projectiles);
@@ -1731,6 +1764,29 @@ export class Game {
         // SAME culled loops so light cost scales with visible emitters too.
         const cull = (e) => this._inView(e.x, e.y, CULL_MARGIN);
         const Lc = GFX.lighting;
+
+        // Boss arena boundary ring — a glowing wall the player + boss are sealed
+        // inside. Drawn on the ground so entities render over it; a soft inner
+        // glow band + a pulsing dashed edge sell it as an energy barrier.
+        if (this.arena) {
+            const a = this.arena;
+            ctx.save();
+            const pulse = 0.6 + 0.4 * Math.sin(this.time * 4);
+            // Inner glow band just inside the wall.
+            const band = ctx.createRadialGradient(a.x, a.y, a.r - 90, a.x, a.y, a.r);
+            band.addColorStop(0, 'rgba(255,90,60,0)');
+            band.addColorStop(1, `rgba(255,90,60,${0.18 * pulse})`);
+            ctx.fillStyle = band;
+            ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, TWO_PI); ctx.fill();
+            // The wall itself.
+            ctx.strokeStyle = BOSS.arenaColor;
+            ctx.globalAlpha = 0.5 + 0.4 * pulse;
+            ctx.lineWidth = 6;
+            ctx.setLineDash([34, 22]);
+            ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, TWO_PI); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
 
         // Boss telegraph decals — drawn on the GROUND, below entities, so the
         // boss paints over them. A warning ring that fills in across the

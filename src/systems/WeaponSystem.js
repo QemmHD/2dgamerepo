@@ -15,6 +15,10 @@ import { compactInPlace, TWO_PI } from '../core/MathUtils.js';
 // camera follows the player, so the player is the screen center). A small
 // margin lets a foe right at the edge still be shot, avoiding a dead ring.
 const TARGET_MARGIN = 60;
+// Chaos pass: auto-aim only engages enemies within this radius (was the whole
+// screen). Shots no longer reach across the arena, so enemies close right up on
+// the player before dying — far more frantic. Radius weapons are unaffected.
+const AUTO_AIM_RANGE = 620;
 import { WEAPONS } from '../content/weapons.js';
 
 function weaponMaxLevel(def) {
@@ -92,7 +96,13 @@ export class WeaponSystem {
         // On-screen test for auto-aim target selection (player-centered).
         const halfW = INTERNAL_WIDTH / 2 + TARGET_MARGIN;
         const halfH = INTERNAL_HEIGHT / 2 + TARGET_MARGIN;
-        const inView = (x, y) => Math.abs(x - player.x) <= halfW && Math.abs(y - player.y) <= halfH;
+        const rangeSq = AUTO_AIM_RANGE * AUTO_AIM_RANGE;
+        // Target only enemies that are both within the shorter auto-aim radius
+        // AND on-screen (so shots never fly at far/off-screen foes).
+        const inView = (x, y) => {
+            const dx = x - player.x, dy = y - player.y;
+            return dx * dx + dy * dy <= rangeSq && Math.abs(dx) <= halfW && Math.abs(dy) <= halfH;
+        };
         const ctx = {
             player,
             enemies,
