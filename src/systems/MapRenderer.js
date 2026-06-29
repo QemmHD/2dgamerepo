@@ -58,6 +58,9 @@ export class MapRenderer {
         // Set by Game from reducedEffects / the FPS governor: when true, the
         // cosmetic decoration contact shadows are skipped to shed fill cost.
         this.lowQuality = false;
+        // Active biome theme ({ bg, grade, gradeAlpha }); null = default dusk.
+        // Set by Game at run start from the selected map.
+        this.theme = null;
     }
 
     _ensureTilePattern(ctx) {
@@ -74,21 +77,34 @@ export class MapRenderer {
 
     drawBackground(ctx, camera, viewW, viewH) {
         // Solid base color first — if the pattern ever fails to build
-        // we'd rather see a dark backdrop than transparent gaps.
-        ctx.fillStyle = MAP.backgroundColor;
+        // we'd rather see a dark backdrop than transparent gaps. The active
+        // biome theme can override the base color.
+        const theme = this.theme;
+        ctx.fillStyle = (theme && theme.bg) || MAP.backgroundColor;
         const left = camera.x - viewW / 2;
         const top = camera.y - viewH / 2;
         ctx.fillRect(left, top, viewW, viewH);
 
         this._ensureTilePattern(ctx);
-        if (!this.tilePattern) return;
+        if (this.tilePattern) {
+            // Tile pattern is anchored at world (0,0). Save/restore so the
+            // pattern transform we apply doesn't leak out.
+            ctx.save();
+            ctx.fillStyle = this.tilePattern;
+            ctx.fillRect(left, top, viewW, viewH);
+            ctx.restore();
+        }
 
-        // Tile pattern is anchored at world (0,0). Save/restore so the
-        // pattern transform we apply doesn't leak out.
-        ctx.save();
-        ctx.fillStyle = this.tilePattern;
-        ctx.fillRect(left, top, viewW, viewH);
-        ctx.restore();
+        // Biome color grade: a translucent tint multiplied over the ground so
+        // an alternate map reads as a different place without new sprite art.
+        if (theme && theme.grade && theme.gradeAlpha > 0) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'multiply';
+            ctx.globalAlpha = theme.gradeAlpha;
+            ctx.fillStyle = theme.grade;
+            ctx.fillRect(left, top, viewW, viewH);
+            ctx.restore();
+        }
     }
 
     _getChunkDecorations(cx, cy) {

@@ -8,6 +8,7 @@
 import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR, GEAR_LIST } from '../content/gear.js';
 import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST } from '../content/cosmetics.js';
 import { CHARACTER_IDS, DEFAULT_CHARACTER } from '../content/characters.js';
+import { MAPS, DEFAULT_MAP, isMapUnlocked } from '../content/maps.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 
@@ -68,6 +69,8 @@ function defaultData() {
         selectedCharacter: DEFAULT_CHARACTER,
         // Ember Forge pity counter (forges since the last Rare+).
         forge: { pity: 0 },
+        // Selected biome/map id (see content/maps.js); unlock-gated by bosses.
+        selectedMap: DEFAULT_MAP,
         version: 4,
     };
 }
@@ -196,7 +199,9 @@ export class SaveSystem {
         const dfr = data.forge && typeof data.forge === 'object' ? data.forge : {};
         const forge = { pity: Number.isFinite(dfr.pity) && dfr.pity >= 0 ? Math.floor(dfr.pity) : 0 };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, version: 4 };
+        const selectedMap = MAPS[data.selectedMap] ? data.selectedMap : DEFAULT_MAP;
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, selectedMap, version: 4 };
     }
 
     save() {
@@ -333,6 +338,21 @@ export class SaveSystem {
     setSelectedCharacter(id) {
         if (!CHARACTER_IDS.includes(id)) return false;
         this.data.selectedCharacter = id;
+        this.save();
+        return true;
+    }
+
+    // ── Map selection (unlock-gated by lifetime boss kills) ──────────────
+    getSelectedMap() {
+        const id = this.data.selectedMap ?? DEFAULT_MAP;
+        // Defensively fall back if a saved map isn't unlocked (e.g. after a reset).
+        return isMapUnlocked(id, this.data.stats?.totalBosses) ? id : DEFAULT_MAP;
+    }
+
+    setSelectedMap(id) {
+        if (!MAPS[id]) return false;
+        if (!isMapUnlocked(id, this.data.stats?.totalBosses)) return false;
+        this.data.selectedMap = id;
         this.save();
         return true;
     }
