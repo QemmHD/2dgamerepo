@@ -1922,6 +1922,10 @@ export class Game {
             ctx.fillStyle = '#0a0e16';
             ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
             this.ui.draw(ctx, this._buildUIState());
+            // The Cinder Wager overlay is Game-drawn (not part of the menu
+            // renderer), so it must be painted here — the start screen returns
+            // before the gameplay-tail overlay block below.
+            if (this.wager) this._drawWager(ctx);
             return;
         }
 
