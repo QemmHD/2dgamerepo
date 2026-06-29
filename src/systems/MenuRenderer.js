@@ -311,8 +311,9 @@ export class MenuRenderer {
         const startBtn = { x: rx + 28, y: c.y + c.h - 96, w: rw - 56, h: 78 };
         const curDiff = state.difficulty || 'normal';
         const activeMods = state.selectedModifiers || [];
-        // Difficulty row (3 tiers).
-        const dRowY = ly + 118;
+        // Difficulty row (3 tiers). Sits well below the (tall, two-line) biome
+        // chips so the "Difficulty" label can't collide with the biome row.
+        const dRowY = ly + 146;
         ctx.fillStyle = '#cdd6e2'; ctx.font = `700 20px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillText('Difficulty', rx + 28, dRowY - 10);
         const dW = (rw - 56 - 20) / 3;
@@ -328,7 +329,8 @@ export class MenuRenderer {
             this._hot(dx, dy, dW, 50, 'setDifficulty', d.id);
         }
         // Trials toggles (6 chips, 3×2). Active ones glow + show the reward %.
-        const tY = dRowY + 64;
+        // Offset clears the 50px difficulty buttons + the "Trials" label.
+        const tY = dRowY + 92;
         ctx.fillStyle = '#cdd6e2'; ctx.font = `700 20px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         const bonusPct = Math.round(activeMods.reduce((a, id) => {
             const m = RUN_MODIFIERS.find((x) => x.id === id); return a + (m ? (m.xpBonus || 0) : 0);
