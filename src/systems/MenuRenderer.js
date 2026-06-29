@@ -106,16 +106,31 @@ export class MenuRenderer {
         this.hotspots = [];
         const sa = this._sa();
         const save = state.saveData;
+        // Wall-clock seconds for menu animations (title shimmer, tab glow,
+        // START pulse, selected-chip glow). Frame-rate independent.
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+        if (this._t0 === undefined) this._t0 = now;
+        this._t = (now - this._t0) / 1000;
+        const t = this._t;
 
         // Backdrop.
         ctx.fillStyle = '#0a0d12';
         ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
 
-        // Header: title + coin bank.
+        // Header: title (animated warm shimmer + glow) + coin bank.
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#ffce54';
+        ctx.save();
+        const tg = ctx.createLinearGradient(sa.left + 56, 0, sa.left + 56 + 420, 0);
+        const off = Math.sin(t * 1.2) * 0.5 + 0.5;
+        tg.addColorStop(Math.max(0, off - 0.3), '#ffb43a');
+        tg.addColorStop(off, '#fff1b8');
+        tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
+        ctx.fillStyle = tg;
+        ctx.shadowColor = 'rgba(255,180,60,0.45)';
+        ctx.shadowBlur = 18;
         ctx.font = `800 52px ${FONT}`;
         ctx.fillText('EMBERWAKE', sa.left + 56, sa.top + 70);
+        ctx.restore();
         ctx.textAlign = 'right';
         ctx.fillStyle = '#ffd86b';
         ctx.font = `700 34px ${FONT}`;
@@ -158,22 +173,31 @@ export class MenuRenderer {
         const y = sa.top + 104;
         const h = 62;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const time = this._t || 0;
         for (let i = 0; i < MENU_TABS.length; i++) {
             const t = MENU_TABS[i];
             const x = x0 + i * (tabW + gap);
             const active = t.id === activeTab;
             const accent = t.accent || '#ffce54';
+            ctx.save();
+            if (active) { ctx.shadowColor = accent; ctx.shadowBlur = 14 + Math.sin(time * 4) * 6; }
             roundRectPath(ctx, x, y, tabW, h, 12);
             ctx.fillStyle = active ? accent : 'rgba(30,36,46,0.9)';
             ctx.fill();
+            ctx.restore();
             ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.1)';
             ctx.lineWidth = 2; ctx.stroke();
             ctx.fillStyle = active ? '#10141c' : 'rgba(235,240,248,0.85)';
             ctx.font = `700 ${tabW < 230 ? 20 : 23}px ${FONT}`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(t.label, x + tabW / 2, y + h / 2 + 1);
-            // Inactive tabs get a thin accent underline so each section keeps
-            // its color identity even when not selected.
-            if (!active) {
+            if (active) {
+                // Active tab gets a hue-cycling RGB underline that draws the eye.
+                const hue = (time * 90 + i * 40) % 360;
+                ctx.fillStyle = `hsl(${hue}, 95%, 62%)`;
+                ctx.fillRect(x + 12, y + h - 6, tabW - 24, 4);
+            } else {
+                // Inactive tabs keep a thin static accent underline (section identity).
                 ctx.fillStyle = accent;
                 ctx.globalAlpha = 0.7;
                 ctx.fillRect(x + 14, y + h - 7, tabW - 28, 3);
@@ -204,12 +228,8 @@ export class MenuRenderer {
         // The selected starting weapon drives the themed skin overlay so the
         // preview matches the in-game look (character + cosmetics + weapon).
         const skin = resolveWeaponSkin(resolveStartingWeapon(save));
-        // Wall-clock for the preview's subtle idle motion — derived from
-        // performance.now() so it's frame-rate independent (a 120Hz display
-        // doesn't animate 2× fast). Falls back to 0 (static) when unavailable.
-        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
-        if (this._t0 === undefined) this._t0 = now;
-        this._t = (now - this._t0) / 1000;
+        // this._t (wall-clock seconds, frame-rate independent) is set in draw()
+        // and drives the avatar's subtle idle motion.
         this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
@@ -262,98 +282,186 @@ export class MenuRenderer {
         roundRectPath(ctx, barX, barY, barW, 18, 9); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
         roundRectPath(ctx, barX, barY, barW * clamp01(prog.fraction), 18, 9); ctx.fillStyle = '#9a6cff'; ctx.fill();
 
-        // Right: equipped loadout chips + START RUN.
+        // ── Right column: equipped loadout + biome / difficulty / trials +
+        // START. The whole stack is laid out top→down with ONE vertical scale
+        // `s` so it always fits c.h — on short panels (iPhone landscape, where
+        // cover-fit crop shrinks the content rect) every row + gap compresses
+        // instead of overrunning the START button. ──────────────────────────
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+        const t = this._t || 0;
         const rx = c.x + cardW + 36;
         const rw = c.w - cardW - 36;
+        const innerX = rx + 28, innerW = rw - 56;
         this._panel(ctx, rx, c.y, rw, c.h);
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 26px ${FONT}`;
-        ctx.fillText('Equipped Loadout', rx + 28, c.y + 44);
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 24px ${FONT}`;
+        ctx.fillText('Equipped Loadout', innerX, c.y + 38);
+
         const eq = save.gear.equipped;
-        let ly = c.y + 78;
+        const curDiff = state.difficulty || 'normal';
+        const activeMods = state.selectedModifiers || [];
+
+        // START reserved at the bottom; the four sections fit in the gap above.
+        const startH = clamp(c.h * 0.12, 56, 84);
+        const startY = c.y + c.h - startH;
+        const top = c.y + 52;
+        const avail = startY - top - 12;
+        const nGear = GEAR_CATEGORIES.length;
+        const N = { gearRow: 52, gearGap: 9, sec: 18, lbl: 30, biome: 60, diff: 46, chip: 38, chipGap: 8 };
+        // The TRUE laid-out height for a given scale. Labels + chip rows have
+        // their own lower floors (so text stays legible), which is exactly why
+        // a naive avail/needed under-budgets — so we MEASURE with the real
+        // floors and binary-search the largest scale that fits `avail`. This
+        // keeps the stated "always fits c.h" invariant on any panel (the floors
+        // only affect how big things look when there's room, never overlap).
+        const lblScale = (s) => Math.max(s, 0.82);
+        const chipScale = (s) => Math.max(s, 0.8);
+        const fitH = (s) =>
+            nGear * N.gearRow * s + (nGear - 1) * N.gearGap * s + N.sec * s
+            + N.lbl * lblScale(s) + N.biome * s + N.sec * s
+            + N.lbl * lblScale(s) + N.diff * s + N.sec * s
+            + N.lbl * lblScale(s) + (2 * N.chip * chipScale(s) + N.chipGap * s);
+        let s = 1;
+        if (fitH(1) > avail) {                        // doesn't fit at full size → shrink to fit
+            let lo = 0.2, hi = 1;
+            for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fitH(mid) <= avail) lo = mid; else hi = mid; }
+            s = lo;
+        }
+        s = clamp(s, 0.2, 1);
+        const lblS = lblScale(s);                     // labels shrink less (stay legible)
+        const gearRow = N.gearRow * s, gearGap = N.gearGap * s, sec = N.sec * s,
+            lbl = N.lbl * lblS, biomeRow = N.biome * s, diffRow = N.diff * s,
+            chipRow = N.chip * chipScale(s), chipGap = N.chipGap * s;
+        const fs = (px) => Math.round(px * lblS);     // font-size scaler
+
+        let y = top;
+        // Loadout rows.
         for (const cat of GEAR_CATEGORIES) {
             const item = GEAR[eq[cat]];
             const col = item ? rarityColor(item.rarity) : 'rgba(255,255,255,0.25)';
-            roundRectPath(ctx, rx + 28, ly, rw - 56, 56, 10);
+            roundRectPath(ctx, innerX, y, innerW, gearRow, 10);
             ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
             ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
-            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 18px ${FONT}`;
-            ctx.fillText(GEAR_CATEGORY_LABELS[cat], rx + 44, ly + 24);
-            ctx.fillStyle = '#fff'; ctx.font = `700 24px ${FONT}`;
-            ctx.fillText(item ? item.name : '— empty —', rx + 44, ly + 46);
-            ly += 66;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 ${fs(16)}px ${FONT}`;
+            ctx.fillText(GEAR_CATEGORY_LABELS[cat], innerX + 16, y + gearRow * 0.40);
+            ctx.fillStyle = '#fff'; ctx.font = `700 ${fs(21)}px ${FONT}`;
+            ctx.fillText(item ? item.name : '— empty —', innerX + 16, y + gearRow * 0.82);
+            y += gearRow + gearGap;
         }
-        // Biome selector: the second map unlocks after 3 lifetime bosses.
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 22px ${FONT}`;
-        ctx.fillText('Biome', rx + 28, ly + 26);
-        const bw = (rw - 56 - 14 * (MAP_ORDER.length - 1)) / MAP_ORDER.length;
+        y += sec - gearGap;
+
+        // Biome selector.
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(20)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText('Biome', innerX, y + lbl * 0.72);
+        y += lbl;
+        const bw = (innerW - 14 * (MAP_ORDER.length - 1)) / MAP_ORDER.length;
         const totalBosses = save.stats?.totalBosses ?? 0;
         const selMap = save.selectedMap ?? MAP_ORDER[0];
         for (let i = 0; i < MAP_ORDER.length; i++) {
             const m = MAPS[MAP_ORDER[i]];
             const unlocked = isMapUnlocked(m.id, totalBosses);
             const sel = m.id === selMap;
-            const bx = rx + 28 + i * (bw + 14);
-            const by = ly + 38;
-            roundRectPath(ctx, bx, by, bw, 64, 10);
+            const bx = innerX + i * (bw + 14);
+            roundRectPath(ctx, bx, y, bw, biomeRow, 10);
             ctx.fillStyle = sel ? 'rgba(255,206,84,0.16)' : 'rgba(255,255,255,0.04)'; ctx.fill();
+            if (sel) this._selGlow(ctx, bx, y, bw, biomeRow, 10, '#ffce54', t);
             ctx.strokeStyle = sel ? '#ffce54' : unlocked ? m.accent : 'rgba(255,255,255,0.12)';
             ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
             ctx.globalAlpha = unlocked ? 1 : 0.5;
-            ctx.fillStyle = '#fff'; ctx.font = `700 20px ${FONT}`;
-            ctx.fillText(m.name, bx + 16, by + 26);
-            ctx.fillStyle = unlocked ? m.accent : 'rgba(255,255,255,0.6)'; ctx.font = `500 14px ${FONT}`;
-            ctx.fillText(unlocked ? m.subtitle : `🔒 Defeat ${m.unlockBosses} bosses`, bx + 16, by + 48);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = '#fff'; ctx.font = `700 ${fs(18)}px ${FONT}`;
+            ctx.fillText(m.name, bx + 14, y + biomeRow * 0.42);
+            ctx.fillStyle = unlocked ? m.accent : 'rgba(255,255,255,0.6)'; ctx.font = `500 ${fs(13)}px ${FONT}`;
+            ctx.fillText(unlocked ? m.subtitle : `🔒 ${m.unlockBosses} bosses`, bx + 14, y + biomeRow * 0.76);
             ctx.globalAlpha = 1;
-            this._hot(bx, by, bw, 64, 'selectMap', { id: m.id });
+            this._hot(bx, y, bw, biomeRow, 'selectMap', { id: m.id });
         }
-        // ── Difficulty + Trials (pre-run "shape your run") ─────────────────
-        const startBtn = { x: rx + 28, y: c.y + c.h - 96, w: rw - 56, h: 78 };
-        const curDiff = state.difficulty || 'normal';
-        const activeMods = state.selectedModifiers || [];
-        // Difficulty row (3 tiers). Sits well below the (tall, two-line) biome
-        // chips so the "Difficulty" label can't collide with the biome row.
-        const dRowY = ly + 146;
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 20px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText('Difficulty', rx + 28, dRowY - 10);
-        const dW = (rw - 56 - 20) / 3;
+        y += biomeRow + sec;
+
+        // Difficulty row (3 tiers).
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText('Difficulty', innerX, y + lbl * 0.72);
+        y += lbl;
+        const dW = (innerW - 20) / 3;
         for (let i = 0; i < DIFFICULTY_ORDER.length; i++) {
             const d = DIFFICULTY[DIFFICULTY_ORDER[i]];
-            const dx = rx + 28 + i * (dW + 10), dy = dRowY;
+            const dx = innerX + i * (dW + 10);
             const sel = curDiff === d.id;
-            roundRectPath(ctx, dx, dy, dW, 50, 9);
+            roundRectPath(ctx, dx, y, dW, diffRow, 9);
             ctx.fillStyle = sel ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)'; ctx.fill();
+            if (sel) this._selGlow(ctx, dx, y, dW, diffRow, 9, d.color, t);
             ctx.strokeStyle = sel ? d.color : 'rgba(255,255,255,0.14)'; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
-            ctx.fillStyle = sel ? d.color : '#fff'; ctx.font = `700 18px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(d.label, dx + dW / 2, dy + 25);
-            this._hot(dx, dy, dW, 50, 'setDifficulty', d.id);
+            ctx.fillStyle = sel ? d.color : '#fff'; ctx.font = `700 ${fs(17)}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(d.label, dx + dW / 2, y + diffRow / 2);
+            this._hot(dx, y, dW, diffRow, 'setDifficulty', d.id);
         }
+        y += diffRow + sec;
+
         // Trials toggles (6 chips, 3×2). Active ones glow + show the reward %.
-        // Offset clears the 50px difficulty buttons + the "Trials" label.
-        const tY = dRowY + 92;
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 20px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         const bonusPct = Math.round(activeMods.reduce((a, id) => {
             const m = RUN_MODIFIERS.find((x) => x.id === id); return a + (m ? (m.xpBonus || 0) : 0);
         }, 0) * 100);
-        ctx.fillText(`Trials${bonusPct > 0 ? `  (+${bonusPct}% Pass XP)` : ''}`, rx + 28, tY - 10);
+        ctx.fillText(`Trials${bonusPct > 0 ? `  (+${bonusPct}% XP)` : ''}`, innerX, y + lbl * 0.72);
+        y += lbl;
         const tcols = 3, tgap = 8;
-        const tW = (rw - 56 - tgap * (tcols - 1)) / tcols;
+        const tW = (innerW - tgap * (tcols - 1)) / tcols;
         for (let i = 0; i < RUN_MODIFIERS.length; i++) {
             const m = RUN_MODIFIERS[i];
             const col = i % tcols, row = Math.floor(i / tcols);
-            const mx = rx + 28 + col * (tW + tgap), my = tY + row * 44;
+            const mx = innerX + col * (tW + tgap), my = y + row * (chipRow + chipGap);
             const on = activeMods.includes(m.id);
-            roundRectPath(ctx, mx, my, tW, 38, 8);
+            roundRectPath(ctx, mx, my, tW, chipRow, 8);
             ctx.fillStyle = on ? 'rgba(255,206,84,0.16)' : 'rgba(255,255,255,0.03)'; ctx.fill();
+            if (on) this._selGlow(ctx, mx, my, tW, chipRow, 8, '#ffce54', t);
             ctx.strokeStyle = on ? '#ffce54' : 'rgba(255,255,255,0.12)'; ctx.lineWidth = on ? 3 : 2; ctx.stroke();
-            ctx.fillStyle = on ? '#ffce54' : '#cdd6e2'; ctx.font = `700 15px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(m.name, mx + tW / 2, my + 19);
-            this._hot(mx, my, tW, 38, 'toggleModifier', m.id);
+            ctx.fillStyle = on ? '#ffce54' : '#cdd6e2'; ctx.font = `700 ${fs(14)}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(m.name, mx + tW / 2, my + chipRow / 2);
+            this._hot(mx, my, tW, chipRow, 'toggleModifier', m.id);
         }
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-        // START RUN.
-        this._button(ctx, startBtn, 'START RUN', { primary: true, fontSize: 34, sub: 'Space / Enter', action: 'startRun' });
+        // START RUN — animated (RGB hue-cycle border + warm sheen sweep + glow).
+        this._drawStartButton(ctx, { x: innerX, y: startY, w: innerW, h: startH }, t);
+    }
+
+    // Pulsing accent glow behind a SELECTED chip (biome / difficulty / trial).
+    _selGlow(ctx, x, y, w, h, r, color, t) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 0.45 + Math.sin(t * 4) * 0.28);
+        ctx.shadowColor = color; ctx.shadowBlur = 16;
+        ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+        roundRectPath(ctx, x, y, w, h, r); ctx.stroke();
+        ctx.restore();
+    }
+
+    // The big call-to-action: a green button with a moving warm sheen, a
+    // hue-cycling RGB border, and a soft pulsing glow — hard to miss.
+    _drawStartButton(ctx, r, t) {
+        ctx.save();
+        const hue = (t * 70) % 360;
+        ctx.shadowColor = `hsl(${hue}, 90%, 58%)`;
+        ctx.shadowBlur = 22 + Math.sin(t * 3) * 8;
+        const sweep = Math.sin(t * 1.5) * 0.5 + 0.5;
+        const g = ctx.createLinearGradient(r.x, r.y, r.x + r.w, r.y);
+        g.addColorStop(Math.max(0, sweep - 0.28), '#33a356');
+        g.addColorStop(sweep, '#74e890');
+        g.addColorStop(Math.min(1, sweep + 0.28), '#33a356');
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
+        ctx.fillStyle = g; ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = `hsl(${hue}, 95%, 66%)`;
+        ctx.lineWidth = 3; ctx.stroke();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `800 ${Math.round(Math.min(34, r.h * 0.42))}px ${FONT}`;
+        ctx.fillText('START RUN', r.x + r.w / 2, r.y + r.h / 2 - r.h * 0.12);
+        ctx.font = `600 ${Math.round(Math.min(18, r.h * 0.22))}px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.fillText('Space / Enter', r.x + r.w / 2, r.y + r.h / 2 + r.h * 0.24);
+        ctx.restore();
+        this._hot(r.x, r.y, r.w, r.h, 'startRun', null);
     }
 
     // Lifetime stats showcase — surfaces what the save has always tracked.
