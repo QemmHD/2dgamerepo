@@ -14,8 +14,10 @@
 import { BOSS } from '../config/GameConfig.js';
 
 export class BossDirector {
-    constructor() {
-        this.bossTypes = BOSS.types;
+    // `types` is the ordered boss roster to cycle (the selected map's three
+    // bosses). Falls back to the global default order if omitted.
+    constructor(types) {
+        this.bossTypes = (Array.isArray(types) && types.length) ? types : BOSS.types;
         this.spawnInterval = BOSS.spawnInterval;
         this.postDeathCooldown = BOSS.postDeathCooldown ?? 0;
         this.spawnsTotal = 0;

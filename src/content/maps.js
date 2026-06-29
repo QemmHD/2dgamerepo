@@ -25,6 +25,8 @@ export const MAPS = {
         unlockBosses: 0,
         accent: '#ffd27a',
         weather: 'embers',      // warm drifting pollen/embers
+        tier: 1,                // difficulty rung (1 = easiest); folds into boss + enemy scaling
+        bosses: ['vinebackGoliath', 'stormwingAlpha', 'gloomMaw'],
     },
     hollowreach: {
         id: 'hollowreach',
@@ -39,6 +41,8 @@ export const MAPS = {
         unlockBosses: 3,
         accent: '#bfe3ff',
         weather: 'snow',        // falling flecks
+        tier: 2,
+        bosses: ['rimewarden', 'hoarfang', 'aurorath'],
     },
     crypts: {
         id: 'crypts',
@@ -53,6 +57,8 @@ export const MAPS = {
         unlockBosses: 6,
         accent: '#b9a8e0',
         weather: 'snow',        // pale motes read as drifting crypt-dust
+        tier: 3,
+        bosses: ['ossuar', 'mourndrift', 'nihagault'],
     },
     dunes: {
         id: 'dunes',
@@ -67,6 +73,8 @@ export const MAPS = {
         unlockBosses: 9,
         accent: '#ffdf9a',
         weather: 'embers',      // shimmering heat / blown sand motes
+        tier: 4,
+        bosses: ['dunescourge', 'cindermaw', 'solnakh'],
     },
 };
 
@@ -75,6 +83,20 @@ export const DEFAULT_MAP = 'emberwood';
 
 export function getMap(id) {
     return MAPS[id] || MAPS[DEFAULT_MAP];
+}
+
+// The three bosses that must ALL be defeated to clear a map, in encounter
+// order (3rd is that map's climax). Falls back to the default map's trio.
+export function getMapBosses(id) {
+    const m = MAPS[id] || MAPS[DEFAULT_MAP];
+    return m.bosses || MAPS[DEFAULT_MAP].bosses;
+}
+
+// Difficulty rung of a map (1 = easiest). Later maps multiply boss/enemy
+// scaling so each map plays a little harder than the last.
+export function getMapTier(id) {
+    const m = MAPS[id] || MAPS[DEFAULT_MAP];
+    return m.tier || 1;
 }
 
 // A map is unlocked when lifetime boss kills meet its threshold.

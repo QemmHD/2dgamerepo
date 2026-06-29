@@ -60,7 +60,7 @@ import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
 import { OBJECTIVES, OBJECTIVE_COUNT } from '../content/objectives.js';
-import { getMap, MAP_ORDER, DEFAULT_MAP } from '../content/maps.js';
+import { getMap, getMapBosses, getMapTier, MAP_ORDER, DEFAULT_MAP } from '../content/maps.js';
 import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 
@@ -477,7 +477,12 @@ export class Game {
         this.upgradeSystem = new UpgradeSystem();
         this.passiveSystem = new PassiveSystem();
         this.waveDirector = new WaveDirector();
-        this.bossDirector = new BossDirector();
+        // Per-map boss trio: cycle THIS map's three bosses (all must fall to
+        // clear the map). Later maps carry their own tougher rosters.
+        this.bossDirector = new BossDirector(getMapBosses(this.saveSystem.getSelectedMap()));
+        // Difficulty rung of the selected map (1..4); folds into boss + enemy
+        // scaling so each map plays a little harder than the last.
+        this.mapTier = getMapTier(this.saveSystem.getSelectedMap());
         // Cache the current wave state so render can read it without
         // re-computing during the same frame.
         this.waveState = this.waveDirector.getState(0);
@@ -603,6 +608,15 @@ export class Game {
             coinBonus += m.coinBonus || 0;
         }
         this.runScale = { hp, speed, damage, elite, cap, interval };
+        // Per-map difficulty rung: later maps' TRASH is a little tougher too, so
+        // the whole map (not just its bosses) ramps. Kept MILD — the boss tier
+        // (mapHpMul in _spawnBoss) is the dominant step. tier 1→4: hp +0/12/24/36%.
+        const _mt = getMapTier(this.saveSystem.getSelectedMap());
+        if (_mt > 1) {
+            this.runScale.hp *= 1 + (_mt - 1) * 0.12;
+            this.runScale.damage *= 1 + (_mt - 1) * 0.08;
+            this.runScale.speed *= 1 + (_mt - 1) * 0.03;
+        }
         this.runBonus = {
             xp: Math.min(xpBonus, RUN_MODIFIER_MAX_BONUS + (diff.xpBonus || 0)),
             coin: Math.min(coinBonus, RUN_MODIFIER_MAX_BONUS),
@@ -737,10 +751,15 @@ export class Game {
             this._checkAchievements();
             this._runRecorded = true;
         }
-        // The new biome is now unlocked (3 lifetime bosses) — select it if asked.
+        // Clearing this map's three bosses advances the campaign — select the
+        // NEXT map in order if it's now unlocked (each map's trio feeds lifetime
+        // boss kills, which gate the next biome at 3/6/9).
         if (selectNewMap) {
-            const next = MAP_ORDER.find((id) => id !== DEFAULT_MAP) || DEFAULT_MAP;
-            this.saveSystem.setSelectedMap(next);
+            const cur = this.saveSystem.getSelectedMap();
+            const curIdx = MAP_ORDER.indexOf(cur);
+            for (let i = curIdx + 1; i < MAP_ORDER.length; i++) {
+                if (this.saveSystem.setSelectedMap(MAP_ORDER[i])) break; // first unlocked next map
+            }
         }
         this.victory = null;
         this.returnToShop();
@@ -1314,10 +1333,18 @@ export class Game {
         // HP step up (1× / 1.8× / 2.6× …) to stay a real fight; damage ramps
         // only mildly (the boss already hits hard enough).
         const tierMul = 1 + encounter * 0.8;
-        // Boss HP also scales with the difficulty tier (trash damage/speed
-        // already flow through this.waveState). runScale.hp folds difficulty in.
-        const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul * (this.runScale?.hp ?? 1);
-        const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.12);
+        // Per-MAP difficulty: later maps' bosses are tougher than earlier maps'
+        // (the user-facing "each map gets harder"). The map-tier rung ALREADY
+        // flows to bosses through runScale.hp / waveState (the mild trash fold,
+        // ~+12%/+8% per tier), so these are small BOSS-ONLY EXTRAS on top —
+        // they compound to roughly +20% HP / +12% damage per tier for bosses
+        // while trash stays at the milder rate. (No speed extra: runScale.speed
+        // already carries the per-tier speed bump to bosses too.)
+        const mt = this.mapTier ?? 1;
+        const mapHpMul = 1 + (mt - 1) * 0.07;
+        const mapDmgMul = 1 + (mt - 1) * 0.04;
+        const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul * (this.runScale?.hp ?? 1) * mapHpMul;
+        const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.12) * mapDmgMul;
         const boss = new Enemy(id, x, y, {
             healthMul: bossHpMul,
             speedMul: this.waveState.speedMul * (1 + encounter * 0.04),
