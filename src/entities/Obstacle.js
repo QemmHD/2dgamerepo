@@ -33,7 +33,10 @@ export class Obstacle {
     }
 
     draw(ctx) {
-        const { size, palette } = this.def;
+        const size = this.def.size;
+        // Per-instance palette wins (biome tinting / building walls set it);
+        // otherwise fall back to the archetype's own palette.
+        const palette = this.palette || this.def.palette;
         const w = size.w, h = size.h;
         ctx.save();
         ctx.translate(this.x, this.y);
@@ -45,15 +48,21 @@ export class Obstacle {
         ctx.fill();
 
         switch (this.type) {
-            case 'ruinedWall':  this._drawWall(ctx, w, h, palette); break;
-            case 'stoneBlock':  this._drawBlock(ctx, w, h, palette); break;
-            case 'pillar':      this._drawPillar(ctx, w, h, palette); break;
-            case 'brokenTower': this._drawTower(ctx, w, h, palette); break;
-            case 'graveMarker': this._drawGrave(ctx, w, h, palette); break;
-            case 'tree':        this._drawTree(ctx, w, h, palette); break;
-            case 'fence':       this._drawFence(ctx, w, h, palette); break;
-            case 'barricade':   this._drawBarricade(ctx, w, h, palette); break;
-            default:            this._drawBlock(ctx, w, h, palette); break;
+            case 'ruinedWall':   this._drawWall(ctx, w, h, palette); break;
+            case 'stoneBlock':   this._drawBlock(ctx, w, h, palette); break;
+            case 'pillar':       this._drawPillar(ctx, w, h, palette); break;
+            case 'brokenTower':  this._drawTower(ctx, w, h, palette); break;
+            case 'graveMarker':  this._drawGrave(ctx, w, h, palette); break;
+            case 'tree':         this._drawTree(ctx, w, h, palette); break;
+            case 'fence':        this._drawFence(ctx, w, h, palette); break;
+            case 'barricade':    this._drawBarricade(ctx, w, h, palette); break;
+            case 'crate':        this._drawCrate(ctx, w, h, palette); break;
+            case 'barrel':       this._drawBarrel(ctx, w, h, palette); break;
+            case 'well':         this._drawWell(ctx, w, h, palette); break;
+            case 'statue':       this._drawStatue(ctx, w, h, palette); break;
+            case 'cactus':       this._drawCactus(ctx, w, h, palette); break;
+            case 'buildingWall': this._drawBuildingWall(ctx, w, h, palette); break;
+            default:             this._drawBlock(ctx, w, h, palette); break;
         }
         ctx.restore();
     }
@@ -190,5 +199,142 @@ export class Obstacle {
         ctx.beginPath(); ctx.moveTo(hw, 0); ctx.lineTo(-hw, -h); ctx.stroke();
         ctx.strokeStyle = p.top; ctx.lineWidth = 12;
         ctx.beginPath(); ctx.moveTo(-hw, -h * 0.5); ctx.lineTo(hw, -h * 0.5); ctx.stroke();
+    }
+
+    _drawCrate(ctx, w, h, p) {
+        const hw = w * 0.5;
+        ctx.fillStyle = p.base; ctx.fillRect(-hw, -h, w, h);
+        // Lid highlight (slight top face).
+        ctx.fillStyle = p.top;
+        ctx.beginPath();
+        ctx.moveTo(-hw, -h); ctx.lineTo(-hw + w * 0.14, -h - h * 0.16);
+        ctx.lineTo(hw + w * 0.14, -h - h * 0.16); ctx.lineTo(hw, -h); ctx.closePath(); ctx.fill();
+        // Plank cross-bracing.
+        ctx.strokeStyle = p.edge; ctx.lineWidth = 3;
+        ctx.strokeRect(-hw, -h, w, h);
+        ctx.beginPath();
+        ctx.moveTo(-hw, -h); ctx.lineTo(hw, 0); ctx.moveTo(hw, -h); ctx.lineTo(-hw, 0);
+        ctx.moveTo(-hw, -h * 0.5); ctx.lineTo(hw, -h * 0.5); ctx.stroke();
+    }
+
+    _drawBarrel(ctx, w, h, p) {
+        const hw = w * 0.42;
+        // Body (slightly bulged staves).
+        ctx.fillStyle = p.base;
+        ctx.beginPath();
+        ctx.moveTo(-hw, -h * 0.04);
+        ctx.quadraticCurveTo(-hw * 1.16, -h * 0.5, -hw, -h * 0.96);
+        ctx.lineTo(hw, -h * 0.96);
+        ctx.quadraticCurveTo(hw * 1.16, -h * 0.5, hw, -h * 0.04);
+        ctx.closePath(); ctx.fill();
+        // Top ellipse.
+        ctx.fillStyle = p.top;
+        ctx.beginPath(); ctx.ellipse(0, -h * 0.96, hw, hw * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+        // Hoops.
+        ctx.strokeStyle = p.edge; ctx.lineWidth = 4;
+        for (const yy of [-h * 0.28, -h * 0.66]) {
+            ctx.beginPath(); ctx.moveTo(-hw * 1.08, yy); ctx.lineTo(hw * 1.08, yy); ctx.stroke();
+        }
+    }
+
+    _drawWell(ctx, w, h, p) {
+        const hw = w * 0.42;
+        // Stone ring base.
+        ctx.fillStyle = p.base;
+        ctx.beginPath(); ctx.ellipse(0, -h * 0.18, hw, hw * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+        // Dark water mouth.
+        ctx.fillStyle = '#0b0d12';
+        ctx.beginPath(); ctx.ellipse(0, -h * 0.22, hw * 0.66, hw * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+        // Rim highlight.
+        ctx.strokeStyle = p.top; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.ellipse(0, -h * 0.18, hw, hw * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+        // Posts + little roof.
+        ctx.strokeStyle = p.edge; ctx.lineWidth = 7; ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-hw * 0.78, -h * 0.3); ctx.lineTo(-hw * 0.78, -h * 0.92);
+        ctx.moveTo(hw * 0.78, -h * 0.3); ctx.lineTo(hw * 0.78, -h * 0.92); ctx.stroke();
+        ctx.fillStyle = p.top;
+        ctx.beginPath();
+        ctx.moveTo(-hw * 1.1, -h * 0.86); ctx.lineTo(0, -h * 1.04);
+        ctx.lineTo(hw * 1.1, -h * 0.86); ctx.closePath(); ctx.fill();
+    }
+
+    _drawStatue(ctx, w, h, p) {
+        const hw = w * 0.5;
+        // Plinth.
+        ctx.fillStyle = p.edge; ctx.fillRect(-hw, -h * 0.18, w, h * 0.18);
+        ctx.fillStyle = p.base; ctx.fillRect(-hw * 0.72, -h * 0.26, w * 0.72, h * 0.08);
+        // Figure (robed, weathered).
+        ctx.fillStyle = p.base;
+        ctx.beginPath();
+        ctx.moveTo(-hw * 0.5, -h * 0.26);
+        ctx.lineTo(-hw * 0.34, -h * 0.86);
+        ctx.quadraticCurveTo(0, -h * 1.02, hw * 0.34, -h * 0.86);
+        ctx.lineTo(hw * 0.5, -h * 0.26); ctx.closePath(); ctx.fill();
+        // Head.
+        ctx.fillStyle = p.top;
+        ctx.beginPath(); ctx.arc(0, -h * 0.88, hw * 0.22, 0, Math.PI * 2); ctx.fill();
+        // Crack + shading.
+        ctx.strokeStyle = p.edge; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(hw * 0.06, -h * 0.8); ctx.lineTo(-hw * 0.04, -h * 0.5); ctx.lineTo(hw * 0.08, -h * 0.3); ctx.stroke();
+    }
+
+    _drawCactus(ctx, w, h, p) {
+        const armW = w * 0.16;
+        // Trunk.
+        ctx.fillStyle = p.base;
+        ctx.fillRect(-armW * 0.5, -h, armW, h);
+        ctx.beginPath(); ctx.arc(0, -h, armW * 0.5, Math.PI, 0); ctx.fill();
+        // Two arms.
+        ctx.beginPath();
+        ctx.moveTo(-armW * 0.5, -h * 0.62);
+        ctx.lineTo(-w * 0.34, -h * 0.62);
+        ctx.lineTo(-w * 0.34, -h * 0.88);
+        ctx.lineTo(-w * 0.34 + armW, -h * 0.88);
+        ctx.lineTo(-w * 0.34 + armW, -h * 0.6 + armW);
+        ctx.lineTo(-armW * 0.5, -h * 0.46); ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(armW * 0.5, -h * 0.5);
+        ctx.lineTo(w * 0.34, -h * 0.5);
+        ctx.lineTo(w * 0.34, -h * 0.78);
+        ctx.lineTo(w * 0.34 - armW, -h * 0.78);
+        ctx.lineTo(w * 0.34 - armW, -h * 0.48 + armW);
+        ctx.lineTo(armW * 0.5, -h * 0.34); ctx.closePath(); ctx.fill();
+        // Ridge highlight + spines.
+        ctx.strokeStyle = p.top; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(0, -h * 0.96); ctx.lineTo(0, -h * 0.1); ctx.stroke();
+        ctx.strokeStyle = p.edge; ctx.lineWidth = 1.5;
+        for (let yy = -h * 0.85; yy < -h * 0.1; yy += h * 0.16) {
+            ctx.beginPath(); ctx.moveTo(-armW * 0.5, yy); ctx.lineTo(-armW * 0.85, yy - 4);
+            ctx.moveTo(armW * 0.5, yy); ctx.lineTo(armW * 0.85, yy - 4); ctx.stroke();
+        }
+    }
+
+    // A single wall segment of an enterable building: a clean masonry slab with
+    // a coping cap, mortar courses, and a lit top edge. Several of these (with a
+    // doorway gap) form a building the player walks in and out of.
+    _drawBuildingWall(ctx, w, h, p) {
+        const hw = w * 0.5;
+        // Body.
+        ctx.fillStyle = p.base;
+        ctx.fillRect(-hw, -h, w, h);
+        // Lit top face (coping) — gives the wall thickness.
+        ctx.fillStyle = p.top;
+        ctx.beginPath();
+        ctx.moveTo(-hw, -h); ctx.lineTo(-hw + 10, -h - 14);
+        ctx.lineTo(hw + 10, -h - 14); ctx.lineTo(hw, -h); ctx.closePath(); ctx.fill();
+        ctx.fillRect(-hw, -h, w, Math.max(6, h * 0.07));
+        // Mortar courses (horizontal) — skip if the segment is very short.
+        ctx.strokeStyle = p.edge; ctx.lineWidth = 2;
+        for (let yy = -h * 0.78; yy < -2; yy += h * 0.2) {
+            ctx.beginPath(); ctx.moveTo(-hw, yy); ctx.lineTo(hw, yy); ctx.stroke();
+        }
+        // A couple of vertical joints for wider segments.
+        if (w > 120) {
+            for (let xx = -hw + w / 3; xx < hw; xx += w / 3) {
+                ctx.beginPath(); ctx.moveTo(xx, -h * 0.9); ctx.lineTo(xx, 0); ctx.stroke();
+            }
+        }
+        ctx.lineWidth = 3; ctx.strokeRect(-hw, -h, w, h);
     }
 }
