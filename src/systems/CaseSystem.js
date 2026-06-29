@@ -28,6 +28,19 @@ export const CASES = {
 
 export const CASE_ORDER = ['basic', 'mystic', 'royal'];
 
+// ── Ember Forge ─────────────────────────────────────────────────────────
+// A "doesn't feel like gambling" mode: spend grindable Cinders (coins) to
+// REFINE a reward, with a transparent PITY meter — every forge nudges you
+// toward a guaranteed Rare+, and the meter resets when you hit one. Framed as
+// crafting + a visible safety net, so it reads as earned progress while still
+// delivering the variable-reward dopamine. Not in CASE_ORDER (own panel).
+export const FORGE = {
+    id: 'forge', name: 'Ember Forge', cost: 120,
+    odds: { common: 0.40, uncommon: 0.32, rare: 0.18, epic: 0.08, legendary: 0.02 },
+};
+CASES.forge = FORGE;       // so buildCaseReel/openCase resolve it by id
+export const FORGE_PITY = 8; // forges since the last Rare+ that force one
+
 // One flat index of everything a case can award, tagged by kind + rarity.
 const ITEM_POOL = [
     ...GEAR_LIST.map((g) => ({ kind: 'gear', id: g.id, rarity: g.rarity, name: g.name, category: g.category })),
@@ -93,11 +106,14 @@ export function openCase(save, caseType, opts = {}) {
     }
     save.incrementStat('casesOpened', 1);
 
-    const rarity = rollRarity(def.odds);
-    const pool = poolByRarity(rarity);
+    return grantRarityReward(save, rollRarity(def.odds));
+}
 
-    // 82% of the time, the prize is an item of the rolled rarity; otherwise a
-    // coin/battle-pass consolation so cases always feel rewarding.
+// Resolve + apply the reward for a rolled rarity (shared by cases + the forge).
+// 82% an item of that rarity (duplicates convert to coin dust); otherwise a
+// coin / battle-pass consolation so a pull always pays out something.
+function grantRarityReward(save, rarity) {
+    const pool = poolByRarity(rarity);
     if (pool.length && Math.random() < 0.82) {
         const pick = pool[Math.floor(Math.random() * pool.length)];
         const owned = pick.kind === 'gear' ? save.isGearUnlocked(pick.id) : save.isCosmeticUnlocked(pick.id);
@@ -112,8 +128,6 @@ export function openCase(save, caseType, opts = {}) {
         return { ok: true, kind: pick.kind, rarity, id: pick.id, name: pick.name,
             category: pick.category, label: `${rarityName(rarity)} ${pick.name}` };
     }
-
-    // Consolation: coins (most of the time) or battle-pass XP.
     if (Math.random() < 0.6) {
         const amount = Math.round(rarityDust(rarity) * 1.5);
         save.addCoins(amount);
@@ -122,6 +136,47 @@ export function openCase(save, caseType, opts = {}) {
     const amount = 50 + RARITY_ORDER.indexOf(rarity) * 40;
     save.addBattlePassXp(amount);
     return { ok: true, kind: 'bpxp', rarity, amount, label: `${amount} vigil XP` };
+}
+
+// Lowest rarity in `odds` that is at least `floor` (for the pity guarantee).
+function rarityAtLeast(floor, odds) {
+    const fi = RARITY_ORDER.indexOf(floor);
+    const eligible = RARITY_ORDER.filter((r, i) => odds[r] && i >= fi);
+    if (!eligible.length) return floor;
+    // Weight by odds among the eligible tiers so a forced pull still varies.
+    const weighted = [];
+    for (const r of eligible) for (let i = 0; i < Math.max(1, Math.round(odds[r] * 100)); i++) weighted.push(r);
+    return weighted[Math.floor(Math.random() * weighted.length)];
+}
+
+// Forge pity progress for the UI: forges remaining until a guaranteed Rare+.
+export function forgePityRemaining(save) {
+    // Accepts either the SaveSystem instance (save.data) or a raw save-data
+    // object (the menu passes state.saveData directly).
+    const data = (save && save.data) || save || {};
+    const pity = (data.forge && data.forge.pity) || 0;
+    return Math.max(0, FORGE_PITY - pity);
+}
+
+// Ember Forge pull. Spends coins, advances the pity meter, and either rolls
+// normally or — once the meter is full — guarantees a Rare+ (then resets it).
+// A natural Rare+ also resets the meter, so it always reflects the real wait.
+export function openForge(save) {
+    if (save.data.totalCoins < FORGE.cost) return { ok: false, reason: 'cost' };
+    save.spendCoins(FORGE.cost);
+    save.incrementStat('casesOpened', 1);
+    if (!save.data.forge) save.data.forge = { pity: 0 };
+    const rareIdx = RARITY_ORDER.indexOf('rare');
+    let rarity;
+    if ((save.data.forge.pity || 0) + 1 >= FORGE_PITY) {
+        rarity = rarityAtLeast('rare', FORGE.odds);
+        save.data.forge.pity = 0;
+    } else {
+        rarity = rollRarity(FORGE.odds);
+        save.data.forge.pity = RARITY_ORDER.indexOf(rarity) >= rareIdx ? 0 : (save.data.forge.pity || 0) + 1;
+    }
+    save.save();
+    return grantRarityReward(save, rarity);
 }
 
 // Odds as display rows (high→low) for the shop UI.

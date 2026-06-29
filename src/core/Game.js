@@ -50,7 +50,7 @@ import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
-import { openCase, buildCaseReel } from '../systems/CaseSystem.js';
+import { openCase, openForge, buildCaseReel } from '../systems/CaseSystem.js';
 import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
@@ -638,6 +638,7 @@ export class Game {
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
             case 'openCase': this._openCaseFlow(arg); break;
+            case 'openForge': this._openForgeFlow(); break;
             case 'claimBP': {
                 const r = claimBattlePass(this.saveSystem, arg);
                 this._setToast(r.ok ? `Claimed: ${r.label}` : 'Cannot claim');
@@ -678,6 +679,14 @@ export class Game {
         // with a scrolling reel that decelerates onto the won item.
         const { reel, landingIndex } = buildCaseReel(caseType, res);
         this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime: 2.6 };
+    }
+
+    _openForgeFlow() {
+        const res = openForge(this.saveSystem);
+        if (!res.ok) { this._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
+        this.audio.forge();
+        const { reel, landingIndex } = buildCaseReel('forge', res);
+        this.caseAnim = { caseType: 'forge', result: res, age: 0, reel, landingIndex, spinTime: 2.6 };
     }
 
     _dismissCase() { this.caseAnim = null; }

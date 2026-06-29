@@ -66,6 +66,8 @@ function defaultData() {
         },
         // Selected playable character id (run uses it; see content/characters).
         selectedCharacter: DEFAULT_CHARACTER,
+        // Ember Forge pity counter (forges since the last Rare+).
+        forge: { pity: 0 },
         version: 4,
     };
 }
@@ -191,7 +193,10 @@ export class SaveSystem {
             ? data.selectedCharacter
             : DEFAULT_CHARACTER;
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, version: 4 };
+        const dfr = data.forge && typeof data.forge === 'object' ? data.forge : {};
+        const forge = { pity: Number.isFinite(dfr.pity) && dfr.pity >= 0 ? Math.floor(dfr.pity) : 0 };
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, version: 4 };
     }
 
     save() {
