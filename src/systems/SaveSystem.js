@@ -71,6 +71,8 @@ function defaultData() {
         selectedCharacter: DEFAULT_CHARACTER,
         // Ember Forge pity counter (forges since the last Rare+).
         forge: { pity: 0 },
+        // Gamble quota: plays used in the current rolling-hour window.
+        gamble: { windowStart: 0, count: 0 },
         // Selected biome/map id (see content/maps.js); unlock-gated by bosses.
         selectedMap: DEFAULT_MAP,
         version: 4,
@@ -201,9 +203,15 @@ export class SaveSystem {
         const dfr = data.forge && typeof data.forge === 'object' ? data.forge : {};
         const forge = { pity: Number.isFinite(dfr.pity) && dfr.pity >= 0 ? Math.floor(dfr.pity) : 0 };
 
+        const dgam = data.gamble && typeof data.gamble === 'object' ? data.gamble : {};
+        const gamble = {
+            windowStart: Number.isFinite(dgam.windowStart) && dgam.windowStart >= 0 ? dgam.windowStart : 0,
+            count: Number.isFinite(dgam.count) && dgam.count >= 0 ? Math.floor(dgam.count) : 0,
+        };
+
         const selectedMap = MAPS[data.selectedMap] ? data.selectedMap : DEFAULT_MAP;
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, selectedMap, version: 4 };
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, gamble, selectedMap, version: 4 };
     }
 
     save() {
@@ -391,6 +399,31 @@ export class SaveSystem {
         if (!this.data.stats) return;
         this.data.stats[key] = (this.data.stats[key] ?? 0) + amount;
         this.save();
+    }
+
+    // ── Gamble quota: 5 plays per rolling hour ───────────────────────────
+    // { remaining, resetInMs } for the current window (auto-resets when the
+    // hour lapses). Used by the shop to show "Plays: X/5 · resets in Ym".
+    gamblePlaysInfo() {
+        const max = 5, windowMs = 3600000;
+        const g = this.data.gamble || { windowStart: 0, count: 0 };
+        const now = Date.now();
+        if (now - g.windowStart >= windowMs) return { remaining: max, max, resetInMs: 0 };
+        return { remaining: Math.max(0, max - g.count), max, resetInMs: windowMs - (now - g.windowStart) };
+    }
+
+    // Spend one play if the quota allows (resets the window when the hour
+    // lapses). Returns true if a play was consumed, false if none remain.
+    consumeGamblePlay() {
+        const max = 5, windowMs = 3600000;
+        if (!this.data.gamble) this.data.gamble = { windowStart: 0, count: 0 };
+        const g = this.data.gamble;
+        const now = Date.now();
+        if (now - g.windowStart >= windowMs) { g.windowStart = now; g.count = 0; }
+        if (g.count >= max) return false;
+        g.count += 1;
+        this.save();
+        return true;
     }
 
     // Testing cheat: unlock every gear + cosmetic at once. Returns how many

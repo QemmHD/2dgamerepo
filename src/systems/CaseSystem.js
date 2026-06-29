@@ -56,21 +56,34 @@ export const FORGE = {
 CASES.forge = FORGE;       // so buildCaseReel/openCase resolve it by id
 export const FORGE_PITY = 8; // forges since the last Rare+ that force one
 
-// ── Cinder Climb (coin gambling mini-game) ──────────────────────────────
-// A crash/cash-out gamble (think Aviator/Bustabit): stake coins, a multiplier
-// rockets up from 1.00× — and BURNS OUT at a secret, pre-rolled point. Cash out
-// before it burns to win stake × the live multiplier; wait too long and you
-// lose the stake. There's no safe moment (the burnout is random), so greed
-// busts you — no trivially-timed win. ~3% house edge with a heavy upper tail.
+// ── Mines (coin gambling mini-game) ─────────────────────────────────────
+// A Stake-style MINES gamble: stake coins on a 5×5 grid hiding a few mines.
+// Reveal safe tiles one at a time — each safe pick ratchets the multiplier up
+// (and the next pick gets riskier). Cash out anytime to bank stake × the live
+// multiplier; hit a mine and lose the stake. ~3% house edge.
 export const WAGER_BETS = [100, 500, 2000];
+export const MINES = { tiles: 25, cols: 5, mines: 3 };
+export const MINES_HOUSE = 0.97;
 
-// Secret burnout multiplier (>= 1.00). ~4% chance of an instant burnout; a
-// 0.97/(1-r) tail makes the median ~2× but rare runs soar past 10×.
-export function rollCrashPoint() {
-    const r = Math.random();
-    if (r < 0.04) return 1.00;                  // instant burnout
-    const c = 0.97 / (1 - r);                   // heavy-tailed, ~3% edge
-    return Math.max(1.01, Math.round(c * 100) / 100);
+// Pre-roll the hidden mine positions (array of distinct tile indices).
+export function rollMines(count = MINES.mines, tiles = MINES.tiles) {
+    const set = new Set();
+    while (set.size < count) set.add(Math.floor(Math.random() * tiles));
+    return [...set];
+}
+
+// Fair (pre-house-edge) multiplier after revealing `safe` safe tiles: the
+// product of unrevealed/(safe-unrevealed) at each step. Apply MINES_HOUSE for
+// the paid value.
+export function minesRawMultiplier(safe, mines = MINES.mines, tiles = MINES.tiles) {
+    let mul = 1;
+    for (let i = 0; i < safe; i++) {
+        const unrevealed = tiles - i;
+        const safeUnrevealed = (tiles - mines) - i;
+        if (safeUnrevealed <= 0) break;
+        mul *= unrevealed / safeUnrevealed;
+    }
+    return mul;
 }
 
 // One flat index of everything a case can award, tagged by kind + rarity.

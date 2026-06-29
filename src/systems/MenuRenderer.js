@@ -559,19 +559,26 @@ export class MenuRenderer {
         this._panel(ctx, c.x, fy, c.w, forgeH, 'rgba(30,20,14,0.92)', '#ff8a4a');
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ffb24a'; ctx.font = `800 30px ${FONT}`;
-        ctx.fillText('🚀  CINDER CLIMB', c.x + 32, fy + 46);
+        ctx.fillText('💣  MINES', c.x + 32, fy + 46);
+        // Hourly play quota.
+        const plays = state.gamblePlays || { remaining: 5, max: 5, resetInMs: 0 };
+        ctx.textAlign = 'left';
+        ctx.fillStyle = plays.remaining > 0 ? '#7be08a' : '#ff6a5a';
+        ctx.font = `700 22px ${FONT}`;
+        const resetTxt = plays.remaining < plays.max && plays.resetInMs > 0 ? ` · resets in ${Math.ceil(plays.resetInMs / 60000)}m` : '';
+        ctx.fillText(`Plays: ${plays.remaining}/${plays.max}${resetTxt}`, c.x + 220, fy + 46);
         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 20px ${FONT}`;
-        ctx.fillText('Stake coins — the multiplier rockets up. CASH OUT before it burns out, or lose the lot. Push your luck.', c.x + 32, fy + 78);
-        // Three stake buttons.
+        ctx.fillText('Stake coins, dig safe tiles to climb the multiplier — cash out before you hit a mine. 5 plays per hour.', c.x + 32, fy + 78);
+        // Three stake buttons (greyed when no plays remain).
         const bets = WAGER_BETS;
         const bw = 200, bgap = 18;
         const totalW = bets.length * bw + (bets.length - 1) * bgap;
         let bx = c.x + c.w - totalW - 32;
         for (const bet of bets) {
-            const aff = save.totalCoins >= bet;
+            const aff = save.totalCoins >= bet && plays.remaining > 0;
             const r = { x: bx, y: fy + 96, w: bw, h: 56 };
             this._button(ctx, r, `STAKE  ◎ ${bet}`,
-                { primary: aff, enabled: true, accent: aff ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openWager', arg: bet, fontSize: 24 });
+                { primary: aff, enabled: true, accent: aff ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openMines', arg: bet, fontSize: 24 });
             bx += bw + bgap;
         }
     }
