@@ -2265,7 +2265,7 @@ export class Game {
         const potential = Math.floor(m.bet * m.mul);
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.font = '28px sans-serif';
-        ctx.fillText(`Stake ◎ ${m.bet}   ·   ${m.mul.toFixed(2)}×   ·   ${m.safeRevealed > 0 ? `cash ◎ ${potential}` : 'reveal a tile to start'}`, cx, 196);
+        ctx.fillText(`Bet ◎ ${m.bet}   ·   ${m.mul.toFixed(2)}×   ·   ${m.safeRevealed > 0 ? `cash ◎ ${potential}` : 'reveal a tile to start'}`, cx, 196);
 
         // Board.
         const rects = this._minesTileRects();
