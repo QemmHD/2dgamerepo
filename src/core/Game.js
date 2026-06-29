@@ -50,7 +50,7 @@ import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
-import { openCase, buildCaseReel, resolveWager, WAGER_ZONES } from '../systems/CaseSystem.js';
+import { openCase, buildCaseReel, rollCrashPoint } from '../systems/CaseSystem.js';
 import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
@@ -774,28 +774,50 @@ export class Game {
 
     _dismissCase() { this.caseAnim = null; }
 
-    // ── Cinder Wager (coin gambling mini-game) ───────────────────────────
-    // Stake coins up front, then STOP a sweeping spark on the multiplier bar.
+    // ── Cinder Climb (coin gambling mini-game) ───────────────────────────
+    // A crash/cash-out gamble: stake coins, a multiplier rockets up from 1.00×
+    // and BURNS OUT at a secret pre-rolled point. Cash out before it burns to
+    // win stake × the live multiplier; wait too long and lose the stake.
     _openWager(bet) {
         if (this.caseAnim || this.wager) return;
         if (!this.saveSystem.spendCoins(bet)) { this._setToast('Not enough coins'); return; }
-        this.wager = { bet, pos: 0, dir: 1, speed: 1.8, stopped: false, result: null, age: 0, _tick: 0 };
+        this.wager = { bet, mul: 1, crashPoint: rollCrashPoint(), busted: false, cashed: false, stopped: false, result: null, age: 0, _tick: 0 };
         this.audio.forge();
     }
 
-    // Lock the spark: resolve the zone, pay out, and bank any winnings.
+    // CASH OUT: lock the live multiplier, pay out, bank the winnings.
     _wagerStop() {
         const w = this.wager;
         if (!w || w.stopped) return;
         w.stopped = true;
-        const z = resolveWager(w.pos);
-        const payout = Math.floor(w.bet * z.mul);
-        w.result = { mul: z.mul, label: z.label, color: z.color, payout, net: payout - w.bet };
+        w.cashed = true;
+        const payout = Math.floor(w.bet * w.mul);
+        w.result = { mul: w.mul, payout, net: payout - w.bet };
         if (payout > 0) this.saveSystem.addCoins(payout);
-        // Sound scales with the outcome: bust = a hurt thud; wins reuse the
-        // tiered reveal chime (bigger multiplier = bigger sound).
-        if (z.mul <= 0) this.audio.hurt();
-        else this.audio.reveal(z.mul >= 5 ? 'mythic' : z.mul >= 2 ? 'legendary' : z.mul > 1 ? 'epic' : 'rare');
+        // Win chime scales with how high you rode it (bigger = bigger sound).
+        this.audio.reveal(w.mul >= 8 ? 'mythic' : w.mul >= 4 ? 'legendary' : w.mul >= 2 ? 'epic' : 'rare');
+    }
+
+    // Advance the climb one tick (called from the start-screen update). The
+    // multiplier grows exponentially (accelerating tension); when it reaches the
+    // secret burnout point the stake is lost.
+    _tickWager(dt) {
+        const w = this.wager;
+        if (!w || w.stopped) { if (w) w.age += dt; return; }
+        w.age += dt;
+        w.mul *= Math.exp(0.5 * dt); // ~doubles every ~1.4s, then faster
+        if (w.mul >= w.crashPoint) {
+            w.mul = w.crashPoint;
+            w.busted = true;
+            w.stopped = true;
+            w.result = { mul: w.crashPoint, payout: 0, net: -w.bet };
+            this.audio.hurt();
+            return;
+        }
+        // A rising ratchet tick that quickens as the multiplier climbs.
+        w._tick += dt;
+        const interval = Math.max(0.04, 0.16 - w.mul * 0.02);
+        if (w._tick >= interval) { w._tick = 0; this.audio.spinTick(); }
     }
 
     _dismissWager() { this.wager = null; }
@@ -1458,19 +1480,7 @@ export class Game {
                 // richness scales with the won rarity (better pull = bigger noise).
                 if (wasSpinning && this.caseAnim.age >= spinTime) this.audio.reveal(this.caseAnim.result?.rarity);
             }
-            if (this.wager) {
-                const w = this.wager;
-                if (!w.stopped) {
-                    // Ping-pong the spark across the bar; a steady tick sells the spin.
-                    w.pos += w.dir * w.speed * dt;
-                    if (w.pos >= 1) { w.pos = 1; w.dir = -1; }
-                    else if (w.pos <= 0) { w.pos = 0; w.dir = 1; }
-                    w._tick += dt;
-                    if (w._tick > 0.07) { w._tick = 0; this.audio.spinTick(); }
-                } else {
-                    w.age += dt;
-                }
-            }
+            if (this.wager) this._tickWager(dt);
             if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
             return;
         }
@@ -2211,71 +2221,75 @@ export class Game {
         if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
     }
 
-    // Cinder Wager overlay: a multiplier bar with the live spark marker, the
-    // stake, and (after a stop) the outcome + payout.
+    // Cinder Climb overlay: a giant live multiplier rocketing up, a rising
+    // ember-trail curve, and (after cash-out / burnout) the outcome.
     _drawWager(ctx) {
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT, w = this.wager;
+        const cx = W / 2, cy = H / 2;
         ctx.save();
-        ctx.fillStyle = 'rgba(8,6,16,0.82)';
+        ctx.fillStyle = 'rgba(8,6,16,0.85)';
         ctx.fillRect(0, 0, W, H);
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ffb24a';
-        ctx.font = 'bold 64px sans-serif';
-        ctx.fillText('CINDER WAGER', W / 2, H / 2 - 200);
+        ctx.font = 'bold 56px sans-serif';
+        ctx.fillText('CINDER CLIMB', cx, cy - 230);
         ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        ctx.font = '30px sans-serif';
-        ctx.fillText(`Stake: ◎ ${w.bet}`, W / 2, H / 2 - 150);
+        ctx.font = '28px sans-serif';
+        ctx.fillText(`Stake: ◎ ${w.bet}`, cx, cy - 188);
 
-        // The multiplier bar (zones colored by payout).
-        const barW = 1100, barH = 84;
-        const bx = W / 2 - barW / 2, by = H / 2 - 60;
-        let prev = 0;
-        for (const z of WAGER_ZONES) {
-            const x0 = bx + prev * barW, x1 = bx + z.to * barW;
-            ctx.fillStyle = z.color;
-            ctx.globalAlpha = z.mul <= 0 ? 0.55 : 0.85;
-            ctx.fillRect(x0, by, x1 - x0, barH);
-            ctx.globalAlpha = 1;
-            // Multiplier label on wide-enough zones.
-            if ((z.to - prev) > 0.06) {
-                ctx.fillStyle = '#10131c';
-                ctx.font = 'bold 22px sans-serif';
-                ctx.fillText(z.label.replace('JACKPOT ', ''), (x0 + x1) / 2, by + barH / 2 + 8);
-            }
-            prev = z.to;
-        }
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(bx, by, barW, barH);
-
-        // The spark marker.
-        const mx = bx + Math.max(0, Math.min(1, w.pos)) * barW;
-        ctx.fillStyle = '#fff';
+        // Rising ember-trail curve (visual only): climbs steeper as the
+        // multiplier grows. Tinted hot when alive, ash when burned out.
+        const gx = cx - 460, gy = cy + 150, gw = 920, gh = 300;
+        const prog = Math.min(1, (w.mul - 1) / 9); // 1×→10× fills the curve
+        ctx.strokeStyle = w.busted ? '#6a6a78' : '#ff7a3c';
+        ctx.lineWidth = 7;
+        ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(mx, by - 18);
-        ctx.lineTo(mx - 12, by - 40);
-        ctx.lineTo(mx + 12, by - 40);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillRect(mx - 3, by - 18, 6, barH + 36);
+        ctx.moveTo(gx, gy);
+        const tipX = gx + gw * Math.max(0.04, prog);
+        for (let i = 0; i <= 24; i++) {
+            const f = i / 24;
+            const x = gx + (tipX - gx) * f;
+            const y = gy - gh * Math.pow(f, 2.2) * Math.max(0.06, prog);
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        // Spark at the tip.
+        const tipY = gy - gh * Math.max(0.06, prog);
+        ctx.fillStyle = w.busted ? '#9a9aa8' : '#fff';
+        ctx.beginPath(); ctx.arc(tipX, tipY, w.busted ? 9 : 13, 0, Math.PI * 2); ctx.fill();
+
+        // The big live multiplier.
+        const big = (w.stopped ? w.result.mul : w.mul);
+        ctx.fillStyle = w.busted ? '#ff5a3c' : (w.cashed ? '#7be08a' : '#ffd166');
+        ctx.font = 'bold 130px sans-serif';
+        ctx.fillText(`${big.toFixed(2)}×`, cx, cy - 20);
 
         if (!w.stopped) {
-            ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            ctx.font = 'bold 34px sans-serif';
-            ctx.fillText('TAP / SPACE to STOP', W / 2, by + barH + 90);
-        } else {
-            const r = w.result;
-            const bust = r.mul <= 0;
-            ctx.fillStyle = bust ? '#ff5a3c' : r.color;
-            ctx.font = 'bold 56px sans-serif';
-            ctx.fillText(bust ? 'BUST!' : r.label, W / 2, by + barH + 86);
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 40px sans-serif';
-            ctx.fillText(bust ? `Lost ◎ ${w.bet}`
-                : `Won ◎ ${r.payout}  (${r.net >= 0 ? '+' : ''}${r.net})`, W / 2, by + barH + 140);
-            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.font = 'bold 36px sans-serif';
+            ctx.fillText('TAP / SPACE to CASH OUT', cx, cy + 70);
+            ctx.fillStyle = 'rgba(255,255,255,0.55)';
             ctx.font = '24px sans-serif';
-            ctx.fillText('Tap / Space to continue', W / 2, by + barH + 192);
+            ctx.fillText(`Bank ◎ ${Math.floor(w.bet * w.mul)} now — or ride it higher and risk the burnout`, cx, cy + 112);
+        } else if (w.busted) {
+            ctx.fillStyle = '#ff5a3c';
+            ctx.font = 'bold 60px sans-serif';
+            ctx.fillText('BURNED OUT!', cx, cy + 80);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 36px sans-serif';
+            ctx.fillText(`Lost ◎ ${w.bet}`, cx, cy + 132);
+            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '24px sans-serif';
+            ctx.fillText('Tap / Space to continue', cx, cy + 182);
+        } else {
+            ctx.fillStyle = '#7be08a';
+            ctx.font = 'bold 56px sans-serif';
+            ctx.fillText('CASHED OUT!', cx, cy + 80);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 36px sans-serif';
+            ctx.fillText(`Won ◎ ${w.result.payout}  (${w.result.net >= 0 ? '+' : ''}${w.result.net})`, cx, cy + 132);
+            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '24px sans-serif';
+            ctx.fillText('Tap / Space to continue', cx, cy + 182);
         }
         ctx.restore();
     }

@@ -559,9 +559,9 @@ export class MenuRenderer {
         this._panel(ctx, c.x, fy, c.w, forgeH, 'rgba(30,20,14,0.92)', '#ff8a4a');
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ffb24a'; ctx.font = `800 30px ${FONT}`;
-        ctx.fillText('🎰  CINDER WAGER', c.x + 32, fy + 46);
+        ctx.fillText('🚀  CINDER CLIMB', c.x + 32, fy + 46);
         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 20px ${FONT}`;
-        ctx.fillText('Stake coins, then STOP the spark — edges play safe (1.5×), dead-center hits the 5× jackpot, miss and bust.', c.x + 32, fy + 78);
+        ctx.fillText('Stake coins — the multiplier rockets up. CASH OUT before it burns out, or lose the lot. Push your luck.', c.x + 32, fy + 78);
         // Three stake buttons.
         const bets = WAGER_BETS;
         const bw = 200, bgap = 18;
