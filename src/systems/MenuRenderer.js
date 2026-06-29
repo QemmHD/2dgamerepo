@@ -23,7 +23,9 @@ import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battleP
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter } from '../content/characters.js';
-import { getCharacterFrames } from '../assets/ProceduralSprites.js';
+import { getCharacterFrames, drawCloakShape, drawHatShape, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
+import { resolveStartingWeapon } from './LoadoutSystem.js';
+import { resolveWeaponSkin } from '../content/weaponSkins.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 
@@ -196,10 +198,20 @@ export class MenuRenderer {
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let charSprite = null;
         try { charSprite = getCharacterFrames(ch.id, ch)[0]; } catch (e) { charSprite = null; }
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite);
+        // The selected starting weapon drives the themed skin overlay so the
+        // preview matches the in-game look (character + cosmetics + weapon).
+        const skin = resolveWeaponSkin(resolveStartingWeapon(save));
+        // Self-advancing clock for subtle idle motion in the preview motif.
+        this._t = (this._t || 0) + 0.016;
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
         ctx.fillText(`${ch.name} — ${ch.title}`, ccx, c.y + c.h * 0.46);
+        // Themed-skin caption (driven by the equipped starting weapon).
+        if (skin) {
+            ctx.fillStyle = skin.accent; ctx.font = `700 16px ${FONT}`;
+            ctx.fillText(`${skin.name} skin`, ccx, c.y + c.h * 0.435);
+        }
         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 18px ${FONT}`;
         this._wrapText(ctx, ch.description, ccx, c.y + c.h * 0.51, cardW - 60, 22, 2);
 
@@ -297,7 +309,11 @@ export class MenuRenderer {
     // cached character frame) is supplied it's drawn as the body so the menu
     // model exactly matches the selected character; otherwise a procedural
     // blob is used as a fallback.
-    _drawAvatar(ctx, cx, cy, r, ap, sprite = null) {
+    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0) {
+        // The avatar draws the body sprite at S=r*2.4, so the shared cosmetic +
+        // weapon-skin helpers (authored in sprite-half units) take s = S/2.
+        const S = r * 2.4;
+        const s = S / 2;
         ctx.save();
         if (ap.auraColor) {
             const g = ctx.createRadialGradient(cx, cy, r * 0.3, cx, cy, r * 1.4);
@@ -306,15 +322,10 @@ export class MenuRenderer {
             ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill();
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
         }
-        if (ap.cloakColor) {
-            ctx.fillStyle = ap.cloakColor;
-            ctx.beginPath();
-            ctx.moveTo(cx - r * 0.7, cy - r * 0.1); ctx.lineTo(cx + r * 0.7, cy - r * 0.1);
-            ctx.lineTo(cx + r * 0.95, cy + r); ctx.lineTo(cx - r * 0.95, cy + r); ctx.closePath(); ctx.fill();
-        }
+        // Cloak (shared shape — matches the in-game player exactly).
+        if (ap.cloakColor) drawCloakShape(ctx, cx, cy, s, ap.cloakColor);
         if (sprite) {
             // Real character sprite as the body, sized to the avatar box.
-            const S = r * 2.4;
             ctx.drawImage(sprite, cx - S / 2, cy - S / 2, S, S);
         } else {
             // Fallback procedural blob.
@@ -326,28 +337,10 @@ export class MenuRenderer {
             ctx.beginPath(); ctx.arc(cx - r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2);
             ctx.arc(cx + r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2); ctx.fill();
         }
-        // Hat.
-        if (ap.hatShape && ap.hatShape !== 'none') {
-            ctx.fillStyle = ap.hatColor || '#ffd35a';
-            const ty = cy - r * 0.55;
-            if (ap.hatShape === 'cap') { ctx.beginPath(); ctx.arc(cx, ty, r * 0.34, Math.PI, 0); ctx.fill(); }
-            else if (ap.hatShape === 'candle') {
-                ctx.fillStyle = '#e8e2cf'; ctx.fillRect(cx - r * 0.07, ty - r * 0.3, r * 0.14, r * 0.32);
-                ctx.fillStyle = '#ffb24a'; ctx.beginPath(); ctx.ellipse(cx, ty - r * 0.32, r * 0.06, r * 0.12, 0, 0, Math.PI * 2); ctx.fill();
-            } else if (ap.hatShape === 'horns') {
-                ctx.strokeStyle = ap.hatColor || '#9a6cff'; ctx.lineWidth = 9; ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(cx - r * 0.24, ty); ctx.quadraticCurveTo(cx - r * 0.5, ty - r * 0.3, cx - r * 0.34, ty - r * 0.5);
-                ctx.moveTo(cx + r * 0.24, ty); ctx.quadraticCurveTo(cx + r * 0.5, ty - r * 0.3, cx + r * 0.34, ty - r * 0.5);
-                ctx.stroke();
-            } else if (ap.hatShape === 'crown') {
-                const cw = r * 0.5;
-                ctx.beginPath();
-                ctx.moveTo(cx - cw, ty); ctx.lineTo(cx - cw, ty - r * 0.18); ctx.lineTo(cx - cw * 0.5, ty - r * 0.04);
-                ctx.lineTo(cx, ty - r * 0.26); ctx.lineTo(cx + cw * 0.5, ty - r * 0.04); ctx.lineTo(cx + cw, ty - r * 0.18);
-                ctx.lineTo(cx + cw, ty); ctx.closePath(); ctx.fill();
-            }
-        }
+        // Weapon-themed skin overlay (shared with the in-game player), then hat
+        // on top — identical layering + geometry so the preview never diverges.
+        if (skin) drawWeaponSkinOverlay(ctx, cx, cy, s, skin, t);
+        if (ap.hatShape && ap.hatShape !== 'none') drawHatShape(ctx, cx, cy, s, ap.hatShape, ap.hatColor);
         ctx.restore();
     }
 

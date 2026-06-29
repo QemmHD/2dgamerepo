@@ -38,6 +38,16 @@ export const SPRITE_FX = {
         samples: 8,           // offset stamps around the ring
         alpha: 0.85,          // contour opacity (a touch under solid so it isn't a hard line)
     },
+    // Rim light: a soft warm highlight baked onto the top-left edge of every
+    // character/enemy sprite at cache-fill (alongside the outline), for more
+    // depth + a polished lit-form read. Source-atop so it only touches the
+    // art's own pixels; one-time cost, never per render frame.
+    rimLight: {
+        enabled: true,
+        color: '#fff3da',     // warm key light from up-left
+        offsetLogical: 1.6,   // how far the lit edge is offset (authoring units)
+        alpha: 0.12,          // subtle — a sheen, not a second sprite
+    },
     decorationShadow: {
         enabled: true,
         alpha: 0.3,           // contact-shadow opacity under map decorations

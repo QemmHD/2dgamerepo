@@ -279,6 +279,9 @@ function softShadow(ctx, cx, cy, rx, ry, alpha = 0.35) {
 // raw backing-store pixels — drawers leave a SPRITE_SS scale on the context,
 // so we reset to identity for the stamp. Mutates and returns `canvas`.
 function addOutline(canvas) {
+    // Bake a soft top-left rim light onto the art first (more depth), then the
+    // dark contour behind it. Both are one-time, cache-fill costs.
+    addRimLight(canvas);
     const cfg = SPRITE_FX.outline;
     if (!cfg || !cfg.enabled) return canvas;
     const w = canvas.width, h = canvas.height;
@@ -307,6 +310,236 @@ function addOutline(canvas) {
     }
     ctx.restore();
     return canvas;
+}
+
+// Soft warm rim light on the top-left edge of a finished sprite (depth + a
+// polished lit-form read). Builds a bright silhouette of the art and stamps it
+// back with 'source-atop' (only touches the art's own pixels) offset up-left.
+// Mutates and returns `canvas`. One-time cost at cache-fill.
+function addRimLight(canvas) {
+    const cfg = SPRITE_FX.rimLight;
+    if (!cfg || !cfg.enabled) return canvas;
+    const w = canvas.width, h = canvas.height;
+    const sil = document.createElement('canvas');
+    sil.width = w; sil.height = h;
+    const sctx = sil.getContext('2d');
+    sctx.drawImage(canvas, 0, 0);
+    sctx.globalCompositeOperation = 'source-in';
+    sctx.fillStyle = cfg.color;
+    sctx.fillRect(0, 0, w, h);
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-atop'; // brighten only existing art
+    ctx.globalAlpha = cfg.alpha ?? 0.12;
+    const px = Math.max(1, Math.round((cfg.offsetLogical ?? 1.5) * SPRITE_SS));
+    ctx.drawImage(sil, -px, -px);
+    ctx.restore();
+    return canvas;
+}
+
+// ─── Shared cosmetic + weapon-skin overlays ─────────────────────────────
+// These are the SINGLE source of truth for the cloak/hat cosmetic shapes and
+// the weapon-themed skin overlay, used by BOTH the in-game player (Player.draw)
+// and the start-menu preview (MenuRenderer._drawAvatar) so the two can never
+// diverge. All draw in the caller's current transform, anchored at (ox, oy)
+// (the sprite centre) with `s` as the scale unit (the player passes spriteHalf;
+// the menu passes half its avatar sprite size).
+
+export function drawCloakShape(ctx, ox, oy, s, color) {
+    if (!color) return;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(ox - s * 0.42, oy - s * 0.18);
+    ctx.lineTo(ox + s * 0.42, oy - s * 0.18);
+    ctx.lineTo(ox + s * 0.6, oy + s * 0.62);
+    ctx.lineTo(ox, oy + s * 0.78);
+    ctx.lineTo(ox - s * 0.6, oy + s * 0.62);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+export function drawHatShape(ctx, ox, oy, s, shape, color) {
+    if (!shape || shape === 'none') return;
+    const topY = oy - s * 0.62;
+    ctx.save();
+    ctx.fillStyle = color || '#ffd35a';
+    if (shape === 'cap') {
+        ctx.beginPath();
+        ctx.arc(ox, topY, s * 0.32, Math.PI, 0);
+        ctx.fill();
+        ctx.fillRect(ox - s * 0.34, topY - 2, s * 0.68, 6);
+    } else if (shape === 'candle') {
+        ctx.fillStyle = '#e8e2cf';
+        ctx.fillRect(ox - s * 0.07, topY - s * 0.28, s * 0.14, s * 0.3);
+        ctx.fillStyle = '#ffb24a';
+        ctx.beginPath();
+        ctx.ellipse(ox, topY - s * 0.3, s * 0.06, s * 0.11, 0, 0, TWO_PI);
+        ctx.fill();
+    } else if (shape === 'horns') {
+        ctx.strokeStyle = color || '#9a6cff';
+        ctx.lineWidth = Math.max(4, s * 0.09); ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(ox - s * 0.22, topY + 6); ctx.quadraticCurveTo(ox - s * 0.5, topY - s * 0.2, ox - s * 0.32, topY - s * 0.4);
+        ctx.moveTo(ox + s * 0.22, topY + 6); ctx.quadraticCurveTo(ox + s * 0.5, topY - s * 0.2, ox + s * 0.32, topY - s * 0.4);
+        ctx.stroke();
+    } else if (shape === 'crown') {
+        const cw = s * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(ox - cw, topY);
+        ctx.lineTo(ox - cw, topY - s * 0.16);
+        ctx.lineTo(ox - cw * 0.5, topY - s * 0.04);
+        ctx.lineTo(ox, topY - s * 0.22);
+        ctx.lineTo(ox + cw * 0.5, topY - s * 0.04);
+        ctx.lineTo(ox + cw, topY - s * 0.16);
+        ctx.lineTo(ox + cw, topY);
+        ctx.closePath();
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+// Themed weapon-skin overlay: a diagonal sash across the torso, a chest gem,
+// and a floating motif (orb/flame/bolt/blade/sigil/shard/crown) with an
+// additive glow — all keyed to the skin theme. `t` (seconds) drives subtle
+// idle motion (orbit / flicker). Draws in the caller's transform at (ox,oy),
+// unit `s`. Cheap (a handful of paths) — only the single player + menu avatar
+// ever call it, so it's a live draw rather than a cached frame.
+export function drawWeaponSkinOverlay(ctx, ox, oy, s, skin, t = 0) {
+    if (!skin) return;
+    const accent = skin.accent || '#ffd27a';
+    const glow = skin.glow || accent;
+    ctx.save();
+
+    // Diagonal sash across the torso (shoulder → opposite hip) with a lighter
+    // inner stripe for depth.
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = s * 0.14;
+    ctx.beginPath();
+    ctx.moveTo(ox - s * 0.32, oy - s * 0.06);
+    ctx.lineTo(ox + s * 0.30, oy + s * 0.30);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = s * 0.05;
+    ctx.beginPath();
+    ctx.moveTo(ox - s * 0.30, oy - s * 0.05);
+    ctx.lineTo(ox + s * 0.28, oy + s * 0.28);
+    ctx.stroke();
+
+    // Chest gem at the sash crossing.
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(ox - s * 0.02, oy + s * 0.10, s * 0.085, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.arc(ox - s * 0.04, oy + s * 0.075, s * 0.03, 0, TWO_PI); ctx.fill();
+
+    // Floating motif by the head-right, with an additive glow halo. Subtle
+    // bob/orbit from `t`.
+    const bob = Math.sin(t * 2.2) * s * 0.04;
+    const mx = ox + s * 0.5;
+    const my = oy - s * 0.5 + bob;
+    const ms = s * 0.2;
+    ctx.globalCompositeOperation = 'lighter';
+    const halo = ctx.createRadialGradient(mx, my, 0, mx, my, ms * 1.8);
+    halo.addColorStop(0, glow);
+    halo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(mx, my, ms * 1.8, 0, TWO_PI); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    drawWeaponEmblem(ctx, mx, my, ms, skin.emblem, accent, t);
+
+    ctx.restore();
+}
+
+// Draw a single themed emblem shape centred at (mx,my), size ~ms.
+function drawWeaponEmblem(ctx, mx, my, ms, emblem, accent, t) {
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.fillStyle = accent;
+    ctx.strokeStyle = accent;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    switch (emblem) {
+        case 'flame': {
+            ctx.beginPath();
+            ctx.moveTo(0, -ms);
+            ctx.quadraticCurveTo(ms * 0.8, -ms * 0.1, ms * 0.4, ms * 0.7);
+            ctx.quadraticCurveTo(0, ms, -ms * 0.4, ms * 0.7);
+            ctx.quadraticCurveTo(-ms * 0.8, -ms * 0.1, 0, -ms);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,240,180,0.85)';
+            ctx.beginPath(); ctx.ellipse(0, ms * 0.2, ms * 0.22, ms * 0.4, 0, 0, TWO_PI); ctx.fill();
+            break;
+        }
+        case 'bolt': {
+            ctx.beginPath();
+            ctx.moveTo(ms * 0.25, -ms); ctx.lineTo(-ms * 0.45, ms * 0.1);
+            ctx.lineTo(ms * 0.05, ms * 0.1); ctx.lineTo(-ms * 0.25, ms);
+            ctx.lineTo(ms * 0.5, -ms * 0.15); ctx.lineTo(0, -ms * 0.15);
+            ctx.closePath(); ctx.fill();
+            break;
+        }
+        case 'blade': {
+            ctx.rotate(t * 1.6); // spin
+            ctx.beginPath();
+            ctx.moveTo(0, -ms); ctx.lineTo(ms * 0.28, 0); ctx.lineTo(0, ms); ctx.lineTo(-ms * 0.28, 0);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = ms * 0.08;
+            ctx.beginPath(); ctx.moveTo(0, -ms); ctx.lineTo(0, ms); ctx.stroke();
+            break;
+        }
+        case 'sigil': {
+            ctx.lineWidth = ms * 0.16;
+            ctx.beginPath(); ctx.arc(0, 0, ms * 0.7, 0, TWO_PI); ctx.stroke();
+            ctx.beginPath();
+            for (let i = 0; i < 4; i++) {
+                const a = t * 0.6 + i * (Math.PI / 2);
+                ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * ms * 0.7, Math.sin(a) * ms * 0.7);
+            }
+            ctx.stroke();
+            break;
+        }
+        case 'shard': {
+            for (let i = 0; i < 3; i++) {
+                const a = t * 0.8 + i * (TWO_PI / 3);
+                const dx = Math.cos(a) * ms * 0.4, dy = Math.sin(a) * ms * 0.4;
+                ctx.beginPath();
+                ctx.moveTo(dx, dy - ms * 0.5); ctx.lineTo(dx + ms * 0.22, dy);
+                ctx.lineTo(dx, dy + ms * 0.5); ctx.lineTo(dx - ms * 0.22, dy);
+                ctx.closePath(); ctx.fill();
+            }
+            break;
+        }
+        case 'crown': {
+            ctx.beginPath();
+            ctx.moveTo(-ms * 0.8, ms * 0.5); ctx.lineTo(-ms * 0.8, -ms * 0.2);
+            ctx.lineTo(-ms * 0.35, ms * 0.1); ctx.lineTo(0, -ms * 0.6);
+            ctx.lineTo(ms * 0.35, ms * 0.1); ctx.lineTo(ms * 0.8, -ms * 0.2);
+            ctx.lineTo(ms * 0.8, ms * 0.5); ctx.closePath(); ctx.fill();
+            break;
+        }
+        case 'orb':
+        default: {
+            const g = ctx.createRadialGradient(-ms * 0.2, -ms * 0.2, 0, 0, 0, ms);
+            g.addColorStop(0, 'rgba(255,255,255,0.9)');
+            g.addColorStop(0.5, accent);
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(0, 0, ms, 0, TWO_PI); ctx.fill();
+            // Two orbiting motes.
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            for (let i = 0; i < 2; i++) {
+                const a = t * 2.4 + i * Math.PI;
+                ctx.beginPath(); ctx.arc(Math.cos(a) * ms * 0.9, Math.sin(a) * ms * 0.9, ms * 0.12, 0, TWO_PI); ctx.fill();
+            }
+            break;
+        }
+    }
+    ctx.restore();
 }
 
 // ─── Player / monkey ──────────────────────────────────────────────────
