@@ -697,6 +697,46 @@ function drawMonkey(size, frame, opts = {}) {
             ctx.fill();
             ctx.stroke();
         }
+    } else if (feature === 'horns') {
+        // Two curved horns sweeping up-and-back from the brow — the berserker.
+        const hc = opts.accent || '#d65a3e';
+        ctx.fillStyle = '#e8d8c4';
+        ctx.strokeStyle = '#6e2017';
+        ctx.lineWidth = 2;
+        for (const s of [-1, 1]) {
+            ctx.beginPath();
+            ctx.moveTo(cx + s * 22, headY - 24);
+            ctx.quadraticCurveTo(cx + s * 54, headY - 44, cx + s * 50, headY - 78);
+            ctx.quadraticCurveTo(cx + s * 40, headY - 50, cx + s * 14, headY - 30);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+        // Glowing brand between the horns.
+        ctx.fillStyle = hc;
+        ctx.beginPath();
+        ctx.arc(cx, headY - 22, 4, 0, TWO_PI);
+        ctx.fill();
+    } else if (feature === 'hood') {
+        // A pointed hood drawn over the crown + cheeks — the assassin.
+        const hc = opts.accent || '#5a6e92';
+        ctx.fillStyle = hc;
+        ctx.strokeStyle = '#222d42';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cx - 40, headY + 6);
+        ctx.quadraticCurveTo(cx - 46, headY - 40, cx, headY - 52);
+        ctx.quadraticCurveTo(cx + 46, headY - 40, cx + 40, headY + 6);
+        ctx.quadraticCurveTo(cx + 22, headY - 14, cx, headY - 16);
+        ctx.quadraticCurveTo(cx - 22, headY - 14, cx - 40, headY + 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Shadow inside the cowl.
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.beginPath();
+        ctx.ellipse(cx, headY - 6, 22, 16, 0, 0, TWO_PI);
+        ctx.fill();
     } else if (feature === 'hat') {
         const hc = opts.accent || '#5a4b8c';
         ctx.fillStyle = hc;

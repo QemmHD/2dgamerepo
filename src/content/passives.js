@@ -169,6 +169,29 @@ export const PASSIVES = {
         },
     },
 
+    // ── Risk / reward + mobility ────────────────────────────────────────
+    glasswick: {
+        id: 'glasswick',
+        name: 'Glasswick',
+        description: '+22% weapon damage per level, but +7% damage taken — burn hot.',
+        maxLevel: 3,
+        apply(player) {
+            player.damageMul *= 1.22;
+            player.damageTakenMul *= 1.07;
+        },
+    },
+
+    featherstep: {
+        id: 'featherstep',
+        name: 'Featherstep',
+        description: '+9% move speed and +8% pickup range per level.',
+        maxLevel: 4,
+        apply(player) {
+            player.speed *= 1.09;
+            player.pickupRange *= 1.08;
+        },
+    },
+
     // ── Hybrid bulwark ──────────────────────────────────────────────────
     stoneheart: {
         id: 'stoneheart',

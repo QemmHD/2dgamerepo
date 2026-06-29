@@ -26,14 +26,18 @@ import { getCharacterFrames } from '../assets/ProceduralSprites.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 
+// Each tab carries an accent color so the menu reads as color-coded sections
+// at a glance (the active tab tints to its own hue; inactive tabs show a thin
+// accent underline). Cool→warm grouping: play/progress greens & golds, economy
+// ambers, cosmetic violet, utility grey.
 export const MENU_TABS = [
-    { id: 'play', label: 'PLAY' },
-    { id: 'skills', label: 'SKILLS' },
-    { id: 'loadout', label: 'LOADOUT' },
-    { id: 'character', label: 'CHARACTER' },
-    { id: 'shop', label: 'SHOP' },
-    { id: 'battlepass', label: 'BATTLE PASS' },
-    { id: 'settings', label: 'SETTINGS' },
+    { id: 'play', label: 'PLAY', accent: '#5fd36a' },
+    { id: 'skills', label: 'SKILLS', accent: '#7fd0ff' },
+    { id: 'loadout', label: 'LOADOUT', accent: '#ffce54' },
+    { id: 'character', label: 'CHARACTER', accent: '#c08bff' },
+    { id: 'shop', label: 'SHOP', accent: '#ff9a4a' },
+    { id: 'battlepass', label: 'BATTLE PASS', accent: '#ff5a8a' },
+    { id: 'settings', label: 'SETTINGS', accent: '#9fb0c4' },
 ];
 
 const SETTING_TOGGLES = [
@@ -151,14 +155,23 @@ export class MenuRenderer {
             const t = MENU_TABS[i];
             const x = x0 + i * (tabW + gap);
             const active = t.id === activeTab;
+            const accent = t.accent || '#ffce54';
             roundRectPath(ctx, x, y, tabW, h, 12);
-            ctx.fillStyle = active ? '#ffce54' : 'rgba(30,36,46,0.9)';
+            ctx.fillStyle = active ? accent : 'rgba(30,36,46,0.9)';
             ctx.fill();
-            ctx.strokeStyle = active ? '#ffe08a' : 'rgba(255,255,255,0.1)';
+            ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.1)';
             ctx.lineWidth = 2; ctx.stroke();
-            ctx.fillStyle = active ? '#1a130a' : 'rgba(235,240,248,0.85)';
+            ctx.fillStyle = active ? '#10141c' : 'rgba(235,240,248,0.85)';
             ctx.font = `700 ${tabW < 230 ? 20 : 23}px ${FONT}`;
             ctx.fillText(t.label, x + tabW / 2, y + h / 2 + 1);
+            // Inactive tabs get a thin accent underline so each section keeps
+            // its color identity even when not selected.
+            if (!active) {
+                ctx.fillStyle = accent;
+                ctx.globalAlpha = 0.7;
+                ctx.fillRect(x + 14, y + h - 7, tabW - 28, 3);
+                ctx.globalAlpha = 1;
+            }
             this._hot(x, y, tabW, h, 'tab', t.id);
         }
     }
@@ -188,12 +201,13 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 18px ${FONT}`;
         this._wrapText(ctx, ch.description, ccx, c.y + c.h * 0.51, cardW - 60, 22, 2);
 
-        // Character picker: a 2×2 grid of selectable hero chips.
+        // Character picker: a 3-wide grid of selectable hero chips (fits the
+        // six heroes in two tidy rows).
         ctx.font = `700 18px ${FONT}`;
         ctx.fillStyle = '#cdd6e2'; ctx.textAlign = 'left';
         ctx.fillText('CHARACTER', c.x + 30, c.y + c.h * 0.58);
-        const cols = 2, gap = 12;
-        const chipW = (cardW - 60 - gap) / cols;
+        const cols = 3, gap = 10;
+        const chipW = (cardW - 60 - gap * (cols - 1)) / cols;
         const chipH = 46;
         const gridY = c.y + c.h * 0.6;
         for (let i = 0; i < CHARACTER_IDS.length; i++) {
@@ -351,17 +365,32 @@ export class MenuRenderer {
             const cost = nextCost(u, level);
             const maxed = level >= u.maxLevel;
             const afford = !maxed && save.totalCoins >= cost;
+            // Color-coded state: green = maxed, gold = affordable now, dim =
+            // can't afford. The card tints + gets a left accent bar so the eye
+            // is drawn to what's buyable.
+            const stateCol = maxed ? '#5fd36a' : afford ? '#ffce54' : 'rgba(255,255,255,0.12)';
             roundRectPath(ctx, x, y, cardW, cardH, 12);
-            ctx.fillStyle = 'rgba(22,27,36,0.9)'; ctx.fill();
-            ctx.strokeStyle = maxed ? '#5fd36a' : afford ? '#ffce54' : 'rgba(255,255,255,0.1)';
-            ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = afford ? 'rgba(46,40,18,0.92)' : maxed ? 'rgba(20,34,24,0.92)' : 'rgba(22,27,36,0.9)';
+            ctx.fill();
+            ctx.strokeStyle = stateCol;
+            ctx.lineWidth = afford || maxed ? 2.5 : 2; ctx.stroke();
+            // Left accent bar.
+            ctx.fillStyle = stateCol;
+            ctx.fillRect(x + 4, y + 12, 5, cardH - 24);
             ctx.textAlign = 'left';
             ctx.fillStyle = '#fff'; ctx.font = `700 25px ${FONT}`;
             ctx.fillText(u.name, x + 22, y + 34);
             ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `500 19px ${FONT}`;
-            ctx.fillText(u.description, x + 22, y + 60);
-            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 17px ${FONT}`;
-            ctx.fillText(`Lv ${level}/${u.maxLevel}`, x + 22, y + 82);
+            ctx.fillText(u.description, x + 22, y + 58);
+            // Segmented level progress bar (filled = owned levels).
+            const segGap = 4, segY = y + 74, segH = 8;
+            const segW = (210 - segGap * (u.maxLevel - 1)) / u.maxLevel;
+            for (let s = 0; s < u.maxLevel; s++) {
+                ctx.fillStyle = s < level ? stateCol : 'rgba(255,255,255,0.12)';
+                ctx.fillRect(x + 22 + s * (segW + segGap), segY, Math.max(2, segW), segH);
+            }
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 15px ${FONT}`;
+            ctx.fillText(`Lv ${level}/${u.maxLevel}`, x + 22, y + 90);
             // Buy button on the right.
             const bw = 150, bh = 56;
             const br = { x: x + cardW - bw - 16, y: y + (cardH - bh) / 2, w: bw, h: bh };
