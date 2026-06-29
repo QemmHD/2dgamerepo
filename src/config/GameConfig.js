@@ -122,31 +122,31 @@ export const AURA = {
 // ── Enemies ────────────────────────────────────────────────────────────
 export const ENEMY = {
     slime: {
-        hp: 30,
-        speed: 110,
+        hp: 34,
+        speed: 115,
         radius: 55,
-        contactDamage: 7,
+        contactDamage: 9,
         xpValue: 1,
     },
     bat: {
-        hp: 18,
-        speed: 220,
+        hp: 20,
+        speed: 232,
         radius: 45,
-        contactDamage: 6,
+        contactDamage: 8,
         xpValue: 1,
     },
     brute: {
-        hp: 80,
-        speed: 80,
+        hp: 95,
+        speed: 84,
         radius: 70,
-        contactDamage: 12,
+        contactDamage: 16,
         xpValue: 3,
     },
     crawler: {
-        hp: 24,
-        speed: 175,
+        hp: 26,
+        speed: 182,
         radius: 40,
-        contactDamage: 7,
+        contactDamage: 9,
         xpValue: 1,
     },
     // Ranged threat: a slow drifter that keeps its distance and lobs a
@@ -159,22 +159,22 @@ export const ENEMY = {
         xpValue: 2,
         behavior: 'spitter',
         keepDistance: 430,   // tries to hold this gap from the player
-        fireInterval: 2.6,   // seconds between shots
+        fireInterval: 2.4,   // seconds between shots
         windup: 0.5,         // telegraph time before a shot leaves
         fireRange: 820,      // won't fire beyond this
-        projectileSpeed: 430,
-        projectileDamage: 10,
+        projectileSpeed: 450,
+        projectileDamage: 13,
     },
     // Burst threat: stalks slowly, then winds up and dashes through the
     // player's last position — punishes standing still.
     charger: {
-        hp: 50,
-        speed: 70,
+        hp: 58,
+        speed: 74,
         radius: 50,
-        contactDamage: 9,
+        contactDamage: 12,
         xpValue: 2,
         behavior: 'charger',
-        chargeInterval: 3.4, // seconds between dashes
+        chargeInterval: 3.1, // seconds between dashes
         windup: 0.55,        // telegraph time before the dash
         triggerRange: 620,   // starts a charge when within this range
         dashSpeed: 760,
@@ -183,20 +183,20 @@ export const ENEMY = {
     // Swarm threat: tiny, very fast, very fragile — comes in numbers and
     // punishes a stationary player but dies to a stiff breeze.
     mite: {
-        hp: 9,
-        speed: 275,
+        hp: 10,
+        speed: 288,
         radius: 28,
-        contactDamage: 4,
+        contactDamage: 5,
         xpValue: 1,
         visualScale: 0.55,
     },
     // Anchor threat: huge, slow, and very tanky with heavy contact damage —
     // a wall you must kite around while it lumbers after you.
     juggernaut: {
-        hp: 210,
-        speed: 50,
+        hp: 245,
+        speed: 52,
         radius: 92,
-        contactDamage: 17,
+        contactDamage: 22,
         xpValue: 5,
         visualScale: 1.35,
     },
@@ -204,50 +204,55 @@ export const ENEMY = {
     // boss HP bar, chest drop on death, and lets the constructor pull in
     // bossName + visualScale. They scale with wave just like other enemies.
     vinebackGoliath: {
-        hp: 1250,
-        speed: 60,
+        hp: 1500,
+        speed: 62,
         radius: 105,
-        contactDamage: 25,
+        contactDamage: 32,
         xpValue: 50,
         boss: true,
         bossName: 'Gravemaw',
         visualScale: 1.85,
-        // Apex boss: a ground-heavy fight. Telegraphed shockwave slam, a cone
-        // of hurled boulders, and a bramble call that summons ground minions —
-        // plus phase-2 enrage at 50% HP and one-shot support waves at 75/50/25%.
+        // Apex boss: a ground-heavy fight. Telegraphed shockwave slam, a SPIRAL
+        // of hurled boulders, a goring CHARGE that lunges through the player's
+        // position, and a bramble call that summons ground minions — plus
+        // phase-2 enrage at 50% HP and one-shot support waves at 75/50/25%.
         behavior: 'apexBoss',
         phase2HpFraction: 0.5,
         // Themed reinforcements (used for the opening group + threshold waves +
         // the Bramble Call summon). Ground-dwellers fit the Goliath's theme.
         supportTypes: { brute: 1, crawler: 2, slime: 2 },
         attacks: [
-            { id: 'slam', kind: 'shockwave', cooldown: 6.0, windup: 0.8, damage: 30, growth: 700, rMax: 520, band: 90 },
-            { id: 'boulders', kind: 'fan', cooldown: 8.5, windup: 0.7, count: 6, spread: 2.3, projectileSpeed: 300, projectileDamage: 20 },
-            { id: 'bramble', kind: 'summon', cooldown: 13.0, windup: 0.7, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
+            { id: 'slam', kind: 'shockwave', cooldown: 5.5, windup: 0.8, damage: 34, growth: 720, rMax: 560, band: 95 },
+            { id: 'boulders', kind: 'fan', cooldown: 7.5, windup: 0.7, count: 7, spread: 2.4, projectileSpeed: 320, projectileDamage: 22, spiral: true, spin: 0.55 },
+            { id: 'charge', kind: 'charge', cooldown: 9.5, windup: 0.65, dashSpeed: 640, dashDuration: 0.7 },
+            { id: 'bramble', kind: 'summon', cooldown: 12.0, windup: 0.7, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
         ],
-        phase2Attacks: ['slam'],
+        phase2Attacks: ['slam', 'charge'],
     },
     stormwingAlpha: {
-        hp: 780,
-        speed: 130,
+        hp: 1000,
+        speed: 134,
         radius: 80,
-        contactDamage: 18,
+        contactDamage: 24,
         xpValue: 35,
         boss: true,
         bossName: 'Vesperwing',
         visualScale: 1.55,
-        // Apex boss: a fast aerial fight. Full-circle radial volley, a sweeping
-        // gust shockwave, and a wing-swarm that summons bats — plus phase-2
-        // enrage at 50% HP and one-shot support waves at 75/50/25%.
+        // Apex boss: a fast aerial fight. Full-circle radial volley, a rotating
+        // SPIRAL barrage, a sweeping gust shockwave, a diving CHARGE, and a
+        // wing-swarm that summons bats — plus phase-2 enrage at 50% HP and
+        // one-shot support waves at 75/50/25%.
         behavior: 'apexBoss',
         phase2HpFraction: 0.5,
         supportTypes: { bat: 3, crawler: 1 },
         attacks: [
-            { id: 'volley', kind: 'fan', cooldown: 5.0, windup: 0.6, count: 12, spread: 6.2832 /* TWO_PI: full-circle radial */, projectileSpeed: 380, projectileDamage: 14 },
-            { id: 'gust', kind: 'shockwave', cooldown: 9.0, windup: 0.6, damage: 22, growth: 600, rMax: 440, band: 80 },
+            { id: 'volley', kind: 'fan', cooldown: 4.5, windup: 0.6, count: 14, spread: 6.2832 /* TWO_PI: full-circle radial */, projectileSpeed: 400, projectileDamage: 16 },
+            { id: 'spiral', kind: 'fan', cooldown: 7.0, windup: 0.5, count: 9, spread: 6.2832, projectileSpeed: 330, projectileDamage: 14, spiral: true, spin: 0.75 },
+            { id: 'gust', kind: 'shockwave', cooldown: 8.0, windup: 0.6, damage: 26, growth: 640, rMax: 480, band: 85 },
+            { id: 'dive', kind: 'charge', cooldown: 8.5, windup: 0.5, dashSpeed: 800, dashDuration: 0.55 },
             { id: 'wingswarm', kind: 'summon', cooldown: 11.0, windup: 0.5, summonCount: 3, summonTypes: { bat: 3 } },
         ],
-        phase2Attacks: ['volley'],
+        phase2Attacks: ['volley', 'dive'],
     },
 };
 
@@ -468,9 +473,9 @@ export const WAVES = [
         spawnIntervalMul: 0.60,
         maxAlive: 110,
         typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24 },
-        eliteChance: 0.015,
-        healthMul: 1.35,
-        speedMul: 1.15,
+        eliteChance: 0.02,
+        healthMul: 1.45,
+        speedMul: 1.17,
     },
     {
         index: 4,
@@ -480,9 +485,9 @@ export const WAVES = [
         spawnIntervalMul: 0.52,
         maxAlive: 125,
         typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8 },
-        eliteChance: 0.03,
-        healthMul: 1.5,
-        speedMul: 1.20,
+        eliteChance: 0.04,
+        healthMul: 1.65,
+        speedMul: 1.22,
     },
     {
         index: 5,
@@ -492,9 +497,9 @@ export const WAVES = [
         spawnIntervalMul: 0.44,
         maxAlive: 145,
         typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20, mite: 28, juggernaut: 14 },
-        eliteChance: 0.06,
-        healthMul: 1.7,
-        speedMul: 1.25,
+        eliteChance: 0.08,
+        healthMul: 1.9,
+        speedMul: 1.28,
     },
 ];
 
@@ -506,21 +511,23 @@ export const WAVES = [
 // wave's startTime, which is 5 min, so 10 → 15 min total) so late enemies
 // actually hurt instead of pinging for minute-1 damage.
 export const ENDLESS_SCALING = {
-    healthPerMinute: 0.09,
-    speedPerMinute: 0.03,
-    spawnIntervalShrinkPerMinute: 0.045,
+    healthPerMinute: 0.11,
+    speedPerMinute: 0.035,
+    spawnIntervalShrinkPerMinute: 0.05,
     capGrowthPerMinute: 4,
-    eliteChancePerMinute: 0.015,
-    damageStartMinutesBeyond: 10,
-    damagePerMinute: 0.06,
-    maxDamageMultiplier: 2.5,
+    eliteChancePerMinute: 0.018,
+    // Contact-damage scaling now bites earlier (7 min total vs 15) and ramps
+    // harder so late enemies are a real threat to a strong build, not chip.
+    damageStartMinutesBeyond: 2,
+    damagePerMinute: 0.08,
+    maxDamageMultiplier: 3.0,
 };
 
 export const WAVE_LIMITS = {
     maxEnemyCap: 180,
-    maxSpeedMultiplier: 2.2,
-    maxHealthMultiplier: 6.0,
-    maxEliteChance: 0.35,
+    maxSpeedMultiplier: 2.3,
+    maxHealthMultiplier: 7.0,
+    maxEliteChance: 0.4,
 };
 
 // Pressure layers ON TOP of the time-based wave tiers to make a wave feel like

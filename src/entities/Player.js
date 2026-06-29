@@ -74,6 +74,15 @@ export class Player {
         this.chillStrength = 0;
         this.freezeChanceBonus = 0;
 
+        // Offensive perk modifiers (read by weapons.js powerRoll at hit time).
+        //   critChance       0..1 chance a hit crits (Emberzeal, Keen Ember)
+        //   critMul          damage multiplier on a crit (Executioner raises it)
+        //   lowHpDamageBonus extra damage fraction while below the rage HP
+        //                    threshold (Last Light) — rewards fighting hurt
+        this.critChance = 0;
+        this.critMul = 2.0;
+        this.lowHpDamageBonus = 0;
+
         // Forward-looking stash for the chest stage.
         this.chestLuck = 0;
         this.coins = 0;
@@ -89,6 +98,11 @@ export class Player {
         // Transient Shadow Dash visual (set by the ability; ticked in update,
         // drawn as an afterimage smear along the blink path). null when idle.
         this.dashFx = null;
+        // Shadow Dash (reworked): a timed movement-speed surge instead of an
+        // instant blink. While speedBoostTimer > 0, move speed is multiplied by
+        // speedBoostMul. Both reset on a fresh Player (restart).
+        this.speedBoostTimer = 0;
+        this.speedBoostMul = 1;
     }
 
     gainXP(amount) {
@@ -123,8 +137,16 @@ export class Player {
 
     update(dt, input) {
         const move = input.getMovement();
-        this.vx = move.x * this.speed;
-        this.vy = move.y * this.speed;
+        // Shadow Dash surge: a transient speed multiplier folded in here so it
+        // never mutates the base speed (upgrades/caps stay intact and it
+        // reverses cleanly when the timer runs out).
+        if (this.speedBoostTimer > 0) {
+            this.speedBoostTimer = Math.max(0, this.speedBoostTimer - dt);
+            if (this.speedBoostTimer === 0) this.speedBoostMul = 1;
+        }
+        const spd = this.speed * (this.speedBoostTimer > 0 ? this.speedBoostMul : 1);
+        this.vx = move.x * spd;
+        this.vy = move.y * spd;
         this.x += this.vx * dt;
         this.y += this.vy * dt;
 

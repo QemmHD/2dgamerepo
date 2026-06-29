@@ -175,6 +175,12 @@ export class Enemy {
             // (75/50/25%) the Game polls to fire support waves + ramp aggression.
             this.bossCadenceMul = 1;
             this.thresholds = { t75: false, t50: false, t25: false };
+            // Charge-attack lunge state + a rotating phase for spiral barrages.
+            this.bossDashTimer = 0;
+            this.bossDashSpeed = 0;
+            this.bossDashDirX = 0;
+            this.bossDashDirY = 0;
+            this.spiralPhase = 0;
             if (Array.isArray(def.attacks)) {
                 for (const a of def.attacks) {
                     this.attackTimers[a.id] = Math.random() * a.cooldown;
@@ -230,7 +236,7 @@ export class Enemy {
         if (dur > this.burnTimer) this.burnTimer = dur;
     }
 
-    update(dt, player, enemyProjectiles) {
+    update(dt, player, enemyProjectiles, obstacleSystem = null) {
         const dx = player.x - this.x;
         const dy = player.y - this.y;
         const len = Math.hypot(dx, dy) || 0.0001;
@@ -298,7 +304,26 @@ export class Enemy {
             // default (moveX/moveY already = nx/ny); runBossAI drives windups
             // and commits. Brace (stand still) while a windup is charging.
             runBossAI(this, dt, player, this._bossOut);
-            if (this.bossWindupTimer > 0 || this.activeAttack) { moveX = 0; moveY = 0; }
+            if (this.bossDashTimer > 0) {
+                // Committed CHARGE: barrel along the locked lunge heading at the
+                // dash speed (ignores bracing so the lunge actually travels).
+                this.bossDashTimer -= dt;
+                moveX = this.bossDashDirX; moveY = this.bossDashDirY;
+                spd = this.bossDashSpeed * slowK * chillK;
+            } else if (this.bossWindupTimer > 0 || this.activeAttack) {
+                moveX = 0; moveY = 0;
+            }
+        }
+
+        // Big-body obstacle avoidance: bosses and juggernauts are wide enough to
+        // wedge against buildings on a straight chase. When the path directly
+        // ahead is blocked, rotate the move heading to the nearest clear angle
+        // so they flow AROUND cover instead of grinding into it (and getting
+        // stuck). Skipped while dashing/bracing (they commit their heading).
+        if (obstacleSystem && (this.boss || this.radius >= 85) && (moveX || moveY) && spd > 0 &&
+            this.bossDashTimer <= 0 && this.bossWindupTimer <= 0 && !this.activeAttack) {
+            const steered = steerAround(this.x, this.y, moveX, moveY, this.radius, obstacleSystem);
+            moveX = steered.x; moveY = steered.y;
         }
 
         if (moveX !== 0 || moveY !== 0) {
@@ -316,7 +341,7 @@ export class Enemy {
         // ground telegraph it already painted (the shockwave commits at the
         // boss's live position, so drift would desync the warning ring). The
         // impulse is dropped, not banked, so it doesn't snap on release.
-        const bossPlanted = this.boss && (this.bossWindupTimer > 0 || this.activeAttack);
+        const bossPlanted = this.boss && (this.bossWindupTimer > 0 || this.activeAttack || this.bossDashTimer > 0);
         if (bossPlanted) {
             this.knockbackVx = 0;
             this.knockbackVy = 0;
@@ -578,6 +603,27 @@ function hexToHalo(hex, a) {
 // time. Movement is the default chase handled by Enemy.update; this only
 // drives specials. The caller braces the boss (stand still) while a windup is
 // active so the telegraph reads clearly.
+// Probe headings fanning out from the desired chase direction and return the
+// first one whose lookahead point is clear of obstacles, so a wide body steers
+// around cover instead of pressing into it. Angles alternate left/right and
+// widen; falls back to the straight heading if everything is blocked (the
+// per-frame resolveCircle still keeps it out of walls in that worst case).
+const STEER_ANGLES = [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.1, -2.1];
+function steerAround(x, y, dx, dy, radius, obs) {
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = dx / len, ny = dy / len;
+    const ahead = radius + 70;
+    for (const a of STEER_ANGLES) {
+        const c = Math.cos(a), s = Math.sin(a);
+        const rx = nx * c - ny * s;
+        const ry = nx * s + ny * c;
+        if (!obs.isBlocked(x + rx * ahead, y + ry * ahead, radius * 0.92)) {
+            return { x: rx, y: ry };
+        }
+    }
+    return { x: nx, y: ny };
+}
+
 function runBossAI(e, dt, player, out) {
     const def = e.def;
 
@@ -625,6 +671,18 @@ function runBossAI(e, dt, player, out) {
                     out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 140, age: 0, lifetime: atk.windup, active: true, fan: true });
                 } else if (atk.kind === 'summon') {
                     out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 160, age: 0, lifetime: atk.windup, active: true, fan: true });
+                } else if (atk.kind === 'charge') {
+                    // Directional lunge warning: a lane painted from the boss
+                    // toward the player so the charge is telegraphed, not a
+                    // surprise. Aimed at the player's current position (the
+                    // commit re-aims, so this is a close approximation).
+                    const ca = Math.atan2(player.y - e.y, player.x - e.x);
+                    out.hazards.push({
+                        kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 120,
+                        age: 0, lifetime: atk.windup, active: true, charge: true,
+                        dirX: Math.cos(ca), dirY: Math.sin(ca),
+                        reach: (atk.dashSpeed ?? 600) * (atk.dashDuration ?? 0.6),
+                    });
                 }
             }
             break; // only one windup at a time
@@ -648,9 +706,15 @@ function commitBossAttack(e, atk, player, out) {
             active: true,
         });
     } else if (atk.kind === 'fan' && out.enemyProjectiles) {
-        const base = Math.atan2(player.y - e.y, player.x - e.x);
+        let base = Math.atan2(player.y - e.y, player.x - e.x);
         const count = atk.count ?? 1;
         const full = (atk.spread ?? 0) >= 6.28; // full-circle radial volley
+        // SPIRAL barrage: rotate the whole pattern a little each cast so
+        // successive volleys sweep a turning spiral the player must weave.
+        if (atk.spiral) {
+            base += e.spiralPhase;
+            e.spiralPhase = (e.spiralPhase + (atk.spin ?? 0.5)) % TWO_PI;
+        }
         for (let i = 0; i < count; i++) {
             const a = full
                 ? base + (i / count) * TWO_PI
@@ -662,6 +726,14 @@ function commitBossAttack(e, atk, player, out) {
                 atk.projectileDamage
             ));
         }
+    } else if (atk.kind === 'charge') {
+        // Goring lunge: lock the heading at the player's current position and
+        // commit to a fast dash for dashDuration (driven in Enemy.update).
+        const ang = Math.atan2(player.y - e.y, player.x - e.x);
+        e.bossDashDirX = Math.cos(ang);
+        e.bossDashDirY = Math.sin(ang);
+        e.bossDashSpeed = atk.dashSpeed ?? 600;
+        e.bossDashTimer = atk.dashDuration ?? 0.6;
     } else if (atk.kind === 'summon' && out.summons) {
         // Queue a themed minion call for the Game to fulfill (it owns spawn
         // placement, wave scaling, and the live enemy cap).

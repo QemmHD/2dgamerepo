@@ -27,6 +27,27 @@ import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KNOCKBACK, SHOCK_CFG, AURA } from '../
 import { Projectile } from '../entities/Projectile.js';
 import { getEmberWispSprite } from '../assets/ProceduralSprites.js';
 
+// HP fraction at/under which Last Light's rage bonus engages.
+const LOW_HP_RAGE_THRESHOLD = 0.35;
+
+// Per-hit damage multiplier from the offensive perks (crit + low-HP rage).
+// Folded into the `dmgMul` every weapon already multiplies its base damage by,
+// so a single roll covers projectile spawns and instant hits alike. Crit is a
+// chance roll, so it's evaluated once per shot / per weapon tick (gated by the
+// weapon's own cooldown) — exactly where damage is decided. Returns 1 when the
+// player has no offensive perks, so default behavior is unchanged.
+export function powerRoll(player) {
+    if (!player) return 1;
+    let m = 1;
+    const rage = player.lowHpDamageBonus ?? 0;
+    if (rage > 0 && player.maxHp > 0 && player.hp / player.maxHp <= LOW_HP_RAGE_THRESHOLD) {
+        m *= 1 + rage;
+    }
+    const cc = player.critChance ?? 0;
+    if (cc > 0 && Math.random() < cc) m *= (player.critMul ?? 2);
+    return m;
+}
+
 export const WEAPONS = {
     arcaneBolt: {
         id: 'arcaneBolt',
@@ -258,19 +279,19 @@ export const WEAPONS = {
     // Data-driven, movement-only. They appear in the level-up pool like any
     // other weapon. None require manual aiming.
 
-    // Shadow Dash: periodically blink a short distance along your movement,
-    // slashing enemies on the path. Won't dash through walls (LOS-gated).
+    // Shadow Dash: periodically surge with a burst of movement speed for a few
+    // seconds — a kiting/repositioning tool rather than an instant blink.
     shadowDash: {
         id: 'shadowDash', name: 'Shadow Dash', kind: 'special', ability: true,
-        description: 'Periodically dash forward, cutting through foes.',
+        description: 'Surge with a burst of speed for a few seconds.',
         maxLevel: 5,
         perLevel: [
             null,
-            { cooldown: 5.0, dashDistance: 280, damage: 18, width: 80 },
-            { cooldown: 4.5, dashDistance: 300, damage: 24, width: 86 },
-            { cooldown: 4.0, dashDistance: 320, damage: 30, width: 92 },
-            { cooldown: 3.5, dashDistance: 340, damage: 35, width: 98 },
-            { cooldown: 3.0, dashDistance: 360, damage: 42, width: 104 },
+            { cooldown: 8.0, duration: 2.5, speedMul: 1.6 },
+            { cooldown: 7.5, duration: 2.8, speedMul: 1.7 },
+            { cooldown: 7.0, duration: 3.1, speedMul: 1.8 },
+            { cooldown: 6.5, duration: 3.4, speedMul: 1.9 },
+            { cooldown: 6.0, duration: 3.8, speedMul: 2.0 },
         ],
         update: shadowDashUpdate,
     },
@@ -398,7 +419,7 @@ function arcaneBoltUpdate(dt, owned, ctx) {
         return;
     }
 
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     const dx = target.x - ctx.player.x;
     const dy = target.y - ctx.player.y;
@@ -435,7 +456,7 @@ function orbitingBladeUpdate(dt, owned, ctx) {
         });
     }
 
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     const damage = cfg.damage * dmgMul;
     const hitCooldown = cfg.hitCooldown * cdMul;
@@ -480,7 +501,7 @@ function holyPulseUpdate(dt, owned, ctx) {
     const cfg = WEAPONS[owned.id].perLevel[owned.level];
     owned.timer -= dt;
     if (owned.timer > 0) return;
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     owned.timer = cfg.cooldown * cdMul;
     const damage = cfg.damage * dmgMul;
@@ -540,7 +561,7 @@ function lightningMarkUpdate(dt, owned, ctx) {
         return;
     }
 
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     const damage = cfg.damage * dmgMul;
     // Signature: anti-boss targeting. Reserve half the strikes (min 1) for
@@ -634,7 +655,7 @@ function arcaneStormUpdate(dt, owned, ctx) {
         return;
     }
 
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     const dx = target.x - ctx.player.x;
     const dy = target.y - ctx.player.y;
@@ -671,7 +692,7 @@ function emberWispUpdate(dt, owned, ctx) {
         return;
     }
 
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     const dx = target.x - ctx.player.x;
     const dy = target.y - ctx.player.y;
@@ -703,7 +724,7 @@ function infernoStormUpdate(dt, owned, ctx) {
         return;
     }
 
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     const dx = target.x - ctx.player.x;
     const dy = target.y - ctx.player.y;
@@ -736,7 +757,7 @@ function divineNovaUpdate(dt, owned, ctx) {
     owned.timer -= dt;
     if (owned.timer > 0) return;
 
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     owned.timer = cfg.cooldown * cdMul;
     const damage = cfg.damage * dmgMul;
@@ -804,7 +825,7 @@ function thunderCrownUpdate(dt, owned, ctx) {
         return;
     }
 
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     const damage = cfg.damage * dmgMul;
     const chainDamage = (cfg.chainDamage ?? cfg.damage) * dmgMul;
@@ -884,58 +905,25 @@ function thunderCrownUpdate(dt, owned, ctx) {
 
 // ─── Ability behaviors ─────────────────────────────────────────────────
 
-// Shadow Dash: on cooldown, blink along the player's movement direction
-// (facing if idle), damaging foes near the dash line. Won't cross walls.
+// Shadow Dash (reworked): on cooldown, grant a timed movement-speed surge so
+// the player can reposition / kite. No teleport, no path damage — a pure
+// mobility burst. The boost is applied as a transient multiplier on the Player
+// (folded into movement in Player.update) so it never mutates base speed.
 function shadowDashUpdate(dt, owned, ctx) {
     const cfg = WEAPONS[owned.id].perLevel[owned.level];
     owned.timer -= dt;
     if (owned.timer > 0) return;
     const p = ctx.player;
 
-    let dx = p.vx ?? 0, dy = p.vy ?? 0;
-    let len = Math.hypot(dx, dy);
-    if (len < 1) { dx = (p.facingX ?? 1) >= 0 ? 1 : -1; dy = 0; len = 1; }
-    const nx = dx / len, ny = dy / len;
+    p.speedBoostTimer = cfg.duration;
+    p.speedBoostMul = cfg.speedMul;
 
-    // Pick the farthest dash whose path crosses no SOLID obstacle (fences and
-    // graves block the dash too, not just sight-blockers) — never blink into a
-    // wall. blocked() is solid-aware with an LOS fallback for safety.
-    const blocked = (bx, by) => (ctx.solidBlocked ? ctx.solidBlocked(p.x, p.y, bx, by)
-        : (ctx.los ? !ctx.los(bx, by) : false));
-    let dist = cfg.dashDistance;
-    if (blocked(p.x + nx * dist, p.y + ny * dist)) {
-        dist *= 0.5;
-        if (blocked(p.x + nx * dist, p.y + ny * dist)) { owned.timer = 0.3; return; }
+    // A burst at the player's feet + dust kick to sell the surge taking off.
+    ctx.effects.push({ kind: 'pulse', x: p.x, y: p.y, radius: 64, age: 0, lifetime: 0.3, active: true });
+    if (ctx.particles && ctx.particles.dashDust) {
+        const fx = (p.facingX ?? 1) >= 0 ? 1 : -1;
+        ctx.particles.dashDust(p.x, p.y, -fx, 0);
     }
-
-    const destX = p.x + nx * dist, destY = p.y + ny * dist;
-    const dmg = cfg.damage * (p.damageMul ?? 1);
-    // Damage enemies within `width` of the dash segment.
-    for (const e of ctx.enemies) {
-        if (!e.active) continue;
-        const t = Math.max(0, Math.min(1, ((e.x - p.x) * nx + (e.y - p.y) * ny) / dist));
-        const cx = p.x + nx * dist * t, cy = p.y + ny * dist * t;
-        if ((e.x - cx) ** 2 + (e.y - cy) ** 2 <= (cfg.width + e.radius) ** 2) {
-            e.takeDamage(dmg, nx * KNOCKBACK.strength * 0.5, ny * KNOCKBACK.strength * 0.5);
-            ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
-            if (!e.active) ctx.killed.push(e);
-        }
-    }
-
-    const fromX = p.x, fromY = p.y;
-    p.x = destX; p.y = destY;
-    // Readable dash animation: stash a short-lived smear/afterimage state the
-    // Player renders (ghost trail along the path + a forward stretch), plus a
-    // burst at the start AND arrival so the blink reads as a deliberate dash.
-    p.dashFx = {
-        age: 0, dur: 0.22,
-        fromX, fromY, toX: destX, toY: destY,
-        dirX: nx, dirY: ny,
-    };
-    ctx.effects.push({ kind: 'pulse', x: fromX, y: fromY, radius: 56, age: 0, lifetime: 0.28, active: true });
-    ctx.effects.push({ kind: 'pulse', x: destX, y: destY, radius: 70, age: 0, lifetime: 0.3, active: true });
-    // Dust/sparks kicked back from the launch point.
-    if (ctx.particles && ctx.particles.dashDust) ctx.particles.dashDust(fromX, fromY, nx, ny);
     owned.timer = cfg.cooldown * (p.cooldownMul ?? 1);
 }
 
@@ -945,7 +933,7 @@ function cinderAuraUpdate(dt, owned, ctx) {
     const cfg = WEAPONS[owned.id].perLevel[owned.level];
     owned.timer -= dt;
     if (owned.timer > 0) return;
-    const dmgMul = ctx.player.damageMul ?? 1;
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     owned.timer = cfg.cooldown * cdMul;
     const damage = cfg.damage * dmgMul;

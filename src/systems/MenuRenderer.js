@@ -395,13 +395,17 @@ export class MenuRenderer {
             ctx.fillText(labels[cat], x + colW / 2, c.y + 34);
             const items = itemsFor(cat);
             let iy = c.y + 56;
-            const ih = 64, ig = 10;
+            // Gear cards are taller so each can carry a short line describing
+            // what its buffs actually DO (the player asked for this); cosmetics
+            // have no buffs, so they stay compact.
+            const ih = kind === 'gear' ? 88 : 64, ig = 10;
+            const innerW = colW - 24;
             for (const item of items) {
                 if (iy + ih > c.y + c.h - 8) break; // clip to column
                 const unlocked = isUnlocked(item.id);
                 const equippedHere = equipped[cat] === item.id;
                 const col = rarityColor(item.rarity);
-                roundRectPath(ctx, x + 12, iy, colW - 24, ih, 10);
+                roundRectPath(ctx, x + 12, iy, innerW, ih, 10);
                 ctx.fillStyle = equippedHere ? 'rgba(255,206,84,0.16)' : 'rgba(255,255,255,0.04)';
                 ctx.fill();
                 ctx.strokeStyle = equippedHere ? '#ffce54' : unlocked ? col : 'rgba(255,255,255,0.08)';
@@ -413,6 +417,31 @@ export class MenuRenderer {
                 ctx.fillText(item.name, x + 26, iy + 26);
                 ctx.fillStyle = col; ctx.font = `600 15px ${FONT}`;
                 ctx.fillText(unlocked ? (equippedHere ? 'EQUIPPED' : rarityName(item.rarity)) : '🔒 LOCKED', x + 26, iy + 48);
+                // Gear: short effect summary so the player knows what each item
+                // grants. Buff bag → human strings; a buffless starting weapon
+                // falls back to its flavor description (trimmed to one line).
+                if (kind === 'gear') {
+                    const buffs = buffSummary(item.buffs);
+                    const text = (buffs.length ? buffs.join(' · ')
+                        : (item.description || '').replace(/^Start (?:each vigil )?with the [^.]+\.\s*/i, '').trim())
+                        || 'No bonuses — base option.';
+                    ctx.fillStyle = 'rgba(206,214,226,0.82)';
+                    ctx.font = `500 13px ${FONT}`;
+                    // Word-wrap to at most two lines within the card width.
+                    const maxW = innerW - 28;
+                    const words = text.split(/\s+/);
+                    const lines = [];
+                    let line = '';
+                    for (const w of words) {
+                        const test = line ? line + ' ' + w : w;
+                        if (ctx.measureText(test).width > maxW && line) {
+                            lines.push(line); line = w;
+                            if (lines.length >= 2) break;
+                        } else line = test;
+                    }
+                    if (line && lines.length < 2) lines.push(line);
+                    for (let li = 0; li < lines.length; li++) ctx.fillText(lines[li], x + 26, iy + 68 + li * 16);
+                }
                 ctx.globalAlpha = 1;
                 if (unlocked && !equippedHere) {
                     this._hot(x + 12, iy, colW - 24, ih,
