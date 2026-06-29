@@ -39,6 +39,13 @@ function defaultData() {
             totalBosses: 0,
             totalCoinsEarned: 0,
             casesOpened: 0,
+            // "The Vigil Endures" additions (all numeric → auto-validated by the
+            // stats loop in _validate; old saves default them to 0).
+            playtimeSec: 0,          // lifetime seconds survived across runs
+            eliteBossesDefeated: 0,  // bosses killed on Hard (a bragging stat)
+            bestGauntletScore: 0,    // best endless score after 3rd-boss victory
+            gauntletRuns: 0,         // endless continuations played
+            hardWins: 0,             // 3rd-boss victories on Hard difficulty
         },
         settings: {
             screenShake: true,
@@ -75,9 +82,17 @@ function defaultData() {
         gamble: { windowStart: 0, count: 0 },
         // Selected biome/map id (see content/maps.js); unlock-gated by bosses.
         selectedMap: DEFAULT_MAP,
-        version: 4,
+        // Chosen difficulty tier (validated string — deliberately NOT in
+        // settings{}, whose loop clamps every value to 0..1 / booleans).
+        difficulty: 'normal',
+        // Earned achievement ids (one-time milestones; see content/achievements).
+        achievements: { claimed: [] },
+        version: 5,
     };
 }
+
+// Valid difficulty tiers (kept here so _validate + accessors agree).
+const DIFFICULTIES = ['easy', 'normal', 'hard'];
 
 // Validate an array into a deduped list of non-empty strings, seeded with the
 // supplied defaults so a slot can never lose its baseline unlocks.
@@ -211,7 +226,20 @@ export class SaveSystem {
 
         const selectedMap = MAPS[data.selectedMap] ? data.selectedMap : DEFAULT_MAP;
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, gamble, selectedMap, version: 4 };
+        // Difficulty: validated string (falls back to 'normal' for old saves /
+        // stale values). Must live OUTSIDE settings{} (that loop is numeric).
+        const difficulty = DIFFICULTIES.includes(data.difficulty) ? data.difficulty : 'normal';
+
+        // Achievements: a deduped list of known-string claimed ids (mirrors the
+        // battlePass.claimed pattern; unknown/old ids are harmless).
+        const da = data.achievements && typeof data.achievements === 'object' ? data.achievements : {};
+        const achievements = {
+            claimed: Array.isArray(da.claimed)
+                ? [...new Set(da.claimed.filter((s) => typeof s === 'string' && s))]
+                : [],
+        };
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, gamble, selectedMap, difficulty, achievements, version: 5 };
     }
 
     save() {
@@ -399,6 +427,46 @@ export class SaveSystem {
         if (!this.data.stats) return;
         this.data.stats[key] = (this.data.stats[key] ?? 0) + amount;
         this.save();
+    }
+
+    // ── Difficulty tier ──────────────────────────────────────────────────
+    getDifficulty() {
+        return DIFFICULTIES.includes(this.data.difficulty) ? this.data.difficulty : 'normal';
+    }
+
+    setDifficulty(id) {
+        if (!DIFFICULTIES.includes(id)) return false;
+        this.data.difficulty = id;
+        this.save();
+        return true;
+    }
+
+    // ── Achievements (one-time milestone claims) ─────────────────────────
+    isAchievementClaimed(id) {
+        return !!this.data.achievements && this.data.achievements.claimed.includes(id);
+    }
+
+    // Marks an achievement claimed. Returns true if this call NEWLY claimed it.
+    claimAchievement(id) {
+        if (!this.data.achievements) this.data.achievements = { claimed: [] };
+        if (this.data.achievements.claimed.includes(id)) return false;
+        this.data.achievements.claimed.push(id);
+        this.save();
+        return true;
+    }
+
+    // ── Gauntlet (endless) score ─────────────────────────────────────────
+    // Banks an endless-continuation score; bumps the best + the run counter.
+    // Returns true if it's a new personal best.
+    recordGauntletScore(score) {
+        const s = this.data.stats;
+        if (!s) return false;
+        const v = Math.max(0, Math.floor(score || 0));
+        s.gauntletRuns = (s.gauntletRuns ?? 0) + 1;
+        let best = false;
+        if (v > (s.bestGauntletScore ?? 0)) { s.bestGauntletScore = v; best = true; }
+        this.save();
+        return best;
     }
 
     // ── Gamble quota: 5 plays per rolling hour ───────────────────────────

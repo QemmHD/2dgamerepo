@@ -49,6 +49,7 @@ import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
+import { DIFFICULTY, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS } from '../config/GameConfig.js';
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
@@ -130,6 +131,11 @@ export class Game {
         // Main-menu state: active tab + transient case-opening animation +
         // a short-lived toast for claim/case feedback.
         this.menuTab = 'play';
+        // Transient pre-run "Trial" modifier selection (ids); never persisted.
+        this.selectedModifiers = new Set();
+        // Run-scale layer (difficulty × modifiers); set fresh each run start.
+        this.runScale = { hp: 1, speed: 1, damage: 1, elite: 1, cap: 1, interval: 1 };
+        this.runBonus = { xp: 0, coin: 0 };
         this.caseAnim = null;
         // Mines mini-game overlay (coin gamble): state object while open, null
         // otherwise. See _openMines.
@@ -492,6 +498,11 @@ export class Game {
         this._victoryShown = false;
         this._runRecorded = false;
         this.runSummary = null;
+        // Gauntlet (endless) scoring — armed only after a 3rd-boss victory
+        // continuation; banked on the next death.
+        this._gauntletActive = false;
+        this.gauntletScore = 0;
+        this.gauntletBest = false;
 
         this.time = 0;
         this.kills = 0;
@@ -560,6 +571,39 @@ export class Game {
         this.player.weaponSkin = resolveWeaponSkin(startWeaponId);
         this.playerSwingMelee = isMeleeWeapon(startWeaponId);
         this._swingCd = 0;
+        // ── Difficulty + run modifiers ("Trials") ──────────────────────────
+        // Fold the chosen difficulty tier and any active run modifiers into a
+        // single wave-scale layer (applied to waveState each frame) + apply the
+        // player-side mods now (after character/loadout so they compound). The
+        // XP/coin bonus rewards the extra challenge and is capped.
+        this.difficulty = this.saveSystem.getDifficulty();
+        const diff = DIFFICULTY[this.difficulty] || DIFFICULTY.normal;
+        const mods = RUN_MODIFIERS.filter((m) => this.selectedModifiers.has(m.id));
+        this.activeModifiers = mods;
+        let hp = diff.hp, speed = diff.speed, damage = diff.damage, elite = diff.elite, cap = 1, interval = 1;
+        let pDamage = 1, pPickup = 1, pIncoming = 1, xpBonus = diff.xpBonus || 0, coinBonus = 0;
+        for (const m of mods) {
+            if (m.hp) hp *= m.hp;
+            if (m.speed) speed *= m.speed;
+            if (m.damage) damage *= m.damage;
+            if (m.elite) elite *= m.elite;
+            if (m.cap) cap *= m.cap;
+            if (m.interval) interval *= m.interval;
+            if (m.playerDamage) pDamage *= m.playerDamage;
+            if (m.playerPickup) pPickup *= m.playerPickup;
+            if (m.playerIncoming) pIncoming *= m.playerIncoming;
+            xpBonus += m.xpBonus || 0;
+            coinBonus += m.coinBonus || 0;
+        }
+        this.runScale = { hp, speed, damage, elite, cap, interval };
+        this.runBonus = {
+            xp: Math.min(xpBonus, RUN_MODIFIER_MAX_BONUS + (diff.xpBonus || 0)),
+            coin: Math.min(coinBonus, RUN_MODIFIER_MAX_BONUS),
+        };
+        // Apply player-side modifiers (compose onto loadout/character values).
+        this.player.damageMul = (this.player.damageMul ?? 1) * pDamage;
+        this.player.pickupRange *= pPickup;
+        this.player.damageTakenMul = (this.player.damageTakenMul ?? 1) * pIncoming;
         // Remember how many coins the shop handed us so _enterGameOver can
         // bank only what was *earned* this run, not the granted seed.
         this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
@@ -612,12 +656,16 @@ export class Game {
     _showVictory() {
         this.victory = { age: 0 };
         this.audio.objective();
+        // A 3rd-boss clear on Nightmare is a bragging milestone.
+        if (this.difficulty === 'hard') this.saveSystem.incrementStat('hardWins', 1);
         this._updateJoystickEnabled();
     }
 
-    // Continue the same run (keep the gauntlet going past 3 bosses).
+    // Continue the same run (keep the gauntlet going past 3 bosses). From here
+    // on the run is scored as a Gauntlet (endless) — banked on the next death.
     victoryContinue() {
         this.victory = null;
+        this._gauntletActive = true;
         this.audio.click();
         this._updateJoystickEnabled();
     }
@@ -771,6 +819,11 @@ export class Game {
         switch (action) {
             case 'tab': this.menuTab = arg; this.resetConfirming = false; break;
             case 'startRun': this._pressFeedback('start'); this._startRun(); break;
+            case 'setDifficulty': this.saveSystem.setDifficulty(arg); break;
+            case 'toggleModifier':
+                if (this.selectedModifiers.has(arg)) this.selectedModifiers.delete(arg);
+                else this.selectedModifiers.add(arg);
+                break;
             case 'buyUpgrade': this._pressFeedback(`shop:${arg}`); this.buyUpgrade(arg); break;
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
@@ -1072,7 +1125,7 @@ export class Game {
     // ahead for balance testing. Refreshes the cached wave state immediately.
     _debugSkipTime(seconds) {
         this.time += seconds;
-        this.waveState = this.waveDirector.getState(this.time);
+        this.waveState = this._applyRunScale(this.waveDirector.getState(this.time));
         if (this.waveDirector.announce) this.waveDirector.announce(`⏩ +${seconds}s → ${(this.time / 60).toFixed(1)} min`, 1.5);
     }
 
@@ -1112,6 +1165,22 @@ export class Game {
         if (d > max && d > 0) { ent.x = a.x + (dx / d) * max; ent.y = a.y + (dy / d) * max; }
     }
 
+    // Fold the run-scale layer (difficulty × active modifiers) into a freshly-
+    // built wave state. getState() returns a new object literal each call, so
+    // mutating it here can't compound across frames. eliteChance + cap stay
+    // bounded so Hard + Elite-Hunt can't runaway.
+    _applyRunScale(ws) {
+        const r = this.runScale;
+        if (!r || !ws) return ws;
+        ws.healthMul = (ws.healthMul ?? 1) * r.hp;
+        ws.speedMul = (ws.speedMul ?? 1) * r.speed;
+        ws.damageMul = (ws.damageMul ?? 1) * r.damage;
+        ws.eliteChance = Math.min(0.85, (ws.eliteChance ?? 0) * r.elite);
+        ws.maxAlive = Math.round((ws.maxAlive ?? 0) * r.cap);
+        ws.spawnIntervalMul = (ws.spawnIntervalMul ?? 1) * r.interval;
+        return ws;
+    }
+
     _spawnBoss(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
@@ -1148,7 +1217,9 @@ export class Game {
         // HP step up (1× / 1.8× / 2.6× …) to stay a real fight; damage ramps
         // only mildly (the boss already hits hard enough).
         const tierMul = 1 + encounter * 0.8;
-        const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul;
+        // Boss HP also scales with the difficulty tier (trash damage/speed
+        // already flow through this.waveState). runScale.hp folds difficulty in.
+        const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul * (this.runScale?.hp ?? 1);
         const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.12);
         const boss = new Enemy(id, x, y, {
             healthMul: bossHpMul,
@@ -1492,6 +1563,20 @@ export class Game {
         // Bank run coins to total — exactly once (the helper is guarded by
         // bankedThisRun, which also covers abandoning via the pause overlay).
         const earned = this._bankRunCoins();
+        // Difficulty/modifier coin bonus on top of what was earned.
+        if (this.runBonus?.coin > 0 && earned > 0) {
+            this.saveSystem.addCoins(Math.round(earned * this.runBonus.coin));
+        }
+        // Lifetime trackers surfaced on the new Stats screen.
+        this.saveSystem.incrementStat('playtimeSec', Math.max(0, Math.floor(this.time)));
+        if (this.difficulty === 'hard') {
+            this.saveSystem.incrementStat('eliteBossesDefeated', this.bossesDefeated);
+        }
+        // Gauntlet (endless) score: only after a 3rd-boss victory continuation.
+        if (this._gauntletActive) {
+            this.gauntletScore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
+            this.gauntletBest = this.saveSystem.recordGauntletScore(this.gauntletScore);
+        }
 
         this.runSummary = {
             time: this.time,
@@ -1518,6 +1603,11 @@ export class Game {
         // Award battle-pass (vigil) XP from the run and surface the gain on the
         // game-over screen.
         this.bpResult = awardBattlePassRun(this.saveSystem, this.runSummary);
+        // Difficulty/modifier Pass-XP bonus (Hard = +50%, mods add more).
+        if (this.runBonus?.xp > 0 && this.bpResult && this.bpResult.gained > 0) {
+            const bonus = Math.round(this.bpResult.gained * this.runBonus.xp);
+            if (bonus > 0) { this.saveSystem.addBattlePassXp(bonus); this.bpResult.gained += bonus; }
+        }
 
         this._updateJoystickEnabled();
     }
@@ -1613,7 +1703,7 @@ export class Game {
         this._checkObjectives();
 
         this.waveDirector.update(dt, this.time, this.enemies.length);
-        this.waveState = this.waveDirector.getState(this.time);
+        this.waveState = this._applyRunScale(this.waveDirector.getState(this.time));
 
         // One boss at a time: gate the scheduler on a live "is any boss alive"
         // check so a scheduled spawn is held (not stacked) while one is active.
@@ -2568,6 +2658,9 @@ export class Game {
             base.caseAnim = this.caseAnim;
             base.menuToast = this.menuToastTimer > 0 ? this.menuToast : null;
             base.gamblePlays = this.saveSystem.gamblePlaysInfo();
+            // "Vigil Endures": pre-run difficulty + active Trial modifiers.
+            base.difficulty = this.saveSystem.getDifficulty();
+            base.selectedModifiers = [...this.selectedModifiers];
             return base;
         }
 
