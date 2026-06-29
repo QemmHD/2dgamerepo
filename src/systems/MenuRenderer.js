@@ -201,12 +201,13 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 18px ${FONT}`;
         this._wrapText(ctx, ch.description, ccx, c.y + c.h * 0.51, cardW - 60, 22, 2);
 
-        // Character picker: a 2×2 grid of selectable hero chips.
+        // Character picker: a 3-wide grid of selectable hero chips (fits the
+        // six heroes in two tidy rows).
         ctx.font = `700 18px ${FONT}`;
         ctx.fillStyle = '#cdd6e2'; ctx.textAlign = 'left';
         ctx.fillText('CHARACTER', c.x + 30, c.y + c.h * 0.58);
-        const cols = 2, gap = 12;
-        const chipW = (cardW - 60 - gap) / cols;
+        const cols = 3, gap = 10;
+        const chipW = (cardW - 60 - gap * (cols - 1)) / cols;
         const chipH = 46;
         const gridY = c.y + c.h * 0.6;
         for (let i = 0; i < CHARACTER_IDS.length; i++) {
