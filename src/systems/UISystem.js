@@ -311,8 +311,10 @@ export class UISystem {
         const combo = state.combo ?? 0;
         if (combo < (COMBO.minToShow ?? 3)) return;
         const sa = this.renderer.safeArea;
-        const cx = INTERNAL_WIDTH / 2;
-        const y = sa.top + 116;
+        // Anchored to the upper-RIGHT (right-aligned), below the debug/pause
+        // buttons, so it never collides with the center timer/wave/boss stack.
+        const rx = INTERNAL_WIDTH - sa.right - 40;
+        const y = sa.top + 150;
         // Pick the hottest tier the streak has reached.
         let color = COMBO.tiers[0].color;
         for (const t of COMBO.tiers) if (combo >= t.at) color = t.color;
@@ -320,20 +322,20 @@ export class UISystem {
         // Subtle pulse that quickens with the streak size.
         const pulse = 1 + 0.06 * Math.sin((state.time ?? 0) * (6 + combo * 0.05));
         ctx.save();
-        ctx.textAlign = 'center';
+        ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.shadowColor = color;
         ctx.shadowBlur = 14;
         ctx.fillStyle = color;
-        ctx.font = `900 ${Math.round(38 * pulse)}px ${FONT}`;
-        ctx.fillText(`${combo}× STREAK`, cx, y);
+        ctx.font = `900 ${Math.round(34 * pulse)}px ${FONT}`;
+        ctx.fillText(`${combo}× STREAK`, rx, y);
         ctx.shadowBlur = 0;
-        // Draining window bar beneath the text.
-        const barW = 168, barH = 6, bx = cx - barW / 2, by = y + 24;
+        // Draining window bar beneath the text (right-aligned).
+        const barW = 168, barH = 6, bx = rx - barW, by = y + 22;
         ctx.fillStyle = 'rgba(255,255,255,0.14)';
         ctx.fillRect(bx, by, barW, barH);
         ctx.fillStyle = color;
-        ctx.fillRect(bx, by, barW * frac, barH);
+        ctx.fillRect(bx + barW * (1 - frac), by, barW * frac, barH);
         ctx.restore();
     }
 
@@ -369,9 +371,13 @@ export class UISystem {
             roundRectPath(ctx, bx, by, barW * p, barH, 3);
             ctx.fill();
             if (p > 0.7) {
+                // Label ABOVE the bar so it never collides with the boss HP bar
+                // that sits just below this band.
+                ctx.textBaseline = 'bottom';
                 ctx.fillStyle = `rgba(255,90,60,${0.5 + 0.3 * Math.sin(performanceNowSafe() * 0.008)})`;
                 ctx.font = `bold 13px ${FONT}`;
-                ctx.fillText('PRESSURE', INTERNAL_WIDTH / 2, by + barH + 3);
+                ctx.fillText('PRESSURE', INTERNAL_WIDTH / 2, by - 3);
+                ctx.textBaseline = 'top';
             }
         }
         ctx.restore();
@@ -1444,6 +1450,7 @@ export class UISystem {
             ['Level', `Lv ${summary.level}`],
             ['Kills', summary.kills],
             ['Bosses', summary.bossesDefeated],
+            ['Objectives', `${state.objectivesDone ?? 0}/${state.objectivesTotal ?? 0}`],
             ['Coins earned', summary.coinsEarned],
         ];
         const statsStartY = 240 + sa.top;

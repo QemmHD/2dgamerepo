@@ -618,7 +618,7 @@ export class MenuRenderer {
         }
         ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 18px ${FONT}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText('Audio is not yet implemented — volume is saved for a future update.', innerX, y + 20);
+        ctx.fillText('Themed music + sound effects. Adjust to taste; 0% mutes.', innerX, y + 20);
 
         // ── Cheats (testing) ──────────────────────────────────────────────
         y += 52;
