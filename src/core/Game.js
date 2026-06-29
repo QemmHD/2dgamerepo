@@ -50,7 +50,7 @@ import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
-import { openCase, openForge, buildCaseReel } from '../systems/CaseSystem.js';
+import { openCase, buildCaseReel, resolveWager, WAGER_ZONES } from '../systems/CaseSystem.js';
 import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
@@ -129,6 +129,9 @@ export class Game {
         // a short-lived toast for claim/case feedback.
         this.menuTab = 'play';
         this.caseAnim = null;
+        // Cinder Wager mini-game overlay (coin gamble): { bet, pos, dir, speed,
+        // stopped, result, age } while open, null otherwise.
+        this.wager = null;
         this.menuToast = null;
         this.menuToastTimer = 0;
 
@@ -157,6 +160,13 @@ export class Game {
                 return;
             }
             if (this.screen === 'start') {
+                if (this.wager) {
+                    if (e.code === 'Space' || e.code === 'Enter') {
+                        e.preventDefault();
+                        if (!this.wager.stopped) this._wagerStop(); else this._dismissWager();
+                    }
+                    return;
+                }
                 if (this.caseAnim) {
                     if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this._dismissCase(); }
                     return;
@@ -332,6 +342,12 @@ export class Game {
 
         const tryStartScreenAt = (clientX, clientY) => {
             if (this.screen !== 'start') return false;
+            // The wager mini-game owns input while it's up: a tap stops the
+            // spark, then a second tap dismisses the result.
+            if (this.wager) {
+                if (!this.wager.stopped) this._wagerStop(); else this._dismissWager();
+                return true;
+            }
             // The case-opening overlay owns input while it's up: any tap continues.
             if (this.caseAnim) { this._dismissCase(); return true; }
             const pos = this.renderer.clientToInternal(clientX, clientY);
@@ -712,7 +728,7 @@ export class Game {
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
             case 'openCase': this._openCaseFlow(arg); break;
-            case 'openForge': this._openForgeFlow(); break;
+            case 'openWager': this._openWager(arg); break;
             case 'claimBP': {
                 const r = claimBattlePass(this.saveSystem, arg);
                 this._setToast(r.ok ? `Claimed: ${r.label}` : 'Cannot claim');
@@ -756,15 +772,33 @@ export class Game {
         this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime: 2.6 };
     }
 
-    _openForgeFlow() {
-        const res = openForge(this.saveSystem);
-        if (!res.ok) { this._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
+    _dismissCase() { this.caseAnim = null; }
+
+    // ── Cinder Wager (coin gambling mini-game) ───────────────────────────
+    // Stake coins up front, then STOP a sweeping spark on the multiplier bar.
+    _openWager(bet) {
+        if (this.caseAnim || this.wager) return;
+        if (!this.saveSystem.spendCoins(bet)) { this._setToast('Not enough coins'); return; }
+        this.wager = { bet, pos: 0, dir: 1, speed: 1.8, stopped: false, result: null, age: 0, _tick: 0 };
         this.audio.forge();
-        const { reel, landingIndex } = buildCaseReel('forge', res);
-        this.caseAnim = { caseType: 'forge', result: res, age: 0, reel, landingIndex, spinTime: 2.6 };
     }
 
-    _dismissCase() { this.caseAnim = null; }
+    // Lock the spark: resolve the zone, pay out, and bank any winnings.
+    _wagerStop() {
+        const w = this.wager;
+        if (!w || w.stopped) return;
+        w.stopped = true;
+        const z = resolveWager(w.pos);
+        const payout = Math.floor(w.bet * z.mul);
+        w.result = { mul: z.mul, label: z.label, color: z.color, payout, net: payout - w.bet };
+        if (payout > 0) this.saveSystem.addCoins(payout);
+        // Sound scales with the outcome: bust = a hurt thud; wins reuse the
+        // tiered reveal chime (bigger multiplier = bigger sound).
+        if (z.mul <= 0) this.audio.hurt();
+        else this.audio.reveal(z.mul >= 5 ? 'mythic' : z.mul >= 2 ? 'legendary' : z.mul > 1 ? 'epic' : 'rare');
+    }
+
+    _dismissWager() { this.wager = null; }
 
     _setToast(msg) { this.menuToast = msg; this.menuToastTimer = 2.5; }
 
@@ -1423,6 +1457,19 @@ export class Game {
                 // Fire the reveal chime the instant the reel settles — its pitch/
                 // richness scales with the won rarity (better pull = bigger noise).
                 if (wasSpinning && this.caseAnim.age >= spinTime) this.audio.reveal(this.caseAnim.result?.rarity);
+            }
+            if (this.wager) {
+                const w = this.wager;
+                if (!w.stopped) {
+                    // Ping-pong the spark across the bar; a steady tick sells the spin.
+                    w.pos += w.dir * w.speed * dt;
+                    if (w.pos >= 1) { w.pos = 1; w.dir = -1; }
+                    else if (w.pos <= 0) { w.pos = 0; w.dir = 1; }
+                    w._tick += dt;
+                    if (w._tick > 0.07) { w._tick = 0; this.audio.spinTick(); }
+                } else {
+                    w.age += dt;
+                }
             }
             if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
             return;
@@ -2155,8 +2202,78 @@ export class Game {
         this.ui.draw(ctx, this._buildUIState());
 
         if (this.victory) this._drawVictory(ctx);
+        if (this.wager) this._drawWager(ctx);
 
         if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
+    }
+
+    // Cinder Wager overlay: a multiplier bar with the live spark marker, the
+    // stake, and (after a stop) the outcome + payout.
+    _drawWager(ctx) {
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT, w = this.wager;
+        ctx.save();
+        ctx.fillStyle = 'rgba(8,6,16,0.82)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffb24a';
+        ctx.font = 'bold 64px sans-serif';
+        ctx.fillText('CINDER WAGER', W / 2, H / 2 - 200);
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.font = '30px sans-serif';
+        ctx.fillText(`Stake: ◎ ${w.bet}`, W / 2, H / 2 - 150);
+
+        // The multiplier bar (zones colored by payout).
+        const barW = 1100, barH = 84;
+        const bx = W / 2 - barW / 2, by = H / 2 - 60;
+        let prev = 0;
+        for (const z of WAGER_ZONES) {
+            const x0 = bx + prev * barW, x1 = bx + z.to * barW;
+            ctx.fillStyle = z.color;
+            ctx.globalAlpha = z.mul <= 0 ? 0.55 : 0.85;
+            ctx.fillRect(x0, by, x1 - x0, barH);
+            ctx.globalAlpha = 1;
+            // Multiplier label on wide-enough zones.
+            if ((z.to - prev) > 0.06) {
+                ctx.fillStyle = '#10131c';
+                ctx.font = 'bold 22px sans-serif';
+                ctx.fillText(z.label.replace('JACKPOT ', ''), (x0 + x1) / 2, by + barH / 2 + 8);
+            }
+            prev = z.to;
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(bx, by, barW, barH);
+
+        // The spark marker.
+        const mx = bx + Math.max(0, Math.min(1, w.pos)) * barW;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(mx, by - 18);
+        ctx.lineTo(mx - 12, by - 40);
+        ctx.lineTo(mx + 12, by - 40);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillRect(mx - 3, by - 18, 6, barH + 36);
+
+        if (!w.stopped) {
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.font = 'bold 34px sans-serif';
+            ctx.fillText('TAP / SPACE to STOP', W / 2, by + barH + 90);
+        } else {
+            const r = w.result;
+            const bust = r.mul <= 0;
+            ctx.fillStyle = bust ? '#ff5a3c' : r.color;
+            ctx.font = 'bold 56px sans-serif';
+            ctx.fillText(bust ? 'BUST!' : r.label, W / 2, by + barH + 86);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 40px sans-serif';
+            ctx.fillText(bust ? `Lost ◎ ${w.bet}`
+                : `Won ◎ ${r.payout}  (${r.net >= 0 ? '+' : ''}${r.net})`, W / 2, by + barH + 140);
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.font = '24px sans-serif';
+            ctx.fillText('Tap / Space to continue', W / 2, by + barH + 192);
+        }
+        ctx.restore();
     }
 
     // Layout for the victory overlay's three stacked buttons (internal coords).

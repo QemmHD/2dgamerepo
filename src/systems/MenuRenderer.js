@@ -17,7 +17,7 @@ import {
 import {
     COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance,
 } from '../content/cosmetics.js';
-import { CASES, CASE_ORDER, caseOddsRows, FORGE, FORGE_PITY, forgePityRemaining } from './CaseSystem.js';
+import { CASES, CASE_ORDER, caseOddsRows, WAGER_BETS } from './CaseSystem.js';
 import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
 import { rewardLabel } from './BattlePassSystem.js';
@@ -553,28 +553,27 @@ export class MenuRenderer {
                 { primary: afford, enabled: true, accent: afford ? null : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: 24 });
         }
 
-        // ── Ember Forge strip: a "refine, don't gamble" pull with a visible
-        // pity meter (guaranteed Rare+ countdown) so it reads as earned. ──
+        // ── Cinder Wager strip: a skill coin-gamble. Pick a stake, then STOP
+        // the sweeping spark on the multiplier bar (center = jackpot). ──
         const fy = c.y + gridH + 24;
         this._panel(ctx, c.x, fy, c.w, forgeH, 'rgba(30,20,14,0.92)', '#ff8a4a');
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ffb24a'; ctx.font = `800 30px ${FONT}`;
-        ctx.fillText('⚒  EMBER FORGE', c.x + 32, fy + 46);
+        ctx.fillText('🎰  CINDER WAGER', c.x + 32, fy + 46);
         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 20px ${FONT}`;
-        ctx.fillText('Refine raw Cinders into a reward — every forge builds toward a guaranteed prize.', c.x + 32, fy + 78);
-        // Pity meter.
-        const remain = forgePityRemaining(save);
-        const filled = (FORGE_PITY - remain) / FORGE_PITY;
-        const pmX = c.x + 32, pmY = fy + 100, pmW = c.w - 420, pmH = 16;
-        roundRectPath(ctx, pmX, pmY, pmW, pmH, 8); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
-        roundRectPath(ctx, pmX, pmY, pmW * clamp01(filled), pmH, 8); ctx.fillStyle = '#ffce54'; ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `600 18px ${FONT}`;
-        ctx.fillText(remain <= 0 ? 'Next forge: GUARANTEED Rare+!' : `Guaranteed Rare+ in ${remain} forge${remain > 1 ? 's' : ''}`, pmX, pmY + 38);
-        // Forge button.
-        const affF = save.totalCoins >= FORGE.cost;
-        const fbr = { x: c.x + c.w - 340, y: fy + 40, w: 308, h: 80 };
-        this._button(ctx, fbr, `FORGE  ◎ ${FORGE.cost}`,
-            { primary: affF, enabled: true, accent: affF ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openForge', fontSize: 28 });
+        ctx.fillText('Stake coins, then STOP the spark — edges play safe (1.5×), dead-center hits the 5× jackpot, miss and bust.', c.x + 32, fy + 78);
+        // Three stake buttons.
+        const bets = WAGER_BETS;
+        const bw = 200, bgap = 18;
+        const totalW = bets.length * bw + (bets.length - 1) * bgap;
+        let bx = c.x + c.w - totalW - 32;
+        for (const bet of bets) {
+            const aff = save.totalCoins >= bet;
+            const r = { x: bx, y: fy + 96, w: bw, h: 56 };
+            this._button(ctx, r, `STAKE  ◎ ${bet}`,
+                { primary: aff, enabled: true, accent: aff ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openWager', arg: bet, fontSize: 24 });
+            bx += bw + bgap;
+        }
     }
 
     // ── BATTLE PASS ──────────────────────────────────────────────────────
