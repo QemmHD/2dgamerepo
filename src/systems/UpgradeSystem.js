@@ -138,6 +138,9 @@ const WEIGHT_NEW_WEAPON = 0.9;
 const WEIGHT_WEAPON_UPGRADE = 1.1;
 const WEIGHT_NEW_PASSIVE = 0.85;
 const WEIGHT_PASSIVE_UPGRADE = 1.05;
+// Rarer perks roll less often, so a high-rarity card feels like a score (and
+// its card is tinted by rarity in the level-up UI). Drives the "perk lottery".
+const RARITY_WEIGHT = { common: 1.25, uncommon: 1.0, rare: 0.6, epic: 0.32, legendary: 0.18, mythic: 0.1 };
 
 export class UpgradeSystem {
     constructor() {
@@ -338,7 +341,7 @@ function passiveUpgradeChoice(owned, def) {
         name: def?.name ?? owned.id,
         description: def?.description ?? '',
         cardLevelText: `Lv ${owned.level} → ${next}`,
-        rarity: 'uncommon',
+        rarity: def?.rarity ?? 'common',
         weight: WEIGHT_PASSIVE_UPGRADE,
         apply(game) {
             game.passiveSystem.levelUpPassive(owned.id, game.player);
@@ -348,15 +351,16 @@ function passiveUpgradeChoice(owned, def) {
 
 function newPassiveChoice(id) {
     const def = PASSIVES[id];
+    const rarity = def?.rarity ?? 'common';
     return {
         id: `passive:${id}:new`,
         kind: 'passive-new',
-        cardLabel: 'NEW PASSIVE',
+        cardLabel: 'NEW PERK',
         name: def?.name ?? id,
         description: def?.description ?? '',
         cardLevelText: 'Lv 1',
-        rarity: 'uncommon',
-        weight: WEIGHT_NEW_PASSIVE,
+        rarity,
+        weight: WEIGHT_NEW_PASSIVE * (RARITY_WEIGHT[rarity] ?? 1),
         apply(game) {
             game.passiveSystem.addPassive(id, game.player);
         },

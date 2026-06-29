@@ -82,6 +82,9 @@ export class Player {
         this.critChance = 0;
         this.critMul = 2.0;
         this.lowHpDamageBonus = 0;
+        // Lifesteal-on-kill (Blooddrinker). HP healed per kill, routed through
+        // the sustained-heal cap so it can't out-heal a crowd.
+        this.killHeal = 0;
 
         // Forward-looking stash for the chest stage.
         this.chestLuck = 0;

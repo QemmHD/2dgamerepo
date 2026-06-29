@@ -17,7 +17,7 @@ import {
 import {
     COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance,
 } from '../content/cosmetics.js';
-import { CASES, CASE_ORDER, caseOddsRows } from './CaseSystem.js';
+import { CASES, CASE_ORDER, caseOddsRows, FORGE, FORGE_PITY, forgePityRemaining } from './CaseSystem.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
@@ -490,11 +490,14 @@ export class MenuRenderer {
         const save = state.saveData;
         const gap = 28;
         const cardW = (c.w - gap * (CASE_ORDER.length - 1)) / CASE_ORDER.length;
+        // Reserve a strip at the bottom for the Ember Forge.
+        const forgeH = 168;
+        const caseH = c.h - forgeH - 24;
         ctx.textBaseline = 'alphabetic';
         for (let i = 0; i < CASE_ORDER.length; i++) {
             const def = CASES[CASE_ORDER[i]];
             const x = c.x + i * (cardW + gap);
-            this._panel(ctx, x, c.y, cardW, c.h, 'rgba(18,22,30,0.9)');
+            this._panel(ctx, x, c.y, cardW, caseH, 'rgba(18,22,30,0.9)');
             ctx.textAlign = 'center';
             ctx.fillStyle = '#fff'; ctx.font = `800 30px ${FONT}`;
             ctx.fillText(def.name, x + cardW / 2, c.y + 50);
@@ -510,12 +513,35 @@ export class MenuRenderer {
                 oy += 34;
             }
             const afford = save.totalCoins >= def.cost;
-            const br = { x: x + 36, y: c.y + c.h - 86, w: cardW - 72, h: 64 };
+            const br = { x: x + 36, y: c.y + caseH - 80, w: cardW - 72, h: 60 };
             // Always clickable: an unaffordable tap surfaces a "Not enough
             // coins" toast rather than silently doing nothing.
             this._button(ctx, br, `OPEN  ◎ ${def.cost}`,
                 { primary: afford, enabled: true, accent: afford ? null : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: 26 });
         }
+
+        // ── Ember Forge strip: a "refine, don't gamble" pull with a visible
+        // pity meter (guaranteed Rare+ countdown) so it reads as earned. ──
+        const fy = c.y + caseH + 24;
+        this._panel(ctx, c.x, fy, c.w, forgeH, 'rgba(30,20,14,0.92)', '#ff8a4a');
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#ffb24a'; ctx.font = `800 30px ${FONT}`;
+        ctx.fillText('⚒  EMBER FORGE', c.x + 32, fy + 46);
+        ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 20px ${FONT}`;
+        ctx.fillText('Refine raw Cinders into a reward — every forge builds toward a guaranteed prize.', c.x + 32, fy + 78);
+        // Pity meter.
+        const remain = forgePityRemaining(save);
+        const filled = (FORGE_PITY - remain) / FORGE_PITY;
+        const pmX = c.x + 32, pmY = fy + 100, pmW = c.w - 420, pmH = 16;
+        roundRectPath(ctx, pmX, pmY, pmW, pmH, 8); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
+        roundRectPath(ctx, pmX, pmY, pmW * clamp01(filled), pmH, 8); ctx.fillStyle = '#ffce54'; ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `600 18px ${FONT}`;
+        ctx.fillText(remain <= 0 ? 'Next forge: GUARANTEED Rare+!' : `Guaranteed Rare+ in ${remain} forge${remain > 1 ? 's' : ''}`, pmX, pmY + 38);
+        // Forge button.
+        const affF = save.totalCoins >= FORGE.cost;
+        const fbr = { x: c.x + c.w - 340, y: fy + 40, w: 308, h: 80 };
+        this._button(ctx, fbr, `FORGE  ◎ ${FORGE.cost}`,
+            { primary: affF, enabled: true, accent: affF ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openForge', fontSize: 28 });
     }
 
     // ── BATTLE PASS ──────────────────────────────────────────────────────
