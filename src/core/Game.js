@@ -398,8 +398,8 @@ export class Game {
         this.chestReward = null;
         this.pendingChests = 0;
         this.chestsOpened = 0;
-        // Weapon-aura cache (recomputed only when the owned set changes).
-        this._auraSig = null;
+        // Weapon-aura cache (recomputed only when weaponSystem.version changes).
+        this._auraVersion = -1;
         this._auraSnapshot = null;
         this.coins = [];
         // Cached reference to the strongest active boss for the boss HP bar.
@@ -730,12 +730,12 @@ export class Game {
     // The aura is purely visual (color/intensity/radius); the snapshot is also
     // used to tint the player's light and shown in the debug panel.
     _updateAura() {
-        const owned = this.weaponSystem.owned;
-        let sig = '';
-        for (const w of owned) sig += w.id + w.level + ';';
-        if (sig !== this._auraSig) {
-            this._auraSig = sig;
-            this._auraSnapshot = computePlayerAura(owned);
+        // Recompute only when the weapon set/levels actually change (WeaponSystem
+        // bumps .version on add/levelUp/evolve) — no per-frame allocation.
+        const v = this.weaponSystem.version;
+        if (v !== this._auraVersion) {
+            this._auraVersion = v;
+            this._auraSnapshot = computePlayerAura(this.weaponSystem.owned);
         }
         // Reduced-effects (mobile/perf) skips the extra additive aura glow but
         // still lets the player light pick up the aura tint (free).
@@ -1607,7 +1607,10 @@ export class Game {
         base.bossHpMul = Math.min(1 + (this.time / 60) * BOSS.hpPerMinute, BOSS.maxHpMul);
         base.bossResist = Math.min((this.time / 60) * BOSS.resistPerMinute, BOSS.maxResist);
         base.ownedWeaponCount = this.weaponSystem.owned.length;
-        base.evolvedWeaponCount = this.weaponSystem.owned.filter((w) => WEAPONS[w.id]?.evolved).length;
+        // Debug-only; reduce (not filter) to avoid a per-frame array alloc.
+        base.evolvedWeaponCount = this.showDebug
+            ? this.weaponSystem.owned.reduce((n, w) => n + (WEAPONS[w.id]?.evolved ? 1 : 0), 0)
+            : 0;
         base.auraStyle = this._auraSnapshot ? this._auraSnapshot.label : '';
         // Only the debug panel shows this, and the scan walks every
         // evolution every frame — so only pay for it when debug is on.

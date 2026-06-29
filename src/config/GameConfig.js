@@ -199,9 +199,11 @@ export const BOSS = {
     // Late-game survivability. Boss HP scales with the run minute much harder
     // than trash (so a 20-30 min boss isn't deleted instantly), and a mild
     // flat damage resistance ramps with time. Never invulnerable — just tanky.
-    //   bossHpMul = 1 + minutes * hpPerMinute  (10m→2.6×, 20m→4.2×, 30m→5.8×)
+    //   bossHpMul = 1 + minutes * hpPerMinute  (10m→3.0×, 20m→5.0×, 30m→7.0×)
     //   resist    = min(minutes * resistPerMinute, maxResist)
-    hpPerMinute: 0.16,
+    // 0.20 (was 0.16) so the 10-15 min boss is a real fight, not a 1s delete,
+    // while 30 min lands exactly on the 7× ceiling.
+    hpPerMinute: 0.20,
     maxHpMul: 7.0,
     resistPerMinute: 0.012,
     maxResist: 0.35,

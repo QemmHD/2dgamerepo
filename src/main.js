@@ -4,7 +4,8 @@ import { Game } from './core/Game.js';
 import { Input } from './core/Input.js';
 import { KeyboardInput } from './core/KeyboardInput.js';
 import { TouchJoystick } from './core/TouchJoystick.js';
-import { prewarmSprites } from './assets/ProceduralSprites.js';
+import { prewarmSprites, getGlowSprite } from './assets/ProceduralSprites.js';
+import { WEAPON_AURA } from './content/weapons.js';
 
 function boot() {
     const canvas = document.getElementById('game');
@@ -44,6 +45,9 @@ function boot() {
     // Rasterize all procedural sprites once, before the first frame, so
     // no spawn/boss/coin hitches the loop by building art mid-frame.
     prewarmSprites();
+    // Warm the weapon-aura glow colors too, so the first weapon pickup /
+    // evolution / aura color-swap doesn't rasterize a 128px glow mid-frame.
+    for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
 
     game = new Game({ renderer, input, loop });
     loop.start();

@@ -937,7 +937,10 @@ function hearthTotemUpdate(dt, owned, ctx) {
     owned.timer = cfg.cooldown * (ctx.player.cooldownMul ?? 1);
 
     const p = ctx.player;
-    if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + cfg.heal);
+    // Route through the global sustained-heal budget (CAPS.healPerSecond) so a
+    // Totem + regen + Divine Nova stack can't out-heal late-game contact damage.
+    if (p.healSustained) p.healSustained(cfg.heal);
+    else if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + cfg.heal);
     ctx.effects.push({
         kind: 'pulse', x: p.x, y: p.y, radius: 120, age: 0, lifetime: 0.5, active: true, evolved: true,
     });
