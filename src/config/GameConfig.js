@@ -282,8 +282,11 @@ export const BOSS = {
     // aggression. All support spawns respect the live enemy cap so a boss wave
     // pressures without flooding.
     warningDuration: 3.0,        // seconds of "BOSS INCOMING" before it spawns
-    openingSupport: 4,           // themed minions that arrive with the boss
-    thresholdSupport: { t75: 3, t50: 4, t25: 5 },
+    // Boss = the main event: the normal swarm is paused during the fight and
+    // only a small themed escort appears, so the player duels the boss instead
+    // of being buried in adds.
+    openingSupport: 2,           // themed minions that arrive with the boss
+    thresholdSupport: { t75: 2, t50: 2, t25: 3 },
     // Attack-cooldown multiplier at each HP threshold (lower = faster attacks).
     thresholdCadence: { t75: 0.85, t50: 0.7, t25: 0.55 },
     enrageSpeedMul: 1.15,        // boss move-speed bump at 25%

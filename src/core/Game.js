@@ -43,6 +43,7 @@ import { MapRenderer } from '../systems/MapRenderer.js';
 import { ObstacleSystem } from '../systems/ObstacleSystem.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
+import { AudioSystem } from '../systems/AudioSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
@@ -54,6 +55,7 @@ import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
+import { OBJECTIVES, OBJECTIVE_COUNT } from '../content/objectives.js';
 import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 
@@ -105,6 +107,11 @@ export class Game {
         // so they live across runs (particles are cleared on run start).
         this.lighting = new LightingSystem();
         this.particles = new ParticleSystem();
+        // Procedural audio (synthesized; silent no-op when unsupported/headless).
+        // Volumes seed from saved settings; the context resumes on first input.
+        this.audio = new AudioSystem();
+        this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
+        this.audio.playMusic('menu');
         // Adaptive graphics governor state. level 0 = full quality.
         this._gfxLevel = 0;
         this._gfxLowTimer = 0;
@@ -429,6 +436,10 @@ export class Game {
         this.comboTimer = 0;
         this.comboBest = 0;
         this._comboMilestoneIdx = 0;
+        // Run objectives: ids completed this run + the list (for the game-over
+        // summary). Repeatable each run.
+        this._objDone = new Set();
+        this._objCompleted = [];
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.gameOver = false;
@@ -495,6 +506,10 @@ export class Game {
         this.mapRenderer.lowQuality = this.reducedEffects;
         this._lastHp = this.player.hp;
         this.screen = 'gameplay';
+        // Kick the driving gameplay theme (resume covers the keyboard-start path
+        // where no menu tap fired yet).
+        this.audio.resume();
+        this.audio.playMusic('gameplay');
         // Reset the UI's per-run animation state (bar display values, boss
         // bar slide, etc.) so nothing carries over from the previous run.
         if (this.ui.beginRun) this.ui.beginRun(this.player);
@@ -510,6 +525,7 @@ export class Game {
 
     returnToShop() {
         this._bankRunCoins();
+        this.audio.playMusic('menu');
         this.screen = 'start';
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
@@ -605,6 +621,10 @@ export class Game {
     // Dispatch a click on a main-menu hotspot (see MenuRenderer). Any action
     // other than RESET cancels a pending reset confirmation.
     _menuAction(action, arg) {
+        // A menu tap is a user gesture — resume the audio context here and give
+        // every interaction a click sound.
+        this.audio.resume();
+        this.audio.click();
         if (action !== 'resetSave' && action !== 'tab') this.resetConfirming = false;
         switch (action) {
             case 'tab': this.menuTab = arg; this.resetConfirming = false; break;
@@ -648,6 +668,7 @@ export class Game {
     _adjustVolume(key, delta) {
         const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;
         this.saveSystem.setSetting(key, clamp(cur + delta, 0, 1));
+        this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
     }
 
     _openCaseFlow(caseType) {
@@ -697,6 +718,29 @@ export class Game {
             this._comboMilestoneIdx++;
             this.waveDirector.announce(`${reached} KILL STREAK!`, 1.4, '#ffd166');
             this._pushFeedback('levelup', 0.3);
+            this.audio.streak();
+        }
+    }
+
+    // Evaluate run objectives against live metrics; the first time one is met it
+    // pays its coin reward, announces, and counts toward the game-over summary.
+    _checkObjectives() {
+        const m = {
+            kills: this.kills,
+            timeSec: this.time,
+            level: this.player.level,
+            comboBest: this.comboBest,
+            bosses: this.bossesDefeated,
+        };
+        for (const o of OBJECTIVES) {
+            if (this._objDone.has(o.id)) continue;
+            if ((m[o.metric] ?? 0) >= o.target) {
+                this._objDone.add(o.id);
+                this._objCompleted.push(o.id);
+                this.saveSystem.addCoins(o.reward);
+                this.audio.objective();
+                this.waveDirector.announce(`✓ ${o.name}  +${o.reward}`, 2.2, '#7fe0a0');
+            }
         }
     }
 
@@ -859,11 +903,19 @@ export class Game {
         // Boss HP scales with the run minute far harder than trash so a 20-30
         // min boss isn't deleted instantly; a mild flat resistance ramps too.
         const minutes = this.time / 60;
-        const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul);
+        // Each successive boss THIS RUN is a major step up (the 3rd is the
+        // hardest), so the boss gauntlet escalates toward a real climax instead
+        // of every boss feeling the same. `bossesDefeated` is the encounter
+        // index (0 = first). Time-scaling is capped first, then the encounter
+        // tier multiplies on top.
+        const encounter = this.bossesDefeated;
+        const tierMul = 1 + encounter * 0.6;        // 1×, 1.6×, 2.2× …
+        const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul;
+        const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.18);
         const boss = new Enemy(id, x, y, {
             healthMul: bossHpMul,
-            speedMul: this.waveState.speedMul,
-            contactDamageMul: this.waveState.damageMul ?? 1,
+            speedMul: this.waveState.speedMul * (1 + encounter * 0.05),
+            contactDamageMul: bossDmgMul,
         });
         boss.resist = Math.min(minutes * BOSS.resistPerMinute, BOSS.maxResist);
         // Stash the stable output channels the apex-boss AI writes into
@@ -878,6 +930,8 @@ export class Game {
         };
         this.enemies.push(boss);
         this.waveDirector.announce(`${def.bossName} approaches!`, 3.0, '#ff5a4a');
+        this.audio.bossSpawn();
+        this.audio.playMusic('boss');
         // A heavier, longer shake than a normal hit to telegraph the arrival.
         this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
         // The boss arrives flanked by a themed opening group (capped).
@@ -1154,6 +1208,8 @@ export class Game {
     _enterGameOver() {
         if (this.gameOver) return;
         this.gameOver = true;
+        this.audio.gameOver();
+        this.audio.stopMusic();
         this.screen = 'gameOver';
         this.gameOverAge = 0;
         this.upgradeChoices = null;
@@ -1247,6 +1303,7 @@ export class Game {
             this.comboTimer -= dt;
             if (this.comboTimer <= 0) { this.combo = 0; this._comboMilestoneIdx = 0; }
         }
+        this._checkObjectives();
 
         this.waveDirector.update(dt, this.time, this.enemies.length);
         this.waveState = this.waveDirector.getState(this.time);
@@ -1290,7 +1347,14 @@ export class Game {
             const r = this.obstacleSystem.resolveCircle(this.player.x, this.player.y, this.player.radius);
             this.player.x = r.x; this.player.y = r.y;
         }
-        this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
+        // Boss = main event: while a boss is incoming or alive, halt the normal
+        // trash spawner so the fight is the player vs. the boss (and only the
+        // boss's own themed adds), not a swarm. Normal spawns resume once the
+        // boss is dead.
+        const bossOnField = !!this.bossWarning || this.enemies.some((e) => e.active && e.boss);
+        if (!bossOnField) {
+            this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
+        }
         const weaponResult = this.weaponSystem.update(
             dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles
         );
@@ -1409,6 +1473,7 @@ export class Game {
             if (levels > 0) {
                 this.pendingLevelUps += levels;
                 this._pushFeedback('levelup', 0.5);
+                this.audio.levelUp();
                 this.particles.levelUpBurst(this.player.x, this.player.y);
                 // QoL juice: a level-up vacuums every loose gem on the field so
                 // nothing earned is left behind while the overlay is up.
@@ -1426,6 +1491,7 @@ export class Game {
             if (got > 0) {
                 this.player.coins = (this.player.coins ?? 0) + got;
                 this.particles.pickupSparkle(c.x, c.y, LIGHT_COLORS.coin);
+                this.audio.coin();
             }
         }
 
@@ -1445,6 +1511,7 @@ export class Game {
         if (allKilled.length > 0) {
             this.kills += allKilled.length;
             this._addCombo(allKilled.length);
+            this.audio.kill();
             this.waveDirector.notifyKill(allKilled.length);
             for (const e of allKilled) {
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
@@ -1463,6 +1530,8 @@ export class Game {
                     this.waveDirector.announce(`${e.name.toUpperCase()} DEFEATED!`, 3.0, '#ff6a4a');
                     this.particles.bossDeathBurst(e.x, e.y, '#ff8c4a');
                     this._shake(SCREEN_SHAKE.intensity * 1.1, 0.5);
+                    // Back to the driving theme once the duel ends.
+                    this.audio.playMusic('gameplay');
                 } else if (e.elite) {
                     // Elites: chance at a chest, chance at a coin burst.
                     if (Math.random() < CHEST.eliteDropChance) {
@@ -1557,6 +1626,7 @@ export class Game {
         // fires a green feedback pulse. Tracked centrally so individual
         // reward code doesn't each need to remember to trigger it.
         if (this.player.hp > this._lastHp + 0.5) this._pushFeedback('heal', 0.4);
+        else if (this.player.hp < this._lastHp - 0.5) this.audio.hurt();
         this._lastHp = this.player.hp;
 
         // Second Wind: trickle HP back while no enemy is within the safe
@@ -1872,6 +1942,9 @@ export class Game {
         base.combo = this.combo;
         base.comboTimer = this.comboTimer;
         base.comboWindow = COMBO.window;
+        base.objectivesDone = this._objDone ? this._objDone.size : 0;
+        base.objectivesTotal = OBJECTIVE_COUNT;
+        base.objectivesCompleted = this._objCompleted || [];
         base.enemyCount = this.enemies.length;
         base.projectileCount = this.projectiles.length;
         base.gemCount = this.gems.length;
