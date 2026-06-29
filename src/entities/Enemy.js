@@ -62,7 +62,9 @@ export class Enemy {
         const hpMul = elite ? ELITE.hpMul : 1;
         const eliteSizeMul = elite ? ELITE.sizeMul : 1;
         const spdMul = elite ? ELITE.speedMul : 1;
-        const dmgMul = elite ? ELITE.contactDamageMul : 1;
+        // Contact damage = elite bonus × the wave's time-based damage ramp
+        // (1.0 until late game; scales after ~15 min so late enemies hurt).
+        const dmgMul = (elite ? ELITE.contactDamageMul : 1) * (opts.contactDamageMul ?? 1);
         const xpMul = elite ? ELITE.xpMul : 1;
         const baseScale = def.visualScale ?? 1;
 
@@ -84,6 +86,9 @@ export class Enemy {
 
         this.elite = elite;
         this.boss = isBoss;
+        // Mild flat damage resistance (bosses only, set by Game at spawn based
+        // on the run minute). 0 = takes full damage.
+        this.resist = 0;
         this.canDropChest = elite || isBoss;
         this.visualScale = baseScale * eliteSizeMul;
 
@@ -352,6 +357,9 @@ export class Enemy {
     }
 
     takeDamage(amount, knockbackVx = 0, knockbackVy = 0) {
+        // Mild boss resistance (never full immunity — resist is clamped well
+        // below 1 in config). No-op for normal enemies (resist 0).
+        if (this.resist > 0) amount *= (1 - this.resist);
         this.hp -= amount;
         this.hitFlashTimer = HIT_FLASH_DURATION;
         this.knockbackVx += knockbackVx;

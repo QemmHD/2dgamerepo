@@ -20,6 +20,9 @@ export class WeaponSystem {
     constructor(startingWeaponId = 'arcaneBolt') {
         this.owned = [];
         this.effects = [];
+        // Bumped whenever the owned set / a weapon level / an evolution changes,
+        // so consumers (the aura) can detect changes without a per-frame scan.
+        this.version = 0;
         // The run's starting weapon comes from the equipped loadout gear; falls
         // back to the Cinderbolt if the id is missing/unknown.
         this.addWeapon(WEAPONS[startingWeaponId] ? startingWeaponId : 'arcaneBolt');
@@ -32,6 +35,7 @@ export class WeaponSystem {
         const initial = def.initialState ? def.initialState() : {};
         const entry = { id, level: 1, timer: 0, state: initial };
         this.owned.push(entry);
+        this.version++;
         return entry;
     }
 
@@ -41,6 +45,7 @@ export class WeaponSystem {
         const def = WEAPONS[id];
         if (w.level >= weaponMaxLevel(def)) return false;
         w.level += 1;
+        this.version++;
         return true;
     }
 
@@ -53,6 +58,7 @@ export class WeaponSystem {
         if (!def) return false;
         const initial = def.initialState ? def.initialState() : {};
         this.owned[idx] = { id: evolvedId, level: 1, timer: 0, state: initial };
+        this.version++;
         return true;
     }
 
