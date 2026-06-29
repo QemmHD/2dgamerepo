@@ -48,6 +48,7 @@ import { AudioSystem } from '../systems/AudioSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
+import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
@@ -553,6 +554,12 @@ export class Game {
         // so multipliers compound). Cosmetics drive the player's appearance.
         applyLoadout(this.player, this.saveSystem.data);
         this.player.appearance = resolveAppearance(this.saveSystem.getEquippedCosmetics());
+        // Weapon-themed skin overlay + melee-swing flag from the selected
+        // starting weapon (visual identity only — see content/weaponSkins.js).
+        const startWeaponId = resolveStartingWeapon(this.saveSystem.data);
+        this.player.weaponSkin = resolveWeaponSkin(startWeaponId);
+        this.playerSwingMelee = isMeleeWeapon(startWeaponId);
+        this._swingCd = 0;
         // Remember how many coins the shop handed us so _enterGameOver can
         // bank only what was *earned* this run, not the granted seed.
         this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
@@ -1956,6 +1963,29 @@ export class Game {
         }
         if (this.pendingChests > 0 && !this.chestReward && !this.upgradeChoices) {
             this._presentChest();
+        }
+
+        // Melee swing animation: when the chosen starting weapon is a
+        // melee/blade family, the hero rhythmically slashes toward the nearest
+        // enemy in reach. Purely cosmetic (no damage) — the auto-attack weapons
+        // still do all the real work. Throttled so it reads as deliberate.
+        if (this.playerSwingMelee) {
+            this._swingCd -= dt;
+            if (this._swingCd <= 0) {
+                let best = null, bd = 270 * 270;
+                for (const e of this.enemies) {
+                    if (!e.active) continue;
+                    const dx = e.x - this.player.x, dy = e.y - this.player.y;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 < bd) { bd = d2; best = e; }
+                }
+                if (best) {
+                    this.player.triggerSwing(Math.atan2(best.y - this.player.y, best.x - this.player.x));
+                    this._swingCd = 0.34;
+                } else {
+                    this._swingCd = 0.15; // nothing in reach — re-check soon
+                }
+            }
         }
 
         // Cache the strongest active boss for the UI HP bar. Picking by

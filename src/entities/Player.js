@@ -9,9 +9,16 @@ import {
     xpRequired,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
-import { getCharacterFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
+import { Easing } from '../core/Easing.js';
+import {
+    getCharacterFrames, getGlowSprite,
+    drawCloakShape, drawHatShape, drawWeaponSkinOverlay,
+} from '../assets/ProceduralSprites.js';
 import { getCharacter } from '../content/characters.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
+
+// Player melee swing animation timing.
+const SWING_DUR = 0.3;
 
 export class Player {
     constructor(x = PLAYER.startX, y = PLAYER.startY, characterId = 'monkey') {
@@ -38,6 +45,10 @@ export class Player {
         this._trailTick = 0;
         // Lazily-built fur-tinted sprite frames (keyed by color).
         this._tintCache = { color: null, frames: null };
+        // Weapon-themed skin overlay (set by Game from the starting weapon) +
+        // melee swing animation state ({ age, dir } or null).
+        this.weaponSkin = null;
+        this.swing = null;
 
         this.level = 1;
         this.xp = 0;
@@ -164,6 +175,7 @@ export class Player {
         this.moving = speedSq > 1;
         if (this.moving) this.bobTimer += dt;
         this.aliveTimer += dt;
+        if (this.swing) { this.swing.age += dt; if (this.swing.age >= SWING_DUR) this.swing = null; }
         if (move.x !== 0) this.facingX = move.x < 0 ? -1 : 1;
 
         // Record a sparse trail (cosmetic only) while moving.
@@ -353,63 +365,75 @@ export class Player {
         }
         ctx.restore();
 
+        // Weapon-themed skin overlay (sash + chest gem + floating motif) drawn
+        // over the body, under the hat — shared with the menu preview so the two
+        // always match. Unflipped + in-character-space; t = idle clock.
+        if (this.weaponSkin) drawWeaponSkinOverlay(ctx, 0, 0, this.spriteHalf, this.weaponSkin, this.aliveTimer);
+
         // Accessory on the head (symmetric → drawn unflipped, on top).
         if (ap.hatShape && ap.hatShape !== 'none') this._drawHat(ctx, ap.hatShape, ap.hatColor);
         ctx.restore();
+
+        // Melee swing arc (world-space, additive) on top of everything.
+        if (this.swing) this._drawSwing(ctx);
     }
 
-    _drawCloak(ctx, color) {
-        const h = this.spriteHalf;
-        ctx.save();
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(-h * 0.42, -h * 0.18);
-        ctx.lineTo(h * 0.42, -h * 0.18);
-        ctx.lineTo(h * 0.6, h * 0.62);
-        ctx.lineTo(0, h * 0.78);
-        ctx.lineTo(-h * 0.6, h * 0.62);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
+    // Cloak + hat delegate to the shared shape helpers (single source of truth
+    // with the menu preview — see ProceduralSprites.drawCloakShape/drawHatShape).
+    _drawCloak(ctx, color) { drawCloakShape(ctx, 0, 0, this.spriteHalf, color); }
+    _drawHat(ctx, shape, color) { drawHatShape(ctx, 0, 0, this.spriteHalf, shape, color); }
+
+    // Spawn a melee swing toward `angle` (world radians). Game calls this on a
+    // cadence while a melee/blade weapon is owned + an enemy is near. Purely
+    // cosmetic. A fresh swing restarts the arc so it stays in rhythm.
+    triggerSwing(angle) {
+        this.swing = { age: 0, dir: angle };
     }
 
-    _drawHat(ctx, shape, color) {
-        const h = this.spriteHalf;
-        const topY = -h * 0.62;
+    // The slash arc + blade trail + leading flash, drawn in world space at the
+    // player (additive). Called at the end of draw().
+    _drawSwing(ctx) {
+        const sw = this.swing;
+        if (!sw) return;
+        const t = Math.min(1, sw.age / SWING_DUR);
+        const e = Easing.outQuad(t);
+        const spread = 1.15;
+        const a0 = sw.dir - spread, a1 = sw.dir + spread;
+        const R = this.radius + 30;
+        const color = (this.weaponSkin && this.weaponSkin.glow) || '#cfe0ff';
         ctx.save();
-        ctx.fillStyle = color || '#ffd35a';
-        if (shape === 'cap') {
+        ctx.translate(this.x, this.y);
+        ctx.globalCompositeOperation = 'lighter';
+        // Trailing arc fan (blade trail) behind the leading edge.
+        const trail = 5;
+        for (let i = 0; i < trail; i++) {
+            const tt = e - i * 0.12;
+            if (tt < 0) break;
+            const ang = a0 + (a1 - a0) * tt;
+            ctx.globalAlpha = (1 - i / trail) * (1 - t) * 0.5;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = Math.max(1, 7 - i);
             ctx.beginPath();
-            ctx.arc(0, topY, h * 0.32, Math.PI, 0);
-            ctx.fill();
-            ctx.fillRect(-h * 0.34, topY - 2, h * 0.68, 6);
-        } else if (shape === 'candle') {
-            ctx.fillStyle = '#e8e2cf';
-            ctx.fillRect(-h * 0.07, topY - h * 0.28, h * 0.14, h * 0.3);
-            ctx.fillStyle = '#ffb24a';
-            ctx.beginPath();
-            ctx.ellipse(0, topY - h * 0.3, h * 0.06, h * 0.11, 0, 0, Math.PI * 2);
-            ctx.fill();
-        } else if (shape === 'horns') {
-            ctx.strokeStyle = color || '#9a6cff';
-            ctx.lineWidth = 8; ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(-h * 0.22, topY + 6); ctx.quadraticCurveTo(-h * 0.5, topY - h * 0.2, -h * 0.32, topY - h * 0.4);
-            ctx.moveTo(h * 0.22, topY + 6); ctx.quadraticCurveTo(h * 0.5, topY - h * 0.2, h * 0.32, topY - h * 0.4);
+            ctx.arc(0, 0, R, ang - 0.28, ang + 0.05);
             ctx.stroke();
-        } else if (shape === 'crown') {
-            ctx.beginPath();
-            const cw = h * 0.5, cy = topY;
-            ctx.moveTo(-cw, cy);
-            ctx.lineTo(-cw, cy - h * 0.16);
-            ctx.lineTo(-cw * 0.5, cy - h * 0.04);
-            ctx.lineTo(0, cy - h * 0.22);
-            ctx.lineTo(cw * 0.5, cy - h * 0.04);
-            ctx.lineTo(cw, cy - h * 0.16);
-            ctx.lineTo(cw, cy);
-            ctx.closePath();
-            ctx.fill();
         }
+        // Bright leading slash crescent.
+        const lead = a0 + (a1 - a0) * e;
+        ctx.globalAlpha = (1 - t) * 0.9;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(0, 0, R, lead - 0.4, lead + 0.1);
+        ctx.stroke();
+        // Leading-edge flash spark.
+        const lx = Math.cos(lead) * R, ly = Math.sin(lead) * R;
+        const fr = 16 * (1 - t) + 4;
+        const fl = ctx.createRadialGradient(lx, ly, 0, lx, ly, fr);
+        fl.addColorStop(0, '#ffffff');
+        fl.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.globalAlpha = 1 - t;
+        ctx.fillStyle = fl;
+        ctx.beginPath(); ctx.arc(lx, ly, fr, 0, TWO_PI); ctx.fill();
         ctx.restore();
     }
 

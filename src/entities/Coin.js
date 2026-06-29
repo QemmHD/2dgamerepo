@@ -74,6 +74,17 @@ export class Coin {
             : 1;
         const idx = Math.floor((this.age + this.spinOffset) * SPIN_HZ) % this.frames.length;
         const sprite = this.frames[idx];
+        // Warm shine that brightens as the coin face turns toward the camera
+        // (synced to the spin) — one additive arc, cheap.
+        const shine = 0.5 + 0.5 * Math.sin((this.age + this.spinOffset) * SPIN_HZ * Math.PI);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.12 + 0.18 * shine;
+        ctx.fillStyle = '#ffe9a8';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y + bobY, this.radius * 1.5, 0, TWO_PI);
+        ctx.fill();
+        ctx.restore();
         // Source is supersampled (SPRITE_SS×); draw at logical world size.
         const w = (sprite.width / SPRITE_SS) * popScale;
         const h = (sprite.height / SPRITE_SS) * popScale;

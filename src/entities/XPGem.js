@@ -13,6 +13,8 @@ export class XPGem {
         this.xp = def.xp;
         this.radius = def.radius;
         this.sprite = getXPGemSprite(tier);
+        // Tier-tinted glow for the pulsing pickup halo.
+        this.glowColor = tier === 'large' ? '#ffe07a' : tier === 'medium' ? '#9af0a0' : '#8fe9ff';
         this.active = true;
 
         const angle = Math.random() * TWO_PI;
@@ -67,6 +69,16 @@ export class XPGem {
         const popScale = this.bounceTimer < BOUNCE_DURATION
             ? 0.6 + (this.bounceTimer / BOUNCE_DURATION) * 0.4
             : 1;
+        // Pulsing additive glow halo (one filled arc — no per-frame gradient).
+        const pulse = 0.5 + 0.5 * Math.sin(this.age * 6);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.16 + 0.16 * pulse;
+        ctx.fillStyle = this.glowColor;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y + bobY, this.radius * (1.5 + 0.35 * pulse), 0, TWO_PI);
+        ctx.fill();
+        ctx.restore();
         // Source is supersampled (SPRITE_SS×); draw at logical world size.
         const w = (this.sprite.width / SPRITE_SS) * popScale;
         const h = (this.sprite.height / SPRITE_SS) * popScale;
