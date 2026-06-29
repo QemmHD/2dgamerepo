@@ -50,7 +50,7 @@ import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
-import { openCase, buildCaseReel, rollCrashPoint } from '../systems/CaseSystem.js';
+import { openCase, buildCaseReel, MINES, MINES_HOUSE, rollMines, minesRawMultiplier } from '../systems/CaseSystem.js';
 import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
@@ -129,9 +129,9 @@ export class Game {
         // a short-lived toast for claim/case feedback.
         this.menuTab = 'play';
         this.caseAnim = null;
-        // Cinder Wager mini-game overlay (coin gamble): { bet, pos, dir, speed,
-        // stopped, result, age } while open, null otherwise.
-        this.wager = null;
+        // Mines mini-game overlay (coin gamble): state object while open, null
+        // otherwise. See _openMines.
+        this.mines = null;
         this.menuToast = null;
         this.menuToastTimer = 0;
 
@@ -160,10 +160,11 @@ export class Game {
                 return;
             }
             if (this.screen === 'start') {
-                if (this.wager) {
+                if (this.mines) {
                     if (e.code === 'Space' || e.code === 'Enter') {
                         e.preventDefault();
-                        if (!this.wager.stopped) this._wagerStop(); else this._dismissWager();
+                        if (this.mines.stopped) this._dismissMines();
+                        else this._minesCashOut();
                     }
                     return;
                 }
@@ -342,11 +343,16 @@ export class Game {
 
         const tryStartScreenAt = (clientX, clientY) => {
             if (this.screen !== 'start') return false;
-            // The wager mini-game owns input while it's up: a tap stops the
-            // spark, then a second tap dismisses the result.
-            if (this.wager) {
-                if (!this.wager.stopped) this._wagerStop(); else this._dismissWager();
-                return true;
+            // The Mines mini-game owns input while it's up.
+            if (this.mines) {
+                const pos = this.renderer.clientToInternal(clientX, clientY);
+                if (this.mines.stopped) { this._dismissMines(); return true; }
+                if (inRect(pos, this._minesCashRect(), 0)) { this._minesCashOut(); return true; }
+                const tiles = this._minesTileRects();
+                for (let i = 0; i < tiles.length; i++) {
+                    if (inRect(pos, tiles[i], 0)) { this._minesReveal(i); return true; }
+                }
+                return true; // consume taps while the board is up
             }
             // The case-opening overlay owns input while it's up: any tap continues.
             if (this.caseAnim) { this._dismissCase(); return true; }
@@ -728,7 +734,7 @@ export class Game {
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
             case 'openCase': this._openCaseFlow(arg); break;
-            case 'openWager': this._openWager(arg); break;
+            case 'openMines': this._openMines(arg); break;
             case 'claimBP': {
                 const r = claimBattlePass(this.saveSystem, arg);
                 this._setToast(r.ok ? `Claimed: ${r.label}` : 'Cannot claim');
@@ -774,53 +780,76 @@ export class Game {
 
     _dismissCase() { this.caseAnim = null; }
 
-    // ── Cinder Climb (coin gambling mini-game) ───────────────────────────
-    // A crash/cash-out gamble: stake coins, a multiplier rockets up from 1.00×
-    // and BURNS OUT at a secret pre-rolled point. Cash out before it burns to
-    // win stake × the live multiplier; wait too long and lose the stake.
-    _openWager(bet) {
-        if (this.caseAnim || this.wager) return;
-        if (!this.saveSystem.spendCoins(bet)) { this._setToast('Not enough coins'); return; }
-        this.wager = { bet, mul: 1, crashPoint: rollCrashPoint(), busted: false, cashed: false, stopped: false, result: null, age: 0, _tick: 0 };
+    // ── Mines (coin gambling mini-game) ──────────────────────────────────
+    // Stake coins on a 5×5 grid hiding mines. Reveal safe tiles to ratchet the
+    // multiplier up; cash out to bank stake × multiplier, or hit a mine and
+    // lose it. Gated by the hourly gamble quota (5 plays / rolling hour).
+    _openMines(bet) {
+        if (this.caseAnim || this.mines) return;
+        if (this.saveSystem.data.totalCoins < bet) { this._setToast('Not enough coins'); return; }
+        if (!this.saveSystem.consumeGamblePlay()) {
+            const info = this.saveSystem.gamblePlaysInfo();
+            this._setToast(`No plays left — resets in ${Math.ceil(info.resetInMs / 60000)}m`);
+            return;
+        }
+        this.saveSystem.spendCoins(bet);
+        this.mines = {
+            bet, mineSet: rollMines(), revealed: [], safeRevealed: 0, mul: 1,
+            stopped: false, busted: false, cashed: false, result: null, age: 0,
+        };
         this.audio.forge();
     }
 
-    // CASH OUT: lock the live multiplier, pay out, bank the winnings.
-    _wagerStop() {
-        const w = this.wager;
-        if (!w || w.stopped) return;
-        w.stopped = true;
-        w.cashed = true;
-        const payout = Math.floor(w.bet * w.mul);
-        w.result = { mul: w.mul, payout, net: payout - w.bet };
-        if (payout > 0) this.saveSystem.addCoins(payout);
-        // Win chime scales with how high you rode it (bigger = bigger sound).
-        this.audio.reveal(w.mul >= 8 ? 'mythic' : w.mul >= 4 ? 'legendary' : w.mul >= 2 ? 'epic' : 'rare');
-    }
-
-    // Advance the climb one tick (called from the start-screen update). The
-    // multiplier grows exponentially (accelerating tension); when it reaches the
-    // secret burnout point the stake is lost.
-    _tickWager(dt) {
-        const w = this.wager;
-        if (!w || w.stopped) { if (w) w.age += dt; return; }
-        w.age += dt;
-        w.mul *= Math.exp(0.5 * dt); // ~doubles every ~1.4s, then faster
-        if (w.mul >= w.crashPoint) {
-            w.mul = w.crashPoint;
-            w.busted = true;
-            w.stopped = true;
-            w.result = { mul: w.crashPoint, payout: 0, net: -w.bet };
+    // Reveal one tile. Safe → ratchet the multiplier; mine → bust + lose stake.
+    _minesReveal(i) {
+        const m = this.mines;
+        if (!m || m.stopped || i == null || i < 0 || i >= MINES.tiles || m.revealed.includes(i)) return;
+        m.revealed.push(i);
+        if (m.mineSet.includes(i)) {
+            m.busted = true; m.stopped = true;
+            m.result = { mul: 0, payout: 0, net: -m.bet };
             this.audio.hurt();
             return;
         }
-        // A rising ratchet tick that quickens as the multiplier climbs.
-        w._tick += dt;
-        const interval = Math.max(0.04, 0.16 - w.mul * 0.02);
-        if (w._tick >= interval) { w._tick = 0; this.audio.spinTick(); }
+        m.safeRevealed += 1;
+        m.mul = minesRawMultiplier(m.safeRevealed) * MINES_HOUSE;
+        this.audio.spinTick();
+        // Cleared every safe tile → auto cash-out at the max multiplier.
+        if (m.safeRevealed >= MINES.tiles - MINES.mines) this._minesCashOut();
     }
 
-    _dismissWager() { this.wager = null; }
+    // Cash out the live multiplier (needs at least one safe reveal).
+    _minesCashOut() {
+        const m = this.mines;
+        if (!m || m.stopped || m.safeRevealed <= 0) return;
+        m.stopped = true; m.cashed = true;
+        const payout = Math.floor(m.bet * m.mul);
+        m.result = { mul: m.mul, payout, net: payout - m.bet };
+        if (payout > 0) this.saveSystem.addCoins(payout);
+        this.audio.reveal(m.mul >= 8 ? 'mythic' : m.mul >= 4 ? 'legendary' : m.mul >= 2 ? 'epic' : 'rare');
+    }
+
+    _dismissMines() { this.mines = null; }
+
+    // Grid tile rects (internal coords) — shared by render + hit-testing.
+    _minesTileRects() {
+        const cols = MINES.cols, rows = Math.ceil(MINES.tiles / cols);
+        const cell = 130, gap = 14;
+        const gw = cols * cell + (cols - 1) * gap;
+        const gh = rows * cell + (rows - 1) * gap;
+        const ox = INTERNAL_WIDTH / 2 - gw / 2;
+        const oy = INTERNAL_HEIGHT / 2 - gh / 2 + 30;
+        const rects = [];
+        for (let i = 0; i < MINES.tiles; i++) {
+            const c = i % cols, r = Math.floor(i / cols);
+            rects.push({ x: ox + c * (cell + gap), y: oy + r * (cell + gap), w: cell, h: cell });
+        }
+        return rects;
+    }
+
+    _minesCashRect() {
+        return { x: INTERNAL_WIDTH / 2 - 200, y: INTERNAL_HEIGHT / 2 + 380, w: 400, h: 76 };
+    }
 
     _setToast(msg) { this.menuToast = msg; this.menuToastTimer = 2.5; }
 
@@ -1480,7 +1509,7 @@ export class Game {
                 // richness scales with the won rarity (better pull = bigger noise).
                 if (wasSpinning && this.caseAnim.age >= spinTime) this.audio.reveal(this.caseAnim.result?.rarity);
             }
-            if (this.wager) this._tickWager(dt);
+            if (this.mines && this.mines.stopped) this.mines.age += dt;
             if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
             return;
         }
@@ -1932,10 +1961,10 @@ export class Game {
             ctx.fillStyle = '#0a0e16';
             ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
             this.ui.draw(ctx, this._buildUIState());
-            // The Cinder Wager overlay is Game-drawn (not part of the menu
-            // renderer), so it must be painted here — the start screen returns
-            // before the gameplay-tail overlay block below.
-            if (this.wager) this._drawWager(ctx);
+            // The Mines overlay is Game-drawn (not part of the menu renderer),
+            // so it must be painted here — the start screen returns before the
+            // gameplay-tail overlay block below.
+            if (this.mines) this._drawMines(ctx);
             return;
         }
 
@@ -2216,80 +2245,74 @@ export class Game {
         this.ui.draw(ctx, this._buildUIState());
 
         if (this.victory) this._drawVictory(ctx);
-        if (this.wager) this._drawWager(ctx);
 
         if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
     }
 
-    // Cinder Climb overlay: a giant live multiplier rocketing up, a rising
-    // ember-trail curve, and (after cash-out / burnout) the outcome.
-    _drawWager(ctx) {
-        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT, w = this.wager;
-        const cx = W / 2, cy = H / 2;
+    // Mines overlay: the stake + live multiplier, the 5×5 board (hidden /
+    // safe / mine tiles), a CASH OUT button, and the outcome after a stop.
+    _drawMines(ctx) {
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT, m = this.mines;
+        const cx = W / 2;
         ctx.save();
-        ctx.fillStyle = 'rgba(8,6,16,0.85)';
+        ctx.fillStyle = 'rgba(8,6,16,0.88)';
         ctx.fillRect(0, 0, W, H);
         ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ffb24a';
-        ctx.font = 'bold 56px sans-serif';
-        ctx.fillText('CINDER CLIMB', cx, cy - 230);
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.font = 'bold 52px sans-serif';
+        ctx.fillText('💣  MINES', cx, 150);
+        const potential = Math.floor(m.bet * m.mul);
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.font = '28px sans-serif';
-        ctx.fillText(`Stake: ◎ ${w.bet}`, cx, cy - 188);
+        ctx.fillText(`Stake ◎ ${m.bet}   ·   ${m.mul.toFixed(2)}×   ·   ${m.safeRevealed > 0 ? `cash ◎ ${potential}` : 'reveal a tile to start'}`, cx, 196);
 
-        // Rising ember-trail curve (visual only): climbs steeper as the
-        // multiplier grows. Tinted hot when alive, ash when burned out.
-        const gx = cx - 460, gy = cy + 150, gw = 920, gh = 300;
-        const prog = Math.min(1, (w.mul - 1) / 9); // 1×→10× fills the curve
-        ctx.strokeStyle = w.busted ? '#6a6a78' : '#ff7a3c';
-        ctx.lineWidth = 7;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(gx, gy);
-        const tipX = gx + gw * Math.max(0.04, prog);
-        for (let i = 0; i <= 24; i++) {
-            const f = i / 24;
-            const x = gx + (tipX - gx) * f;
-            const y = gy - gh * Math.pow(f, 2.2) * Math.max(0.06, prog);
-            ctx.lineTo(x, y);
+        // Board.
+        const rects = this._minesTileRects();
+        for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            const isRevealed = m.revealed.includes(i);
+            const isMine = m.mineSet.includes(i);
+            // On a bust (or cash-out) reveal where the mines were.
+            const showMine = isMine && (isRevealed || m.stopped);
+            ctx.save();
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 14); }
+            else { ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); }
+            if (showMine) ctx.fillStyle = isRevealed && m.busted ? '#ff5a3c' : '#5a2330';
+            else if (isRevealed) ctx.fillStyle = '#1d6b3a';      // safe
+            else ctx.fillStyle = m.stopped ? 'rgba(40,46,60,0.6)' : '#2a3346';
+            ctx.fill();
+            ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 52px sans-serif';
+            ctx.textBaseline = 'middle';
+            if (showMine) ctx.fillText('💣', r.x + r.w / 2, r.y + r.h / 2 + 2);
+            else if (isRevealed) ctx.fillText('💎', r.x + r.w / 2, r.y + r.h / 2 + 2);
+            ctx.textBaseline = 'alphabetic';
+            ctx.restore();
         }
-        ctx.stroke();
-        // Spark at the tip.
-        const tipY = gy - gh * Math.max(0.06, prog);
-        ctx.fillStyle = w.busted ? '#9a9aa8' : '#fff';
-        ctx.beginPath(); ctx.arc(tipX, tipY, w.busted ? 9 : 13, 0, Math.PI * 2); ctx.fill();
 
-        // The big live multiplier.
-        const big = (w.stopped ? w.result.mul : w.mul);
-        ctx.fillStyle = w.busted ? '#ff5a3c' : (w.cashed ? '#7be08a' : '#ffd166');
-        ctx.font = 'bold 130px sans-serif';
-        ctx.fillText(`${big.toFixed(2)}×`, cx, cy - 20);
-
-        if (!w.stopped) {
-            ctx.fillStyle = 'rgba(255,255,255,0.9)';
-            ctx.font = 'bold 36px sans-serif';
-            ctx.fillText('TAP / SPACE to CASH OUT', cx, cy + 70);
-            ctx.fillStyle = 'rgba(255,255,255,0.55)';
-            ctx.font = '24px sans-serif';
-            ctx.fillText(`Bank ◎ ${Math.floor(w.bet * w.mul)} now — or ride it higher and risk the burnout`, cx, cy + 112);
-        } else if (w.busted) {
-            ctx.fillStyle = '#ff5a3c';
-            ctx.font = 'bold 60px sans-serif';
-            ctx.fillText('BURNED OUT!', cx, cy + 80);
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 36px sans-serif';
-            ctx.fillText(`Lost ◎ ${w.bet}`, cx, cy + 132);
-            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '24px sans-serif';
-            ctx.fillText('Tap / Space to continue', cx, cy + 182);
+        // Cash-out button (or result + continue prompt).
+        const cb = this._minesCashRect();
+        ctx.textAlign = 'center';
+        if (!m.stopped) {
+            const can = m.safeRevealed > 0;
+            ctx.fillStyle = can ? '#1d6b3a' : 'rgba(60,66,78,0.85)';
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(cb.x, cb.y, cb.w, cb.h, 14); ctx.fill(); }
+            else ctx.fillRect(cb.x, cb.y, cb.w, cb.h);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 32px sans-serif';
+            ctx.fillText(can ? `CASH OUT ◎ ${potential}` : 'REVEAL A TILE', cx, cb.y + 50);
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '22px sans-serif';
+            ctx.fillText('Tap tiles to dig · cash out before a mine', cx, cb.y + cb.h + 36);
         } else {
-            ctx.fillStyle = '#7be08a';
-            ctx.font = 'bold 56px sans-serif';
-            ctx.fillText('CASHED OUT!', cx, cy + 80);
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 36px sans-serif';
-            ctx.fillText(`Won ◎ ${w.result.payout}  (${w.result.net >= 0 ? '+' : ''}${w.result.net})`, cx, cy + 132);
-            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '24px sans-serif';
-            ctx.fillText('Tap / Space to continue', cx, cy + 182);
+            ctx.fillStyle = m.busted ? '#ff5a3c' : '#7be08a';
+            ctx.font = 'bold 48px sans-serif';
+            ctx.fillText(m.busted ? 'BOOM!' : 'CASHED OUT!', cx, cb.y + 30);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 32px sans-serif';
+            ctx.fillText(m.busted ? `Lost ◎ ${m.bet}`
+                : `Won ◎ ${m.result.payout}  (${m.result.net >= 0 ? '+' : ''}${m.result.net})`, cx, cb.y + 74);
+            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '22px sans-serif';
+            ctx.fillText('Tap / Space to continue', cx, cb.y + 112);
         }
         ctx.restore();
     }
@@ -2366,6 +2389,7 @@ export class Game {
             base.menuTab = this.menuTab;
             base.caseAnim = this.caseAnim;
             base.menuToast = this.menuToastTimer > 0 ? this.menuToast : null;
+            base.gamblePlays = this.saveSystem.gamblePlaysInfo();
             return base;
         }
 
