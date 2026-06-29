@@ -581,7 +581,12 @@ export class Game {
         if (cur >= upgrade.maxLevel) return false;
         const cost = upgrade.costAt(cur);
         if (!this.saveSystem.spendCoins(cost)) return false;
-        this.saveSystem.incrementUpgrade(id);
+        // Refund if the persist step can't apply (e.g. an upgrade id missing
+        // from the save schema) so coins are never taken without an upgrade.
+        if (!this.saveSystem.incrementUpgrade(id)) {
+            this.saveSystem.addCoins(cost);
+            return false;
+        }
         return true;
     }
 

@@ -17,6 +17,7 @@ function defaultData() {
         upgrades: {
             maxHp: 0,
             damage: 0,
+            critChance: 0,
             moveSpeed: 0,
             xpGain: 0,
             pickupRange: 0,
