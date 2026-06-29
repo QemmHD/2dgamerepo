@@ -27,7 +27,7 @@ export class Player {
         // based on movement state — all four are cached up-front. The selected
         // character recolors the shared silhouette via its palette.
         const ch = getCharacter(characterId);
-        this.frames = getCharacterFrames(characterId, ch.palette);
+        this.frames = getCharacterFrames(characterId, ch);
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
         this.moving = false;

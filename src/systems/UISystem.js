@@ -218,6 +218,9 @@ export class UISystem {
         this._drawTopReadout(ctx, gameState);
         this._drawWaveLabel(ctx, gameState);
         this._drawBossHpBar(ctx, gameState);
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
+            this._drawBossArrow(ctx, gameState);
+        }
         this._drawLoadoutChips(ctx, gameState);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.paused) {
             this._drawAbilityCooldowns(ctx, gameState);
@@ -640,6 +643,61 @@ export class UISystem {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(ann.text, INTERNAL_WIDTH / 2, centerY);
+        ctx.restore();
+    }
+
+    // Off-screen boss locator: when the active boss is outside the viewport,
+    // pin an arrow to the screen edge pointing toward it (with distance), so
+    // the player always knows where to go after the arena reset.
+    _drawBossArrow(ctx, state) {
+        const boss = state.activeBoss;
+        const cam = state.camera;
+        if (!boss || !cam || boss.x == null) return;
+        const cx = INTERNAL_WIDTH / 2;
+        const cy = INTERNAL_HEIGHT / 2;
+        const sx = (boss.x - cam.x) + cx;
+        const sy = (boss.y - cam.y) + cy;
+        const margin = 70;
+        // On-screen → the HP bar + sprite are enough; no arrow.
+        if (sx >= margin && sx <= INTERNAL_WIDTH - margin && sy >= margin && sy <= INTERNAL_HEIGHT - margin) return;
+        const ang = Math.atan2(sy - cy, sx - cx);
+        // Clamp the arrow onto an inset screen rectangle along that direction.
+        const insetX = INTERNAL_WIDTH / 2 - margin;
+        const insetY = INTERNAL_HEIGHT / 2 - margin;
+        const ux = Math.cos(ang), uy = Math.sin(ang);
+        const t = Math.min(
+            Math.abs(insetX / (ux || 1e-6)),
+            Math.abs(insetY / (uy || 1e-6))
+        );
+        const ax = cx + ux * t;
+        const ay = cy + uy * t;
+        const dist = Math.round(Math.hypot(boss.x - cam.x, boss.y - cam.y));
+        const pulse = 0.6 + 0.4 * Math.sin(performanceNowSafe() * 0.008);
+        ctx.save();
+        ctx.translate(ax, ay);
+        ctx.rotate(ang);
+        // Arrowhead.
+        ctx.fillStyle = `rgba(255,80,60,${pulse})`;
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(26, 0);
+        ctx.lineTo(-14, -18);
+        ctx.lineTo(-4, 0);
+        ctx.lineTo(-14, 18);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        // Distance label, just inside the arrow.
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,200,190,0.9)';
+        ctx.font = `bold 18px ${MONO}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const lx = cx + ux * (t - 40);
+        const ly = cy + uy * (t - 40);
+        ctx.fillText(`${dist}`, lx, ly);
         ctx.restore();
     }
 

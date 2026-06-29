@@ -22,6 +22,7 @@ import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battleP
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter } from '../content/characters.js';
+import { getCharacterFrames } from '../assets/ProceduralSprites.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 
@@ -175,8 +176,12 @@ export class MenuRenderer {
         const ap = resolveAppearance(save.cosmetics.equipped);
         // Avatar reflects the selected character's color unless a fur cosmetic
         // overrides it (cosmetics apply on top of the character).
+        // The menu model is the REAL in-game character sprite (correct
+        // silhouette + palette), with equipped cosmetics layered over it.
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp);
+        let charSprite = null;
+        try { charSprite = getCharacterFrames(ch.id, ch)[0]; } catch (e) { charSprite = null; }
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
         ctx.fillText(`${ch.name} — ${ch.title}`, ccx, c.y + c.h * 0.46);
@@ -248,8 +253,11 @@ export class MenuRenderer {
         this._button(ctx, btn, 'START RUN', { primary: true, fontSize: 38, sub: 'Space / Enter', action: 'startRun' });
     }
 
-    // Simple procedural avatar honoring aura/fur/cloak/hat cosmetics.
-    _drawAvatar(ctx, cx, cy, r, ap) {
+    // Avatar honoring aura/fur/cloak/hat cosmetics. When `sprite` (the real
+    // cached character frame) is supplied it's drawn as the body so the menu
+    // model exactly matches the selected character; otherwise a procedural
+    // blob is used as a fallback.
+    _drawAvatar(ctx, cx, cy, r, ap, sprite = null) {
         ctx.save();
         if (ap.auraColor) {
             const g = ctx.createRadialGradient(cx, cy, r * 0.3, cx, cy, r * 1.4);
@@ -264,15 +272,20 @@ export class MenuRenderer {
             ctx.moveTo(cx - r * 0.7, cy - r * 0.1); ctx.lineTo(cx + r * 0.7, cy - r * 0.1);
             ctx.lineTo(cx + r * 0.95, cy + r); ctx.lineTo(cx - r * 0.95, cy + r); ctx.closePath(); ctx.fill();
         }
-        // Body (fur color or default warm brown).
-        ctx.fillStyle = ap.furColor || '#8a6a4a';
-        ctx.beginPath(); ctx.arc(cx, cy, r * 0.62, 0, Math.PI * 2); ctx.fill();
-        // Face.
-        ctx.fillStyle = '#e8d3b0';
-        ctx.beginPath(); ctx.arc(cx, cy - r * 0.05, r * 0.4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#2a2018';
-        ctx.beginPath(); ctx.arc(cx - r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2);
-        ctx.arc(cx + r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2); ctx.fill();
+        if (sprite) {
+            // Real character sprite as the body, sized to the avatar box.
+            const S = r * 2.4;
+            ctx.drawImage(sprite, cx - S / 2, cy - S / 2, S, S);
+        } else {
+            // Fallback procedural blob.
+            ctx.fillStyle = ap.furColor || '#8a6a4a';
+            ctx.beginPath(); ctx.arc(cx, cy, r * 0.62, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#e8d3b0';
+            ctx.beginPath(); ctx.arc(cx, cy - r * 0.05, r * 0.4, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#2a2018';
+            ctx.beginPath(); ctx.arc(cx - r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2);
+            ctx.arc(cx + r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2); ctx.fill();
+        }
         // Hat.
         if (ap.hatShape && ap.hatShape !== 'none') {
             ctx.fillStyle = ap.hatColor || '#ffd35a';
@@ -575,25 +588,53 @@ export class MenuRenderer {
         ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         const cx = INTERNAL_WIDTH / 2, cy = INTERNAL_HEIGHT / 2;
         const t = anim.age;
-        const reveal = 0.85;
+        const reveal = anim.reel ? (anim.spinTime ?? 2.6) : 0.85;
         const result = anim.result;
         const col = result && result.rarity ? rarityColor(result.rarity) : '#ffce54';
 
-        if (t < reveal) {
-            // Shaking, glowing case box.
-            const shake = (reveal - t) * 14;
-            const ox = Math.sin(t * 60) * shake, oy = Math.cos(t * 53) * shake;
-            const glow = 0.3 + 0.5 * (t / reveal);
-            const g = ctx.createRadialGradient(cx, cy, 30, cx, cy, 280);
-            g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.save(); ctx.globalAlpha = glow; ctx.globalCompositeOperation = 'lighter';
-            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 280, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-            roundRectPath(ctx, cx - 110 + ox, cy - 90 + oy, 220, 180, 18);
-            ctx.fillStyle = '#3a3344'; ctx.fill();
-            ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.stroke();
-            ctx.fillStyle = '#ffd86b'; ctx.font = `800 80px ${FONT}`;
+        if (t < reveal && anim.reel) {
+            // CS:GO-style spin reel: a horizontal strip scrolls + decelerates so
+            // the won item (at landingIndex) settles under the center marker.
+            const cellW = 168, cellH = 132, gap = 10;
+            const stride = cellW + gap;
+            const frac = easeOutCubic(clamp01(t / reveal));
+            const offset = frac * anim.landingIndex * stride;
+            ctx.save();
+            // Reel band background + clip.
+            const bandY = cy - cellH / 2;
+            roundRectPath(ctx, 0, bandY - 8, INTERNAL_WIDTH, cellH + 16, 0);
+            ctx.fillStyle = 'rgba(8,10,16,0.92)'; ctx.fill();
+            ctx.save();
+            ctx.beginPath(); ctx.rect(60, bandY - 8, INTERNAL_WIDTH - 120, cellH + 16); ctx.clip();
+            for (let i = 0; i < anim.reel.length; i++) {
+                const cellX = cx - offset + i * stride - cellW / 2;
+                if (cellX > INTERNAL_WIDTH + cellW || cellX < -cellW) continue;
+                const cell = anim.reel[i];
+                const cc = rarityColor(cell.rarity);
+                roundRectPath(ctx, cellX, bandY, cellW, cellH, 12);
+                ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
+                ctx.strokeStyle = cc; ctx.lineWidth = 3; ctx.stroke();
+                // Rarity swatch + name.
+                ctx.fillStyle = cc;
+                ctx.beginPath(); ctx.arc(cellX + cellW / 2, bandY + cellH * 0.36, 26, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.font = `700 18px ${FONT}`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                const nm = cell.name.length > 14 ? cell.name.slice(0, 13) + '…' : cell.name;
+                ctx.fillText(nm, cellX + cellW / 2, bandY + cellH * 0.78);
+            }
+            ctx.restore();
+            // Center marker.
+            ctx.strokeStyle = '#ffd86b'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(cx, bandY - 14); ctx.lineTo(cx, bandY + cellH + 14); ctx.stroke();
+            ctx.fillStyle = '#ffd86b';
+            ctx.beginPath();
+            ctx.moveTo(cx - 14, bandY - 14); ctx.lineTo(cx + 14, bandY - 14); ctx.lineTo(cx, bandY + 2); ctx.closePath(); ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(cx - 14, bandY + cellH + 14); ctx.lineTo(cx + 14, bandY + cellH + 14); ctx.lineTo(cx, bandY + cellH - 2); ctx.closePath(); ctx.fill();
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText('?', cx + ox, cy + oy);
+            ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `800 30px ${FONT}`;
+            ctx.fillText('OPENING…', cx, bandY - 48);
+            ctx.restore();
         } else {
             // Reveal card.
             const k = easeOutCubic(clamp01((t - reveal) / 0.4));

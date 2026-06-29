@@ -74,6 +74,8 @@ export function prewarmSprites() {
     getStormwingAlphaFrames();
     getSpitterFrames();
     getChargerFrames();
+    getMiteFrames();
+    getJuggernautFrames();
     getChestFrames();
     getCoinFrames();
     getProjectileSprite();
@@ -146,15 +148,16 @@ export function getMonkeySprite() {
 // Per-character frames: the shared wick-keeper silhouette recolored by the
 // character's palette (see content/characters.js). Cached per character id, so
 // each is rasterized once. 'monkey' with no palette reuses the default frames.
-export function getCharacterFrames(id, palette = null) {
-    if (id === 'monkey' || !palette) return getMonkeyFrames();
+export function getCharacterFrames(id, char = null) {
+    if (id === 'monkey' || !char) return getMonkeyFrames();
     const key = `charFrames:${id}`;
     if (cache.has(key)) return cache.get(key);
+    const opts = { palette: char.palette, feature: char.feature, accent: char.accent };
     const frames = [
-        addOutline(drawMonkey(SPRITE_SIZE, 0, { palette })),
-        addOutline(drawMonkey(SPRITE_SIZE, 1, { palette })),
-        addOutline(drawMonkey(SPRITE_SIZE, 2, { palette })),
-        addOutline(drawMonkey(SPRITE_SIZE, 3, { palette })),
+        addOutline(drawMonkey(SPRITE_SIZE, 0, opts)),
+        addOutline(drawMonkey(SPRITE_SIZE, 1, opts)),
+        addOutline(drawMonkey(SPRITE_SIZE, 2, opts)),
+        addOutline(drawMonkey(SPRITE_SIZE, 3, opts)),
     ];
     cache.set(key, frames);
     return frames;
@@ -180,6 +183,8 @@ export const getVinebackGoliathFrames = makeFrameGetter('vinebackFrames', 2, dra
 export const getStormwingAlphaFrames = makeFrameGetter('stormwingFrames', 4, drawStormwingAlpha);
 export const getSpitterFrames = makeFrameGetter('spitterFrames', 4, drawSpitter);
 export const getChargerFrames = makeFrameGetter('chargerFrames', 2, drawCharger);
+export const getMiteFrames = makeFrameGetter('miteFrames', 4, drawMite);
+export const getJuggernautFrames = makeFrameGetter('juggernautFrames', 2, drawJuggernaut);
 
 // Back-compat: idle frames for legacy callers.
 export function getSlimeSprite() { return getSlimeFrames()[0]; }
@@ -614,6 +619,60 @@ function drawMonkey(size, frame, opts = {}) {
     ctx.beginPath();
     ctx.arc(cx, headY + 17, 5, 0, Math.PI);
     ctx.stroke();
+
+    // Per-character distinguishing feature so heroes read as different models,
+    // not just recolors: elf = long pointed ears, orc = jutting tusks, wizard =
+    // a pointed hat. Drawn over the head using the character's accent color.
+    const feature = opts.feature;
+    if (feature === 'ears') {
+        ctx.fillStyle = FUR;
+        ctx.strokeStyle = FUR_DARK;
+        ctx.lineWidth = 3;
+        for (const s of [-1, 1]) {
+            ctx.beginPath();
+            ctx.moveTo(cx + s * 34, headY - 4);
+            ctx.quadraticCurveTo(cx + s * 70, headY - 30, cx + s * 52, headY - 54);
+            ctx.quadraticCurveTo(cx + s * 40, headY - 28, cx + s * 26, headY - 16);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+    } else if (feature === 'tusks') {
+        ctx.fillStyle = '#f0ead6';
+        ctx.strokeStyle = '#9a9277';
+        ctx.lineWidth = 2;
+        for (const s of [-1, 1]) {
+            ctx.beginPath();
+            ctx.moveTo(cx + s * 10, headY + 18);
+            ctx.quadraticCurveTo(cx + s * 16, headY + 34, cx + s * 8, headY + 40);
+            ctx.lineTo(cx + s * 4, headY + 22);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+    } else if (feature === 'hat') {
+        const hc = opts.accent || '#5a4b8c';
+        ctx.fillStyle = hc;
+        ctx.beginPath();
+        ctx.moveTo(cx - 40, headY - 26);
+        ctx.lineTo(cx + 40, headY - 26);
+        ctx.lineTo(cx + 6, headY - 96);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#2c2448';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        // Brim + star.
+        ctx.fillStyle = hc;
+        ctx.beginPath();
+        ctx.ellipse(cx, headY - 26, 48, 12, 0, 0, TWO_PI);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#ffe066';
+        ctx.beginPath();
+        ctx.arc(cx + 2, headY - 56, 5, 0, TWO_PI);
+        ctx.fill();
+    }
 
     return canvas;
 }
@@ -1187,6 +1246,131 @@ function drawSpitter(size, frame, count) {
 
 // ─── Charger (dash) ───────────────────────────────────────────────────
 // A low, armored ram with horns + braced legs. 2 frames: braced / lunging.
+// Mite — a tiny, fast, fragile skitterer (small/fast/low-HP archetype). Drawn
+// modestly sized in the canvas; the Enemy's small radius + visualScale shrink
+// it on screen. 4 frames cycle the leg skitter.
+function drawMite(size, frame, count = 4) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const ph = (frame / count) * TWO_PI;
+    const sk = Math.sin(ph) * 8;
+
+    const BODY = '#3a2e44';
+    const BODY_DARK = '#1e1726';
+    const BODY_LIGHT = '#5e4d70';
+    const EYE = '#ff5a6a';
+    const LEG = '#241c2e';
+
+    softShadow(ctx, cx, cy + 30, 36, 8, 0.4);
+
+    // Six skittering legs (3 per side), alternating with the cycle.
+    ctx.strokeStyle = LEG;
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+        const ly = cy - 14 + i * 16;
+        const swing = (i % 2 === 0 ? sk : -sk);
+        ctx.beginPath();
+        ctx.moveTo(cx - 22, ly);
+        ctx.lineTo(cx - 52, ly + swing);
+        ctx.moveTo(cx + 22, ly);
+        ctx.lineTo(cx + 52, ly - swing);
+        ctx.stroke();
+    }
+
+    // Carapace (small rounded abdomen + head).
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 6, 30, 26, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 22, 18, 15, 0, 0, TWO_PI);
+    ctx.fill();
+    // Shell highlight.
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 8, cy - 2, 11, 8, -0.4, 0, TWO_PI);
+    ctx.fill();
+    // Outline.
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 6, 30, 26, 0, 0, TWO_PI);
+    ctx.stroke();
+    // Two glowing eyes.
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx - 7, cy - 24, 4.5, 0, TWO_PI);
+    ctx.arc(cx + 7, cy - 24, 4.5, 0, TWO_PI);
+    ctx.fill();
+    return canvas;
+}
+
+// Juggernaut — a huge, slow, heavily-armored brute (big/slow/high-HP
+// archetype). A stone golem with glowing cracks. 2 frames: a slow breathe.
+function drawJuggernaut(size, frame) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const breathe = frame === 0 ? 0 : 3;
+
+    const ROCK = '#566270';
+    const ROCK_DARK = '#2b333d';
+    const ROCK_LIGHT = '#828f9c';
+    const CRACK = '#ff7a33';
+    const EYE = '#ffd166';
+
+    softShadow(ctx, cx, cy + 78, 86, 18, 0.45);
+
+    // Boulder shoulders.
+    ctx.fillStyle = ROCK_DARK;
+    ctx.beginPath();
+    ctx.arc(cx - 66, cy - 14, 26, 0, TWO_PI);
+    ctx.arc(cx + 66, cy - 14, 26, 0, TWO_PI);
+    ctx.fill();
+
+    // Massive body.
+    ctx.fillStyle = ROCK;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 8, 84 + breathe, 72 + breathe, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = ROCK_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 24, cy - 22, 38, 22, -0.3, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = ROCK_DARK;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 8, 84 + breathe, 72 + breathe, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    // Glowing molten cracks across the chest.
+    ctx.strokeStyle = CRACK;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 30, cy - 30);
+    ctx.lineTo(cx - 10, cy + 2);
+    ctx.lineTo(cx - 22, cy + 34);
+    ctx.moveTo(cx + 28, cy - 24);
+    ctx.lineTo(cx + 12, cy + 8);
+    ctx.lineTo(cx + 26, cy + 38);
+    ctx.stroke();
+
+    // Heavy brow + two burning eyes.
+    ctx.fillStyle = ROCK_DARK;
+    ctx.fillRect(cx - 36, cy - 40, 72, 14);
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx - 18, cy - 30, 7, 0, TWO_PI);
+    ctx.arc(cx + 18, cy - 30, 7, 0, TWO_PI);
+    ctx.fill();
+    return canvas;
+}
+
 function drawCharger(size, frame) {
     const canvas = newSpriteCanvas(size);
     const ctx = canvas.getContext('2d');
