@@ -30,6 +30,8 @@ export class Player {
         this.frames = getCharacterFrames(characterId, ch);
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
+        // Free-running clock (advances even while idle) for the idle breath.
+        this.aliveTimer = 0;
         this.moving = false;
         // Cosmetic trail: recent positions, drawn as a fading wake.
         this.trailPositions = [];
@@ -161,6 +163,7 @@ export class Player {
         const speedSq = this.vx * this.vx + this.vy * this.vy;
         this.moving = speedSq > 1;
         if (this.moving) this.bobTimer += dt;
+        this.aliveTimer += dt;
         if (move.x !== 0) this.facingX = move.x < 0 ? -1 : 1;
 
         // Record a sparse trail (cosmetic only) while moving.
@@ -322,6 +325,16 @@ export class Player {
         if (this.dashFx) {
             const stretch = 1 + 0.18 * (1 - this.dashFx.age / this.dashFx.dur);
             ctx.scale(stretch, 1 / Math.sqrt(stretch));
+        }
+        // Hit squash (stretch wide / squash flat for the hit-flash window) so
+        // taking a hit reads with weight; a gentle idle breath otherwise so the
+        // hero never sits perfectly still.
+        if (this.hitFlashTimer > 0) {
+            const q = this.hitFlashTimer / PLAYER.hitFlashDuration;
+            ctx.scale(1 + 0.16 * q, 1 - 0.13 * q);
+        } else if (!this.moving) {
+            const b = Math.sin(this.aliveTimer * 3) * 0.025;
+            ctx.scale(1 + b, 1 - b);
         }
 
         // Cloak draped behind the body (symmetric → drawn unflipped).

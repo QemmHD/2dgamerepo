@@ -4,6 +4,15 @@ import { getProjectileSprite } from '../assets/ProceduralSprites.js';
 
 const WORLD_MARGIN = 200;
 
+// Trail glow tint by elemental payload (fire/frost/shock); default ember.
+const PROJECTILE_TRAIL_COLOR = {
+    fire: '#ff7a3c',
+    frost: '#7fd0ff',
+    ice: '#7fd0ff',
+    shock: '#ffe14a',
+    default: '#ffd1a0',
+};
+
 export class Projectile {
     constructor(x, y, vx, vy, opts = {}) {
         this.x = x;
@@ -35,9 +44,24 @@ export class Projectile {
         // Weapons may supply a tinted sprite (e.g. the ember bolt); default is
         // the arcane bolt art.
         this.sprite = opts.sprite ?? getProjectileSprite();
+        // Motion trail: a short ring of recent positions, redrawn as fading
+        // additive ghosts so a bolt reads as a streak. Element tints the glow.
+        this.trailX = [];
+        this.trailY = [];
+        this._trailAccum = 0;
+        this.trailColor = opts.trailColor ?? PROJECTILE_TRAIL_COLOR[this.element] ?? PROJECTILE_TRAIL_COLOR.default;
     }
 
     update(dt) {
+        // Sample a sparse trail (every ~16ms, capped) before moving so ghosts
+        // sit behind the head.
+        this._trailAccum += dt;
+        if (this._trailAccum >= 0.016) {
+            this._trailAccum = 0;
+            this.trailX.push(this.x);
+            this.trailY.push(this.y);
+            if (this.trailX.length > 6) { this.trailX.shift(); this.trailY.shift(); }
+        }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.age += dt;
@@ -53,6 +77,21 @@ export class Projectile {
     }
 
     draw(ctx) {
+        // Additive ghost trail behind the head — older samples fade + shrink.
+        const n = this.trailX.length;
+        if (n > 1) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = this.trailColor;
+            for (let i = 0; i < n; i++) {
+                const f = (i + 1) / n;           // 0 (oldest) → 1 (newest)
+                ctx.globalAlpha = 0.32 * f;
+                ctx.beginPath();
+                ctx.arc(this.trailX[i], this.trailY[i], this.radius * (0.4 + 0.6 * f), 0, TWO_PI);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);

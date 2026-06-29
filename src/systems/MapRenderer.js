@@ -202,6 +202,49 @@ export class MapRenderer {
 
     // Soft corner darkening drawn in SCREEN space (caller passes the
     // screen width/height directly — no camera transform).
+    // Biome weather — a stateless, screen-space mote layer. Positions are
+    // derived purely from `time` (deterministic sine drift + wrap), so there's
+    // no per-frame state to advance and nothing to allocate in the loop.
+    // Embers rise (warm, additive); snow falls (cool, source-over). Skipped
+    // under reduced-effects / the low-quality governor.
+    drawWeather(ctx, screenW, screenH, time) {
+        if (this.lowQuality || !this.theme) return;
+        const kind = this.theme.weather;
+        if (kind !== 'embers' && kind !== 'snow') return;
+        const N = 56;
+        const span = screenH + 80;
+        ctx.save();
+        if (kind === 'embers') {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = '#ff9a48';
+            for (let i = 0; i < N; i++) {
+                const speed = 26 + (i % 7) * 9;
+                const x = ((i * 137.5) % screenW) + Math.sin(time * 0.6 + i) * 26;
+                // Rise: subtract so motes float upward, wrapping at the top.
+                const y = screenH - (((time * speed) + i * 53) % span);
+                const flick = 0.25 + 0.2 * Math.sin(time * 3 + i * 1.7);
+                ctx.globalAlpha = Math.max(0, flick);
+                const r = 1.4 + (i % 3) * 0.8;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, TWO_PI);
+                ctx.fill();
+            }
+        } else {
+            ctx.fillStyle = 'rgba(214, 234, 255, 0.55)';
+            for (let i = 0; i < N; i++) {
+                const speed = 34 + (i % 6) * 12;
+                const x = ((i * 113.3) % screenW) + Math.sin(time * 0.8 + i * 0.9) * 34;
+                const y = ((time * speed) + i * 47) % span - 40;
+                ctx.globalAlpha = 0.3 + 0.25 * Math.sin(time * 1.3 + i);
+                const r = 1.2 + (i % 3) * 0.7;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, TWO_PI);
+                ctx.fill();
+            }
+        }
+        ctx.restore();
+    }
+
     drawVignette(ctx, screenW, screenH) {
         const cx = screenW / 2;
         const cy = screenH / 2;

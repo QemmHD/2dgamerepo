@@ -12,6 +12,7 @@ import {
     UI,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
+import { Easing } from '../core/Easing.js';
 import {
     getSlimeFrames,
     getBatFrames,
@@ -32,6 +33,9 @@ import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 // Frame getters all return a pre-cached array of canvases. Per-type
 // animation speed (Hz) — bats flap quickly, brutes breathe slowly.
+// How long the spawn-in scale pop lasts (seconds). easeOutBack overshoot.
+const SPAWN_POP_DUR = 0.28;
+
 const FRAMES_BY_TYPE = {
     slime:           { get: getSlimeFrames,           hz: 5 },
     bat:             { get: getBatFrames,             hz: 10 },
@@ -119,10 +123,21 @@ export class Enemy {
         // splitting are handled by Game at the death site.
         this.affix = null;
         this.affixDef = null;
+        this.affixColor = null;
+        // damageTakenMul (reflective/armored) scales incoming damage in
+        // takeDamage; regenPerSecond (regenerating) is ticked in update.
+        this.damageTakenMul = 1;
+        this.regenPerSecond = 0;
         if (elite) {
             this.affix = ELITE_AFFIXES[Math.floor(Math.random() * ELITE_AFFIXES.length)];
             this.affixDef = AFFIX[this.affix] ?? null;
-            if (this.affix === 'swift' && this.affixDef) this.speed *= this.affixDef.speedMul;
+            if (this.affixDef) {
+                this.affixColor = this.affixDef.tint;
+                if (this.affixDef.speedMul) this.speed *= this.affixDef.speedMul;
+                if (this.affixDef.contactMul) this.contactDamage *= this.affixDef.contactMul;
+                if (this.affixDef.damageTakenMul) this.damageTakenMul = this.affixDef.damageTakenMul;
+                if (this.affixDef.regenFrac) this.regenPerSecond = this.maxHp * this.affixDef.regenFrac;
+            }
         }
 
         this.frames = frameSpec.get();
@@ -131,6 +146,9 @@ export class Enemy {
         // gives the swarm a more natural, varied motion feel.
         this.animOffset = Math.random() * 1000;
         this.animTimer = this.animOffset;
+        // Time since spawn — drives a brief scale-in "pop" so enemies don't
+        // blink into existence (easeOutBack overshoot in draw()).
+        this.spawnAge = 0;
         this.spriteHalf = SPRITE_SIZE / 2;
         this.active = true;
         this.hitFlashTimer = 0;
@@ -414,12 +432,19 @@ export class Enemy {
             if (this.burnTimer < 0) this.burnTimer = 0;
         }
         this.animTimer += dt;
+        this.spawnAge += dt;
+        // Regenerating affix: slowly knit HP back while alive (never past max).
+        if (this.regenPerSecond > 0 && this.hp < this.maxHp) {
+            this.hp = Math.min(this.maxHp, this.hp + this.regenPerSecond * dt);
+        }
     }
 
     takeDamage(amount, knockbackVx = 0, knockbackVy = 0) {
         // Mild boss resistance (never full immunity — resist is clamped well
         // below 1 in config). No-op for normal enemies (resist 0).
         if (this.resist > 0) amount *= (1 - this.resist);
+        // Reflective/armored elite affix: soak a chunk of every hit.
+        if (this.damageTakenMul !== 1) amount *= this.damageTakenMul;
         this.hp -= amount;
         this.hitFlashTimer = HIT_FLASH_DURATION;
         this.knockbackVx += knockbackVx;
@@ -538,7 +563,22 @@ export class Enemy {
             ctx.stroke();
         }
 
-        if (this.visualScale !== 1) ctx.scale(this.visualScale, this.visualScale);
+        // "Alive" deform: idle breathing (volume-preserving pulse so nothing
+        // sits perfectly still) + a spawn-in scale pop (easeOutBack overshoot)
+        // + a hit squash (stretch wide / squash flat) for the hit-flash window.
+        const breath = Math.sin(this.animTimer * 3.1 + this.animOffset) * 0.03;
+        let sx = 1 + breath, sy = 1 - breath;
+        if (this.spawnAge < SPAWN_POP_DUR) {
+            const pop = 0.35 + 0.65 * Easing.outBack(this.spawnAge / SPAWN_POP_DUR);
+            sx *= pop; sy *= pop;
+        }
+        if (this.hitFlashTimer > 0) {
+            const q = this.hitFlashTimer / HIT_FLASH_DURATION;
+            sx *= 1 + 0.20 * q; sy *= 1 - 0.16 * q;
+        }
+        // Non-bosses lean into their horizontal movement — reads as weight.
+        if (!this.boss && this.vx) ctx.rotate(clamp(this.vx * 0.00018, -0.13, 0.13));
+        ctx.scale(this.visualScale * sx, this.visualScale * sy);
 
         const idx = Math.floor(this.animTimer * this.frameHz) % this.frames.length;
         const frame = this.frames[idx];
