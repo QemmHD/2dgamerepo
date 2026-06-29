@@ -38,6 +38,31 @@ function poolByRarity(rarity) {
     return ITEM_POOL.filter((i) => i.rarity === rarity);
 }
 
+// Build a "spin reel": a strip of item cells the overlay scrolls past before
+// landing on the won item. Cells are drawn from the rarities this case can
+// roll (weighted by its odds) for flavor; the WON item is placed at
+// `landingIndex` so the deceleration settles exactly on it. A coins/bpxp
+// result has no item, so its landing cell shows the result label + rarity.
+export function buildCaseReel(caseType, result, length = 48, landingIndex = 42) {
+    const def = CASES[caseType];
+    const rarities = def ? RARITY_ORDER.filter((r) => def.odds[r]) : ['common'];
+    const weighted = [];
+    if (def) for (const r of rarities) for (let i = 0; i < Math.max(1, Math.round(def.odds[r] * 100)); i++) weighted.push(r);
+    const reel = [];
+    for (let i = 0; i < length; i++) {
+        const rr = weighted.length ? weighted[Math.floor(Math.random() * weighted.length)] : 'common';
+        const pool = poolByRarity(rr);
+        const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+        reel.push({ rarity: rr, name: pick ? pick.name : rarityName(rr) });
+    }
+    // Place the real result on the landing cell.
+    reel[landingIndex] = {
+        rarity: result.rarity || 'common',
+        name: result.name || result.label || rarityName(result.rarity || 'common'),
+    };
+    return { reel, landingIndex };
+}
+
 // Pick a rarity from a case's odds. Falls back to the lowest listed rarity if
 // the odds don't sum to 1 (defensive — they do).
 function rollRarity(odds) {

@@ -8,8 +8,13 @@
 // `WEAPONS[id].maxLevel = 1` and `evolved = true`. evolveWeapon() swaps
 // a base entry for its evolved variant in place.
 
-import { MAX_WEAPON_LEVEL } from '../config/GameConfig.js';
+import { MAX_WEAPON_LEVEL, INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
 import { compactInPlace, TWO_PI } from '../core/MathUtils.js';
+
+// Auto-aim weapons only acquire targets within the visible viewport (the
+// camera follows the player, so the player is the screen center). A small
+// margin lets a foe right at the edge still be shot, avoiding a dead ring.
+const TARGET_MARGIN = 60;
 import { WEAPONS } from '../content/weapons.js';
 
 function weaponMaxLevel(def) {
@@ -84,6 +89,10 @@ export class WeaponSystem {
         const solidBlocked = obstacleSystem
             ? (ax, ay, bx, by) => obstacleSystem.segmentBlocked(ax, ay, bx, by)
             : () => false;
+        // On-screen test for auto-aim target selection (player-centered).
+        const halfW = INTERNAL_WIDTH / 2 + TARGET_MARGIN;
+        const halfH = INTERNAL_HEIGHT / 2 + TARGET_MARGIN;
+        const inView = (x, y) => Math.abs(x - player.x) <= halfW && Math.abs(y - player.y) <= halfH;
         const ctx = {
             player,
             enemies,
@@ -94,6 +103,7 @@ export class WeaponSystem {
             los,
             solidBlocked,
             particles,
+            inView,
         };
         for (const w of this.owned) {
             const def = WEAPONS[w.id];

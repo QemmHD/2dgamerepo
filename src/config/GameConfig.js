@@ -180,6 +180,26 @@ export const ENEMY = {
         dashSpeed: 760,
         dashDuration: 0.4,
     },
+    // Swarm threat: tiny, very fast, very fragile — comes in numbers and
+    // punishes a stationary player but dies to a stiff breeze.
+    mite: {
+        hp: 9,
+        speed: 275,
+        radius: 28,
+        contactDamage: 4,
+        xpValue: 1,
+        visualScale: 0.55,
+    },
+    // Anchor threat: huge, slow, and very tanky with heavy contact damage —
+    // a wall you must kite around while it lumbers after you.
+    juggernaut: {
+        hp: 210,
+        speed: 50,
+        radius: 92,
+        contactDamage: 17,
+        xpValue: 5,
+        visualScale: 1.35,
+    },
     // Bosses are still Enemy instances; the `boss: true` flag flips on the
     // boss HP bar, chest drop on death, and lets the constructor pull in
     // bossName + visualScale. They scale with wave just like other enemies.
@@ -435,7 +455,7 @@ export const WAVES = [
         announcement: 'Vigil 3: Skittering Dark — Skitterlings swarm',
         spawnIntervalMul: 0.72,
         maxAlive: 90,
-        typeWeights: { slime: 45, bat: 25, crawler: 30, spitter: 15 },
+        typeWeights: { slime: 45, bat: 25, crawler: 30, spitter: 15, mite: 18 },
         eliteChance: 0,
         healthMul: 1.2,
         speedMul: 1.10,
@@ -447,7 +467,7 @@ export const WAVES = [
         announcement: 'Vigil 4: Gathering Hollow — the dark presses in',
         spawnIntervalMul: 0.60,
         maxAlive: 110,
-        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12 },
+        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24 },
         eliteChance: 0.015,
         healthMul: 1.35,
         speedMul: 1.15,
@@ -459,7 +479,7 @@ export const WAVES = [
         announcement: 'Vigil 5: Direhusks March — the heavy Hollow arrive',
         spawnIntervalMul: 0.52,
         maxAlive: 125,
-        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18 },
+        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8 },
         eliteChance: 0.03,
         healthMul: 1.5,
         speedMul: 1.20,
@@ -471,7 +491,7 @@ export const WAVES = [
         announcement: 'Vigil 6: The Long Dark — hold the light!',
         spawnIntervalMul: 0.44,
         maxAlive: 145,
-        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20 },
+        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20, mite: 28, juggernaut: 14 },
         eliteChance: 0.06,
         healthMul: 1.7,
         speedMul: 1.25,

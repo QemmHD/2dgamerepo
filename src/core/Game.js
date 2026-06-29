@@ -48,7 +48,7 @@ import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
-import { openCase } from '../systems/CaseSystem.js';
+import { openCase, buildCaseReel } from '../systems/CaseSystem.js';
 import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
@@ -642,8 +642,10 @@ export class Game {
     _openCaseFlow(caseType) {
         const res = openCase(this.saveSystem, caseType);
         if (!res.ok) { this._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
-        // The reward is already applied to the save; the overlay just presents it.
-        this.caseAnim = { caseType, result: res, age: 0 };
+        // The reward is already applied to the save; the overlay presents it
+        // with a scrolling reel that decelerates onto the won item.
+        const { reel, landingIndex } = buildCaseReel(caseType, res);
+        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime: 2.6 };
     }
 
     _dismissCase() { this.caseAnim = null; }
@@ -809,6 +811,15 @@ export class Game {
     _spawnBoss(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
+        // Boss arena reset: clear lingering trash so the fight is about the
+        // boss + its own themed adds (which spawn near it below), not leftover
+        // swarm. Cleared enemies are banished (no gems), and a puff sells it.
+        for (const e of this.enemies) {
+            if (e.active && !e.boss) {
+                e.active = false;
+                if (this._inView(e.x, e.y, 0)) this.particles.deathBurst(e.x, e.y, '#6a7a9a');
+            }
+        }
         const angle = Math.random() * TWO_PI;
         const dist = BOSS.spawnRingDistance;
         const halfW = WORLD_WIDTH / 2 - 100;
@@ -1841,6 +1852,8 @@ export class Game {
             maxHp: this.activeBossRef.maxHp,
             phase: this.activeBossRef.phase ?? 1,
             enraged: !!this.activeBossRef.phase2Entered,
+            x: this.activeBossRef.x,
+            y: this.activeBossRef.y,
         } : null;
         base.bossWarning = this.bossWarning
             ? { name: this.bossWarning.name, t: 1 - this.bossWarning.timer / this.bossWarning.total }

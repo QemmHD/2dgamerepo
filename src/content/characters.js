@@ -30,6 +30,7 @@ export const CHARACTERS = {
         stats: { hpMul: 0.85, speedMul: 1.12, damageMul: 1, cooldownMul: 1, pickupRangeMul: 1, xpMul: 1, chestLuckBonus: 1 },
         palette: { fur: '#3f7d52', furDark: '#27543a', furLight: '#62a373', face: '#e9f0d8' },
         accent: '#7fe0a0',
+        feature: 'ears',
         unlocked: true,
     },
     orc: {
@@ -40,6 +41,7 @@ export const CHARACTERS = {
         stats: { hpMul: 1.35, speedMul: 0.9, damageMul: 1.15, cooldownMul: 1, pickupRangeMul: 1, xpMul: 1 },
         palette: { fur: '#5f7d3a', furDark: '#3c5224', furLight: '#82a352', face: '#cdd9a0' },
         accent: '#b6d05a',
+        feature: 'tusks',
         unlocked: true,
     },
     wizard: {
@@ -50,6 +52,7 @@ export const CHARACTERS = {
         stats: { hpMul: 0.8, speedMul: 1, damageMul: 1, cooldownMul: 0.88, pickupRangeMul: 1, xpMul: 1.15 },
         palette: { fur: '#5a4b8c', furDark: '#382f5e', furLight: '#7d6cc0', face: '#e7e0f5' },
         accent: '#a78bff',
+        feature: 'hat',
         unlocked: true,
     },
 };

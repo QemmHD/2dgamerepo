@@ -21,6 +21,8 @@ import {
     getStormwingAlphaFrames,
     getSpitterFrames,
     getChargerFrames,
+    getMiteFrames,
+    getJuggernautFrames,
     getGlowSprite,
     getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
@@ -36,6 +38,8 @@ const FRAMES_BY_TYPE = {
     crawler:         { get: getCrawlerFrames,         hz: 9 },
     spitter:         { get: getSpitterFrames,         hz: 4 },
     charger:         { get: getChargerFrames,         hz: 3 },
+    mite:            { get: getMiteFrames,            hz: 14 },
+    juggernaut:      { get: getJuggernautFrames,      hz: 1.2 },
     vinebackGoliath: { get: getVinebackGoliathFrames, hz: 1.6 },
     stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 7 },
 };
