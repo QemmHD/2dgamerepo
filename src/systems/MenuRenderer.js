@@ -490,6 +490,25 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 18px ${FONT}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillText('Audio is not yet implemented — volume is saved for a future update.', innerX, y + 20);
+
+        // ── Cheats (testing) ──────────────────────────────────────────────
+        y += 52;
+        ctx.fillStyle = '#ff8a5c'; ctx.font = `700 22px ${FONT}`;
+        ctx.fillText('CHEATS (testing)', innerX, y + 6);
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `500 17px ${FONT}`;
+        ctx.fillText('Grant coins / unlock everything to test cases, gear & cosmetics.', innerX + 220, y + 6);
+        y += 22;
+        const cheats = [
+            { label: '+1,000 ◎', action: 'cheatCoins', arg: 1000 },
+            { label: '+10,000 ◎', action: 'cheatCoins', arg: 10000 },
+            { label: 'Unlock All Items', action: 'cheatUnlockAll', arg: null },
+        ];
+        const cbW = (innerW - 2 * 20) / 3, cbH = 56;
+        for (let i = 0; i < cheats.length; i++) {
+            const ch = cheats[i];
+            const r = { x: innerX + i * (cbW + 20), y, w: cbW, h: cbH };
+            this._button(ctx, r, ch.label, { accent: '#5a3a22', action: ch.action, arg: ch.arg, fontSize: 22 });
+        }
     }
 
     // ── CASE OPENING OVERLAY ─────────────────────────────────────────────

@@ -215,7 +215,10 @@ function drawBlade(ctx, x, y, angle, size, isEvolved = false) {
 
 function drawPulse(ctx, fx) {
     const t = fx.age / fx.lifetime;
-    const r = fx.radius * (0.35 + t * 0.65);
+    // Draw the bright ring AT the true damage radius (was 0.35→1.0, which made
+    // the visible ring hug the character and only reach full size as it faded
+    // out). Now it reads at ~0.82→1.06× radius, matching where damage lands.
+    const r = fx.radius * (0.82 + t * 0.24);
     const alpha = 1 - t;
     const isEvolved = !!fx.evolved;
 
