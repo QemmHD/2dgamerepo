@@ -415,7 +415,7 @@ export const ELITE = {
 
 // Rolled affixes layered onto an elite for visible variety + a death/while-
 // alive twist. Each elite picks one at random. Colors tint the elite glow.
-export const ELITE_AFFIXES = ['swift', 'volatile', 'splitting'];
+export const ELITE_AFFIXES = ['swift', 'volatile', 'splitting', 'reflective', 'regenerating', 'frenzied'];
 export const AFFIX = {
     // Cancels the elite speed penalty and then some — a fast, evasive elite.
     swift: { tint: '#7fe0ff', speedMul: 1.7 },
@@ -423,6 +423,13 @@ export const AFFIX = {
     volatile: { tint: '#ff9a4a', explodeRadius: 210, explodeDamage: 26 },
     // Bursts into a few crawlers on death.
     splitting: { tint: '#b48cff', spawnType: 'crawler', spawnCount: 3 },
+    // Armored — takes much-reduced damage, so it has to be committed to.
+    reflective: { tint: '#9fb6d6', damageTakenMul: 0.55 },
+    // Slowly heals while alive (fraction of max HP per second) — punish a
+    // player who chips it and walks away; burst it down instead.
+    regenerating: { tint: '#76e0a0', regenFrac: 0.05 },
+    // Berserk — faster than a plain elite and hits noticeably harder.
+    frenzied: { tint: '#ff5a7a', speedMul: 1.35, contactMul: 1.4 },
 };
 
 // Straight-flying enemy bolt (Spitter + boss volley). Damages the player on

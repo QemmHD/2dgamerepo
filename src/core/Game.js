@@ -24,6 +24,7 @@ import {
     ENEMY_SEPARATION,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
+import { Easing } from './Easing.js';
 import { Camera } from './Camera.js';
 import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
@@ -438,6 +439,15 @@ export class Game {
         // Damaging area hazards (boss shockwaves) + their telegraph decals.
         // Game-owned pool; cleared here so a restart never inherits one.
         this.hazards = [];
+        // Expanding shockwave ring VFX (pure cosmetic; pooled). Spawned on
+        // kills, boss deaths, and level-ups; updated + drawn in the world layer.
+        this.rings = [];
+        // Hit-stop: when > 0 the world sim freezes for these many seconds while
+        // rendering continues — sells the weight of a heavy impact. Drained with
+        // real dt at the top of the gameplay update.
+        this.hitStop = 0;
+        // Brief red screen-edge vignette pulse on taking damage (0..1, decays).
+        this.hitVignette = 0;
         // Queue of boss summon requests (drained each frame into themed spawns).
         this.bossSummons = [];
         // Active "BOSS INCOMING" warning (the boss spawns when this expires).
@@ -658,6 +668,37 @@ export class Game {
         if (this.shakeEnabled) this.camera.shake(intensity, duration);
     }
 
+    // Direct trauma push (0..1) for the trauma-based camera — also gated by the
+    // accessibility toggle so disabling shake silences everything.
+    _addTrauma(amount) {
+        if (this.shakeEnabled) this.camera.addTrauma(amount);
+    }
+
+    // Freeze the sim for `sec` seconds (kept as a max so a big hit landing
+    // during a small freeze extends it rather than shortening it). Skipped when
+    // reduced-effects is on so the accessibility path never stutters.
+    _hitStop(sec) {
+        if (this.reducedEffects) return;
+        this.hitStop = Math.max(this.hitStop, sec);
+    }
+
+    // Spawn an expanding shockwave ring (cosmetic). Pooled + capped so a dense
+    // crowd kill can't flood it. color/width/life/maxR all optional.
+    _spawnRing(x, y, opts = {}) {
+        if (!this.particlesEnabled || this.reducedEffects) return;
+        if (this.rings.length >= 48) return;
+        this.rings.push({
+            x, y, age: 0,
+            life: opts.life ?? 0.45,
+            r0: opts.r0 ?? 6,
+            maxR: opts.maxR ?? 120,
+            width: opts.width ?? 7,
+            color: opts.color ?? '#ffd0a0',
+            ease: opts.ease ?? 'outQuad',
+            active: true,
+        });
+    }
+
     // Re-roll the current level-up offer (costs one reroll charge).
     rerollChoices() {
         if (!this.upgradeChoices || this.rerolls <= 0) return;
@@ -722,8 +763,8 @@ export class Game {
             case 'startRun': this._pressFeedback('start'); this._startRun(); break;
             case 'buyUpgrade': this._pressFeedback(`shop:${arg}`); this.buyUpgrade(arg); break;
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
-            case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); break;
-            case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); break;
+            case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
+            case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); this.audio.equip(); break;
             case 'selectCharacter': this._pressFeedback(`char:${arg.id}`); this.saveSystem.setSelectedCharacter(arg.id); break;
             case 'selectMap': {
                 this._pressFeedback(`map:${arg.id}`);
@@ -947,6 +988,7 @@ export class Game {
         const upgrade = this.upgradeChoices[idx];
         if (!upgrade) return;
         this.upgradeSystem.apply(upgrade, this);
+        this.audio.upgrade();
         this.setUpgradeChoices(null);
         // Drain pending level-ups first, then move on to any queued chests
         // so the player isn't tossed between overlay types mid-stream.
@@ -1542,6 +1584,15 @@ export class Game {
             return;
         }
 
+        // Hit-stop: freeze the simulation for a few frames on a heavy impact but
+        // keep the camera (and its shake) animating, so the freeze reads as
+        // weight rather than a stutter. Drained with real dt.
+        if (this.hitStop > 0) {
+            this.hitStop = Math.max(0, this.hitStop - dt);
+            this.camera.update(dt);
+            return;
+        }
+
         this.time += dt;
 
         // Combo decay: the streak lapses if no kill lands inside the window.
@@ -1639,6 +1690,7 @@ export class Game {
                 e.enrageShouted = true;
                 this.waveDirector.announce('ENRAGED!', 1.2);
                 this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
+                this._spawnRing(e.x, e.y, { maxR: 300, width: 12, life: 0.5, color: '#ff3b4e', ease: 'outCubic' });
             }
         }
 
@@ -1749,6 +1801,9 @@ export class Game {
                 this._pushFeedback('levelup', 0.5);
                 this.audio.levelUp();
                 this.particles.levelUpBurst(this.player.x, this.player.y);
+                this._spawnRing(this.player.x, this.player.y, {
+                    maxR: 200, width: 9, life: 0.6, color: '#8fe1ff', ease: 'outCubic',
+                });
                 // QoL juice: a level-up vacuums every loose gem on the field so
                 // nothing earned is left behind while the overlay is up.
                 for (const g of this.gems) {
@@ -1806,6 +1861,12 @@ export class Game {
                     this.waveDirector.announce(`${e.name.toUpperCase()} DEFEATED!`, 3.0, '#ff6a4a');
                     this.particles.bossDeathBurst(e.x, e.y, '#ff8c4a');
                     this._shake(SCREEN_SHAKE.intensity * 1.1, 0.5);
+                    // Setpiece punch: a hard freeze-frame + a triple expanding
+                    // shockwave so an apex kill really lands.
+                    this._hitStop(0.12);
+                    this._spawnRing(e.x, e.y, { maxR: 520, width: 16, life: 0.7, color: '#ffd0a0', ease: 'outCubic' });
+                    this._spawnRing(e.x, e.y, { maxR: 360, width: 10, life: 0.55, color: '#ff8c4a' });
+                    this._spawnRing(e.x, e.y, { maxR: 220, width: 7, life: 0.4, color: '#ffffff' });
                     // Back to the driving theme once the duel ends; lift the arena.
                     this.audio.playMusic('gameplay');
                     this.arena = null;
@@ -1816,6 +1877,11 @@ export class Game {
                         this._showVictory();
                     }
                 } else if (e.elite) {
+                    // Elite kills pop a small shockwave ring tinted to the affix.
+                    this._spawnRing(e.x, e.y, {
+                        maxR: 170, width: 8, life: 0.5,
+                        color: e.affixColor || '#ffd166',
+                    });
                     // Elites: chance at a chest, chance at a coin burst.
                     if (Math.random() < CHEST.eliteDropChance) {
                         this._dropChest(e.x, e.y);
@@ -1866,6 +1932,13 @@ export class Game {
 
         // Advance particles (ambient embers + fog spawn around the player).
         this.particles.update(dt, this.player);
+        // Advance shockwave rings; expand + fade out over their life.
+        for (const ring of this.rings) {
+            ring.age += dt;
+            if (ring.age >= ring.life) ring.active = false;
+        }
+        // Damage vignette pulse decays back to clear.
+        if (this.hitVignette > 0) this.hitVignette = Math.max(0, this.hitVignette - dt * 2.2);
         this._updateGfxGovernor(dt);
 
         // Chest pickup: chests sit until the player walks onto them, then
@@ -1899,10 +1972,19 @@ export class Game {
         // any means), lift the arena so the player isn't trapped.
         if (this.arena && !this.activeBossRef) this.arena = null;
 
+        // Drive the music's dynamic intensity from how hectic the floor is
+        // (enemy density) and, during a duel, how close the boss is to death.
+        let intensity = Math.min(1, this.enemies.length / 90);
+        if (this.activeBossRef) {
+            intensity = Math.max(intensity, 0.55 + 0.45 * (1 - this.activeBossRef.hp / this.activeBossRef.maxHp));
+        }
+        this.audio.setIntensity(intensity);
+
         compactInPlace(this.enemies);
         compactInPlace(this.projectiles);
         compactInPlace(this.enemyProjectiles);
         compactInPlace(this.hazards);
+        compactInPlace(this.rings);
         compactInPlace(this.gems);
         compactInPlace(this.damageNumbers);
         compactInPlace(this.chests);
@@ -1912,7 +1994,14 @@ export class Game {
         // fires a green feedback pulse. Tracked centrally so individual
         // reward code doesn't each need to remember to trigger it.
         if (this.player.hp > this._lastHp + 0.5) this._pushFeedback('heal', 0.4);
-        else if (this.player.hp < this._lastHp - 0.5) this.audio.hurt();
+        else if (this.player.hp < this._lastHp - 0.5) {
+            this.audio.hurt();
+            // Red screen-edge vignette pulse on any damage; a heavy hit
+            // (>=12% max HP) also briefly freezes the frame for impact.
+            const dmg = this._lastHp - this.player.hp;
+            this.hitVignette = Math.min(1, this.hitVignette + 0.5);
+            if (dmg >= this.player.maxHp * 0.12) this._hitStop(0.05);
+        }
         this._lastHp = this.player.hp;
 
         // Second Wind: trickle HP back while no enemy is within the safe
@@ -2187,6 +2276,10 @@ export class Game {
             }
         }
 
+        // Expanding shockwave rings (kills / boss death / level-up) — additive
+        // so they glow, drawn in the world layer above entities.
+        if (this.rings.length) this._drawRings(ctx);
+
         // Occludable additive particles (embers + death dust) — these sit
         // above entities but BELOW the veil, so they read as ambient glow.
         if (this.particlesEnabled) this.particles.drawWorldAdditive(ctx, this.camera);
@@ -2229,6 +2322,16 @@ export class Game {
         if (L) L.composite(ctx);
         else this.mapRenderer.drawVignette(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT);
 
+        // Biome weather (embers rise / snow falls) — screen-space atmosphere
+        // over the lit world, beneath the HUD.
+        if (this.particlesEnabled && !this.reducedEffects) {
+            this.mapRenderer.drawWeather(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT, this.time);
+        }
+
+        // Damage vignette: a red screen-edge pulse on taking a hit, drawn over
+        // the veil so it reads even in the dark. Cached gradient, just alpha.
+        if (this.hitVignette > 0.01) this._drawHitVignette(ctx);
+
         // Always-bright sparks sit ABOVE the veil so kill/hit/pickup/level
         // feedback never gets dimmed by the darkness.
         if (this.particlesEnabled) this.particles.drawScreenAdditive(ctx, this.camera);
@@ -2247,6 +2350,48 @@ export class Game {
         if (this.victory) this._drawVictory(ctx);
 
         if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
+    }
+
+    // Expanding shockwave rings — additive stroked circles that grow via an
+    // ease and thin + fade as they reach their max radius. World-space (called
+    // inside the camera transform).
+    _drawRings(ctx) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (const ring of this.rings) {
+            if (!ring.active) continue;
+            const t = Math.min(1, ring.age / ring.life);
+            const e = (Easing[ring.ease] || Easing.outQuad)(t);
+            const r = ring.r0 + (ring.maxR - ring.r0) * e;
+            const fade = 1 - t;
+            ctx.globalAlpha = 0.7 * fade;
+            ctx.strokeStyle = ring.color;
+            ctx.lineWidth = Math.max(0.5, ring.width * fade);
+            ctx.beginPath();
+            ctx.arc(ring.x, ring.y, r, 0, TWO_PI);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // Red screen-edge vignette pulse on taking damage. Gradient is built once
+    // (screen-space, fixed internal resolution) and cached; only alpha varies.
+    _drawHitVignette(ctx) {
+        if (!this._hitVignetteGrad) {
+            const cx = INTERNAL_WIDTH / 2, cy = INTERNAL_HEIGHT / 2;
+            const g = ctx.createRadialGradient(
+                cx, cy, INTERNAL_HEIGHT * 0.32,
+                cx, cy, INTERNAL_HEIGHT * 0.72
+            );
+            g.addColorStop(0, 'rgba(180,12,20,0)');
+            g.addColorStop(1, 'rgba(150,8,16,1)');
+            this._hitVignetteGrad = g;
+        }
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.6, this.hitVignette * 0.6);
+        ctx.fillStyle = this._hitVignetteGrad;
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        ctx.restore();
     }
 
     // Mines overlay: the stake + live multiplier, the 5×5 board (hidden /

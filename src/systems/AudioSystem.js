@@ -75,6 +75,9 @@ export class AudioSystem {
         this._bar = 0;
         this._lastSfx = {};
         this._noiseBuf = null;
+        // Dynamic music intensity (0..1) — driven by enemy density / boss low
+        // HP. Brightens the master filter and layers in extra drive.
+        this._intensity = 0;
     }
 
     _ensure() {
@@ -140,6 +143,15 @@ export class AudioSystem {
     playMusic(theme) { this.theme = THEMES[theme] ? theme : null; }
     stopMusic() { this.theme = null; }
 
+    // Dynamic intensity (0..1): the game feeds this from enemy density and boss
+    // low-HP. It brightens the master low-pass (duller when calm, brighter when
+    // it's hectic) and the scheduler layers in extra drive at high values.
+    setIntensity(level) {
+        const v = Math.max(0, Math.min(1, level || 0));
+        this._intensity = v;
+        if (this.masterFilter) this.masterFilter.frequency.value = 5600 + v * 2600;
+    }
+
     // ── Music scheduler ──────────────────────────────────────────────────
     // Steps are sixteenth-notes; 16 per bar. `_bar` advances when the step
     // wraps so the groove can evolve across an 8-bar phrase (A/B + chord moves).
@@ -178,6 +190,13 @@ export class AudioSystem {
         if (def.hat.includes(step)) this._hat(t, e * (step % 4 === 0 ? 0.6 : 1));
         // End-of-phrase fill: a busier hat run so the loop "breathes" + lifts.
         if ((bar % 8) === 7 && step >= 12) this._hat(t, e * 0.7);
+        // Dynamic intensity: drive extra off-beat hats when the floor fills,
+        // and double the kick when it's truly hectic / a boss is near death.
+        const ix = this._intensity;
+        if (ix > 0.5 && (step === 1 || step === 5 || step === 9 || step === 13)) {
+            this._hat(t, e * 0.45 * ix);
+        }
+        if (ix > 0.8 && (step === 6 || step === 14)) this._kick(t, e * 0.6);
 
         // BASS — pumps the chord root an octave down (warm sine).
         if (def.bassSteps.includes(step)) {
@@ -275,6 +294,10 @@ export class AudioSystem {
     shootBolt()  { this._play('shootBolt', 0.07, (t) => this._voice(640, t, 0.07, 0.06, { type: 'triangle', slideTo: 880, cutoff: 3200, attack: 0.003 })); }
     shootFire()  { this._play('shootFire', 0.08, (t) => { this._voice(300, t, 0.12, 0.06, { type: 'sine', slideTo: 200, cutoff: 1500, attack: 0.004 }); this._noise(t, 0.1, 0.04, 1200, this.sfxBus, 500); }); }
     shootShock() { this._play('shootShock', 0.08, (t) => { this._voice(1200, t, 0.06, 0.05, { type: 'sawtooth', slideTo: 720, cutoff: 4200, attack: 0.002 }); this._noise(t, 0.05, 0.04, 6000, this.sfxBus); }); }
+    // Equipping a cosmetic / gear piece: a soft two-note sparkle.
+    equip()    { this._play('equip', 0.04, (t) => { this._voice(880, t, 0.07, 0.08, { type: 'sine', cutoff: 4200, detune: 5 }); this._voice(1320, t + 0.05, 0.12, 0.07, { type: 'triangle', cutoff: 4600, detune: 5 }); }); }
+    // Picking a level-up / upgrade card: a satisfying confirming "ding".
+    upgrade()  { this._play('upgrade', 0.05, (t) => { this._voice(660, t, 0.1, 0.11, { type: 'triangle', slideTo: 990, cutoff: 3600, detune: 6 }); this._voice(990, t + 0.06, 0.2, 0.09, { type: 'triangle', cutoff: 4000, detune: 6 }); }); }
     chest()    { this._play('chest', 0.1, (t) => this._bell(t, 523)); }
     forge()    { this._play('forge', 0.06, (t) => { this._noise(t, 0.16, 0.12, 500, this.sfxBus, 1400); this._voice(220, t, 0.18, 0.12, { type: 'triangle', cutoff: 1400, detune: 9 }); }); }
     // Reel ratchet tick while a case spins (Game paces the cadence).

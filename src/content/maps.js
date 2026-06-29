@@ -15,6 +15,7 @@ export const MAPS = {
         gradeAlpha: 0,
         unlockBosses: 0,
         accent: '#ffb24a',
+        weather: 'embers',      // warm motes drifting upward
     },
     hollowreach: {
         id: 'hollowreach',
@@ -25,6 +26,7 @@ export const MAPS = {
         gradeAlpha: 0.26,
         unlockBosses: 3,        // unlocked after 3 lifetime boss kills
         accent: '#7fd0ff',
+        weather: 'snow',        // cool flecks falling
     },
 };
 
