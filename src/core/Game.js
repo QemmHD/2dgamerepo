@@ -585,6 +585,12 @@ export class Game {
                 break;
             }
             case 'caseContinue': this._dismissCase(); break;
+            case 'cheatCoins': this.saveSystem.addCoins(arg); this._setToast(`+${arg} coins`); break;
+            case 'cheatUnlockAll': {
+                const n = this.saveSystem.cheatUnlockAll();
+                this._setToast(n > 0 ? `Unlocked ${n} item${n > 1 ? 's' : ''}` : 'Everything already unlocked');
+                break;
+            }
             default: break;
         }
     }

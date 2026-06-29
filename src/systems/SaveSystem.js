@@ -5,8 +5,8 @@
 // JSON. All public methods are no-ops on localStorage failures (private
 // mode, exceeded quota, blocked storage) so the game never crashes.
 
-import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR } from '../content/gear.js';
-import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS } from '../content/cosmetics.js';
+import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR, GEAR_LIST } from '../content/gear.js';
+import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST } from '../content/cosmetics.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 
@@ -336,6 +336,26 @@ export class SaveSystem {
         if (!this.data.stats) return;
         this.data.stats[key] = (this.data.stats[key] ?? 0) + amount;
         this.save();
+    }
+
+    // Testing cheat: unlock every gear + cosmetic at once. Returns how many
+    // were newly unlocked.
+    cheatUnlockAll() {
+        let n = 0;
+        for (const g of GEAR_LIST) if (this.unlockGearSilent(g.id)) n++;
+        for (const c of COSMETIC_LIST) if (this.unlockCosmeticSilent(c.id)) n++;
+        this.save();
+        return n;
+    }
+
+    // Internal unlock helpers that don't save per-call (cheatUnlockAll saves once).
+    unlockGearSilent(id) {
+        if (this.data.gear.unlocked.includes(id)) return false;
+        this.data.gear.unlocked.push(id); return true;
+    }
+    unlockCosmeticSilent(id) {
+        if (this.data.cosmetics.unlocked.includes(id)) return false;
+        this.data.cosmetics.unlocked.push(id); return true;
     }
 
     reset() {
