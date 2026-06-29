@@ -4,30 +4,54 @@
 // invulnerability frames. Visual is a cached colored glow.
 
 import { ENEMY_PROJECTILE, WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig.js';
-import { TWO_PI, circleOverlap } from '../core/MathUtils.js';
+import { TWO_PI, circleOverlap, clamp } from '../core/MathUtils.js';
 import { getGlowSprite } from '../assets/ProceduralSprites.js';
 
 const WORLD_MARGIN = 120;
 
 export class EnemyProjectile {
-    constructor(x, y, vx, vy, damage) {
+    // opts (all optional): { homing, turnRate, maxSpeed, color, radius, lifetime }
+    // Plain straight bolts pass no opts and behave exactly as before. Homing
+    // bolts steer toward the player each frame (capped turn rate) — used by the
+    // boss "seeker" moves so the player has to juke, not just sidestep.
+    constructor(x, y, vx, vy, damage, opts = {}) {
         this.x = x;
         this.y = y;
         this.vx = vx;
         this.vy = vy;
         this.damage = damage;
-        this.radius = ENEMY_PROJECTILE.radius;
-        this.lifetime = ENEMY_PROJECTILE.lifetime;
+        this.radius = opts.radius ?? ENEMY_PROJECTILE.radius;
+        this.lifetime = opts.lifetime ?? ENEMY_PROJECTILE.lifetime;
         this.age = 0;
         this.active = true;
         this.angle = Math.atan2(vy, vx);
-        this.sprite = getGlowSprite(ENEMY_PROJECTILE.color);
+        this.homing = !!opts.homing;
+        this.turnRate = opts.turnRate ?? 0;     // radians/sec the heading can turn
+        this.maxSpeed = opts.maxSpeed ?? 0;     // homing speed clamp
+        this.sprite = getGlowSprite(opts.color ?? ENEMY_PROJECTILE.color);
     }
 
     // Returns the damage dealt to the player this frame (0 if none), so the
     // caller can drive feedback. Deactivates on hit, expiry, or leaving the
     // world.
     update(dt, player) {
+        // Homing steer: rotate the velocity toward the player by at most
+        // turnRate·dt, holding (capped) speed — a lazy seek the player can
+        // out-turn but not ignore.
+        if (this.homing && player) {
+            const desired = Math.atan2(player.y - this.y, player.x - this.x);
+            let cur = Math.atan2(this.vy, this.vx);
+            let diff = desired - cur;
+            while (diff > Math.PI) diff -= TWO_PI;
+            while (diff < -Math.PI) diff += TWO_PI;
+            const maxTurn = this.turnRate * dt;
+            cur += clamp(diff, -maxTurn, maxTurn);
+            let speed = Math.hypot(this.vx, this.vy);
+            if (this.maxSpeed) speed = Math.min(this.maxSpeed, speed);
+            this.vx = Math.cos(cur) * speed;
+            this.vy = Math.sin(cur) * speed;
+            this.angle = cur;
+        }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.age += dt;

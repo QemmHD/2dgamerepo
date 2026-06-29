@@ -27,103 +27,97 @@ export const GEAR = {
         description: 'Start each vigil with the Cinderbolt.', weaponId: 'arcaneBolt',
         buffs: {}, defaultUnlocked: true,
     },
-    w_frostmotes: {
-        id: 'w_frostmotes', name: 'Frost Glaives', category: 'weapon', rarity: 'uncommon',
-        description: 'Start with the orbiting Frost Glaives. +5% pickup range.', weaponId: 'orbitingBlade',
-        buffs: { pickupPct: 0.05 },
-    },
-    w_beacon: {
-        id: 'w_beacon', name: 'Beacon Pulse', category: 'weapon', rarity: 'uncommon',
-        description: 'Start with the Beacon Pulse. +10 max HP.', weaponId: 'holyPulse',
-        buffs: { maxHp: 10 },
-    },
-    w_stormbrand: {
-        id: 'w_stormbrand', name: 'Stormbrand', category: 'weapon', rarity: 'rare',
-        description: 'Start with the Stormbrand. +4% damage.', weaponId: 'lightningMark',
-        buffs: { damagePct: 0.04 },
-    },
+    // Starting weapons are the three "wands" — all share the Cinderbolt damage
+    // baseline; the Pyre Wisp + Stormwand trade the plain bolt for a crowd-
+    // clearing element. (Frost Glaives / Beacon Pulse / Stormbrand are NOT
+    // starters — they're earned in-run as level-up weapons/abilities.)
     w_pyrewisp: {
-        id: 'w_pyrewisp', name: 'Pyre Wisp', category: 'weapon', rarity: 'rare',
-        description: 'Start with the Pyre Wisp. +5% damage.', weaponId: 'emberWisp',
+        id: 'w_pyrewisp', name: 'Pyre Wisp', category: 'weapon', rarity: 'uncommon',
+        description: 'Start with the Pyre Wisp — Cinderbolt damage, flames spread between husks.', weaponId: 'emberWisp',
+        buffs: { damagePct: 0.05 },
+    },
+    w_lightningwand: {
+        id: 'w_lightningwand', name: 'Stormwand', category: 'weapon', rarity: 'rare',
+        description: 'Start with the Stormwand — Cinderbolt damage, zaps chain to nearby husks.', weaponId: 'voltWand',
         buffs: { damagePct: 0.05 },
     },
 
     // ── Trinkets ────────────────────────────────────────────────────────
     t_emberband: {
         id: 't_emberband', name: 'Emberband', category: 'trinket', rarity: 'common',
-        description: 'A warm copper ring.', buffs: { coinPct: 0.05 },
+        description: 'A warm copper ring.', buffs: { coinPct: 0.10 },
     },
     t_gleamloop: {
         id: 't_gleamloop', name: 'Gleamloop', category: 'trinket', rarity: 'uncommon',
-        description: 'Draws light to you.', buffs: { pickupPct: 0.10, xpPct: 0.04 },
+        description: 'Draws light to you.', buffs: { pickupPct: 0.15, xpPct: 0.08 },
     },
     t_wardstone: {
         id: 't_wardstone', name: 'Wardstone', category: 'trinket', rarity: 'rare',
-        description: 'A stone that drinks the dark.', buffs: { maxHp: 20, damageTakenPct: 0.03 },
+        description: 'A stone that drinks the dark.', buffs: { maxHp: 35, damageTakenPct: 0.05 },
     },
     t_kindlesigil: {
         id: 't_kindlesigil', name: 'Kindle Sigil', category: 'trinket', rarity: 'epic',
-        description: 'Quickens every spark.', buffs: { damagePct: 0.06, cooldownPct: 0.04, critChancePct: 0.05 },
+        description: 'Quickens every spark.', buffs: { damagePct: 0.10, cooldownPct: 0.06, critChancePct: 0.06 },
     },
     t_phoenixtear: {
         id: 't_phoenixtear', name: 'Phoenix Tear', category: 'trinket', rarity: 'legendary',
-        description: 'A tear that refuses to cool.', buffs: { maxHp: 30, damagePct: 0.05, coinPct: 0.08 },
+        description: 'A tear that refuses to cool.', buffs: { maxHp: 50, damagePct: 0.10, coinPct: 0.12 },
     },
     t_eternalember: {
         id: 't_eternalember', name: 'Eternal Ember', category: 'trinket', rarity: 'mythic',
-        description: 'It has burned since the first vigil.', buffs: { damagePct: 0.08, cooldownPct: 0.05, xpPct: 0.06, critChancePct: 0.08 },
+        description: 'It has burned since the first vigil.', buffs: { damagePct: 0.14, cooldownPct: 0.08, xpPct: 0.10, critChancePct: 0.10 },
     },
 
     // ── Armor ───────────────────────────────────────────────────────────
     a_ashvest: {
         id: 'a_ashvest', name: 'Ash Vest', category: 'armor', rarity: 'common',
-        description: 'Padded with cooled ash.', buffs: { maxHp: 12 },
+        description: 'Padded with cooled ash.', buffs: { maxHp: 18 },
     },
     a_cinderplate: {
         id: 'a_cinderplate', name: 'Cinderplate', category: 'armor', rarity: 'uncommon',
-        description: 'Scaled plates of slag.', buffs: { maxHp: 20, damageTakenPct: 0.03 },
+        description: 'Scaled plates of slag.', buffs: { maxHp: 30, damageTakenPct: 0.05 },
     },
     a_warmweave: {
         id: 'a_warmweave', name: 'Warmweave', category: 'armor', rarity: 'rare',
-        description: 'Light and supple.', buffs: { maxHp: 28, speedPct: 0.04 },
+        description: 'Light and supple.', buffs: { maxHp: 42, speedPct: 0.06 },
     },
     a_pyreguard: {
         id: 'a_pyreguard', name: 'Pyreguard', category: 'armor', rarity: 'epic',
-        description: 'Forged in a living pyre.', buffs: { maxHp: 40, damageTakenPct: 0.05 },
+        description: 'Forged in a living pyre.', buffs: { maxHp: 58, damageTakenPct: 0.08 },
     },
     a_dawnmantle: {
         id: 'a_dawnmantle', name: 'Dawn Mantle', category: 'armor', rarity: 'legendary',
-        description: 'Woven from first light.', buffs: { maxHp: 55, damageTakenPct: 0.06, speedPct: 0.03 },
+        description: 'Woven from first light.', buffs: { maxHp: 75, damageTakenPct: 0.10, speedPct: 0.05 },
     },
     a_aegisofembers: {
         id: 'a_aegisofembers', name: 'Aegis of Embers', category: 'armor', rarity: 'mythic',
-        description: 'The last ward of the Wick-Keepers.', buffs: { maxHp: 70, damageTakenPct: 0.08 },
+        description: 'The last ward of the Wick-Keepers.', buffs: { maxHp: 95, damageTakenPct: 0.13 },
     },
 
     // ── Charms ──────────────────────────────────────────────────────────
     c_luckcinder: {
         id: 'c_luckcinder', name: 'Lucky Cinder', category: 'charm', rarity: 'common',
-        description: 'Pops at just the right moment.', buffs: { chestLuck: 0.10 },
+        description: 'Pops at just the right moment.', buffs: { chestLuck: 0.15 },
     },
     c_coinmoth: {
         id: 'c_coinmoth', name: 'Coin Moth', category: 'charm', rarity: 'uncommon',
-        description: 'Flutters toward gold.', buffs: { coinPct: 0.10 },
+        description: 'Flutters toward gold.', buffs: { coinPct: 0.15 },
     },
     c_scholarwax: {
         id: 'c_scholarwax', name: "Scholar's Wax", category: 'charm', rarity: 'rare',
-        description: 'Memory burns brighter.', buffs: { xpPct: 0.10 },
+        description: 'Memory burns brighter.', buffs: { xpPct: 0.15 },
     },
     c_gildedwick: {
         id: 'c_gildedwick', name: 'Gilded Wick', category: 'charm', rarity: 'epic',
-        description: 'Burns gold into the dark.', buffs: { coinPct: 0.15, chestLuck: 0.15 },
+        description: 'Burns gold into the dark.', buffs: { coinPct: 0.20, chestLuck: 0.20 },
     },
     c_fatesember: {
         id: 'c_fatesember', name: "Fate's Ember", category: 'charm', rarity: 'legendary',
-        description: 'Fortune leans toward its light.', buffs: { xpPct: 0.12, chestLuck: 0.20, coinPct: 0.10 },
+        description: 'Fortune leans toward its light.', buffs: { xpPct: 0.16, chestLuck: 0.25, coinPct: 0.14 },
     },
     c_oblationflame: {
         id: 'c_oblationflame', name: 'Oblation Flame', category: 'charm', rarity: 'mythic',
-        description: 'Every offering is repaid.', buffs: { xpPct: 0.15, coinPct: 0.18, chestLuck: 0.25 },
+        description: 'Every offering is repaid.', buffs: { xpPct: 0.20, coinPct: 0.24, chestLuck: 0.30 },
     },
 };
 

@@ -951,7 +951,7 @@ export class Game {
         const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.12);
         const boss = new Enemy(id, x, y, {
             healthMul: bossHpMul,
-            speedMul: this.waveState.speedMul * (1 + encounter * 0.05),
+            speedMul: this.waveState.speedMul * (1 + encounter * 0.04),
             contactDamageMul: bossDmgMul,
         });
         boss.resist = Math.min(minutes * BOSS.resistPerMinute, BOSS.maxResist);
@@ -1037,7 +1037,8 @@ export class Game {
             if (!e.thresholds.t25 && frac <= 0.25) {
                 e.thresholds.t25 = true;
                 e.bossCadenceMul = BOSS.thresholdCadence.t25;
-                e.speed *= BOSS.enrageSpeedMul;
+                // Move speed now ramps continuously with the low-HP enrage
+                // scalar (see BOSS.enrage + Enemy.update), so no discrete bump here.
                 this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t25, def.supportTypes);
                 this.waveDirector.announce(`${e.name.toUpperCase()} ENRAGES!`, 2.0, '#ff3326');
                 this._shake(SCREEN_SHAKE.intensity * 0.9, 0.5);
@@ -1189,6 +1190,29 @@ export class Game {
                 }
                 e.burnDps = 0;
                 e.burnTickAccum = 0;
+            }
+        }
+
+        // Burn CONTAGION (Pyre Wisp identity: "flames spread"). A burning husk
+        // periodically ignites a nearby un-burning neighbour at a reduced DPS,
+        // so fire chews through packed crowds. Rate-gated (≈ once/0.6s per
+        // burning enemy) + a per-frame cap so it can't instantly torch the whole
+        // field or runaway-chain. Only one neighbour per burning enemy per tick.
+        const SPREAD_R2 = 150 * 150;
+        const spreadChance = 1 - Math.exp(-dt / 0.6);
+        let spreadBudget = 12;
+        for (const e of this.enemies) {
+            if (spreadBudget <= 0) break;
+            if (!e.active || e.burnTimer <= 0 || e.burnDps <= 0) continue;
+            if (Math.random() > spreadChance) continue;
+            for (const o of this.enemies) {
+                if (!o.active || o === e || o.burnTimer > 0) continue;
+                const dx = o.x - e.x, dy = o.y - e.y;
+                if (dx * dx + dy * dy > SPREAD_R2) continue;
+                o.applyBurn(e.burnDps * 0.7, Math.max(1.5, e.burnTimer * 0.8));
+                this.particles.burnEmbers(o.x, o.y);
+                spreadBudget--;
+                break; // ignite one neighbour per burning enemy per tick
             }
         }
         return { killed, hits };
@@ -1400,7 +1424,7 @@ export class Game {
             this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
         }
         const weaponResult = this.weaponSystem.update(
-            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles
+            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio
         );
 
         for (const e of this.enemies) {
@@ -1480,6 +1504,30 @@ export class Game {
             if (hz.kind === 'bossTelegraph') {
                 hz.r = hz.rMax * Math.min(1, hz.age / hz.lifetime);
                 if (hz.age >= hz.lifetime) hz.active = false;
+                continue;
+            }
+            // delayedZone: a telegraphed danger circle that detonates ONCE when
+            // its warning fills, dealing damage if the player is still inside
+            // (and in line of sight). Lingers a few frames after for the blast FX.
+            if (hz.kind === 'delayedZone') {
+                if (hz.age >= hz.lifetime && !hz.hitPlayer) {
+                    hz.hitPlayer = true;
+                    const d = Math.hypot(this.player.x - hz.x, this.player.y - hz.y);
+                    if (d <= hz.r && this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
+                        const dealt = this.player.takeDamage(hz.damage);
+                        if (dealt > 0) {
+                            this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+                            this._pushFeedback('hit', 0.32);
+                            this.damageNumbers.push(new DamageNumber(
+                                this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'));
+                        }
+                    }
+                    if (this.particles) this.particles.deathBurst(hz.x, hz.y, '#ff7a4a');
+                }
+                if (hz.hitPlayer) {
+                    hz.detonateAge += dt;
+                    if (hz.detonateAge > 0.18) hz.active = false;
+                }
                 continue;
             }
             // shockwave: expand and damage the player once when the ring band
@@ -1827,6 +1875,30 @@ export class Game {
                 ctx.beginPath();
                 ctx.arc(hz.x, hz.y, Math.max(2, hz.r), 0, TWO_PI);
                 ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // Delayed-AoE zones: a filling warning disc that flashes bright on
+        // detonation. Drawn on the ground (below entities) like the telegraphs.
+        for (const hz of this.hazards) {
+            if (!hz.active || hz.kind !== 'delayedZone') continue;
+            if (!this._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
+            ctx.save();
+            if (hz.hitPlayer) {
+                // Detonation flash.
+                ctx.globalAlpha = 0.55;
+                ctx.fillStyle = '#ff7a4a';
+                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
+            } else {
+                const t = Math.min(1, hz.age / hz.lifetime);
+                ctx.globalAlpha = 0.12 + 0.26 * t;
+                ctx.fillStyle = BOSS_ATTACK.telegraphColor;
+                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
+                ctx.globalAlpha = 0.35 + 0.55 * t;
+                ctx.strokeStyle = BOSS_ATTACK.telegraphColor;
+                ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r * (0.35 + 0.65 * t), 0, TWO_PI); ctx.stroke();
             }
             ctx.restore();
         }

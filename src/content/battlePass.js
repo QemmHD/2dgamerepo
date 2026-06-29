@@ -50,7 +50,7 @@ export function bpProgress(totalXp) {
 // Milestone unlocks (valid ids in cosmetics.js / gear.js). The remaining
 // locked items are obtainable from cases, so the pass need not grant them all.
 const COSMETIC_MILESTONES = { 5: 'trail_sparks', 15: 'fur_ember', 25: 'aura_frost', 35: 'cloak_crimson', 45: 'fur_frost' };
-const GEAR_MILESTONES = { 10: 'a_cinderplate', 20: 't_gleamloop', 30: 'w_beacon', 40: 'a_pyreguard' };
+const GEAR_MILESTONES = { 10: 'a_cinderplate', 20: 't_gleamloop', 30: 'w_lightningwand', 40: 'a_pyreguard' };
 
 function rewardForLevel(level) {
     if (level === BP_MAX_LEVEL) return { type: 'cosmetic', itemId: 'aura_mythic', special: true };

@@ -148,25 +148,52 @@ export const WEAPONS = {
     emberWisp: {
         id: 'emberWisp',
         name: 'Pyre Wisp',
-        description: 'Slow pyre-bolts that set husks ablaze.',
+        description: 'Cinderbolt damage, but its flames SPREAD between nearby husks.',
         kind: 'projectile',
         evolvesTo: 'infernoStorm',
         element: 'fire',
-        // Signature: FIRE — modest direct damage, but every bolt carries a
-        // burn DoT that re-applies on each pierce/ricochet hop. The thing a
-        // SHOCK build detonates.
+        // A "wand" sibling of the Cinderbolt: identical base damage/cadence, but
+        // every bolt sets a burn DoT — and burning husks ignite their neighbours
+        // (contagion handled in Game._tickStatuses), so it shreds packed crowds.
+        // The base-damage parity is intentional (Cinderbolt is the damage
+        // baseline); the burn + spread is what makes it worth picking.
         perLevel: [
             null,
-            { damage: 6,  cooldown: 1.10, projectileSpeed: 760, projectileRadius: 16, pierce: 0, burnDps: 8,  burnDuration: 3.0 },
-            { damage: 7,  cooldown: 1.05, projectileSpeed: 760, projectileRadius: 16, pierce: 0, burnDps: 9,  burnDuration: 3.0 },
-            { damage: 8,  cooldown: 1.00, projectileSpeed: 760, projectileRadius: 16, pierce: 1, burnDps: 10, burnDuration: 3.0 },
-            { damage: 9,  cooldown: 0.95, projectileSpeed: 760, projectileRadius: 16, pierce: 1, burnDps: 12, burnDuration: 3.0 },
-            { damage: 10, cooldown: 0.90, projectileSpeed: 760, projectileRadius: 16, pierce: 1, burnDps: 14, burnDuration: 3.0 },
-            { damage: 11, cooldown: 0.85, projectileSpeed: 760, projectileRadius: 16, pierce: 2, burnDps: 16, burnDuration: 3.0 },
-            { damage: 12, cooldown: 0.80, projectileSpeed: 760, projectileRadius: 16, pierce: 2, burnDps: 18, burnDuration: 3.0 },
-            { damage: 14, cooldown: 0.75, projectileSpeed: 760, projectileRadius: 16, pierce: 2, burnDps: 20, burnDuration: 3.0 },
+            { damage: 17, cooldown: 0.52, projectileSpeed: 820, projectileRadius: 16, pierce: 0, burnDps: 9,  burnDuration: 3.0 },
+            { damage: 20, cooldown: 0.50, projectileSpeed: 820, projectileRadius: 16, pierce: 0, burnDps: 11, burnDuration: 3.0 },
+            { damage: 24, cooldown: 0.48, projectileSpeed: 840, projectileRadius: 16, pierce: 1, burnDps: 13, burnDuration: 3.0 },
+            { damage: 29, cooldown: 0.44, projectileSpeed: 860, projectileRadius: 16, pierce: 1, burnDps: 15, burnDuration: 3.0 },
+            { damage: 34, cooldown: 0.40, projectileSpeed: 880, projectileRadius: 16, pierce: 1, burnDps: 18, burnDuration: 3.0 },
+            { damage: 40, cooldown: 0.36, projectileSpeed: 900, projectileRadius: 16, pierce: 2, burnDps: 21, burnDuration: 3.0 },
+            { damage: 47, cooldown: 0.32, projectileSpeed: 940, projectileRadius: 17, pierce: 2, burnDps: 24, burnDuration: 3.0 },
+            { damage: 56, cooldown: 0.28, projectileSpeed: 980, projectileRadius: 18, pierce: 2, burnDps: 28, burnDuration: 3.0 },
         ],
         update: emberWispUpdate,
+    },
+
+    voltWand: {
+        id: 'voltWand',
+        name: 'Stormwand',
+        description: 'Cinderbolt damage, but each zap CHAINS shock to nearby husks.',
+        kind: 'lightning',
+        evolvesTo: null,
+        element: 'shock',
+        // The third "wand": Cinderbolt base damage, but instead of a single bolt
+        // it zaps the nearest husk and the lightning arcs to nearby foes (with a
+        // SHOCK damage-amp stack on each), so it clears clustered packs. Lightning
+        // FX + a zap SFX sell it.
+        perLevel: [
+            null,
+            { damage: 17, cooldown: 0.52, range: 700, chainCount: 1, chainChance: 0.85, chainRange: 240, chainDamage: 11, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { damage: 20, cooldown: 0.50, range: 720, chainCount: 1, chainChance: 0.88, chainRange: 250, chainDamage: 13, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { damage: 24, cooldown: 0.48, range: 740, chainCount: 2, chainChance: 0.90, chainRange: 260, chainDamage: 15, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { damage: 29, cooldown: 0.44, range: 760, chainCount: 2, chainChance: 0.90, chainRange: 270, chainDamage: 18, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
+            { damage: 34, cooldown: 0.40, range: 800, chainCount: 2, chainChance: 0.92, chainRange: 280, chainDamage: 21, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
+            { damage: 40, cooldown: 0.36, range: 840, chainCount: 3, chainChance: 0.92, chainRange: 290, chainDamage: 25, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
+            { damage: 47, cooldown: 0.32, range: 880, chainCount: 3, chainChance: 0.95, chainRange: 300, chainDamage: 29, shockPerStack: 0.08, maxShockStacks: 5, shockDuration: 4.0 },
+            { damage: 56, cooldown: 0.28, range: 920, chainCount: 3, chainChance: 1.0, chainRange: 320, chainDamage: 34, shockPerStack: 0.08, maxShockStacks: 5, shockDuration: 4.0 },
+        ],
+        update: voltWandUpdate,
     },
 
     // ─── Evolved weapons (only reachable via treasure chest) ─────────
@@ -180,13 +207,14 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                // Late-game tune: cooldown 0.18 → 0.28 (the main cause of bosses
-                // evaporating — 0.18 with the cd floor was ~580 DPS/projectile)
-                // and ricochet 4 → 3. Still a relentless barrage, no longer an
-                // instant-delete on bosses (which now have HP scaling + resist).
-                damage: 42, cooldown: 0.28, projectileSpeed: 1400,
+                // Evolution payoff pass: a maxed Cinderbolt (L8: 56 dmg @0.28s,
+                // ~200 DPS) should feel clearly weaker than its evolution. Bumped
+                // back up (dmg 42→52, cd 0.28→0.24, ricochet 3→4) now that bosses
+                // are much tankier (2000/1350 HP + per-encounter tiers + resist),
+                // so this reads as a real upgrade without instantly deleting them.
+                damage: 52, cooldown: 0.24, projectileSpeed: 1450,
                 pierce: 4, projectileRadius: 20, projectiles: 2, spread: 0.18,
-                ricochet: 3, ricochetRange: 420,
+                ricochet: 4, ricochetRange: 440,
             },
         ],
         update: arcaneStormUpdate,
@@ -202,15 +230,14 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                // Late-game tune: 8 blades @0.22s hit-cd at radius 165 formed an
-                // impenetrable wall (enemies never reached the player). Now 6
-                // blades, tighter radius, slower hit cadence → it still protects
-                // and freezes, but foes can slip through the gaps sometimes.
-                bladeCount: 6, damage: 26, orbitSpeed: 4.5,
-                orbitRadius: 150, bladeRadius: 36, hitCooldown: 0.30,
-                slowMul: 0.55, slowDuration: 1.4,
-                chillMul: 0.55, chillDuration: 1.4,
-                freezeChance: 0.10, freezeDuration: 0.5,
+                // Evolution payoff: clearly beats maxed Frost Glaives (5 blades,
+                // 22 dmg) — more blades + harder hits + a better freeze proc —
+                // while still leaving gaps so it's not an impenetrable wall.
+                bladeCount: 7, damage: 32, orbitSpeed: 4.6,
+                orbitRadius: 152, bladeRadius: 37, hitCooldown: 0.28,
+                slowMul: 0.50, slowDuration: 1.5,
+                chillMul: 0.50, chillDuration: 1.5,
+                freezeChance: 0.14, freezeDuration: 0.55,
             },
         ],
         initialState() { return { baseAngle: 0, bladePositions: [] }; },
@@ -226,10 +253,11 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                radius: 480, damage: 38, cooldown: 1.4,
-                // maxHealPerPulse 14 → 12; combined with the global heal/s cap
-                // this lets Dawnbreaker clear space + recover from mistakes
-                // without making the player unkillable while standing in a crowd.
+                radius: 500, damage: 46, cooldown: 1.35,
+                // Evolution payoff: hits clearly harder than maxed Beacon Pulse
+                // (38 dmg) over a wider radius. maxHealPerPulse stays modest (12)
+                // so the global heal/s cap still keeps it from making the player
+                // unkillable while standing in a crowd.
                 healPerHit: 0.6, maxHealPerPulse: 12, visualLifetime: 0.7,
                 shredPerStack: 0.12, shredDuration: 4.0, maxShredStacks: 6,
             },
@@ -247,9 +275,11 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                damage: 16, cooldown: 0.5, projectileSpeed: 900,
+                // Evolution payoff: twin bolts that clearly out-damage + out-burn
+                // a maxed Pyre Wisp (14 dmg / 20 burnDps).
+                damage: 22, cooldown: 0.44, projectileSpeed: 940,
                 projectileRadius: 20, projectiles: 2, spread: 0.18, pierce: 4,
-                burnDps: 34, burnDuration: 5.0,
+                burnDps: 46, burnDuration: 5.0,
             },
         ],
         update: infernoStormUpdate,
@@ -265,10 +295,11 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                // strikes 8 → 6: still chains and feels powerful, but no longer
-                // deletes the entire screen every 0.9s (≈18 hits/cast before).
-                strikes: 6, damage: 42, cooldown: 0.9, range: 1400,
-                chainCount: 2, chainChance: 0.8, chainRange: 280, chainDamage: 28,
+                // Evolution payoff: more strikes + an extra chain hop than maxed
+                // Stormbrand (6 strikes, 45 dmg), so it clearly outclasses the
+                // base — without going back to the old screen-deleting 8 strikes.
+                strikes: 7, damage: 50, cooldown: 0.9, range: 1400,
+                chainCount: 3, chainChance: 0.85, chainRange: 300, chainDamage: 32,
                 shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0,
             },
         ],
@@ -367,6 +398,7 @@ export const WEAPON_AURA = {
     lightningMark:   { color: '#6cc6ff', pulse: false }, // faint blue sparks
     thunderCrown:    { color: '#7fd0ff', pulse: true  }, // electric crown
     emberWisp:       { color: '#ff8a3c', pulse: false }, // fire
+    voltWand:        { color: '#7fd0ff', pulse: true  }, // shock wand
     infernoStorm:    { color: '#ff6a2a', pulse: true  }, // raging fire
     shadowDash:      { color: '#9a6cff', pulse: false },
     cinderAura:      { color: '#ff7a33', pulse: false },
@@ -433,6 +465,7 @@ function arcaneBoltUpdate(dt, owned, ctx) {
         ricochet: cfg.ricochet ?? 0,
         ricochetRange: cfg.ricochetRange ?? 0,
     }));
+    if (ctx.audio) ctx.audio.shootBolt();
     owned.timer = cfg.cooldown * cdMul;
 }
 
@@ -676,6 +709,7 @@ function arcaneStormUpdate(dt, owned, ctx) {
             ricochetRange: cfg.ricochetRange ?? 0,
         }));
     }
+    if (ctx.audio) ctx.audio.shootBolt();
     owned.timer = cfg.cooldown * cdMul;
 }
 
@@ -708,6 +742,7 @@ function emberWispUpdate(dt, owned, ctx) {
         burnDuration: cfg.burnDuration,
         sprite: getEmberWispSprite(),
     }));
+    if (ctx.audio) ctx.audio.shootFire();
     owned.timer = cfg.cooldown * cdMul;
 }
 
@@ -747,6 +782,7 @@ function infernoStormUpdate(dt, owned, ctx) {
             sprite: getEmberWispSprite(),
         }));
     }
+    if (ctx.audio) ctx.audio.shootFire();
     owned.timer = cfg.cooldown * cdMul;
 }
 
@@ -900,6 +936,52 @@ function thunderCrownUpdate(dt, owned, ctx) {
             chainSource = nearest;
         }
     }
+    owned.timer = cfg.cooldown * cdMul;
+}
+
+// Stormwand: the lightning "wand". Zaps the nearest on-screen husk for the
+// Cinderbolt base damage, then the bolt arcs to nearby foes (each chain hop
+// deals chainDamage + a SHOCK stack). Reuses shockStrike (so burn-detonate +
+// shock-amp synergies work) and the lightning visual. A zap SFX per cast.
+function voltWandUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+
+    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView);
+    if (!target) {
+        if (owned.timer < 0) owned.timer = 0;
+        return;
+    }
+
+    const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
+    const cdMul = ctx.player.cooldownMul ?? 1;
+    const damage = cfg.damage * dmgMul;
+    const chainDamage = (cfg.chainDamage ?? cfg.damage) * dmgMul;
+    const struck = new Set();
+
+    shockStrike(target, damage, cfg, ctx);
+    struck.add(target);
+    ctx.effects.push({ kind: 'lightning', x: target.x, y: target.y, age: 0, lifetime: 0.22, active: true });
+
+    // Arc to nearby unstruck foes.
+    let src = target;
+    for (let j = 0; j < (cfg.chainCount ?? 0); j++) {
+        if (Math.random() >= (cfg.chainChance ?? 1)) break;
+        const crSq = (cfg.chainRange ?? 0) * (cfg.chainRange ?? 0);
+        let nearest = null, nd = crSq;
+        for (const e of ctx.enemies) {
+            if (!e.active || struck.has(e)) continue;
+            const dsq = distanceSq(src.x, src.y, e.x, e.y);
+            if (dsq < nd) { nearest = e; nd = dsq; }
+        }
+        if (!nearest) break;
+        shockStrike(nearest, chainDamage, cfg, ctx);
+        struck.add(nearest);
+        ctx.effects.push({ kind: 'lightning', x: nearest.x, y: nearest.y, age: 0, lifetime: 0.2, active: true, chain: true });
+        src = nearest;
+    }
+    if (ctx.audio) ctx.audio.shootShock();
     owned.timer = cfg.cooldown * cdMul;
 }
 
