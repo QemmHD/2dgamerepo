@@ -585,25 +585,30 @@ export class UISystem {
         const panelX = (INTERNAL_WIDTH - panelW) / 2;
         const panelY = centerY - panelH / 2;
 
+        // Optional per-event accent (gold by default) so a boss kill or a
+        // weapon evolution reads distinctly from a routine wave shout.
+        const accent = ann.color || '#ffd166';
+        const rgb = hexToRgbTriplet(accent);
+
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.fillStyle = 'rgba(20, 18, 8, 0.78)';
         roundRectPath(ctx, panelX, panelY, panelW, panelH, 18);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 209, 102, 0.55)';
+        ctx.strokeStyle = `rgba(${rgb}, 0.55)`;
         ctx.lineWidth = 3;
         ctx.stroke();
 
         // Accent line sweeps across as it settles.
         const sweep = easeOutCubic(clamp01(t / (fadeIn * 1.6)));
-        ctx.strokeStyle = 'rgba(255, 209, 102, 0.85)';
+        ctx.strokeStyle = `rgba(${rgb}, 0.85)`;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(panelX + 30, panelY + panelH - 16);
         ctx.lineTo(panelX + 30 + (panelW - 60) * sweep, panelY + panelH - 16);
         ctx.stroke();
 
-        ctx.fillStyle = '#ffd166';
+        ctx.fillStyle = accent;
         ctx.font = `bold 48px ${FONT}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -758,7 +763,7 @@ export class UISystem {
             `spd     ${Math.round(state.playerSpeed ?? 0)}   xp× ${(state.playerXpMul ?? 1).toFixed(2)}`,
             `pickup  ${Math.round(state.playerPickupRange ?? 0)}   heal/s≤ ${state.healPerSecondCap ?? '?'}`,
             `wpns    ${state.ownedWeaponCount ?? 0} (${state.evolvedWeaponCount ?? 0} evo)`,
-            `aura    ${state.auraStyle || '-'}`,
+            `aura    ${state.auraStyle || '-'}  i${(state.auraIntensity ?? 0).toFixed(2)} r${Math.round(state.auraRadius ?? 0)}`,
             `chests  ${state.chestCount ?? 0}` + (state.pendingChests > 0 ? ` +${state.pendingChests}` : ''),
             `evos    ${state.eligibleEvolutionCount ?? 0}`,
             `spawn   ${formatSpawn(state.spawnTimer, state.spawnInterval)}`,
@@ -1534,6 +1539,15 @@ function formatBossClock(t) {
     const m = Math.floor(t / 60);
     const s = Math.floor(t % 60);
     return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// '#rrggbb' (or '#rgb') → 'r, g, b' for use in rgba() strings.
+function hexToRgbTriplet(hex) {
+    let h = String(hex).replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const n = parseInt(h, 16);
+    if (!Number.isFinite(n)) return '255, 209, 102';
+    return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
 }
 
 function formatWeights(weights) {

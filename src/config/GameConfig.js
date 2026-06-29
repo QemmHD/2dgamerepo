@@ -23,6 +23,32 @@ export const MAX_FRAME_DT = 0.1;
 // retina displays. Draw calls pass explicit world w/h to keep the footprint.
 export const SPRITE_SIZE = 182;
 export const SPRITE_SS = 2;
+// ── Sprite finishing pass (cache-fill only — never per frame) ───────────
+// outline: a dark contour stamped behind every CHARACTER sprite (player +
+//   all enemies/bosses) at cache-fill so they read cleanly against busy,
+//   dim ground. widthLogical is in authoring units (rasterized × SPRITE_SS);
+//   samples is how many offset stamps form the ring (8 = smooth, cheap).
+//   Applied ONCE — pickups/decorations/glows/projectiles are left untouched.
+// dropShadow: a soft contact ellipse baked under decorations by MapRenderer.
+export const SPRITE_FX = {
+    outline: {
+        enabled: true,
+        color: '#0a0d14',     // near-black, faintly cool — matches the dusk palette
+        widthLogical: 2.3,    // contour thickness in authoring units
+        samples: 8,           // offset stamps around the ring
+        alpha: 0.85,          // contour opacity (a touch under solid so it isn't a hard line)
+    },
+    decorationShadow: {
+        enabled: true,
+        alpha: 0.3,           // contact-shadow opacity under map decorations
+        scaleX: 0.4,          // ellipse half-width as a fraction of sprite width
+        scaleY: 0.13,         // ellipse half-height (foreshortened ground plane)
+        offsetY: 0.32,        // shadow center below sprite center (fraction of height)
+        // Only standing props cast a contact shadow; flat ground litter
+        // (grass, cracked stone, scattered bones) does not.
+        casters: ['rock', 'mushroom', 'skull', 'candle', 'ruin', 'branch'],
+    },
+};
 // World grew (was 4800×2700) for a more explorable map seeded with buildings
 // and obstacles. Kept at 16:9 so spawn-ring/camera math stays proportional.
 export const WORLD_WIDTH = 7200;
@@ -207,6 +233,18 @@ export const BOSS = {
     maxHpMul: 7.0,
     resistPerMinute: 0.012,
     maxResist: 0.35,
+    // In-world presence (drawn by Enemy.draw for bosses only): a broad
+    // ground shadow + a slow ominous aura halo behind the sprite so an apex
+    // predator reads as a major threat. Both use cached sprites — no
+    // per-frame gradients. Colors are prewarmed (see PARTICLE_GLOW_COLORS).
+    presence: {
+        shadowAlpha: 0.5,        // ground-shadow opacity under the boss
+        shadowScale: 1.35,       // shadow half-width vs the boss sprite radius
+        auraColor: '#b41f2e',    // deep crimson menace
+        auraColorEnraged: '#ff5a3c', // hotter once phase-2 enrage latches
+        auraScale: 1.55,         // aura radius vs the boss sprite radius
+        auraAlpha: 0.3,          // base additive aura opacity (pulses ±0.12)
+    },
 };
 
 // Coin drops from enemies / elites / bosses. Tunable so coins feel
@@ -240,8 +278,12 @@ export const CHEST = {
 export const ELITE = {
     hpMul: 4.0,
     sizeMul: 1.3,
-    speedMul: 0.85,
-    contactDamageMul: 1.5,
+    // Elites were SLOWER than the trash around them (0.85), so a player could
+    // simply walk away from every one — the opposite of a threat. Bumped to
+    // 0.95 (still a hair slower so a swift-affix elite still reads as the fast
+    // one) and contact damage 1.5 → 1.7 so closing the gap actually stings.
+    speedMul: 0.95,
+    contactDamageMul: 1.7,
     xpMul: 5,
 };
 
@@ -525,9 +567,12 @@ export const MAP = {
 // readability stays unaffected. (Fallback path only — when the lighting
 // buffer is active it bakes its own vignette into the darkness veil.)
 export const VIGNETTE = {
-    strength: 0.5,
-    innerRadius: 0.32,
-    outerRadius: 0.85,
+    strength: 0.52,
+    innerRadius: 0.3,
+    outerRadius: 0.86,
+    // Cool near-black corner tint (matches GFX.darkness.color) so the
+    // fallback vignette reads as dusk rather than a flat black ring.
+    color: '6, 9, 16',
 };
 
 // ── Graphics / "Emberlight" overhaul ───────────────────────────────────

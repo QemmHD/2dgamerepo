@@ -43,11 +43,13 @@ export class WaveDirector {
         }
     }
 
-    // External callers (e.g. Game on boss spawn) can push their own
-    // transient announcement into the same channel the wave-change shout
-    // uses, so the UI doesn't need a separate render path.
-    announce(text, lifetime = ANNOUNCEMENT_LIFETIME) {
-        this.announcement = { text, age: 0, lifetime };
+    // External callers (e.g. Game on boss spawn / defeat / weapon evolution)
+    // can push their own transient announcement into the same channel the
+    // wave-change shout uses, so the UI doesn't need a separate render path.
+    // An optional accent hex tints the banner (gold by default) so distinct
+    // events — a boss kill, a weapon evolving — read at a glance.
+    announce(text, lifetime = ANNOUNCEMENT_LIFETIME, color = null) {
+        this.announcement = { text, age: 0, lifetime, color };
     }
 
     getState(gameTime) {

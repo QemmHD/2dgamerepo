@@ -159,6 +159,50 @@ export class ParticleSystem {
         }
     }
 
+    // Boss death: a larger, layered burst (bright shard ring + colored
+    // embers + heavy ash) so an apex kill feels like a setpiece, not just a
+    // big enemy popping. Still pool-bounded — _spawn() returns null when full.
+    bossDeathBurst(x, y, color = '#ffae66') {
+        if (!this.enabled) return;
+        const shards = 26;
+        for (let i = 0; i < shards; i++) {
+            const p = this._spawn();
+            if (!p) break;
+            const a = (i / shards) * TWO_PI + Math.random() * 0.2;
+            const sp = 200 + Math.random() * 320;
+            p.x = x; p.y = y;
+            p.vx = Math.cos(a) * sp;
+            p.vy = Math.sin(a) * sp;
+            p.age = 0; p.life = 0.5 + Math.random() * 0.5;
+            p.size0 = 28 + Math.random() * 18; p.size1 = 3;
+            p.color = i % 3 === 0 ? '#ffffff' : color;
+            p.layer = SCREEN_ADD; p.drag = 3.2; p.grav = 30; p.maxAlpha = 1;
+        }
+        for (let i = 0; i < 12; i++) {
+            const p = this._spawn();
+            if (!p) break;
+            const a = Math.random() * TWO_PI;
+            const sp = 60 + Math.random() * 160;
+            p.x = x; p.y = y;
+            p.vx = Math.cos(a) * sp;
+            p.vy = Math.sin(a) * sp - 30;
+            p.age = 0; p.life = 0.7 + Math.random() * 0.6;
+            p.size0 = 34 + Math.random() * 20; p.size1 = 6;
+            p.color = color; p.layer = WORLD_ADD; p.drag = 1.8; p.grav = -4; p.maxAlpha = 0.85;
+        }
+        for (let i = 0; i < 5; i++) {
+            const p = this._spawn();
+            if (!p) break;
+            p.x = x + (Math.random() - 0.5) * 40;
+            p.y = y + (Math.random() - 0.5) * 30;
+            p.vx = (Math.random() - 0.5) * 40;
+            p.vy = -14 - Math.random() * 28;
+            p.age = 0; p.life = 0.9 + Math.random() * 0.6;
+            p.size0 = 40; p.size1 = 110;
+            p.color = '#2a1f1a'; p.layer = WORLD_ADD; p.drag = 1.0; p.grav = -5; p.maxAlpha = 0.45;
+        }
+    }
+
     // ── Elemental emitters ───────────────────────────────────────────
     // Burn: small orange embers rising off a burning enemy. WORLD_ADD so the
     // veil dims them into ambient glow. Fired per DoT tick (budgeted by the

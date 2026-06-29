@@ -171,6 +171,12 @@ export class Game {
                 !this.chestReward && !this.upgradeChoices) {
                 if (e.code === 'BracketRight') { e.preventDefault(); this._debugSkipTime(60); return; }
                 if (e.code === 'Backslash') { e.preventDefault(); this._debugSkipTime(300); return; }
+                // Discrete jump-to-minute keys (7/8/9/0 → 5/10/20/30 min) so a
+                // specific point on the difficulty curve is one keypress away.
+                if (e.code === 'Digit7' || e.code === 'Numpad7') { e.preventDefault(); this._debugJumpToMinute(5); return; }
+                if (e.code === 'Digit8' || e.code === 'Numpad8') { e.preventDefault(); this._debugJumpToMinute(10); return; }
+                if (e.code === 'Digit9' || e.code === 'Numpad9') { e.preventDefault(); this._debugJumpToMinute(20); return; }
+                if (e.code === 'Digit0' || e.code === 'Numpad0') { e.preventDefault(); this._debugJumpToMinute(30); return; }
             }
             // Pause toggle — gameplay only, never while a level-up/chest
             // overlay is up (those already freeze the world).
@@ -699,6 +705,16 @@ export class Game {
         // what the overlay is announcing. The overlay is confirmation, not a
         // commit step — closing it just resumes gameplay.
         reward.apply(this);
+        // A weapon evolution is a milestone — announce it with a distinct
+        // violet banner, a level-up flash, and a celebratory burst so it reads
+        // as the run-defining moment it is (the confirm overlay follows).
+        if (reward.kind === 'evolution') {
+            this.waveDirector.announce(
+                `${(reward.evolvedName ?? 'WEAPON').toUpperCase()} — EVOLVED!`, 3.2, '#c47bff'
+            );
+            this._pushFeedback('levelup', 0.5);
+            this.particles.levelUpBurst(this.player.x, this.player.y);
+        }
         this.chestReward = { reward, age: 0 };
         this._updateJoystickEnabled();
     }
@@ -748,6 +764,15 @@ export class Game {
         this.time += seconds;
         this.waveState = this.waveDirector.getState(this.time);
         if (this.waveDirector.announce) this.waveDirector.announce(`⏩ +${seconds}s → ${(this.time / 60).toFixed(1)} min`, 1.5);
+    }
+
+    // Debug-only: jump the run clock FORWARD to an absolute minute mark (never
+    // backward — you can't un-spawn what's already out) so a tester can land
+    // exactly on the 5/10/20/30-min checkpoints the balance curve targets.
+    _debugJumpToMinute(minute) {
+        const target = minute * 60;
+        if (target <= this.time) return;
+        this._debugSkipTime(target - this.time);
     }
 
     _clearSpot(x, y, clearance) {
@@ -1183,6 +1208,11 @@ export class Game {
                     this.bossDirector.notifyBossDefeated(this.time);
                     this._dropChest(e.x, e.y);
                     this._dropCoinBurst(e.x, e.y, COIN.bossCoinCount, COIN.bossCoinValue);
+                    // Setpiece payoff: a banner, a heavy layered burst, and a
+                    // strong shake so an apex kill lands.
+                    this.waveDirector.announce(`${e.name.toUpperCase()} DEFEATED!`, 3.0, '#ff6a4a');
+                    this.particles.bossDeathBurst(e.x, e.y, '#ff8c4a');
+                    this._shake(SCREEN_SHAKE.intensity * 1.1, 0.5);
                 } else if (e.elite) {
                     // Elites: chance at a chest, chance at a coin burst.
                     if (Math.random() < CHEST.eliteDropChance) {
@@ -1243,6 +1273,10 @@ export class Game {
             if (!c.active) continue;
             if (c.update(dt, this.player)) {
                 this.pendingChests += 1;
+                // Pop of golden sparkle the instant the chest is grabbed (the
+                // reward overlay follows, but the world gets immediate feedback).
+                this.particles.pickupSparkle(c.x, c.y, '#ffd166');
+                this.particles.pickupSparkle(c.x, c.y - 8, '#ffe6b0');
             }
         }
         if (this.pendingChests > 0 && !this.chestReward && !this.upgradeChoices) {
@@ -1612,6 +1646,8 @@ export class Game {
             ? this.weaponSystem.owned.reduce((n, w) => n + (WEAPONS[w.id]?.evolved ? 1 : 0), 0)
             : 0;
         base.auraStyle = this._auraSnapshot ? this._auraSnapshot.label : '';
+        base.auraIntensity = this._auraSnapshot ? this._auraSnapshot.intensity : 0;
+        base.auraRadius = this._auraSnapshot ? this._auraSnapshot.radius : 0;
         // Only the debug panel shows this, and the scan walks every
         // evolution every frame — so only pay for it when debug is on.
         base.eligibleEvolutionCount = this.showDebug ? findEligibleEvolutions(this).length : 0;
