@@ -308,15 +308,30 @@ export class MenuRenderer {
         const avail = startY - top - 12;
         const nGear = GEAR_CATEGORIES.length;
         const N = { gearRow: 52, gearGap: 9, sec: 18, lbl: 30, biome: 60, diff: 46, chip: 38, chipGap: 8 };
-        const needed = nGear * N.gearRow + (nGear - 1) * N.gearGap
-            + (N.sec + N.lbl + N.biome)
-            + (N.sec + N.lbl + N.diff)
-            + (N.sec + N.lbl + 2 * N.chip + N.chipGap);
-        const s = clamp(avail / needed, 0.46, 1);
-        const lblS = Math.max(s, 0.82);               // labels shrink less (stay legible)
+        // The TRUE laid-out height for a given scale. Labels + chip rows have
+        // their own lower floors (so text stays legible), which is exactly why
+        // a naive avail/needed under-budgets — so we MEASURE with the real
+        // floors and binary-search the largest scale that fits `avail`. This
+        // keeps the stated "always fits c.h" invariant on any panel (the floors
+        // only affect how big things look when there's room, never overlap).
+        const lblScale = (s) => Math.max(s, 0.82);
+        const chipScale = (s) => Math.max(s, 0.8);
+        const fitH = (s) =>
+            nGear * N.gearRow * s + (nGear - 1) * N.gearGap * s + N.sec * s
+            + N.lbl * lblScale(s) + N.biome * s + N.sec * s
+            + N.lbl * lblScale(s) + N.diff * s + N.sec * s
+            + N.lbl * lblScale(s) + (2 * N.chip * chipScale(s) + N.chipGap * s);
+        let s = 1;
+        if (fitH(1) > avail) {                        // doesn't fit at full size → shrink to fit
+            let lo = 0.2, hi = 1;
+            for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fitH(mid) <= avail) lo = mid; else hi = mid; }
+            s = lo;
+        }
+        s = clamp(s, 0.2, 1);
+        const lblS = lblScale(s);                     // labels shrink less (stay legible)
         const gearRow = N.gearRow * s, gearGap = N.gearGap * s, sec = N.sec * s,
             lbl = N.lbl * lblS, biomeRow = N.biome * s, diffRow = N.diff * s,
-            chipRow = N.chip * Math.max(s, 0.8), chipGap = N.chipGap * s;
+            chipRow = N.chip * chipScale(s), chipGap = N.chipGap * s;
         const fs = (px) => Math.round(px * lblS);     // font-size scaler
 
         let y = top;
