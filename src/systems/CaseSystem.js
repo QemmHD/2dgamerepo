@@ -56,31 +56,21 @@ export const FORGE = {
 CASES.forge = FORGE;       // so buildCaseReel/openCase resolve it by id
 export const FORGE_PITY = 8; // forges since the last Rare+ that force one
 
-// ── Cinder Wager (coin gambling mini-game) ──────────────────────────────
-// Replaces the old forge pull with a skill bet: stake coins, then STOP a
-// sweeping spark on a multiplier bar. Safe 1.5× bands sit toward the edges; a
-// thin 5× JACKPOT sits dead center flanked by BUST (lose the stake); 0.5× is a
-// partial-loss buffer. On a RANDOM stop the house wins (EV ≈ 0.88×), but a
-// timed stop on a 1.5× band profits — and the center jackpot is the big risk.
-// Zones are cumulative `to` fractions across [0,1]; mul 0 = bust.
+// ── Cinder Climb (coin gambling mini-game) ──────────────────────────────
+// A crash/cash-out gamble (think Aviator/Bustabit): stake coins, a multiplier
+// rockets up from 1.00× — and BURNS OUT at a secret, pre-rolled point. Cash out
+// before it burns to win stake × the live multiplier; wait too long and you
+// lose the stake. There's no safe moment (the burnout is random), so greed
+// busts you — no trivially-timed win. ~3% house edge with a heavy upper tail.
 export const WAGER_BETS = [100, 500, 2000];
-export const WAGER_ZONES = [
-    { to: 0.12, mul: 0,   label: 'BUST',       color: '#ff5a3c' },
-    { to: 0.30, mul: 1.5, label: '1.5×',       color: '#7be08a' },
-    { to: 0.44, mul: 0.5, label: '0.5×',       color: '#9fb0c4' },
-    { to: 0.48, mul: 0,   label: 'BUST',       color: '#ff5a3c' },
-    { to: 0.52, mul: 5,   label: 'JACKPOT 5×', color: '#ffd166' },
-    { to: 0.56, mul: 0,   label: 'BUST',       color: '#ff5a3c' },
-    { to: 0.70, mul: 0.5, label: '0.5×',       color: '#9fb0c4' },
-    { to: 0.88, mul: 1.5, label: '1.5×',       color: '#7be08a' },
-    { to: 1.0,  mul: 0,   label: 'BUST',       color: '#ff5a3c' },
-];
 
-// Which zone a stop position (0..1) lands in.
-export function resolveWager(pos) {
-    const p = Math.max(0, Math.min(1, pos));
-    for (const z of WAGER_ZONES) if (p <= z.to) return z;
-    return WAGER_ZONES[WAGER_ZONES.length - 1];
+// Secret burnout multiplier (>= 1.00). ~4% chance of an instant burnout; a
+// 0.97/(1-r) tail makes the median ~2× but rare runs soar past 10×.
+export function rollCrashPoint() {
+    const r = Math.random();
+    if (r < 0.04) return 1.00;                  // instant burnout
+    const c = 0.97 / (1 - r);                   // heavy-tailed, ~3% edge
+    return Math.max(1.01, Math.round(c * 100) / 100);
 }
 
 // One flat index of everything a case can award, tagged by kind + rarity.
