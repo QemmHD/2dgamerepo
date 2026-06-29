@@ -745,24 +745,31 @@ export class MenuRenderer {
             this._panel(ctx, x, y, cardW, rowH, 'rgba(18,22,30,0.9)');
             ctx.textAlign = 'center';
             ctx.fillStyle = '#fff'; ctx.font = `800 26px ${FONT}`;
-            ctx.fillText(def.name, x + cardW / 2, y + 42);
-            // Odds rows.
+            ctx.fillText(def.name, x + cardW / 2, y + 40);
+            // OPEN button anchored at the card bottom; the odds rows fill the
+            // space BETWEEN the title and the button (spacing compresses to fit)
+            // so the lower rarities never render behind the button.
+            const afford = save.totalCoins >= def.cost;
+            const btnH = Math.min(54, rowH * 0.27);
+            const br = { x: x + 30, y: y + rowH - btnH - 14, w: cardW - 60, h: btnH };
             const oddsRows = caseOddsRows(def.id);
-            let oy = y + 84;
-            ctx.font = `600 19px ${FONT}`;
+            const oTop = y + 62, oBot = br.y - 12;
+            const n = Math.max(1, oddsRows.length);
+            const step = Math.min(30, (oBot - oTop) / n);
+            const ofs = Math.round(Math.max(12, Math.min(19, step * 0.64)));
+            ctx.font = `600 ${ofs}px ${FONT}`;
+            let oy = oTop + step * 0.72;
             for (const r of oddsRows) {
                 ctx.textAlign = 'left'; ctx.fillStyle = rarityColor(r.rarity);
-                ctx.fillText(rarityName(r.rarity), x + 32, oy);
+                ctx.fillText(rarityName(r.rarity), x + 28, oy);
                 ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.85)';
-                ctx.fillText(`${r.pct}%`, x + cardW - 32, oy);
-                oy += 28;
+                ctx.fillText(`${r.pct}%`, x + cardW - 28, oy);
+                oy += step;
             }
-            const afford = save.totalCoins >= def.cost;
-            const br = { x: x + 30, y: y + rowH - 70, w: cardW - 60, h: 54 };
             // Always clickable: an unaffordable tap surfaces a "Not enough
             // coins" toast rather than silently doing nothing.
             this._button(ctx, br, `OPEN  ◎ ${def.cost}`,
-                { primary: afford, enabled: true, accent: afford ? null : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: 24 });
+                { primary: afford, enabled: true, accent: afford ? null : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: Math.round(Math.min(24, btnH * 0.44)) });
         }
 
         // ── Cinder Wager strip: a skill coin-gamble. Pick a stake, then STOP
