@@ -219,6 +219,9 @@ export class UISystem {
         this._drawWaveLabel(ctx, gameState);
         this._drawBossHpBar(ctx, gameState);
         this._drawLoadoutChips(ctx, gameState);
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.paused) {
+            this._drawAbilityCooldowns(ctx, gameState);
+        }
         this._drawHpBar(ctx, gameState);
         this._drawXPBar(ctx, gameState);
         this._drawDebugPanel(ctx, gameState);
@@ -230,6 +233,7 @@ export class UISystem {
 
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
             this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
+            this._drawBossWarning(ctx, gameState);
         }
 
         // Low-HP danger vignette during live play.
@@ -307,6 +311,29 @@ export class UISystem {
             INTERNAL_WIDTH / 2,
             sa.top + 112
         );
+        // Pressure meter: a slim bar that fills + reddens as the field piles up
+        // and you're not clearing fast enough. Hidden when calm.
+        const p = clamp01(state.wavePressure ?? 0);
+        if (p > 0.04) {
+            const barW = 240, barH = 7;
+            const bx = (INTERNAL_WIDTH - barW) / 2;
+            const by = sa.top + 140;
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            roundRectPath(ctx, bx, by, barW, barH, 3);
+            ctx.fill();
+            // Calm → tense color ramp (amber → red).
+            const rC = Math.round(255);
+            const gC = Math.round(180 * (1 - p) + 40 * p);
+            const bC = Math.round(70 * (1 - p));
+            ctx.fillStyle = `rgb(${rC}, ${gC}, ${bC})`;
+            roundRectPath(ctx, bx, by, barW * p, barH, 3);
+            ctx.fill();
+            if (p > 0.7) {
+                ctx.fillStyle = `rgba(255,90,60,${0.5 + 0.3 * Math.sin(performanceNowSafe() * 0.008)})`;
+                ctx.font = `bold 13px ${FONT}`;
+                ctx.fillText('PRESSURE', INTERNAL_WIDTH / 2, by + barH + 3);
+            }
+        }
         ctx.restore();
     }
 
@@ -613,6 +640,117 @@ export class UISystem {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(ann.text, INTERNAL_WIDTH / 2, centerY);
+        ctx.restore();
+    }
+
+    // "BOSS INCOMING" warning: a pulsing red edge tint + centered banner + the
+    // boss's name + a countdown bar, giving the player a few seconds to
+    // reposition before the boss lands. Drawn over the world, under overlays.
+    _drawBossWarning(ctx, state) {
+        const bw = state.bossWarning;
+        if (!bw) return;
+        const t = clamp01(bw.t);
+        const pulse = 0.5 + 0.5 * Math.sin(performanceNowSafe() * 0.012);
+        ctx.save();
+        // Red vignette pulsing from the edges.
+        const cx = INTERNAL_WIDTH / 2;
+        const cy = INTERNAL_HEIGHT / 2;
+        const maxR = Math.hypot(cx, cy);
+        const g = ctx.createRadialGradient(cx, cy, maxR * 0.45, cx, cy, maxR);
+        g.addColorStop(0, 'rgba(190,0,20,0)');
+        g.addColorStop(1, `rgba(200,10,25,${0.28 + 0.22 * pulse})`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        // Banner.
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const by = INTERNAL_HEIGHT * 0.42;
+        ctx.shadowColor = 'rgba(0,0,0,0.6)';
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = `rgba(255,${Math.round(60 + 40 * pulse)},${Math.round(50 + 30 * pulse)},1)`;
+        ctx.font = `bold 60px ${FONT}`;
+        ctx.fillText('⚠  BOSS INCOMING  ⚠', cx, by);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold 40px ${FONT}`;
+        ctx.fillText(bw.name, cx, by + 58);
+        // Countdown bar (fills as the boss approaches).
+        const barW = 360, barH = 8;
+        const bx = cx - barW / 2;
+        const yy = by + 96;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        roundRectPath(ctx, bx, yy, barW, barH, 4);
+        ctx.fill();
+        ctx.fillStyle = '#ff5a3c';
+        roundRectPath(ctx, bx, yy, barW * t, barH, 4);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // Ability cooldown pips (bottom-right). Each owned ability shows a radial
+    // recharge: a dark wedge shrinks clockwise as it cools, the remaining
+    // seconds sit in the center, and a ready ability gets a bright pulsing
+    // ring + its initial. Readable at 1920×1080 and within iPhone safe-area.
+    _drawAbilityCooldowns(ctx, state) {
+        const list = state.abilityCooldowns;
+        if (!list || list.length === 0) return;
+        const sa = this.renderer.safeArea;
+        const R = 30;
+        const gap = 22;
+        const cy = INTERNAL_HEIGHT - sa.bottom - 104;
+        let cx = INTERNAL_WIDTH - sa.right - 56 - R;
+        const now = performanceNowSafe();
+        ctx.save();
+        ctx.textAlign = 'center';
+        for (let i = list.length - 1; i >= 0; i--) {
+            const a = list[i];
+            const frac = a.ready ? 0 : clamp01(a.remaining / a.total);
+            // Base disc.
+            ctx.beginPath();
+            ctx.arc(cx, cy, R, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(12, 16, 24, 0.82)';
+            ctx.fill();
+            // Colored ring (bright when ready, dim while cooling).
+            ctx.lineWidth = 4;
+            ctx.globalAlpha = a.ready ? 1 : 0.5;
+            ctx.strokeStyle = a.color;
+            ctx.beginPath();
+            ctx.arc(cx, cy, R, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.textBaseline = 'middle';
+            if (a.ready) {
+                const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+                ctx.fillStyle = a.color;
+                ctx.globalAlpha = 0.18 + 0.16 * pulse;
+                ctx.beginPath();
+                ctx.arc(cx, cy, R - 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = '#fff';
+                ctx.font = `bold 22px ${FONT}`;
+                ctx.fillText(a.name[0], cx, cy + 1);
+            } else {
+                // Dark wedge over the remaining fraction (clockwise from top).
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                const start = -Math.PI / 2;
+                ctx.arc(cx, cy, R - 2, start, start + Math.PI * 2 * frac);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.font = `bold 22px ${MONO}`;
+                ctx.fillText(a.remaining >= 1 ? String(Math.ceil(a.remaining)) : a.remaining.toFixed(1), cx, cy + 1);
+            }
+            // Short name beneath.
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
+            ctx.font = `600 14px ${FONT}`;
+            ctx.textBaseline = 'top';
+            const nm = a.name.length > 11 ? a.name.slice(0, 10) + '…' : a.name;
+            ctx.fillText(nm, cx, cy + R + 5);
+            cx -= (R * 2 + gap);
+        }
         ctx.restore();
     }
 

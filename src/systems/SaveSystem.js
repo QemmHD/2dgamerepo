@@ -7,6 +7,7 @@
 
 import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR, GEAR_LIST } from '../content/gear.js';
 import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST } from '../content/cosmetics.js';
+import { CHARACTER_IDS, DEFAULT_CHARACTER } from '../content/characters.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 
@@ -62,7 +63,9 @@ function defaultData() {
             xp: 0,
             claimed: [],
         },
-        version: 3,
+        // Selected playable character id (run uses it; see content/characters).
+        selectedCharacter: DEFAULT_CHARACTER,
+        version: 4,
     };
 }
 
@@ -181,7 +184,13 @@ export class SaveSystem {
                 : [],
         };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, version: 3 };
+        // Selected character: keep only a known id; otherwise fall back to the
+        // default (so an old save with no field, or a stale id, loads cleanly).
+        const selectedCharacter = CHARACTER_IDS.includes(data.selectedCharacter)
+            ? data.selectedCharacter
+            : DEFAULT_CHARACTER;
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, version: 4 };
     }
 
     save() {
@@ -308,6 +317,18 @@ export class SaveSystem {
 
     getEquippedGear() {
         return this.data.gear.equipped;
+    }
+
+    // ── Character selection ──────────────────────────────────────────────
+    getSelectedCharacter() {
+        return this.data.selectedCharacter ?? DEFAULT_CHARACTER;
+    }
+
+    setSelectedCharacter(id) {
+        if (!CHARACTER_IDS.includes(id)) return false;
+        this.data.selectedCharacter = id;
+        this.save();
+        return true;
     }
 
     // ── Battle pass ──────────────────────────────────────────────────────

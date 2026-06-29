@@ -31,7 +31,7 @@ export class Spawner {
         this.spawnsTotal = 0;
     }
 
-    update(dt, player, enemies, waveState, obstacleSystem = null) {
+    update(dt, player, enemies, waveState, obstacleSystem = null, waveDirector = null) {
         this.timer += dt;
         if (this.timer < this.nextInterval) return;
         if (this._countAlive(enemies) >= waveState.maxAlive) {
@@ -42,10 +42,10 @@ export class Spawner {
         }
         this.timer -= this.nextInterval;
         this.nextInterval = this._rollInterval(waveState.spawnIntervalMul);
-        this._spawnOne(player, enemies, waveState, obstacleSystem);
+        this._spawnOne(player, enemies, waveState, obstacleSystem, waveDirector);
     }
 
-    _spawnOne(player, enemies, waveState, obstacleSystem) {
+    _spawnOne(player, enemies, waveState, obstacleSystem, waveDirector = null) {
         const type = pickWeightedType(waveState.typeWeights);
         if (!type) return;
         const elite = Math.random() < (waveState.eliteChance ?? 0);
@@ -69,6 +69,7 @@ export class Spawner {
                 elite,
             }));
             this.spawnsTotal += 1;
+            if (waveDirector && waveDirector.notifySpawn) waveDirector.notifySpawn(1);
             return;
         }
     }

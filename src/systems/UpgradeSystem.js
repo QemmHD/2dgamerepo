@@ -232,16 +232,73 @@ export class UpgradeSystem {
     }
 }
 
+// Friendly labels + formatters for the per-level stat fields a weapon/ability
+// exposes. Only the listed keys are surfaced on upgrade cards (the rest are
+// internal tuning); each entry maps a raw value to a player-facing string so a
+// card can show "Damage: 18 → 22", "Cooldown: 0.60s → 0.52s", etc. Higher-is-
+// better unless noted. `inv: true` means the field is shown as a derived stat
+// where a LOWER raw value reads as a HIGHER player stat (slow %).
+const STAT_FIELDS = [
+    { key: 'damage',          label: 'Damage',     fmt: (v) => `${Math.round(v)}` },
+    { key: 'cooldown',        label: 'Cooldown',   fmt: (v) => `${v.toFixed(2)}s` },
+    { key: 'pierce',          label: 'Pierce',     fmt: (v) => `${v}` },
+    { key: 'ricochet',        label: 'Ricochet',   fmt: (v) => `${v}` },
+    { key: 'projectileSpeed', label: 'Proj Speed', fmt: (v) => `${Math.round(v)}` },
+    { key: 'bladeCount',      label: 'Blades',     fmt: (v) => `${v}` },
+    { key: 'count',           label: 'Projectiles', fmt: (v) => `${v}` },
+    { key: 'radius',          label: 'Radius',     fmt: (v) => `${Math.round(v)}` },
+    { key: 'orbitRadius',     label: 'Orbit',      fmt: (v) => `${Math.round(v)}` },
+    { key: 'heal',            label: 'Heal',       fmt: (v) => `${Math.round(v)}` },
+    { key: 'dashDistance',    label: 'Dash',       fmt: (v) => `${Math.round(v)}` },
+    { key: 'width',           label: 'Width',      fmt: (v) => `${Math.round(v)}` },
+    { key: 'motes',           label: 'Motes',      fmt: (v) => `${v}` },
+    { key: 'slowDuration',    label: 'Slow Time',  fmt: (v) => `${v.toFixed(1)}s` },
+    // Slow strength is derived from the multiplier (lower mul = stronger slow).
+    { key: 'slowMul',         label: 'Slow',       fmt: (v) => `${Math.round((1 - v) * 100)}%` },
+];
+const MAX_DELTA_LINES = 4;
+
+// Build a "Stat: a → b" summary of what the NEXT level changes for a weapon /
+// ability. Falls back to the prose description if no tracked field moved.
+function describeWeaponUpgrade(def, fromLevel, toLevel) {
+    const a = def?.perLevel?.[fromLevel];
+    const b = def?.perLevel?.[toLevel];
+    if (!a || !b) return def?.description ?? `Lv ${fromLevel} → ${toLevel}`;
+    const lines = [];
+    for (const f of STAT_FIELDS) {
+        if (a[f.key] === undefined || b[f.key] === undefined) continue;
+        if (a[f.key] === b[f.key]) continue;
+        lines.push(`${f.label}: ${f.fmt(a[f.key])} → ${f.fmt(b[f.key])}`);
+        if (lines.length >= MAX_DELTA_LINES) break;
+    }
+    if (lines.length === 0) return def?.description ?? `Lv ${fromLevel} → ${toLevel}`;
+    return lines.join('   ');
+}
+
+// Key level-1 stats for a brand-new weapon/ability card, appended to its prose.
+function firstLevelSummary(def) {
+    const s = def?.perLevel?.[1];
+    if (!s) return '';
+    const bits = [];
+    for (const f of STAT_FIELDS) {
+        if (s[f.key] === undefined) continue;
+        bits.push(`${f.label} ${f.fmt(s[f.key])}`);
+        if (bits.length >= 3) break;
+    }
+    return bits.join('   ');
+}
+
 function weaponUpgradeChoice(owned) {
     const def = WEAPONS[owned.id];
     const next = owned.level + 1;
+    const isAbility = !!def?.ability;
     return {
         id: `weapon:${owned.id}:upgrade`,
         kind: 'weapon-upgrade',
-        cardLabel: 'WEAPON UPGRADE',
+        cardLabel: isAbility ? 'ABILITY UPGRADE' : 'WEAPON UPGRADE',
         name: def?.name ?? owned.id,
-        description: `Lv ${owned.level} → Lv ${next}`,
-        cardLevelText: `Lv ${next}`,
+        description: describeWeaponUpgrade(def, owned.level, next),
+        cardLevelText: `Lv ${owned.level} → ${next}`,
         rarity: 'rare',
         weight: WEIGHT_WEAPON_UPGRADE,
         apply(game) {
@@ -252,12 +309,15 @@ function weaponUpgradeChoice(owned) {
 
 function newWeaponChoice(id) {
     const def = WEAPONS[id];
+    const isAbility = !!def?.ability;
+    const summary = firstLevelSummary(def);
+    const prose = def?.description ?? '';
     return {
         id: `weapon:${id}:new`,
         kind: 'weapon-new',
-        cardLabel: 'NEW WEAPON',
+        cardLabel: isAbility ? 'NEW ABILITY' : 'NEW WEAPON',
         name: def?.name ?? id,
-        description: def?.description ?? '',
+        description: summary ? `${prose}   ${summary}` : prose,
         cardLevelText: 'Lv 1',
         rarity: 'epic',
         weight: WEIGHT_NEW_WEAPON,
@@ -274,8 +334,8 @@ function passiveUpgradeChoice(owned, def) {
         kind: 'passive-upgrade',
         cardLabel: 'PASSIVE UPGRADE',
         name: def?.name ?? owned.id,
-        description: `${def?.description ?? ''}  •  Lv ${owned.level} → ${next}`,
-        cardLevelText: `Lv ${next}`,
+        description: def?.description ?? '',
+        cardLevelText: `Lv ${owned.level} → ${next}`,
         rarity: 'uncommon',
         weight: WEIGHT_PASSIVE_UPGRADE,
         apply(game) {

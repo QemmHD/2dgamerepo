@@ -21,6 +21,7 @@ import { CASES, CASE_ORDER, caseOddsRows } from './CaseSystem.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
+import { CHARACTERS, CHARACTER_IDS, getCharacter } from '../content/characters.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 
@@ -166,18 +167,53 @@ export class MenuRenderer {
         const c = this._contentRect();
         const save = state.saveData;
 
-        // Left: character preview card.
+        // Left: character preview + selection card.
         const cardW = c.w * 0.42;
         this._panel(ctx, c.x, c.y, cardW, c.h);
+        const ccx = c.x + cardW / 2;
+        const ch = getCharacter(save.selectedCharacter);
         const ap = resolveAppearance(save.cosmetics.equipped);
-        this._drawAvatar(ctx, c.x + cardW / 2, c.y + c.h * 0.36, 150, ap);
+        // Avatar reflects the selected character's color unless a fur cosmetic
+        // overrides it (cosmetics apply on top of the character).
+        const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
-        ctx.fillText('Pyra, last Wick-Keeper', c.x + cardW / 2, c.y + c.h * 0.66);
+        ctx.fillText(`${ch.name} — ${ch.title}`, ccx, c.y + c.h * 0.46);
+        ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 18px ${FONT}`;
+        this._wrapText(ctx, ch.description, ccx, c.y + c.h * 0.51, cardW - 60, 22, 2);
+
+        // Character picker: a 2×2 grid of selectable hero chips.
+        ctx.font = `700 18px ${FONT}`;
+        ctx.fillStyle = '#cdd6e2'; ctx.textAlign = 'left';
+        ctx.fillText('CHARACTER', c.x + 30, c.y + c.h * 0.58);
+        const cols = 2, gap = 12;
+        const chipW = (cardW - 60 - gap) / cols;
+        const chipH = 46;
+        const gridY = c.y + c.h * 0.6;
+        for (let i = 0; i < CHARACTER_IDS.length; i++) {
+            const id = CHARACTER_IDS[i];
+            const def = CHARACTERS[id];
+            const col = i % cols, row = Math.floor(i / cols);
+            const x = c.x + 30 + col * (chipW + gap);
+            const y = gridY + row * (chipH + gap);
+            const selected = id === save.selectedCharacter;
+            roundRectPath(ctx, x, y, chipW, chipH, 9);
+            ctx.fillStyle = selected ? 'rgba(255,206,84,0.16)' : 'rgba(255,255,255,0.04)';
+            ctx.fill();
+            ctx.strokeStyle = selected ? '#ffce54' : def.accent; ctx.lineWidth = selected ? 3 : 2; ctx.stroke();
+            // Color swatch.
+            ctx.fillStyle = def.palette.fur;
+            ctx.beginPath(); ctx.arc(x + 24, y + chipH / 2, 11, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = selected ? '#ffce54' : '#fff'; ctx.font = `700 18px ${FONT}`;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(def.name, x + 42, y + chipH / 2);
+            this._hot(x, y, chipW, chipH, 'selectCharacter', { id });
+        }
 
         // Battle-pass mini progress.
         const prog = bpProgress(save.battlePass.xp);
-        const barY = c.y + c.h * 0.78;
+        const barY = c.y + c.h * 0.86;
         const barW = cardW - 80;
         const barX = c.x + 40;
         ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = `600 20px ${FONT}`;
@@ -260,6 +296,28 @@ export class MenuRenderer {
             }
         }
         ctx.restore();
+    }
+
+    // Center-aligned word wrap (caller sets fillStyle/font/textAlign='center').
+    _wrapText(ctx, text, cx, y, maxWidth, lineHeight, maxLines = 3) {
+        const words = String(text).split(/\s+/);
+        const lines = [];
+        let line = '';
+        for (const w of words) {
+            const test = line ? line + ' ' + w : w;
+            if (ctx.measureText(test).width > maxWidth && line) {
+                lines.push(line);
+                line = w;
+                if (lines.length >= maxLines - 1) break;
+            } else {
+                line = test;
+            }
+        }
+        if (line && lines.length < maxLines) lines.push(line);
+        const prevAlign = ctx.textAlign;
+        ctx.textAlign = 'center';
+        for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], cx, y + i * lineHeight);
+        ctx.textAlign = prevAlign;
     }
 
     // ── SKILLS (permanent upgrades) ──────────────────────────────────────
