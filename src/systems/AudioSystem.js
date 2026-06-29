@@ -277,7 +277,24 @@ export class AudioSystem {
     shootShock() { this._play('shootShock', 0.08, (t) => { this._voice(1200, t, 0.06, 0.05, { type: 'sawtooth', slideTo: 720, cutoff: 4200, attack: 0.002 }); this._noise(t, 0.05, 0.04, 6000, this.sfxBus); }); }
     chest()    { this._play('chest', 0.1, (t) => this._bell(t, 523)); }
     forge()    { this._play('forge', 0.06, (t) => { this._noise(t, 0.16, 0.12, 500, this.sfxBus, 1400); this._voice(220, t, 0.18, 0.12, { type: 'triangle', cutoff: 1400, detune: 9 }); }); }
-    reveal()   { this._play('reveal', 0.1, (t) => { this._bell(t, 659); this._voice(988, t + 0.08, 0.3, 0.1, { type: 'sine', cutoff: 5000, detune: 6 }); }); }
+    // Reel ratchet tick while a case spins (Game paces the cadence).
+    spinTick() { this._play('spinTick', 0.0, (t) => this._voice(430, t, 0.03, 0.05, { type: 'triangle', cutoff: 2600, attack: 0.001 })); }
+    // Reveal chime — its pitch + length + sparkle scale with the won RARITY, so
+    // a legendary/mythic pull sounds clearly bigger than a common.
+    reveal(rarity) {
+        const order = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const tier = Math.max(0, order.indexOf(rarity));
+        this._play('reveal', 0.1, (t) => {
+            const root = 523 * Math.pow(2, tier / 6); // rises ~a fifth across tiers
+            this._bell(t, root);
+            const notes = 2 + tier;                    // bigger arpeggio for better pulls
+            for (let i = 0; i < notes; i++) {
+                this._voice(root * Math.pow(2, i / 4), t + 0.06 * i, 0.26, 0.085,
+                    { type: 'triangle', cutoff: 4400, detune: 6 });
+            }
+            if (tier >= 3) this._noise(t + 0.05, 0.45, 0.05, 6500, this.sfxBus); // epic+ shimmer
+        });
+    }
     objective(){ this._play('obj', 0.1, (t) => { this._voice(784, t, 0.12, 0.12, { type: 'triangle', cutoff: 3600 }); this._voice(1175, t + 0.09, 0.24, 0.12, { type: 'triangle', cutoff: 4200, detune: 6 }); }); }
     caseOpen() { this._play('caseOpen', 0.1, (t) => { this._noise(t, 0.34, 0.10, 300, this.sfxBus, 2600); this._voice(330, t, 0.2, 0.08, { type: 'sine', slideTo: 660, cutoff: 2400 }); }); }
     // A warm bell = fundamental + a quieter octave, both lightly detuned.

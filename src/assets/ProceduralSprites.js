@@ -72,6 +72,7 @@ export function prewarmSprites() {
     getCrawlerFrames();
     getVinebackGoliathFrames();
     getStormwingAlphaFrames();
+    getGloomMawFrames();
     getSpitterFrames();
     getChargerFrames();
     getMiteFrames();
@@ -181,6 +182,7 @@ export const getBruteFrames = makeFrameGetter('bruteFrames', 2, drawBrute);
 export const getCrawlerFrames = makeFrameGetter('crawlerFrames', 4, drawCrawler);
 export const getVinebackGoliathFrames = makeFrameGetter('vinebackFrames', 2, drawVinebackGoliath);
 export const getStormwingAlphaFrames = makeFrameGetter('stormwingFrames', 4, drawStormwingAlpha);
+export const getGloomMawFrames = makeFrameGetter('gloomMawFrames', 4, drawGloomMaw);
 export const getSpitterFrames = makeFrameGetter('spitterFrames', 4, drawSpitter);
 export const getChargerFrames = makeFrameGetter('chargerFrames', 2, drawCharger);
 export const getMiteFrames = makeFrameGetter('miteFrames', 4, drawMite);
@@ -193,6 +195,7 @@ export function getBruteSprite() { return getBruteFrames()[0]; }
 export function getCrawlerSprite() { return getCrawlerFrames()[0]; }
 export function getVinebackGoliathSprite() { return getVinebackGoliathFrames()[0]; }
 export function getStormwingAlphaSprite() { return getStormwingAlphaFrames()[0]; }
+export function getGloomMawSprite() { return getGloomMawFrames()[0]; }
 export function getSpitterSprite() { return getSpitterFrames()[0]; }
 export function getChargerSprite() { return getChargerFrames()[0]; }
 
@@ -1939,6 +1942,115 @@ function drawStormwingAlpha(size, frame, count) {
     ctx.lineTo(cx + 36, cy + 4);
     ctx.lineTo(cx + 42, cy + 16);
     ctx.stroke();
+
+    return canvas;
+}
+
+// Cacklemaw — the third boss: a grinning, many-armed lavender orb (a tentacled
+// "sun"/spider with a big dark eye + a wide toothy grin). Frames wave the arms.
+function drawGloomMaw(size, frame, count) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const phase = (frame / count) * TWO_PI;
+
+    const BODY = '#b59ad6';
+    const BODY_LIGHT = '#dccaf0';
+    const BODY_DARK = '#7d5fae';
+    const ARM = '#9a7ec6';
+    const ARM_DARK = '#6b4f9c';
+    const MOTTLE = '#5d3f86';
+    const EYE = '#241032';
+    const EYE_SHINE = '#cdb3ff';
+    const TEETH = '#f4eef9';
+    const GUM = '#3a2350';
+
+    softShadow(ctx, cx, cy + 56, 60, 14, 0.42);
+
+    // Menacing purple aura.
+    const aura = ctx.createRadialGradient(cx, cy, 10, cx, cy, 92);
+    aura.addColorStop(0, 'rgba(170, 120, 230, 0.20)');
+    aura.addColorStop(1, 'rgba(170, 120, 230, 0)');
+    ctx.fillStyle = aura;
+    ctx.fillRect(0, 0, size, size);
+
+    // Radiating tentacle arms (drawn first so the body overlaps their roots).
+    const ARMS = 10;
+    for (let i = 0; i < ARMS; i++) {
+        const wig = Math.sin(phase * 2 + i * 0.7) * 0.16;
+        const ang = (i / ARMS) * TWO_PI + wig;
+        const bx = cx + Math.cos(ang) * 28, by = cy + Math.sin(ang) * 28;
+        const tx = cx + Math.cos(ang) * 80, ty = cy + Math.sin(ang) * 80;
+        const px = -Math.sin(ang), py = Math.cos(ang);
+        const bw = 9, tw = 3;
+        ctx.fillStyle = (i % 2) ? ARM : ARM_DARK;
+        ctx.beginPath();
+        ctx.moveTo(bx + px * bw, by + py * bw);
+        ctx.quadraticCurveTo(cx + Math.cos(ang) * 56 + px * 6, cy + Math.sin(ang) * 56 + py * 6, tx + px * tw, ty + py * tw);
+        ctx.lineTo(tx - px * tw, ty - py * tw);
+        ctx.quadraticCurveTo(cx + Math.cos(ang) * 56 - px * 6, cy + Math.sin(ang) * 56 - py * 6, bx - px * bw, by - py * bw);
+        ctx.closePath();
+        ctx.fill();
+        // Suction tip.
+        ctx.fillStyle = MOTTLE;
+        ctx.beginPath();
+        ctx.arc(tx, ty, 3.2, 0, TWO_PI);
+        ctx.fill();
+    }
+
+    // Body orb.
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 40, 0, TWO_PI);
+    ctx.fill();
+    // Shading rim + highlight.
+    ctx.fillStyle = BODY_DARK;
+    ctx.beginPath();
+    ctx.arc(cx, cy + 6, 40, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.fill();
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 12, cy - 14, 13, 9, -0.5, 0, TWO_PI);
+    ctx.fill();
+    // Mottles.
+    ctx.fillStyle = MOTTLE;
+    for (const m of [[-20, -2, 4], [16, 6, 5], [4, 18, 3], [-8, 10, 3]]) {
+        ctx.beginPath(); ctx.arc(cx + m[0], cy + m[1], m[2], 0, TWO_PI); ctx.fill();
+    }
+
+    // Big single eye (upper-center), dark + glossy.
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 8, 16, 18, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = EYE_SHINE;
+    ctx.beginPath();
+    ctx.arc(cx - 6, cy - 14, 4.5, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(205,179,255,0.55)';
+    ctx.beginPath();
+    ctx.arc(cx + 5, cy - 4, 2.4, 0, TWO_PI);
+    ctx.fill();
+
+    // Wide toothy grin across the lower body (the signature cackle).
+    const grin = 30 + Math.sin(phase) * 2;
+    ctx.fillStyle = GUM;
+    ctx.beginPath();
+    ctx.moveTo(cx - grin, cy + 14);
+    ctx.quadraticCurveTo(cx, cy + 34, cx + grin, cy + 14);
+    ctx.quadraticCurveTo(cx, cy + 24, cx - grin, cy + 14);
+    ctx.closePath();
+    ctx.fill();
+    // Square teeth.
+    ctx.fillStyle = TEETH;
+    const teeth = 7;
+    for (let i = 0; i < teeth; i++) {
+        const f = i / (teeth - 1);
+        const txx = cx - grin + f * grin * 2;
+        const drop = Math.sin(f * Math.PI) * 5; // follow the smile curve
+        ctx.fillRect(txx - 3.4, cy + 13 + drop, 6.8, 8);
+    }
 
     return canvas;
 }

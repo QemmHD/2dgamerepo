@@ -47,6 +47,7 @@ const SETTING_TOGGLES = [
     { key: 'damageNumbers', label: 'Damage Numbers' },
     { key: 'particles', label: 'Particles' },
     { key: 'reducedEffects', label: 'Reduced Effects (mobile)' },
+    { key: 'unlockMaps', label: 'Unlock All Maps (testing)' },
 ];
 
 export class MenuRenderer {
@@ -513,41 +514,48 @@ export class MenuRenderer {
     _drawShop(ctx, state) {
         const c = this._contentRect();
         const save = state.saveData;
-        const gap = 28;
-        const cardW = (c.w - gap * (CASE_ORDER.length - 1)) / CASE_ORDER.length;
+        const gap = 24;
+        // Six cases (gear + cosmetic per tier) → a 3-column, 2-row grid so the
+        // names + odds aren't crushed into thin slivers.
+        const cols = 3;
+        const rows = Math.ceil(CASE_ORDER.length / cols);
         // Reserve a strip at the bottom for the Ember Forge.
         const forgeH = 168;
-        const caseH = c.h - forgeH - 24;
+        const gridH = c.h - forgeH - 24;
+        const cardW = (c.w - gap * (cols - 1)) / cols;
+        const rowH = (gridH - gap * (rows - 1)) / rows;
         ctx.textBaseline = 'alphabetic';
         for (let i = 0; i < CASE_ORDER.length; i++) {
             const def = CASES[CASE_ORDER[i]];
-            const x = c.x + i * (cardW + gap);
-            this._panel(ctx, x, c.y, cardW, caseH, 'rgba(18,22,30,0.9)');
+            const col = i % cols, row = Math.floor(i / cols);
+            const x = c.x + col * (cardW + gap);
+            const y = c.y + row * (rowH + gap);
+            this._panel(ctx, x, y, cardW, rowH, 'rgba(18,22,30,0.9)');
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#fff'; ctx.font = `800 30px ${FONT}`;
-            ctx.fillText(def.name, x + cardW / 2, c.y + 50);
+            ctx.fillStyle = '#fff'; ctx.font = `800 26px ${FONT}`;
+            ctx.fillText(def.name, x + cardW / 2, y + 42);
             // Odds rows.
-            const rows = caseOddsRows(def.id);
-            let oy = c.y + 96;
-            ctx.font = `600 21px ${FONT}`;
-            for (const r of rows) {
+            const oddsRows = caseOddsRows(def.id);
+            let oy = y + 84;
+            ctx.font = `600 19px ${FONT}`;
+            for (const r of oddsRows) {
                 ctx.textAlign = 'left'; ctx.fillStyle = rarityColor(r.rarity);
-                ctx.fillText(rarityName(r.rarity), x + 40, oy);
+                ctx.fillText(rarityName(r.rarity), x + 32, oy);
                 ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.85)';
-                ctx.fillText(`${r.pct}%`, x + cardW - 40, oy);
-                oy += 34;
+                ctx.fillText(`${r.pct}%`, x + cardW - 32, oy);
+                oy += 28;
             }
             const afford = save.totalCoins >= def.cost;
-            const br = { x: x + 36, y: c.y + caseH - 80, w: cardW - 72, h: 60 };
+            const br = { x: x + 30, y: y + rowH - 70, w: cardW - 60, h: 54 };
             // Always clickable: an unaffordable tap surfaces a "Not enough
             // coins" toast rather than silently doing nothing.
             this._button(ctx, br, `OPEN  ◎ ${def.cost}`,
-                { primary: afford, enabled: true, accent: afford ? null : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: 26 });
+                { primary: afford, enabled: true, accent: afford ? null : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: 24 });
         }
 
         // ── Ember Forge strip: a "refine, don't gamble" pull with a visible
         // pity meter (guaranteed Rare+ countdown) so it reads as earned. ──
-        const fy = c.y + caseH + 24;
+        const fy = c.y + gridH + 24;
         this._panel(ctx, c.x, fy, c.w, forgeH, 'rgba(30,20,14,0.92)', '#ff8a4a');
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ffb24a'; ctx.font = `800 30px ${FONT}`;
@@ -723,9 +731,10 @@ export class MenuRenderer {
                 roundRectPath(ctx, cellX, bandY, cellW, cellH, 12);
                 ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
                 ctx.strokeStyle = cc; ctx.lineWidth = 3; ctx.stroke();
-                // Rarity swatch + name.
+                // Rarity badge + a kind LOGO (gear vs cosmetic vs coin) + name.
                 ctx.fillStyle = cc;
                 ctx.beginPath(); ctx.arc(cellX + cellW / 2, bandY + cellH * 0.36, 26, 0, Math.PI * 2); ctx.fill();
+                this._kindGlyph(ctx, cellX + cellW / 2, bandY + cellH * 0.36, 15, cell.kind);
                 ctx.fillStyle = '#fff'; ctx.font = `700 18px ${FONT}`;
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 const nm = cell.name.length > 14 ? cell.name.slice(0, 13) + '…' : cell.name;
@@ -757,6 +766,10 @@ export class MenuRenderer {
             ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.stroke();
             if (k > 0.7 && result) {
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                // Kind logo above the rarity label.
+                ctx.fillStyle = col;
+                ctx.beginPath(); ctx.arc(cx, cy - 96, 24, 0, Math.PI * 2); ctx.fill();
+                this._kindGlyph(ctx, cx, cy - 96, 14, result.kind);
                 ctx.fillStyle = col; ctx.font = `700 30px ${FONT}`;
                 ctx.fillText(rarityName(result.rarity).toUpperCase(), cx, cy - 56);
                 ctx.fillStyle = '#fff'; ctx.font = `800 40px ${FONT}`;
@@ -770,5 +783,42 @@ export class MenuRenderer {
         }
         // Whole screen continues the overlay.
         this._hot(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT, 'caseContinue', null);
+    }
+
+    // A small white logo marking what KIND of loot a reel cell / reveal is:
+    // gear = a shield, cosmetic = a sparkle star, anything else = a coin ring.
+    _kindGlyph(ctx, cx, cy, s, kind) {
+        ctx.save();
+        ctx.fillStyle = '#fff';
+        ctx.strokeStyle = '#fff';
+        if (kind === 'gear') {
+            // Shield.
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - s);
+            ctx.lineTo(cx + s * 0.8, cy - s * 0.5);
+            ctx.lineTo(cx + s * 0.8, cy + s * 0.2);
+            ctx.quadraticCurveTo(cx + s * 0.8, cy + s, cx, cy + s);
+            ctx.quadraticCurveTo(cx - s * 0.8, cy + s, cx - s * 0.8, cy + s * 0.2);
+            ctx.lineTo(cx - s * 0.8, cy - s * 0.5);
+            ctx.closePath();
+            ctx.fill();
+        } else if (kind === 'cosmetic') {
+            // Four-point sparkle.
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - s);
+            ctx.quadraticCurveTo(cx + s * 0.18, cy - s * 0.18, cx + s, cy);
+            ctx.quadraticCurveTo(cx + s * 0.18, cy + s * 0.18, cx, cy + s);
+            ctx.quadraticCurveTo(cx - s * 0.18, cy + s * 0.18, cx - s, cy);
+            ctx.quadraticCurveTo(cx - s * 0.18, cy - s * 0.18, cx, cy - s);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            // Coin ring (coins / vigil-XP consolation).
+            ctx.lineWidth = Math.max(2, s * 0.28);
+            ctx.beginPath();
+            ctx.arc(cx, cy, s * 0.8, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 }

@@ -19,6 +19,7 @@ import {
     getCrawlerFrames,
     getVinebackGoliathFrames,
     getStormwingAlphaFrames,
+    getGloomMawFrames,
     getSpitterFrames,
     getChargerFrames,
     getMiteFrames,
@@ -42,6 +43,7 @@ const FRAMES_BY_TYPE = {
     juggernaut:      { get: getJuggernautFrames,      hz: 1.2 },
     vinebackGoliath: { get: getVinebackGoliathFrames, hz: 1.6 },
     stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 7 },
+    gloomMaw:        { get: getGloomMawFrames,         hz: 4 },
 };
 
 // Construction-time options:
@@ -185,6 +187,10 @@ export class Enemy {
             this.bossDashSpeed = 0;
             this.bossDashDirX = 0;
             this.bossDashDirY = 0;
+            // Charge heading locked at TELEGRAPH time (so the lunge follows the
+            // warned lane exactly — no re-aim at commit). null = not aimed yet.
+            this.bossChargeDirX = null;
+            this.bossChargeDirY = null;
             this.spiralPhase = 0;
             if (Array.isArray(def.attacks)) {
                 for (const a of def.attacks) {
@@ -722,14 +728,18 @@ function runBossAI(e, dt, player, out) {
                     out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 160, age: 0, lifetime: atk.windup, active: true, fan: true });
                 } else if (atk.kind === 'charge') {
                     // Directional lunge warning: a lane painted from the boss
-                    // toward the player so the charge is telegraphed, not a
-                    // surprise. Aimed at the player's current position (the
-                    // commit re-aims, so this is a close approximation).
-                    const ca = Math.atan2(player.y - e.y, player.x - e.x);
+                    // toward where the player is HEADED. The heading is LOCKED
+                    // here and reused verbatim at commit, so the lunge follows
+                    // exactly the lane that was telegraphed (it never re-aims
+                    // mid-charge — the player can read it and sidestep).
+                    const lead = leadPoint(e, player, atk.dashSpeed ?? 600);
+                    const ca = Math.atan2(lead.y - e.y, lead.x - e.x);
+                    e.bossChargeDirX = Math.cos(ca);
+                    e.bossChargeDirY = Math.sin(ca);
                     out.hazards.push({
                         kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 120,
                         age: 0, lifetime: atk.windup, active: true, charge: true,
-                        dirX: Math.cos(ca), dirY: Math.sin(ca),
+                        dirX: e.bossChargeDirX, dirY: e.bossChargeDirY,
                         reach: (atk.dashSpeed ?? 600) * (atk.dashDuration ?? 0.6),
                     });
                 } else if (atk.kind === 'wall' || atk.kind === 'seekers' || atk.kind === 'zones') {
@@ -781,15 +791,22 @@ function commitBossAttack(e, atk, player, out) {
             ));
         }
     } else if (atk.kind === 'charge') {
-        // Goring lunge: lock the heading at where the player is HEADED (lead the
-        // dash) so it cuts them off instead of lunging at stale ground, then
-        // commit to a fast dash for dashDuration (driven in Enemy.update).
-        const lead = leadPoint(e, player, atk.dashSpeed ?? 600);
-        const ang = Math.atan2(lead.y - e.y, lead.x - e.x);
-        e.bossDashDirX = Math.cos(ang);
-        e.bossDashDirY = Math.sin(ang);
+        // Goring lunge: reuse the heading LOCKED when the telegraph lane was
+        // painted, so the dash follows exactly the warned path (no mid-commit
+        // re-aim). Falls back to a fresh lead if no telegraph ran (e.g. a test
+        // that drives the commit directly).
+        let dx = e.bossChargeDirX, dy = e.bossChargeDirY;
+        if (dx == null) {
+            const lead = leadPoint(e, player, atk.dashSpeed ?? 600);
+            const ang = Math.atan2(lead.y - e.y, lead.x - e.x);
+            dx = Math.cos(ang); dy = Math.sin(ang);
+        }
+        e.bossDashDirX = dx;
+        e.bossDashDirY = dy;
         e.bossDashSpeed = atk.dashSpeed ?? 600;
         e.bossDashTimer = atk.dashDuration ?? 0.6;
+        e.bossChargeDirX = null; // consumed
+        e.bossChargeDirY = null;
     } else if (atk.kind === 'wall' && out.enemyProjectiles) {
         // A broad wall of bolts sweeping toward the player with ONE gap to
         // sprint through — forces a read + reposition, not a sidestep.
