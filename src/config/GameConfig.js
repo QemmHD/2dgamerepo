@@ -61,7 +61,13 @@ export const WORLD_HEIGHT = 4050;
 // (e.g. a 19.5:9 iPhone), prefer COVER (fill the screen, crop a little) over
 // CONTAIN (letterbox bars) as long as the crop stays under this fraction.
 // Keeps tall phones edge-to-edge; ultrawide displays still letterbox.
-export const RENDER = { maxDpr: 3, maxBackingPx: 3840 * 2160, maxCoverCrop: 0.22 };
+// maxDpr 3 → 2: sprites are already supersampled (SPRITE_SS), so device pixels
+// past 2× add little visible sharpness but multiply the full-screen
+// darkness/lighting fill cost — a real frame-rate hazard on 4K/retina PCs.
+// minDpr lets the FPS governor render BELOW the CSS size (then browser-upscale)
+// as a last resort on a fill-rate-bound high-res display, which is the only
+// lever that helps a 4K-at-100%-scaling monitor (where dpr is already 1).
+export const RENDER = { maxDpr: 2, minDpr: 0.7, maxBackingPx: 3840 * 2160, maxCoverCrop: 0.22 };
 
 // ── Player ─────────────────────────────────────────────────────────────
 export const PLAYER = {
