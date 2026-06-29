@@ -123,30 +123,30 @@ export const AURA = {
 export const ENEMY = {
     slime: {
         hp: 34,
-        speed: 115,
+        speed: 138,        // chaos pass: trash closes faster so it actually pressures
         radius: 55,
-        contactDamage: 9,
+        contactDamage: 11,
         xpValue: 1,
     },
     bat: {
         hp: 20,
-        speed: 232,
+        speed: 250,
         radius: 45,
-        contactDamage: 8,
+        contactDamage: 10,
         xpValue: 1,
     },
     brute: {
         hp: 95,
-        speed: 84,
+        speed: 92,
         radius: 70,
-        contactDamage: 16,
+        contactDamage: 18,
         xpValue: 3,
     },
     crawler: {
         hp: 26,
-        speed: 182,
+        speed: 205,
         radius: 40,
-        contactDamage: 9,
+        contactDamage: 11,
         xpValue: 1,
     },
     // Ranged threat: a slow drifter that keeps its distance and lobs a
@@ -184,9 +184,9 @@ export const ENEMY = {
     // punishes a stationary player but dies to a stiff breeze.
     mite: {
         hp: 10,
-        speed: 288,
+        speed: 310,
         radius: 28,
-        contactDamage: 5,
+        contactDamage: 6,
         xpValue: 1,
         visualScale: 0.55,
     },
@@ -204,10 +204,10 @@ export const ENEMY = {
     // boss HP bar, chest drop on death, and lets the constructor pull in
     // bossName + visualScale. They scale with wave just like other enemies.
     vinebackGoliath: {
-        hp: 1500,
-        speed: 62,
+        hp: 2000,          // tankier so a strong build can't melt it (challenge pass)
+        speed: 300,        // fast pursuer — it closes the gap and gets on top of you
         radius: 105,
-        contactDamage: 32,
+        contactDamage: 34,
         xpValue: 50,
         boss: true,
         bossName: 'Gravemaw',
@@ -222,18 +222,20 @@ export const ENEMY = {
         // the Bramble Call summon). Ground-dwellers fit the Goliath's theme.
         supportTypes: { brute: 1, crawler: 2, slime: 2 },
         attacks: [
-            { id: 'slam', kind: 'shockwave', cooldown: 5.5, windup: 0.8, damage: 34, growth: 720, rMax: 560, band: 95 },
-            { id: 'boulders', kind: 'fan', cooldown: 7.5, windup: 0.7, count: 7, spread: 2.4, projectileSpeed: 320, projectileDamage: 22, spiral: true, spin: 0.55 },
-            { id: 'charge', kind: 'charge', cooldown: 9.5, windup: 0.65, dashSpeed: 640, dashDuration: 0.7 },
-            { id: 'bramble', kind: 'summon', cooldown: 12.0, windup: 0.7, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
+            // Harder to dodge: bigger/faster slam, a near-full ring of fast
+            // boulders, and a quicker goring charge.
+            { id: 'slam', kind: 'shockwave', cooldown: 3.3, windup: 0.6, damage: 32, growth: 820, rMax: 640, band: 110 },
+            { id: 'boulders', kind: 'fan', cooldown: 4.2, windup: 0.5, count: 11, spread: 3.4, projectileSpeed: 440, projectileDamage: 20, spiral: true, spin: 0.5 },
+            { id: 'charge', kind: 'charge', cooldown: 5.5, windup: 0.45, dashSpeed: 780, dashDuration: 0.7 },
+            { id: 'bramble', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
         ],
         phase2Attacks: ['slam', 'charge'],
     },
     stormwingAlpha: {
-        hp: 1000,
-        speed: 134,
+        hp: 1350,          // tankier (challenge pass)
+        speed: 360,        // aggressive aerial pursuer
         radius: 80,
-        contactDamage: 24,
+        contactDamage: 26,
         xpValue: 35,
         boss: true,
         bossName: 'Vesperwing',
@@ -246,10 +248,11 @@ export const ENEMY = {
         phase2HpFraction: 0.5,
         supportTypes: { bat: 3, crawler: 1 },
         attacks: [
-            { id: 'volley', kind: 'fan', cooldown: 4.5, windup: 0.6, count: 14, spread: 6.2832 /* TWO_PI: full-circle radial */, projectileSpeed: 400, projectileDamage: 16 },
-            { id: 'spiral', kind: 'fan', cooldown: 7.0, windup: 0.5, count: 9, spread: 6.2832, projectileSpeed: 330, projectileDamage: 14, spiral: true, spin: 0.75 },
-            { id: 'gust', kind: 'shockwave', cooldown: 8.0, windup: 0.6, damage: 26, growth: 640, rMax: 480, band: 85 },
-            { id: 'dive', kind: 'charge', cooldown: 8.5, windup: 0.5, dashSpeed: 800, dashDuration: 0.55 },
+            // Denser, faster radial volleys + tighter spiral = real weaving needed.
+            { id: 'volley', kind: 'fan', cooldown: 2.8, windup: 0.45, count: 18, spread: 6.2832 /* TWO_PI: full-circle radial */, projectileSpeed: 470, projectileDamage: 15 },
+            { id: 'spiral', kind: 'fan', cooldown: 4.0, windup: 0.4, count: 12, spread: 6.2832, projectileSpeed: 400, projectileDamage: 13, spiral: true, spin: 0.6 },
+            { id: 'gust', kind: 'shockwave', cooldown: 4.8, windup: 0.45, damage: 24, growth: 740, rMax: 540, band: 95 },
+            { id: 'dive', kind: 'charge', cooldown: 5.2, windup: 0.4, dashSpeed: 900, dashDuration: 0.55 },
             { id: 'wingswarm', kind: 'summon', cooldown: 11.0, windup: 0.5, summonCount: 3, summonTypes: { bat: 3 } },
         ],
         phase2Attacks: ['volley', 'dive'],
@@ -291,6 +294,13 @@ export const BOSS = {
     thresholdCadence: { t75: 0.85, t50: 0.7, t25: 0.55 },
     enrageSpeedMul: 1.15,        // boss move-speed bump at 25%
     supportRing: 360,            // spawn radius for support around the boss
+    // Boss ARENA: when a boss spawns, the fight is sealed into a circular arena
+    // (smaller than the world) centered on the player. Both the player AND the
+    // boss are confined to it, so you can't just run away and plink — you have
+    // to dodge the boss in close quarters. Lifts on boss death.
+    arenaRadius: 860,            // confinement radius (world px) — smaller than the map
+    arenaSpawnDistance: 600,     // boss spawns this far from player (inside the ring)
+    arenaColor: '#ff5a3c',       // boundary ring tint
     // In-world presence (drawn by Enemy.draw for bosses only): a broad
     // ground shadow + a slow ominous aura halo behind the sprite so an apex
     // predator reads as a major threat. Both use cached sprites — no
@@ -437,7 +447,7 @@ export const WAVES = [
         startTime: 0,
         name: 'First Vigil',
         announcement: 'Vigil 1: The Gloam Stirs',
-        spawnIntervalMul: 1.0,
+        spawnIntervalMul: 0.95,
         maxAlive: 60,
         typeWeights: { slime: 100 },
         eliteChance: 0,
@@ -449,9 +459,9 @@ export const WAVES = [
         startTime: 60,
         name: 'Duskwings Wake',
         announcement: 'Vigil 2: Duskwings Wake — winged Hollow take flight',
-        spawnIntervalMul: 0.85,
-        maxAlive: 75,
-        typeWeights: { slime: 70, bat: 30 },
+        spawnIntervalMul: 0.80,
+        maxAlive: 88,
+        typeWeights: { slime: 55, bat: 30, crawler: 20 },
         eliteChance: 0,
         healthMul: 1.1,
         speedMul: 1.05,
@@ -461,8 +471,8 @@ export const WAVES = [
         startTime: 120,
         name: 'Skittering Dark',
         announcement: 'Vigil 3: Skittering Dark — Skitterlings swarm',
-        spawnIntervalMul: 0.72,
-        maxAlive: 90,
+        spawnIntervalMul: 0.58,
+        maxAlive: 125,
         typeWeights: { slime: 45, bat: 25, crawler: 30, spitter: 15, mite: 18 },
         eliteChance: 0,
         healthMul: 1.2,
@@ -473,8 +483,8 @@ export const WAVES = [
         startTime: 180,
         name: 'Gathering Hollow',
         announcement: 'Vigil 4: Gathering Hollow — the dark presses in',
-        spawnIntervalMul: 0.60,
-        maxAlive: 110,
+        spawnIntervalMul: 0.48,
+        maxAlive: 140,
         typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24 },
         eliteChance: 0.02,
         healthMul: 1.45,
@@ -613,8 +623,10 @@ export const MAGNET = {
 
 // ── Combat feedback ────────────────────────────────────────────────────
 export const KNOCKBACK = {
-    strength: 520,
-    timeConstant: 0.08,
+    // Chaos pass: much weaker knockback so hits don't blow clear gaps in the
+    // swarm — regular enemies stay on top of the player and keep pressure on.
+    strength: 230,
+    timeConstant: 0.07,
 };
 
 export const SCREEN_SHAKE = {
