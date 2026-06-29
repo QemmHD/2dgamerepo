@@ -12,7 +12,7 @@
 // (182×182) — the visual is drawn inside that canvas so the world-space
 // half-extents stay constant across types.
 
-import { SPRITE_SIZE, SPRITE_SS, MAP, GEM_TIERS, LIGHT_COLORS } from '../config/GameConfig.js';
+import { SPRITE_SIZE, SPRITE_SS, SPRITE_FX, MAP, GEM_TIERS, LIGHT_COLORS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 
 const cache = new Map();
@@ -24,6 +24,29 @@ export function getLightMaskSprite() {
     const sprite = drawLightMask(256);
     cache.set('lightMask', sprite);
     return sprite;
+}
+
+// Cached soft contact-shadow blob (black radial → transparent). Stamped
+// (via drawImage at a flattened ellipse aspect) under standing map
+// decorations so props feel grounded. Built once; no per-frame gradient.
+export function getSoftShadowSprite() {
+    if (cache.has('softShadowBlob')) return cache.get('softShadowBlob');
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const r = size / 2;
+    const g = ctx.createRadialGradient(r, r, 1, r, r, r);
+    g.addColorStop(0, 'rgba(0,0,0,0.6)');
+    g.addColorStop(0.55, 'rgba(0,0,0,0.3)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(r, r, r, 0, TWO_PI);
+    ctx.fill();
+    cache.set('softShadowBlob', canvas);
+    return canvas;
 }
 
 // Cached colored radial glow (color center → transparent), used for the
@@ -60,6 +83,7 @@ export function prewarmSprites() {
     for (const type of MAP.decorationTypes) getDecorationSprite(type);
     // Lighting + particle masks/glows.
     getLightMaskSprite();
+    getSoftShadowSprite();
     for (const key in LIGHT_COLORS) getGlowSprite(LIGHT_COLORS[key]);
     // Particle-specific glow colors not in LIGHT_COLORS.
     for (const c of PARTICLE_GLOW_COLORS) getGlowSprite(c);
@@ -77,6 +101,9 @@ export const PARTICLE_GLOW_COLORS = [
     // the boss telegraph + shockwave-light tints) so the first proc of each
     // never rasterizes a gradient mid-combat.
     '#ff7a33', '#ffe066', '#7fe0ff', '#bfe8ff', '#ff5a3c', '#ff7a4a',
+    // Boss in-world aura halo (base + enraged) — prewarmed so the first
+    // boss spawn never rasterizes a 128px glow mid-frame.
+    '#b41f2e',
 ];
 
 // ── Ground tile ────────────────────────────────────────────────────────
@@ -102,10 +129,10 @@ export function getDecorationSprite(type) {
 export function getMonkeyFrames() {
     if (cache.has('monkeyFrames')) return cache.get('monkeyFrames');
     const frames = [
-        drawMonkey(SPRITE_SIZE, 0),
-        drawMonkey(SPRITE_SIZE, 1),
-        drawMonkey(SPRITE_SIZE, 2),
-        drawMonkey(SPRITE_SIZE, 3),
+        addOutline(drawMonkey(SPRITE_SIZE, 0)),
+        addOutline(drawMonkey(SPRITE_SIZE, 1)),
+        addOutline(drawMonkey(SPRITE_SIZE, 2)),
+        addOutline(drawMonkey(SPRITE_SIZE, 3)),
     ];
     cache.set('monkeyFrames', frames);
     return frames;
@@ -122,7 +149,7 @@ function makeFrameGetter(key, count, drawer) {
     return () => {
         if (cache.has(key)) return cache.get(key);
         const frames = [];
-        for (let i = 0; i < count; i++) frames.push(drawer(SPRITE_SIZE, i, count));
+        for (let i = 0; i < count; i++) frames.push(addOutline(drawer(SPRITE_SIZE, i, count)));
         cache.set(key, frames);
         return frames;
     };
@@ -217,6 +244,44 @@ function softShadow(ctx, cx, cy, rx, ry, alpha = 0.35) {
     ctx.beginPath();
     ctx.ellipse(cx, cy, rx, ry, 0, 0, TWO_PI);
     ctx.fill();
+}
+
+// Stamp a dark contour BEHIND a finished character sprite so it keeps a
+// strong silhouette against busy, dim ground. Runs ONCE per frame at
+// cache-fill (never per render frame). Technique: build a solid-colour
+// silhouette of the art (copy → 'source-in' fill), then draw it under the
+// original ('destination-over') at `samples` offsets around a ring. Works in
+// raw backing-store pixels — drawers leave a SPRITE_SS scale on the context,
+// so we reset to identity for the stamp. Mutates and returns `canvas`.
+function addOutline(canvas) {
+    const cfg = SPRITE_FX.outline;
+    if (!cfg || !cfg.enabled) return canvas;
+    const w = canvas.width, h = canvas.height;
+
+    // Solid-colour silhouette of the existing art (keeps its alpha edges).
+    const sil = document.createElement('canvas');
+    sil.width = w;
+    sil.height = h;
+    const sctx = sil.getContext('2d');
+    sctx.drawImage(canvas, 0, 0);
+    sctx.globalCompositeOperation = 'source-in';
+    sctx.fillStyle = cfg.color;
+    sctx.fillRect(0, 0, w, h);
+
+    // Stamp it behind the original at evenly spaced offsets.
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.globalAlpha = cfg.alpha ?? 1;
+    const px = Math.max(1, Math.round((cfg.widthLogical ?? 2) * SPRITE_SS));
+    const n = Math.max(4, cfg.samples ?? 8);
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TWO_PI;
+        ctx.drawImage(sil, Math.round(Math.cos(a) * px), Math.round(Math.sin(a) * px));
+    }
+    ctx.restore();
+    return canvas;
 }
 
 // ─── Player / monkey ──────────────────────────────────────────────────

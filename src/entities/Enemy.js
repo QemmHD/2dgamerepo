@@ -4,6 +4,7 @@ import {
     ELITE_AFFIXES,
     AFFIX,
     ELEMENT,
+    BOSS,
     BOSS_ATTACK,
     SPRITE_SIZE,
     HIT_FLASH_DURATION,
@@ -21,6 +22,7 @@ import {
     getSpitterFrames,
     getChargerFrames,
     getGlowSprite,
+    getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
@@ -373,6 +375,28 @@ export class Enemy {
     draw(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
+
+        // Boss presence: a broad ground shadow + a slow, ominous aura halo
+        // behind the sprite so an apex predator reads as a major threat at a
+        // glance. Both use cached sprites (no per-frame gradients) and only
+        // bosses pay the cost. The aura runs hotter once phase-2 enrage latches.
+        if (this.boss) {
+            const p = BOSS.presence;
+            const bR = this.spriteHalf * this.visualScale;
+            const shadow = getSoftShadowSprite();
+            const sw = bR * p.shadowScale * 2;
+            const sh = sw * 0.34;
+            ctx.globalAlpha = p.shadowAlpha;
+            ctx.drawImage(shadow, -sw / 2, bR * 0.58 - sh / 2, sw, sh);
+            const pulse = Math.sin(this.animTimer * 2.2);
+            const aura = getGlowSprite(this.phase2Entered ? p.auraColorEnraged : p.auraColor);
+            const ar = bR * (p.auraScale + 0.12 * pulse);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = p.auraAlpha + 0.12 * pulse;
+            ctx.drawImage(aura, -ar, -ar, ar * 2, ar * 2);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+        }
 
         // Elite glow halo sits behind the sprite at world scale (before the
         // visualScale transform) so it's a roomy ring, not a tight outline.

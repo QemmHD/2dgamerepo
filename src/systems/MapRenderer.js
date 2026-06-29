@@ -15,11 +15,15 @@
 // Vignette is drawn in screen space (outside the camera transform) so it
 // stays anchored to the viewport corners, not the world.
 
-import { MAP, VIGNETTE, WORLD_WIDTH, WORLD_HEIGHT, GFX, LIGHT_COLORS, SPRITE_SS } from '../config/GameConfig.js';
+import { MAP, VIGNETTE, WORLD_WIDTH, WORLD_HEIGHT, GFX, SPRITE_FX, LIGHT_COLORS, SPRITE_SS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
-import { getGroundTileSprite, getDecorationSprite } from '../assets/ProceduralSprites.js';
+import { getGroundTileSprite, getDecorationSprite, getSoftShadowSprite } from '../assets/ProceduralSprites.js';
 
 const CHUNK_SIZE = MAP.tileSize * MAP.chunkTilesPerSide;
+
+// Which decoration types ground themselves with a soft contact shadow
+// (standing props only — flat litter draws flush). Resolved once from config.
+const SHADOW_CASTERS = new Set(SPRITE_FX.decorationShadow.casters || []);
 
 // Mulberry32 — small, fast PRNG. Deterministic for a given seed, which
 // is exactly what we want for chunk decoration so the same patch of
@@ -117,6 +121,10 @@ export class MapRenderer {
         const right = left + viewW;
         const bottom = top + viewH;
 
+        // Contact-shadow config + cached blob resolved once per call.
+        const ds = SPRITE_FX.decorationShadow;
+        const shadowBlob = ds.enabled ? getSoftShadowSprite() : null;
+
         const cx0 = Math.floor(left / CHUNK_SIZE) - 1;
         const cy0 = Math.floor(top / CHUNK_SIZE) - 1;
         const cx1 = Math.floor(right / CHUNK_SIZE) + 1;
@@ -142,6 +150,16 @@ export class MapRenderer {
                     // (ruin/branch) don't pay the cost when out of view.
                     if (d.x + w / 2 < left || d.x - w / 2 > right) continue;
                     if (d.y + h / 2 < top || d.y - h / 2 > bottom) continue;
+                    // Soft contact shadow under standing props — drawn first,
+                    // axis-aligned on the ground (never rotated with the prop),
+                    // via the cached blob so there's no per-frame gradient.
+                    if (ds.enabled && SHADOW_CASTERS.has(d.type) && shadowBlob) {
+                        const sw = w * ds.scaleX * 2;
+                        const sh = w * ds.scaleY * 2;
+                        ctx.globalAlpha = ds.alpha;
+                        ctx.drawImage(shadowBlob, d.x - sw / 2, d.y + h * ds.offsetY - sh / 2, sw, sh);
+                        ctx.globalAlpha = 1;
+                    }
                     if (d.rot === 0) {
                         ctx.drawImage(sprite, d.x - w / 2, d.y - h / 2, w, h);
                     } else {
@@ -171,9 +189,10 @@ export class MapRenderer {
         const inner = maxR * VIGNETTE.innerRadius;
         const outer = maxR * VIGNETTE.outerRadius;
 
+        const tint = VIGNETTE.color || '0, 0, 0';
         const grad = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(1, `rgba(0,0,0,${VIGNETTE.strength})`);
+        grad.addColorStop(0, `rgba(${tint},0)`);
+        grad.addColorStop(1, `rgba(${tint},${VIGNETTE.strength})`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, screenW, screenH);
     }

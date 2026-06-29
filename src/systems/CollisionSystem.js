@@ -11,8 +11,14 @@ import { circleOverlap } from '../core/MathUtils.js';
 
 // How much each non-strongest overlapping enemy adds to a contact hit, and
 // the ceiling as a multiple of the single strongest enemy's damage.
+// CAP 2.5 → 1.9: at the ~40-min endless ramp peak a max elite brute hits 51,
+// so a dense pile of them capped at 51×2.5 = 127.5 could delete a full-HP
+// (100), no-mitigation player in a SINGLE i-frame window — a one-shot with no
+// counterplay. 1.9 caps that worst case at 51×1.9 ≈ 97 < 100, so a full-HP
+// player always survives one window (then has 0.8 s i-frames to escape). A
+// crowd is still far deadlier than a single enemy, so late game stays intense.
 const CROWD_DAMAGE_FRACTION = 0.3;
-const CROWD_DAMAGE_CAP = 2.5;
+const CROWD_DAMAGE_CAP = 1.9;
 
 // Fallback redirect range for a ricochet bolt that has a budget but no
 // explicit ricochetRange set.
