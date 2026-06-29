@@ -1176,7 +1176,9 @@ export class Game {
         ws.speedMul = (ws.speedMul ?? 1) * r.speed;
         ws.damageMul = (ws.damageMul ?? 1) * r.damage;
         ws.eliteChance = Math.min(0.85, (ws.eliteChance ?? 0) * r.elite);
-        ws.maxAlive = Math.round((ws.maxAlive ?? 0) * r.cap);
+        // Hard ceiling so the Swarm trial (+difficulty) can't push the alive
+        // count past a perf-safe max on mobile (base cap is 180).
+        ws.maxAlive = Math.min(220, Math.round((ws.maxAlive ?? 0) * r.cap));
         ws.spawnIntervalMul = (ws.spawnIntervalMul ?? 1) * r.interval;
         return ws;
     }
