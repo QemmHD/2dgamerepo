@@ -875,7 +875,10 @@ export class Game {
             case 'selectCharacter': this._pressFeedback(`char:${arg.id}`); this.saveSystem.setSelectedCharacter(arg.id); break;
             case 'selectMap': {
                 this._pressFeedback(`map:${arg.id}`);
-                if (!this.saveSystem.setSelectedMap(arg.id)) this._setToast('Defeat 3 bosses to unlock');
+                if (!this.saveSystem.setSelectedMap(arg.id)) {
+                    const need = getMap(arg.id)?.unlockBosses ?? 3;
+                    this._setToast(`Defeat ${need} bosses to unlock`);
+                }
                 break;
             }
             case 'toggleSetting': this._toggleSetting(arg); break;
