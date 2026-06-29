@@ -18,6 +18,7 @@ import {
     COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance,
 } from '../content/cosmetics.js';
 import { CASES, CASE_ORDER, caseOddsRows, FORGE, FORGE_PITY, forgePityRemaining } from './CaseSystem.js';
+import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
@@ -261,6 +262,30 @@ export class MenuRenderer {
             ctx.fillStyle = '#fff'; ctx.font = `700 24px ${FONT}`;
             ctx.fillText(item ? item.name : '— empty —', rx + 44, ly + 46);
             ly += 66;
+        }
+        // Biome selector: the second map unlocks after 3 lifetime bosses.
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 22px ${FONT}`;
+        ctx.fillText('Biome', rx + 28, ly + 26);
+        const bw = (rw - 56 - 14) / MAP_ORDER.length;
+        const totalBosses = save.stats?.totalBosses ?? 0;
+        const selMap = save.selectedMap ?? MAP_ORDER[0];
+        for (let i = 0; i < MAP_ORDER.length; i++) {
+            const m = MAPS[MAP_ORDER[i]];
+            const unlocked = isMapUnlocked(m.id, totalBosses);
+            const sel = m.id === selMap;
+            const bx = rx + 28 + i * (bw + 14);
+            const by = ly + 38;
+            roundRectPath(ctx, bx, by, bw, 64, 10);
+            ctx.fillStyle = sel ? 'rgba(255,206,84,0.16)' : 'rgba(255,255,255,0.04)'; ctx.fill();
+            ctx.strokeStyle = sel ? '#ffce54' : unlocked ? m.accent : 'rgba(255,255,255,0.12)';
+            ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+            ctx.globalAlpha = unlocked ? 1 : 0.5;
+            ctx.fillStyle = '#fff'; ctx.font = `700 20px ${FONT}`;
+            ctx.fillText(m.name, bx + 16, by + 26);
+            ctx.fillStyle = unlocked ? m.accent : 'rgba(255,255,255,0.6)'; ctx.font = `500 14px ${FONT}`;
+            ctx.fillText(unlocked ? m.subtitle : `🔒 Defeat ${m.unlockBosses} bosses`, bx + 16, by + 48);
+            ctx.globalAlpha = 1;
+            this._hot(bx, by, bw, 64, 'selectMap', { id: m.id });
         }
         // START RUN.
         const btn = { x: rx + 28, y: c.y + c.h - 110, w: rw - 56, h: 84 };

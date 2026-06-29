@@ -56,6 +56,7 @@ import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
 import { OBJECTIVES, OBJECTIVE_COUNT } from '../content/objectives.js';
+import { getMap } from '../content/maps.js';
 import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 
@@ -504,6 +505,8 @@ export class Game {
         this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
         this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
         this.mapRenderer.lowQuality = this.reducedEffects;
+        // Apply the selected biome's color grade for this run.
+        this.mapRenderer.theme = getMap(this.saveSystem.getSelectedMap());
         this._lastHp = this.player.hp;
         this.screen = 'gameplay';
         // Kick the driving gameplay theme (resume covers the keyboard-start path
@@ -634,6 +637,11 @@ export class Game {
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); break;
             case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); break;
             case 'selectCharacter': this._pressFeedback(`char:${arg.id}`); this.saveSystem.setSelectedCharacter(arg.id); break;
+            case 'selectMap': {
+                this._pressFeedback(`map:${arg.id}`);
+                if (!this.saveSystem.setSelectedMap(arg.id)) this._setToast('Defeat 3 bosses to unlock');
+                break;
+            }
             case 'toggleSetting': this._toggleSetting(arg); break;
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
