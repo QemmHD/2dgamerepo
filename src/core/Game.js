@@ -121,6 +121,10 @@ export class Game {
         this._gfxLevel = 0;
         this._gfxLowTimer = 0;
         this._gfxHighTimer = 0;
+        // Per-map Emberlight veil multiplier (day≈0.5 … night=1.0). Set at run
+        // start from the selected biome; folded into the governor's full-quality
+        // strength so FPS recovery can't reset day/night feel. 1 = neutral.
+        this.mapDarkness = 1;
 
         // Meta-progression flow: 'start' (title + shop) → 'gameplay' → 'gameOver'.
         // Boot lands on the start screen so the player can spend banked coins
@@ -622,8 +626,16 @@ export class Game {
         // Reduced-effects silences the weapon-skin overlay's additive glow too
         // (mirrors the weaponAura gate). Read here so a mid-session toggle wins.
         this.player.skinOverlayEnabled = !this.reducedEffects;
-        // Apply the selected biome's color grade for this run.
-        this.mapRenderer.theme = getMap(this.saveSystem.getSelectedMap());
+        // Apply the selected biome's color grade + per-map darkness for this run.
+        const biome = getMap(this.saveSystem.getSelectedMap());
+        this.mapRenderer.theme = biome;
+        // Per-map darkness multiplier on the Emberlight veil (day ≈ 0.5 bright,
+        // night = 1.0 darkest). Routed through the governor below so an FPS
+        // quality change can't reset it back to the global strength.
+        this.mapDarkness = biome.darkness ?? 1;
+        if (this.lighting && this.lighting.setQuality) {
+            this.lighting.setQuality({ strength: GFX.darkness.strength * this.mapDarkness });
+        }
         this._lastHp = this.player.hp;
         this.screen = 'gameplay';
         // Kick the driving gameplay theme (resume covers the keyboard-start path
@@ -691,12 +703,28 @@ export class Game {
     // pre-select the new map so the player lands ready to play it.
     victoryToMenu(selectNewMap = false) {
         if (!this._runRecorded) {
-            this.saveSystem.recordRun({
+            // Mirror the game-over bookkeeping so leaving on a VICTORY grants the
+            // same coins, lifetime stats, and achievements as dying would.
+            // Bank first (idempotent — returnToShop's later call is a no-op) so
+            // `earned` is known and folds into totalCoinsEarned via recordRun.
+            const earned = this._bankRunCoins();
+            if (this.runBonus?.coin > 0 && earned > 0) {
+                this.saveSystem.addCoins(Math.round(earned * this.runBonus.coin));
+            }
+            this.saveSystem.incrementStat('playtimeSec', Math.max(0, Math.floor(this.time)));
+            if (this.difficulty === 'hard') {
+                this.saveSystem.incrementStat('eliteBossesDefeated', this.bossesDefeated);
+            }
+            this.runSummary = {
                 time: this.time, level: this.player.level, kills: this.kills,
                 bossesDefeated: this.bossesDefeated,
+                coinsEarned: earned,
+                totalCoins: this.saveSystem.data.totalCoins,
                 finalWave: (this.waveState?.index ?? 0) + 1,
                 finalWaveName: this.waveState?.name ?? '',
-            });
+            };
+            this.saveSystem.recordRun(this.runSummary);
+            this._checkAchievements();
             this._runRecorded = true;
         }
         // The new biome is now unlocked (3 lifetime bosses) — select it if asked.
@@ -2929,7 +2957,7 @@ export class Game {
             this.lighting.setQuality({
                 maxLights: GFX.lighting.maxLights,
                 colorTint: GFX.lighting.colorTint,
-                strength: GFX.darkness.strength,
+                strength: GFX.darkness.strength * (this.mapDarkness ?? 1),
             });
             this.particles.setQuality({ max: GFX.particles.max, fog: GFX.particles.fog });
             this.renderer.setDprCap?.(RENDER.maxDpr);

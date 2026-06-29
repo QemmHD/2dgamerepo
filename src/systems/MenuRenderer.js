@@ -286,7 +286,7 @@ export class MenuRenderer {
         // Biome selector: the second map unlocks after 3 lifetime bosses.
         ctx.fillStyle = '#cdd6e2'; ctx.font = `700 22px ${FONT}`;
         ctx.fillText('Biome', rx + 28, ly + 26);
-        const bw = (rw - 56 - 14) / MAP_ORDER.length;
+        const bw = (rw - 56 - 14 * (MAP_ORDER.length - 1)) / MAP_ORDER.length;
         const totalBosses = save.stats?.totalBosses ?? 0;
         const selMap = save.selectedMap ?? MAP_ORDER[0];
         for (let i = 0; i < MAP_ORDER.length; i++) {
