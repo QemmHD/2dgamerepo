@@ -56,6 +56,33 @@ export const FORGE = {
 CASES.forge = FORGE;       // so buildCaseReel/openCase resolve it by id
 export const FORGE_PITY = 8; // forges since the last Rare+ that force one
 
+// ── Cinder Wager (coin gambling mini-game) ──────────────────────────────
+// Replaces the old forge pull with a skill bet: stake coins, then STOP a
+// sweeping spark on a multiplier bar. Safe 1.5× bands sit toward the edges; a
+// thin 5× JACKPOT sits dead center flanked by BUST (lose the stake); 0.5× is a
+// partial-loss buffer. On a RANDOM stop the house wins (EV ≈ 0.88×), but a
+// timed stop on a 1.5× band profits — and the center jackpot is the big risk.
+// Zones are cumulative `to` fractions across [0,1]; mul 0 = bust.
+export const WAGER_BETS = [100, 500, 2000];
+export const WAGER_ZONES = [
+    { to: 0.12, mul: 0,   label: 'BUST',       color: '#ff5a3c' },
+    { to: 0.30, mul: 1.5, label: '1.5×',       color: '#7be08a' },
+    { to: 0.44, mul: 0.5, label: '0.5×',       color: '#9fb0c4' },
+    { to: 0.48, mul: 0,   label: 'BUST',       color: '#ff5a3c' },
+    { to: 0.52, mul: 5,   label: 'JACKPOT 5×', color: '#ffd166' },
+    { to: 0.56, mul: 0,   label: 'BUST',       color: '#ff5a3c' },
+    { to: 0.70, mul: 0.5, label: '0.5×',       color: '#9fb0c4' },
+    { to: 0.88, mul: 1.5, label: '1.5×',       color: '#7be08a' },
+    { to: 1.0,  mul: 0,   label: 'BUST',       color: '#ff5a3c' },
+];
+
+// Which zone a stop position (0..1) lands in.
+export function resolveWager(pos) {
+    const p = Math.max(0, Math.min(1, pos));
+    for (const z of WAGER_ZONES) if (p <= z.to) return z;
+    return WAGER_ZONES[WAGER_ZONES.length - 1];
+}
+
 // One flat index of everything a case can award, tagged by kind + rarity.
 // Default-unlocked gear (e.g. the Cinderbolt) is EXCLUDED — you already own it,
 // so it should never be a case pull.
