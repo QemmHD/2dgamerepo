@@ -79,6 +79,15 @@ export function prewarmSprites() {
     getJuggernautFrames();
     getHealerFrames();
     getShielderFrames();
+    getRimewardenFrames();
+    getHoarfangFrames();
+    getAurorathFrames();
+    getOssuarFrames();
+    getMourndriftFrames();
+    getNihagaultFrames();
+    getDunescourgeFrames();
+    getCindermawFrames();
+    getSolnakhFrames();
     getChestFrames();
     getCoinFrames();
     getProjectileSprite();
@@ -202,6 +211,223 @@ export function getStormwingAlphaSprite() { return getStormwingAlphaFrames()[0];
 export function getGloomMawSprite() { return getGloomMawFrames()[0]; }
 export function getSpitterSprite() { return getSpitterFrames()[0]; }
 export function getChargerSprite() { return getChargerFrames()[0]; }
+
+// ── New per-map apex bosses (maps 2–4) ───────────────────────────────────
+// Nine new bosses share one PARAMETRIC drawer: a config picks a body
+// archetype (distinct silhouette) + a biome palette + an accent kind, so each
+// boss reads as its own creature (an icy golem, a magma serpent, a void maw…)
+// without nine near-duplicate functions. The makeFrameGetter pipeline still
+// adds the rim light + dark outline, exactly like the hand-built bosses.
+function _bossAura(ctx, size, color) {
+    const cx = size / 2, cy = size / 2;
+    const aura = ctx.createRadialGradient(cx, cy, 10, cx, cy, 94);
+    aura.addColorStop(0, color);
+    aura.addColorStop(1, color.replace(/[\d.]+\)$/, '0)'));
+    ctx.fillStyle = aura;
+    ctx.fillRect(0, 0, size, size);
+}
+function _eye(ctx, x, y, r, eyeCol, shineCol) {
+    ctx.fillStyle = eyeCol;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 1.15, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = shineCol;
+    ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.4, r * 0.34, 0, TWO_PI); ctx.fill();
+}
+
+function drawApexBoss(size, frame, count, cfg) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const phase = (frame / count) * TWO_PI;
+    const p = cfg.palette;
+    softShadow(ctx, cx, cy + 58, 58, 14, 0.42);
+    _bossAura(ctx, size, cfg.glow);
+
+    if (cfg.archetype === 'hulk') {
+        const bob = Math.sin(phase) * 3;
+        // Legs.
+        ctx.fillStyle = p.dark;
+        for (const sx of [-22, 22]) { ctx.beginPath(); ctx.roundRect(cx + sx - 12, cy + 24, 24, 36, 7); ctx.fill(); }
+        // Arms + fists.
+        for (const s of [-1, 1]) {
+            ctx.fillStyle = p.body;
+            ctx.beginPath(); ctx.roundRect(cx + s * 40 - 10, cy - 18 + bob, 20, 52, 9); ctx.fill();
+            ctx.fillStyle = p.dark;
+            ctx.beginPath(); ctx.arc(cx + s * 44, cy + 38 + bob, 15, 0, TWO_PI); ctx.fill();
+        }
+        // Torso.
+        ctx.fillStyle = p.body;
+        ctx.beginPath(); ctx.roundRect(cx - 34, cy - 30 + bob, 68, 70, 16); ctx.fill();
+        ctx.fillStyle = p.dark;
+        ctx.beginPath(); ctx.roundRect(cx - 34, cy + 6 + bob, 68, 34, 14); ctx.fill();
+        // Pauldrons.
+        ctx.fillStyle = p.light;
+        for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(cx + s * 34, cy - 24 + bob, 18, 0, TWO_PI); ctx.fill(); }
+        // Chest core (accent glow).
+        ctx.fillStyle = p.accent;
+        ctx.beginPath(); ctx.arc(cx, cy + 2 + bob, 9 + Math.sin(phase * 2) * 1.5, 0, TWO_PI); ctx.fill();
+        // Head.
+        ctx.fillStyle = p.light;
+        ctx.beginPath(); ctx.arc(cx, cy - 42 + bob, 16, 0, TWO_PI); ctx.fill();
+        _eye(ctx, cx - 6, cy - 43 + bob, 3.4, p.eye, p.accent);
+        _eye(ctx, cx + 6, cy - 43 + bob, 3.4, p.eye, p.accent);
+        if (cfg.accent === 'ice') {
+            ctx.fillStyle = p.accent;
+            for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 34, cy - 40 + bob); ctx.lineTo(cx + s * 30, cy - 64 + bob); ctx.lineTo(cx + s * 42, cy - 44 + bob); ctx.closePath(); ctx.fill(); }
+        } else if (cfg.accent === 'bone') {
+            ctx.strokeStyle = p.dark; ctx.lineWidth = 3;
+            for (let i = 0; i < 3; i++) { const yy = cy - 14 + i * 13 + bob; ctx.beginPath(); ctx.moveTo(cx - 26, yy); ctx.lineTo(cx + 26, yy); ctx.stroke(); }
+        }
+    } else if (cfg.archetype === 'serpent') {
+        // Coiled segmented body swaying with phase, head on top.
+        const segs = 7;
+        for (let i = segs - 1; i >= 0; i--) {
+            const t = i / segs;
+            const sway = Math.sin(phase + i * 0.7) * (10 + i * 2);
+            const sx = cx + sway, sy = cy + 44 - i * 13;
+            ctx.fillStyle = i % 2 ? p.body : p.dark;
+            ctx.beginPath(); ctx.arc(sx, sy, 22 - i * 1.6, 0, TWO_PI); ctx.fill();
+            if (i % 2 === 0) { ctx.fillStyle = p.light; ctx.beginPath(); ctx.arc(sx - 4, sy - 4, (22 - i * 1.6) * 0.4, 0, TWO_PI); ctx.fill(); }
+        }
+        const hx = cx + Math.sin(phase + segs * 0.7) * 16, hy = cy - 48;
+        // Head.
+        ctx.fillStyle = p.light;
+        ctx.beginPath(); ctx.ellipse(hx, hy, 22, 18, 0, 0, TWO_PI); ctx.fill();
+        ctx.fillStyle = p.body;
+        ctx.beginPath(); ctx.ellipse(hx, hy + 6, 22, 12, 0, 0, TWO_PI); ctx.fill();
+        // Horns.
+        ctx.fillStyle = p.accent;
+        for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(hx + s * 12, hy - 12); ctx.lineTo(hx + s * 22, hy - 30); ctx.lineTo(hx + s * 18, hy - 8); ctx.closePath(); ctx.fill(); }
+        _eye(ctx, hx - 8, hy - 2, 4, p.eye, p.accent);
+        _eye(ctx, hx + 8, hy - 2, 4, p.eye, p.accent);
+        // Jaw glow.
+        ctx.fillStyle = cfg.accent === 'magma' ? p.accent : p.eye;
+        ctx.beginPath(); ctx.ellipse(hx, hy + 12, 9, 4, 0, 0, TWO_PI); ctx.fill();
+    } else if (cfg.archetype === 'colossus') {
+        // Tall tapered crystalline body + crown + orbiting shards.
+        const pulse = 1 + Math.sin(phase * 2) * 0.12;
+        ctx.fillStyle = p.body;
+        ctx.beginPath();
+        ctx.moveTo(cx - 30, cy + 58); ctx.lineTo(cx - 18, cy - 40);
+        ctx.lineTo(cx, cy - 56); ctx.lineTo(cx + 18, cy - 40);
+        ctx.lineTo(cx + 30, cy + 58); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = p.dark;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 56); ctx.lineTo(cx + 18, cy - 40); ctx.lineTo(cx + 30, cy + 58); ctx.lineTo(cx, cy + 58); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = p.light;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 56); ctx.lineTo(cx - 8, cy - 20); ctx.lineTo(cx, cy + 30); ctx.lineTo(cx + 6, cy - 20); ctx.closePath(); ctx.fill();
+        // Crown of spikes.
+        ctx.fillStyle = p.accent;
+        for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(cx + i * 12 - 5, cy - 50); ctx.lineTo(cx + i * 12, cy - 50 - (18 - Math.abs(i) * 3)); ctx.lineTo(cx + i * 12 + 5, cy - 50); ctx.closePath(); ctx.fill(); }
+        // Glowing core.
+        ctx.fillStyle = p.accent;
+        ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(cx, cy - 2, 11 * pulse, 0, TWO_PI); ctx.fill(); ctx.globalAlpha = 1;
+        _eye(ctx, cx - 8, cy - 24, 4, p.eye, p.accent);
+        _eye(ctx, cx + 8, cy - 24, 4, p.eye, p.accent);
+        // Orbiting shards.
+        ctx.fillStyle = p.light;
+        for (let i = 0; i < 4; i++) { const a = phase + i * (TWO_PI / 4); const ox = cx + Math.cos(a) * 56, oy = cy - 4 + Math.sin(a) * 40; ctx.beginPath(); ctx.moveTo(ox, oy - 8); ctx.lineTo(ox + 5, oy); ctx.lineTo(ox, oy + 8); ctx.lineTo(ox - 5, oy); ctx.closePath(); ctx.fill(); }
+    } else if (cfg.archetype === 'wraith') {
+        // Floating hooded cloak with a tattered, waving lower edge.
+        const drift = Math.sin(phase) * 4;
+        ctx.fillStyle = p.body;
+        ctx.beginPath();
+        ctx.moveTo(cx - 38, cy - 6 + drift);
+        ctx.quadraticCurveTo(cx, cy - 64 + drift, cx + 38, cy - 6 + drift);
+        // Tattered hem.
+        for (let i = 5; i >= -5; i--) {
+            const tx = cx + i * 7.6;
+            const ty = cy + 44 + Math.sin(phase * 2 + i) * 7 + drift;
+            ctx.lineTo(tx, ty);
+        }
+        ctx.closePath(); ctx.fill();
+        // Inner shade.
+        ctx.fillStyle = p.dark;
+        ctx.beginPath();
+        ctx.moveTo(cx - 22, cy - 14 + drift);
+        ctx.quadraticCurveTo(cx, cy - 50 + drift, cx + 22, cy - 14 + drift);
+        ctx.quadraticCurveTo(cx, cy + 6 + drift, cx - 22, cy - 14 + drift);
+        ctx.closePath(); ctx.fill();
+        // Hood opening + two glowing eyes.
+        ctx.fillStyle = '#05060a';
+        ctx.beginPath(); ctx.ellipse(cx, cy - 22 + drift, 16, 20, 0, 0, TWO_PI); ctx.fill();
+        _eye(ctx, cx - 7, cy - 24 + drift, 4.2, p.accent, p.light);
+        _eye(ctx, cx + 7, cy - 24 + drift, 4.2, p.accent, p.light);
+        // Wispy claws.
+        ctx.strokeStyle = p.light; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        for (const s of [-1, 1]) {
+            ctx.beginPath(); ctx.moveTo(cx + s * 30, cy + drift);
+            ctx.quadraticCurveTo(cx + s * 52, cy + 8 + drift, cx + s * 48, cy + 28 + drift); ctx.stroke();
+        }
+    } else if (cfg.archetype === 'maw') {
+        // Central orb dominated by a vertical toothy maw, ringed by small eyes.
+        const open = 8 + Math.sin(phase * 2) * 6;
+        ctx.fillStyle = p.body;
+        ctx.beginPath(); ctx.arc(cx, cy, 46, 0, TWO_PI); ctx.fill();
+        ctx.fillStyle = p.dark;
+        ctx.beginPath(); ctx.arc(cx, cy + 6, 46, 0.12 * Math.PI, 0.88 * Math.PI); ctx.fill();
+        // Tendrils.
+        ctx.strokeStyle = p.dark; ctx.lineWidth = 6; ctx.lineCap = 'round';
+        for (let i = 0; i < 8; i++) { const a = phase * 0.5 + i * (TWO_PI / 8); ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * 40, cy + Math.sin(a) * 40); ctx.lineTo(cx + Math.cos(a) * 74, cy + Math.sin(a) * 74); ctx.stroke(); }
+        // Maw.
+        ctx.fillStyle = '#0a0410';
+        ctx.beginPath(); ctx.ellipse(cx, cy + 4, 16, 20 + open, 0, 0, TWO_PI); ctx.fill();
+        ctx.fillStyle = p.light;
+        for (let i = 0; i < 5; i++) { const ty = cy - 12 + i * 9; ctx.beginPath(); ctx.moveTo(cx - 14, ty); ctx.lineTo(cx - 8, ty + 4); ctx.lineTo(cx - 14, ty + 8); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(cx + 14, ty); ctx.lineTo(cx + 8, ty + 4); ctx.lineTo(cx + 14, ty + 8); ctx.closePath(); ctx.fill(); }
+        // Ring of small eyes.
+        for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + (i - 2.5) * 0.42; _eye(ctx, cx + Math.cos(a) * 30, cy + Math.sin(a) * 30 - 6, 3, p.accent, p.light); }
+    } else { // 'scarab' — armored beast
+        const step = Math.sin(phase * 2) * 4;
+        // Legs.
+        ctx.strokeStyle = p.dark; ctx.lineWidth = 5; ctx.lineCap = 'round';
+        for (let i = 0; i < 3; i++) { for (const s of [-1, 1]) { const ly = cy + 6 + i * 14; ctx.beginPath(); ctx.moveTo(cx + s * 28, ly); ctx.lineTo(cx + s * (52 + (i === 1 ? step : 0)), ly + 10); ctx.stroke(); } }
+        // Carapace (segmented dome).
+        ctx.fillStyle = p.body;
+        ctx.beginPath(); ctx.ellipse(cx, cy + 6, 42, 46, 0, 0, TWO_PI); ctx.fill();
+        ctx.fillStyle = p.dark;
+        ctx.beginPath(); ctx.ellipse(cx, cy + 14, 42, 38, 0, 0, Math.PI); ctx.fill();
+        ctx.strokeStyle = p.dark; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 36); ctx.lineTo(cx, cy + 48); ctx.stroke();
+        // Back gem.
+        ctx.fillStyle = p.accent;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 14); ctx.lineTo(cx + 10, cy - 2); ctx.lineTo(cx, cy + 12); ctx.lineTo(cx - 10, cy - 2); ctx.closePath(); ctx.fill();
+        // Head + mandibles (pincers open/close).
+        ctx.fillStyle = p.light;
+        ctx.beginPath(); ctx.arc(cx, cy - 40, 16, 0, TWO_PI); ctx.fill();
+        _eye(ctx, cx - 6, cy - 42, 3.2, p.eye, p.accent);
+        _eye(ctx, cx + 6, cy - 42, 3.2, p.eye, p.accent);
+        ctx.strokeStyle = p.accent; ctx.lineWidth = 6; ctx.lineCap = 'round';
+        const pinch = 10 + Math.sin(phase * 2) * 6;
+        for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 10, cy - 50); ctx.quadraticCurveTo(cx + s * (24 + pinch), cy - 64, cx + s * pinch, cy - 74); ctx.stroke(); }
+    }
+    return canvas;
+}
+
+// Per-boss configs (archetype + biome palette + accent kind).
+const BOSS_SPRITE_CFG = {
+    // Snow (maps 2)
+    rimewarden:  { archetype: 'hulk',     accent: 'ice',  glow: 'rgba(150,210,255,0.22)', palette: { body: '#6f93b8', light: '#cfe8f7', dark: '#3f5d7e', accent: '#a6ecff', eye: '#0a1a2a' } },
+    hoarfang:    { archetype: 'serpent',  accent: 'ice',  glow: 'rgba(140,200,255,0.20)', palette: { body: '#5f86ad', light: '#cdeafa', dark: '#37536f', accent: '#aef0ff', eye: '#0a1622' } },
+    aurorath:    { archetype: 'colossus', accent: 'ice',  glow: 'rgba(160,255,224,0.22)', palette: { body: '#7fb0d8', light: '#e9f9ff', dark: '#3e6e92', accent: '#a0ffe0', eye: '#0c2030' } },
+    // Night (map 3)
+    ossuar:      { archetype: 'hulk',     accent: 'bone', glow: 'rgba(180,230,200,0.18)', palette: { body: '#cfc6ad', light: '#f3eeda', dark: '#8a7f63', accent: '#bdf2d2', eye: '#1a1020' } },
+    mourndrift:  { archetype: 'wraith',   accent: 'soul', glow: 'rgba(120,160,255,0.24)', palette: { body: '#5b5f86', light: '#c2c8f2', dark: '#33365a', accent: '#9af0ff', eye: '#d8f6ff' } },
+    nihagault:   { archetype: 'maw',      accent: 'void', glow: 'rgba(150,80,220,0.26)',  palette: { body: '#43325e', light: '#9a7fce', dark: '#1d142e', accent: '#d06bff', eye: '#ff5ad0' } },
+    // Sand (map 4)
+    dunescourge: { archetype: 'scarab',   accent: 'sand', glow: 'rgba(230,180,90,0.20)',  palette: { body: '#c89a52', light: '#f2d490', dark: '#7e5f2c', accent: '#ffe09a', eye: '#2a1808' } },
+    cindermaw:   { archetype: 'serpent',  accent: 'magma', glow: 'rgba(255,120,40,0.26)', palette: { body: '#9a4a2e', light: '#ffa459', dark: '#491c12', accent: '#ffd24a', eye: '#1a0805' } },
+    solnakh:     { archetype: 'colossus', accent: 'solar', glow: 'rgba(255,200,80,0.30)', palette: { body: '#caa23c', light: '#fff2b6', dark: '#8a6a1c', accent: '#ff7a2a', eye: '#2a1400' } },
+};
+
+function _bossDrawer(id) { const cfg = BOSS_SPRITE_CFG[id]; return (size, frame, count) => drawApexBoss(size, frame, count, cfg); }
+
+export const getRimewardenFrames  = makeFrameGetter('rimewardenFrames',  4, _bossDrawer('rimewarden'));
+export const getHoarfangFrames    = makeFrameGetter('hoarfangFrames',    4, _bossDrawer('hoarfang'));
+export const getAurorathFrames    = makeFrameGetter('aurorathFrames',    4, _bossDrawer('aurorath'));
+export const getOssuarFrames      = makeFrameGetter('ossuarFrames',      4, _bossDrawer('ossuar'));
+export const getMourndriftFrames  = makeFrameGetter('mourndriftFrames',  4, _bossDrawer('mourndrift'));
+export const getNihagaultFrames   = makeFrameGetter('nihagaultFrames',   4, _bossDrawer('nihagault'));
+export const getDunescourgeFrames = makeFrameGetter('dunescourgeFrames', 4, _bossDrawer('dunescourge'));
+export const getCindermawFrames   = makeFrameGetter('cindermawFrames',   4, _bossDrawer('cindermaw'));
+export const getSolnakhFrames     = makeFrameGetter('solnakhFrames',     4, _bossDrawer('solnakh'));
 
 // ── Pickups ────────────────────────────────────────────────────────────
 

@@ -347,6 +347,150 @@ export const ENEMY = {
         ],
         phase2Attacks: ['cackle', 'lunge'],
     },
+
+    // ══ MAP 2 — The Frozen Waste (snow). Three frost bosses, a step tougher
+    // than map 1's trio (the per-map tier multiplies HP/damage/speed on top). ══
+    rimewarden: {
+        hp: 2200, speed: 292, radius: 100, contactDamage: 30, xpValue: 54, boss: true,
+        bossName: 'Rimewarden', visualScale: 1.9, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { brute: 1, crawler: 2, slime: 1 },
+        attacks: [
+            { id: 'iceSlam', kind: 'shockwave', cooldown: 3.2, windup: 0.55, damage: 32, growth: 860, rMax: 660, band: 115 },
+            { id: 'shardFan', kind: 'fan', cooldown: 3.8, windup: 0.45, count: 13, spread: 3.2, projectileSpeed: 450, projectileDamage: 18 },
+            { id: 'glacialCharge', kind: 'charge', cooldown: 5.2, windup: 0.45, dashSpeed: 800, dashDuration: 0.65 },
+            { id: 'frostZones', kind: 'zones', cooldown: 8.0, windup: 0.8, count: 6, zoneRadius: 150, spreadRadius: 400, damage: 28, warn: 0.85 },
+            { id: 'blizzard', kind: 'seekers', cooldown: 9.0, windup: 0.5, count: 5, projectileSpeed: 250, projectileDamage: 15, turnRate: 2.2, maxSpeed: 380, color: '#aef0ff' },
+            { id: 'iceWall', kind: 'wall', cooldown: 8.5, windup: 0.6, count: 14, spacing: 74, projectileSpeed: 360, projectileDamage: 20, gap: 2 },
+            { id: 'rimeCall', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
+        ],
+        phase2Attacks: ['iceSlam', 'glacialCharge'],
+    },
+    hoarfang: {
+        hp: 1650, speed: 330, radius: 84, contactDamage: 26, xpValue: 42, boss: true,
+        bossName: 'Hoarfang', visualScale: 1.6, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { bat: 2, crawler: 2 },
+        attacks: [
+            { id: 'frostBreath', kind: 'fan', cooldown: 3.0, windup: 0.4, count: 9, spread: 0.9, projectileSpeed: 540, projectileDamage: 16 },
+            { id: 'icicleVolley', kind: 'fan', cooldown: 3.6, windup: 0.45, count: 18, spread: 6.2832, projectileSpeed: 440, projectileDamage: 14 },
+            { id: 'freezePools', kind: 'zones', cooldown: 7.5, windup: 0.75, count: 6, zoneRadius: 140, spreadRadius: 430, damage: 26, warn: 0.8 },
+            { id: 'tailSweep', kind: 'shockwave', cooldown: 4.6, windup: 0.45, damage: 26, growth: 780, rMax: 560, band: 100 },
+            { id: 'icicleWall', kind: 'wall', cooldown: 8.0, windup: 0.5, count: 15, spacing: 68, projectileSpeed: 420, projectileDamage: 16, gap: 2 },
+            { id: 'lunge', kind: 'charge', cooldown: 5.0, windup: 0.4, dashSpeed: 900, dashDuration: 0.55 },
+        ],
+        phase2Attacks: ['icicleVolley', 'lunge'],
+    },
+    aurorath: {
+        hp: 2100, speed: 270, radius: 118, contactDamage: 32, xpValue: 78, boss: true,
+        bossName: 'Aurorath', visualScale: 2.05, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { bat: 2, crawler: 1, slime: 1 },
+        attacks: [
+            { id: 'auroraVolley', kind: 'fan', cooldown: 2.9, windup: 0.45, count: 20, spread: 6.2832, projectileSpeed: 450, projectileDamage: 15 },
+            { id: 'cometZones', kind: 'zones', cooldown: 7.0, windup: 0.7, count: 7, zoneRadius: 150, spreadRadius: 440, damage: 30, warn: 0.8 },
+            { id: 'crystalWall', kind: 'wall', cooldown: 8.0, windup: 0.55, count: 16, spacing: 70, projectileSpeed: 400, projectileDamage: 19, gap: 2 },
+            { id: 'shardSeekers', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 270, projectileDamage: 16, turnRate: 2.4, maxSpeed: 420, color: '#a0ffe0' },
+            { id: 'novaShock', kind: 'shockwave', cooldown: 4.0, windup: 0.5, damage: 30, growth: 920, rMax: 620, band: 115 },
+            { id: 'spiralAurora', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 16, spread: 6.2832, projectileSpeed: 420, projectileDamage: 14, spiral: true, spin: 0.5 },
+            { id: 'wispSummon', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { bat: 3, mite: 2 } },
+        ],
+        phase2Attacks: ['auroraVolley', 'novaShock'],
+    },
+
+    // ══ MAP 3 — The Sunless Night (undead/void). Tougher again. ══
+    ossuar: {
+        hp: 2600, speed: 300, radius: 106, contactDamage: 34, xpValue: 60, boss: true,
+        bossName: 'Ossuar', visualScale: 1.95, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { brute: 1, crawler: 2, mite: 2 },
+        attacks: [
+            { id: 'boneFan', kind: 'fan', cooldown: 3.0, windup: 0.45, count: 15, spread: 3.6, projectileSpeed: 470, projectileDamage: 19 },
+            { id: 'graveQuake', kind: 'zones', cooldown: 7.5, windup: 0.8, count: 7, zoneRadius: 155, spreadRadius: 410, damage: 32, warn: 0.85 },
+            { id: 'boneWall', kind: 'wall', cooldown: 8.0, windup: 0.6, count: 16, spacing: 72, projectileSpeed: 380, projectileDamage: 22, gap: 2 },
+            { id: 'reapCharge', kind: 'charge', cooldown: 5.0, windup: 0.45, dashSpeed: 840, dashDuration: 0.7 },
+            { id: 'skullSeekers', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 250, projectileDamage: 17, turnRate: 2.2, maxSpeed: 400, color: '#e8f0d8' },
+            { id: 'graveStomp', kind: 'shockwave', cooldown: 4.2, windup: 0.5, damage: 30, growth: 940, rMax: 600, band: 110 },
+            { id: 'raiseDead', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 4, summonTypes: { crawler: 2, mite: 2 } },
+        ],
+        phase2Attacks: ['boneFan', 'reapCharge'],
+    },
+    mourndrift: {
+        hp: 2050, speed: 342, radius: 82, contactDamage: 30, xpValue: 48, boss: true,
+        bossName: 'Mourndrift', visualScale: 1.62, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { bat: 3, mite: 1 },
+        attacks: [
+            { id: 'soulVolley', kind: 'fan', cooldown: 2.8, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 460, projectileDamage: 15 },
+            { id: 'phantomZones', kind: 'zones', cooldown: 7.0, windup: 0.7, count: 7, zoneRadius: 140, spreadRadius: 440, damage: 28, warn: 0.78 },
+            { id: 'spectralSeekers', kind: 'seekers', cooldown: 8.0, windup: 0.45, count: 6, projectileSpeed: 280, projectileDamage: 15, turnRate: 2.6, maxSpeed: 440, color: '#9af0ff' },
+            { id: 'wail', kind: 'shockwave', cooldown: 4.2, windup: 0.45, damage: 26, growth: 820, rMax: 580, band: 100 },
+            { id: 'scytheWall', kind: 'wall', cooldown: 7.5, windup: 0.5, count: 16, spacing: 66, projectileSpeed: 430, projectileDamage: 17, gap: 2 },
+            { id: 'blink', kind: 'charge', cooldown: 4.6, windup: 0.35, dashSpeed: 960, dashDuration: 0.5 },
+            { id: 'spiralSouls', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 18, spread: 6.2832, projectileSpeed: 430, projectileDamage: 13, spiral: true, spin: 0.55 },
+        ],
+        phase2Attacks: ['soulVolley', 'blink'],
+    },
+    nihagault: {
+        hp: 2600, speed: 280, radius: 122, contactDamage: 36, xpValue: 82, boss: true,
+        bossName: 'Nihagault', visualScale: 2.1, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { mite: 3, bat: 2, crawler: 1 },
+        attacks: [
+            { id: 'voidBurst', kind: 'fan', cooldown: 2.8, windup: 0.45, count: 24, spread: 6.2832, projectileSpeed: 460, projectileDamage: 16 },
+            { id: 'gravityZones', kind: 'zones', cooldown: 6.8, windup: 0.75, count: 8, zoneRadius: 150, spreadRadius: 440, damage: 32, warn: 0.78 },
+            { id: 'abyssWall', kind: 'wall', cooldown: 7.5, windup: 0.55, count: 17, spacing: 68, projectileSpeed: 400, projectileDamage: 21, gap: 2 },
+            { id: 'voidSeekers', kind: 'seekers', cooldown: 8.0, windup: 0.5, count: 7, projectileSpeed: 270, projectileDamage: 17, turnRate: 2.6, maxSpeed: 430, color: '#d06bff' },
+            { id: 'collapse', kind: 'shockwave', cooldown: 4.0, windup: 0.5, damage: 32, growth: 980, rMax: 640, band: 120 },
+            { id: 'spiralVoid', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 430, projectileDamage: 14, spiral: true, spin: 0.5 },
+            { id: 'devour', kind: 'charge', cooldown: 5.5, windup: 0.45, dashSpeed: 860, dashDuration: 0.6 },
+            { id: 'spawnShades', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { mite: 3, bat: 2 } },
+        ],
+        phase2Attacks: ['voidBurst', 'collapse'],
+    },
+
+    // ══ MAP 4 — The Sunscorch Expanse (desert). The hardest trio; Solnakh is
+    // the game's final boss. ══
+    dunescourge: {
+        hp: 3000, speed: 310, radius: 108, contactDamage: 36, xpValue: 66, boss: true,
+        bossName: 'Dunescourge', visualScale: 1.95, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { brute: 1, crawler: 2, charger: 1 },
+        attacks: [
+            { id: 'sandBlast', kind: 'fan', cooldown: 2.9, windup: 0.45, count: 16, spread: 3.6, projectileSpeed: 480, projectileDamage: 20 },
+            { id: 'quicksand', kind: 'zones', cooldown: 7.0, windup: 0.75, count: 8, zoneRadius: 155, spreadRadius: 420, damage: 32, warn: 0.8 },
+            { id: 'duneWall', kind: 'wall', cooldown: 7.5, windup: 0.55, count: 17, spacing: 70, projectileSpeed: 400, projectileDamage: 22, gap: 2 },
+            { id: 'goreCharge', kind: 'charge', cooldown: 4.8, windup: 0.4, dashSpeed: 880, dashDuration: 0.7 },
+            { id: 'sandstorm', kind: 'seekers', cooldown: 8.0, windup: 0.5, count: 7, projectileSpeed: 270, projectileDamage: 17, turnRate: 2.4, maxSpeed: 420, color: '#ffe09a' },
+            { id: 'burrowStomp', kind: 'shockwave', cooldown: 4.0, windup: 0.45, damage: 30, growth: 980, rMax: 620, band: 110 },
+            { id: 'broodCall', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 4, summonTypes: { crawler: 3, charger: 1 } },
+        ],
+        phase2Attacks: ['sandBlast', 'goreCharge'],
+    },
+    cindermaw: {
+        hp: 2450, speed: 340, radius: 88, contactDamage: 34, xpValue: 52, boss: true,
+        bossName: 'Cindermaw', visualScale: 1.65, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { bat: 2, spitter: 1, crawler: 1 },
+        attacks: [
+            { id: 'magmaVolley', kind: 'fan', cooldown: 2.7, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 460, projectileDamage: 16 },
+            { id: 'lavaZones', kind: 'zones', cooldown: 6.8, windup: 0.7, count: 8, zoneRadius: 145, spreadRadius: 440, damage: 30, warn: 0.75 },
+            { id: 'emberSeekers', kind: 'seekers', cooldown: 7.8, windup: 0.45, count: 6, projectileSpeed: 290, projectileDamage: 16, turnRate: 2.6, maxSpeed: 450, color: '#ffae5a' },
+            { id: 'fireShock', kind: 'shockwave', cooldown: 4.0, windup: 0.45, damage: 28, growth: 880, rMax: 600, band: 105 },
+            { id: 'obsidianWall', kind: 'wall', cooldown: 7.5, windup: 0.5, count: 16, spacing: 66, projectileSpeed: 440, projectileDamage: 18, gap: 2 },
+            { id: 'fireLunge', kind: 'charge', cooldown: 4.6, windup: 0.38, dashSpeed: 940, dashDuration: 0.55 },
+            { id: 'spiralFlame', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 18, spread: 6.2832, projectileSpeed: 440, projectileDamage: 14, spiral: true, spin: 0.55 },
+        ],
+        phase2Attacks: ['magmaVolley', 'fireLunge'],
+    },
+    solnakh: {
+        hp: 3100, speed: 286, radius: 124, contactDamage: 40, xpValue: 90, boss: true,
+        bossName: 'Solnakh', visualScale: 2.15, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        supportTypes: { brute: 1, spitter: 1, bat: 2, mite: 2 },
+        attacks: [
+            { id: 'solarVolley', kind: 'fan', cooldown: 2.6, windup: 0.45, count: 26, spread: 6.2832, projectileSpeed: 470, projectileDamage: 17 },
+            { id: 'scorchZones', kind: 'zones', cooldown: 6.5, windup: 0.7, count: 9, zoneRadius: 155, spreadRadius: 450, damage: 34, warn: 0.75 },
+            { id: 'blazeWall', kind: 'wall', cooldown: 7.0, windup: 0.5, count: 18, spacing: 66, projectileSpeed: 420, projectileDamage: 23, gap: 2 },
+            { id: 'mirageSeekers', kind: 'seekers', cooldown: 7.5, windup: 0.45, count: 8, projectileSpeed: 280, projectileDamage: 18, turnRate: 2.6, maxSpeed: 450, color: '#ff9a3c' },
+            { id: 'supernova', kind: 'shockwave', cooldown: 4.0, windup: 0.55, damage: 36, growth: 1040, rMax: 680, band: 125 },
+            { id: 'spiralSun', kind: 'fan', cooldown: 4.8, windup: 0.4, count: 22, spread: 6.2832, projectileSpeed: 440, projectileDamage: 15, spiral: true, spin: 0.5 },
+            { id: 'sunLunge', kind: 'charge', cooldown: 5.0, windup: 0.4, dashSpeed: 900, dashDuration: 0.6 },
+            { id: 'moteSummon', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 5, summonTypes: { mite: 3, bat: 2 } },
+        ],
+        phase2Attacks: ['solarVolley', 'supernova'],
+    },
 };
 
 // Boss spawn schedule + spawn placement.
