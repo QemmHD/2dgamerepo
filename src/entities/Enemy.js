@@ -671,6 +671,18 @@ function runBossAI(e, dt, player, out) {
                     out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 140, age: 0, lifetime: atk.windup, active: true, fan: true });
                 } else if (atk.kind === 'summon') {
                     out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 160, age: 0, lifetime: atk.windup, active: true, fan: true });
+                } else if (atk.kind === 'charge') {
+                    // Directional lunge warning: a lane painted from the boss
+                    // toward the player so the charge is telegraphed, not a
+                    // surprise. Aimed at the player's current position (the
+                    // commit re-aims, so this is a close approximation).
+                    const ca = Math.atan2(player.y - e.y, player.x - e.x);
+                    out.hazards.push({
+                        kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 120,
+                        age: 0, lifetime: atk.windup, active: true, charge: true,
+                        dirX: Math.cos(ca), dirY: Math.sin(ca),
+                        reach: (atk.dashSpeed ?? 600) * (atk.dashDuration ?? 0.6),
+                    });
                 }
             }
             break; // only one windup at a time

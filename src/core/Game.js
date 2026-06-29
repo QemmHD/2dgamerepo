@@ -1612,10 +1612,36 @@ export class Game {
             ctx.save();
             ctx.globalAlpha = 0.2 + 0.6 * t;
             ctx.strokeStyle = BOSS_ATTACK.telegraphColor;
-            ctx.lineWidth = hz.fan ? 4 : 5;
-            ctx.beginPath();
-            ctx.arc(hz.x, hz.y, Math.max(2, hz.r), 0, TWO_PI);
-            ctx.stroke();
+            if (hz.charge) {
+                // A widening lane + arrowhead along the lunge heading: fills in
+                // over the windup so the player can read the charge and dodge.
+                const reach = (hz.reach ?? 360) * (0.5 + 0.5 * t);
+                const ex = hz.x + hz.dirX * reach, ey = hz.y + hz.dirY * reach;
+                const px = -hz.dirY, py = hz.dirX;       // perpendicular
+                const halfW = 26 + 22 * t;
+                ctx.fillStyle = BOSS_ATTACK.telegraphColor;
+                ctx.globalAlpha = 0.14 + 0.18 * t;
+                ctx.beginPath();
+                ctx.moveTo(hz.x + px * halfW * 0.5, hz.y + py * halfW * 0.5);
+                ctx.lineTo(hz.x - px * halfW * 0.5, hz.y - py * halfW * 0.5);
+                ctx.lineTo(ex - px * halfW, ey - py * halfW);
+                ctx.lineTo(ex + px * halfW, ey + py * halfW);
+                ctx.closePath();
+                ctx.fill();
+                ctx.globalAlpha = 0.35 + 0.5 * t;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(ex + hz.dirX * 18, ey + hz.dirY * 18);
+                ctx.lineTo(ex - px * halfW * 0.7, ey - py * halfW * 0.7);
+                ctx.lineTo(ex + px * halfW * 0.7, ey + py * halfW * 0.7);
+                ctx.closePath();
+                ctx.stroke();
+            } else {
+                ctx.lineWidth = hz.fan ? 4 : 5;
+                ctx.beginPath();
+                ctx.arc(hz.x, hz.y, Math.max(2, hz.r), 0, TWO_PI);
+                ctx.stroke();
+            }
             ctx.restore();
         }
 
