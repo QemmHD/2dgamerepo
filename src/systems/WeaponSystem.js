@@ -78,7 +78,7 @@ export class WeaponSystem {
         return w.level >= weaponMaxLevel(def);
     }
 
-    update(dt, player, enemies, projectiles, obstacleSystem = null, particles = null) {
+    update(dt, player, enemies, projectiles, obstacleSystem = null, particles = null, audio = null) {
         const hits = [];
         const killed = [];
         // los(ex, ey) → can the player "see" that point? Walls block melee
@@ -114,6 +114,7 @@ export class WeaponSystem {
             solidBlocked,
             particles,
             inView,
+            audio,
         };
         for (const w of this.owned) {
             const def = WEAPONS[w.id];

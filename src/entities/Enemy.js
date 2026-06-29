@@ -175,6 +175,11 @@ export class Enemy {
             // (75/50/25%) the Game polls to fire support waves + ramp aggression.
             this.bossCadenceMul = 1;
             this.thresholds = { t75: false, t50: false, t25: false };
+            // Continuous low-HP enrage scalar (0 at full HP → 1 at death), set
+            // each frame by runBossAI. Scales move speed (Enemy.update), attack
+            // cadence (runBossAI), and contact damage (off baseContactDamage).
+            this.enrageT = 0;
+            this.baseContactDamage = this.contactDamage;
             // Charge-attack lunge state + a rotating phase for spiral barrages.
             this.bossDashTimer = 0;
             this.bossDashSpeed = 0;
@@ -259,6 +264,16 @@ export class Enemy {
         const frozen = this.freezeTimer > 0;
         if (frozen) { moveX = 0; moveY = 0; spd = 0; }
 
+        // Smarter boss chase: instead of homing on the player's CURRENT spot,
+        // a boss leads their movement and steers toward where they're GOING, so
+        // it cuts the player off in the arena instead of trailing behind them.
+        // (Plain enemies keep the simple chase; a target without velocity — e.g.
+        // a test stub — falls back to a straight chase.)
+        if (this.boss && !frozen) {
+            const lead = bossLead(this, player, len);
+            moveX = lead.x; moveY = lead.y;
+        }
+
         if (!frozen && this.behavior === 'spitter') {
             // Hold a firing gap: retreat if too close, approach if too far.
             const kd = this.def.keepDistance;
@@ -325,6 +340,9 @@ export class Enemy {
             const steered = steerAround(this.x, this.y, moveX, moveY, this.radius, obstacleSystem);
             moveX = steered.x; moveY = steered.y;
         }
+
+        // Continuous low-HP enrage: a wounded boss moves (and lunges) faster.
+        if (this.boss && this.enrageT) spd *= 1 + this.enrageT * BOSS.enrage.speedBonus;
 
         if (moveX !== 0 || moveY !== 0) {
             this.vx = moveX * spd;
@@ -608,6 +626,26 @@ function hexToHalo(hex, a) {
 // around cover instead of pressing into it. Angles alternate left/right and
 // widen; falls back to the straight heading if everything is blocked (the
 // per-frame resolveCircle still keeps it out of walls in that worst case).
+// Predict where the player will be in `t` seconds from their current velocity.
+// A target without velocity fields (a test stub) reduces to the current spot.
+function leadPoint(e, player, speed) {
+    const pvx = player.vx || 0, pvy = player.vy || 0;
+    const dist = Math.hypot(player.x - e.x, player.y - e.y);
+    // Time for a projectile/lunge at `speed` (or the boss's move speed) to close
+    // the gap, clamped so we never over-lead clear across the arena.
+    const t = Math.min(1.1, dist / Math.max(120, speed || e.speed || 1));
+    return { x: player.x + pvx * t, y: player.y + pvy * t };
+}
+
+// Chase heading that leads the player's movement (cut-off pursuit). Returns a
+// unit vector toward the predicted intercept point.
+function bossLead(e, player, dist) {
+    const lead = leadPoint(e, player, e.speed);
+    const dx = lead.x - e.x, dy = lead.y - e.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: dx / len, y: dy / len };
+}
+
 const STEER_ANGLES = [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.1, -2.1];
 function steerAround(x, y, dx, dy, radius, obs) {
     const len = Math.hypot(dx, dy) || 1;
@@ -626,6 +664,14 @@ function steerAround(x, y, dx, dy, radius, obs) {
 
 function runBossAI(e, dt, player, out) {
     const def = e.def;
+
+    // Continuous enrage scalar: 0 at full HP → 1 at death. Drives the smooth
+    // speed/cadence/contact-damage ramp so the closer the boss is to dying, the
+    // more frantic and dangerous it gets.
+    const frac = e.maxHp > 0 ? clamp(e.hp / e.maxHp, 0, 1) : 1;
+    e.enrageT = 1 - frac;
+    // Contact damage scales live off the captured baseline.
+    e.contactDamage = e.baseContactDamage * (1 + e.enrageT * BOSS.enrage.damageBonus);
 
     // Phase-2 latch: polled (there is no onDamage hook). The one-shot enrage
     // announce/retint is driven by Game off the phase2Entered flag.
@@ -661,7 +707,10 @@ function runBossAI(e, dt, player, out) {
             // faster and the two systems compose instead of shadowing.
             const phaseCad = e.phase === 2 ? (BOSS_ATTACK.phase2CadenceMul ?? 1) : 1;
             const cadence = Math.min(e.bossCadenceMul ?? 1, phaseCad);
-            e.attackTimers[atk.id] = atk.cooldown * cadence;
+            // Continuous enrage shortens cooldowns further (composes with the
+            // threshold/phase cadence) so a low-HP boss attacks much faster.
+            const enrageCad = 1 - (e.enrageT ?? 0) * BOSS.enrage.cadenceCut;
+            e.attackTimers[atk.id] = atk.cooldown * cadence * enrageCad;
             // Ground-decal telegraph that expands across the windup, centered
             // on the boss (it braces in place while charging, so this stays put).
             if (out.hazards) {
@@ -683,6 +732,11 @@ function runBossAI(e, dt, player, out) {
                         dirX: Math.cos(ca), dirY: Math.sin(ca),
                         reach: (atk.dashSpeed ?? 600) * (atk.dashDuration ?? 0.6),
                     });
+                } else if (atk.kind === 'wall' || atk.kind === 'seekers' || atk.kind === 'zones') {
+                    // New moves: a generic windup ring so the boss visibly
+                    // charges (zones/walls/seekers paint their own danger on
+                    // commit; this just reads the wind-up).
+                    out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 170, age: 0, lifetime: atk.windup, active: true, fan: true });
                 }
             }
             break; // only one windup at a time
@@ -727,13 +781,73 @@ function commitBossAttack(e, atk, player, out) {
             ));
         }
     } else if (atk.kind === 'charge') {
-        // Goring lunge: lock the heading at the player's current position and
+        // Goring lunge: lock the heading at where the player is HEADED (lead the
+        // dash) so it cuts them off instead of lunging at stale ground, then
         // commit to a fast dash for dashDuration (driven in Enemy.update).
-        const ang = Math.atan2(player.y - e.y, player.x - e.x);
+        const lead = leadPoint(e, player, atk.dashSpeed ?? 600);
+        const ang = Math.atan2(lead.y - e.y, lead.x - e.x);
         e.bossDashDirX = Math.cos(ang);
         e.bossDashDirY = Math.sin(ang);
         e.bossDashSpeed = atk.dashSpeed ?? 600;
         e.bossDashTimer = atk.dashDuration ?? 0.6;
+    } else if (atk.kind === 'wall' && out.enemyProjectiles) {
+        // A broad wall of bolts sweeping toward the player with ONE gap to
+        // sprint through — forces a read + reposition, not a sidestep.
+        const ang = Math.atan2(player.y - e.y, player.x - e.x);
+        const px = -Math.sin(ang), py = Math.cos(ang); // unit perpendicular
+        const count = atk.count ?? 13;
+        const spacing = atk.spacing ?? 72;
+        const spd = atk.projectileSpeed ?? 360;
+        const gapHalf = atk.gap ?? 2;
+        // Vary the gap location each cast (reuse the rotating spiral phase as a
+        // cheap pseudo-random so successive walls don't share a safe lane).
+        const gapIdx = Math.floor((((e.spiralPhase * 0.4) % 1) + 1) % 1 * count);
+        e.spiralPhase = (e.spiralPhase + 1.7) % TWO_PI;
+        for (let i = 0; i < count; i++) {
+            if (Math.abs(i - gapIdx) <= gapHalf) continue; // leave the gap
+            const off = (i - (count - 1) / 2) * spacing;
+            const ox = e.x + px * off, oy = e.y + py * off;
+            out.enemyProjectiles.push(new EnemyProjectile(
+                ox, oy, Math.cos(ang) * spd, Math.sin(ang) * spd, atk.projectileDamage ?? 16));
+        }
+    } else if (atk.kind === 'seekers' && out.enemyProjectiles) {
+        // A handful of slow HOMING orbs fanned out — they curve after the
+        // player, so you can't just stand still after the first dodge.
+        const count = atk.count ?? 4;
+        const base = Math.atan2(player.y - e.y, player.x - e.x);
+        const spd = atk.projectileSpeed ?? 250;
+        for (let i = 0; i < count; i++) {
+            const a = base + (count > 1 ? (i / (count - 1) - 0.5) * 1.6 : 0);
+            out.enemyProjectiles.push(new EnemyProjectile(
+                e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd, atk.projectileDamage ?? 14, {
+                    homing: true, turnRate: atk.turnRate ?? 2.2, maxSpeed: atk.maxSpeed ?? 360,
+                    color: atk.color, lifetime: 5.0,
+                }));
+        }
+    } else if (atk.kind === 'zones' && out.hazards) {
+        // Delayed AoE: telegraphed danger circles bloom around the player, then
+        // detonate — pressures the player to keep MOVING, not turtle near the boss.
+        const count = atk.count ?? 5;
+        const spread = atk.spreadRadius ?? 360;
+        const r = atk.zoneRadius ?? 150;
+        for (let i = 0; i < count; i++) {
+            // First zone lands on the player's lead point; the rest scatter
+            // around them so there's always somewhere to run.
+            let zx, zy;
+            if (i === 0) {
+                const lead = leadPoint(e, player, 9999);
+                zx = lead.x; zy = lead.y;
+            } else {
+                const a = Math.random() * TWO_PI;
+                const rr = spread * (0.3 + Math.random() * 0.7);
+                zx = player.x + Math.cos(a) * rr;
+                zy = player.y + Math.sin(a) * rr;
+            }
+            out.hazards.push({
+                kind: 'delayedZone', x: zx, y: zy, r, damage: atk.damage ?? 24,
+                age: 0, lifetime: atk.warn ?? 0.85, hitPlayer: false, detonateAge: 0, active: true,
+            });
+        }
     } else if (atk.kind === 'summon' && out.summons) {
         // Queue a themed minion call for the Game to fulfill (it owns spawn
         // placement, wave scaling, and the live enemy cap).

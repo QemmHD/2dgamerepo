@@ -13,11 +13,46 @@
 const A4 = 440;
 const hz = (midi) => A4 * Math.pow(2, (midi - 69) / 12);
 
-// 16-step note tables (MIDI) per theme + a mellow timbre per theme.
+// Minor pentatonic — energetic and impossible to make dissonant, so the
+// groove can drive hard without going harsh/tiring.
+const PENT = [0, 3, 5, 7, 10];
+
+// Resolve a scale degree (can be negative or span octaves) to a MIDI note.
+function degToMidi(root, scale, deg) {
+    const len = scale.length;
+    const oct = Math.floor(deg / len);
+    const idx = ((deg % len) + len) % len;
+    return root + oct * 12 + scale[idx];
+}
+
+// Themes are now full grooves, not a single melody loop: each has a DRUM bed
+// (kick + hat) for drive, a BASS that pumps the chord root, and a LEAD with an
+// A and B section. A per-bar chord PROGRESSION + the 8-bar A/B phrase make the
+// loop evolve (~16s before it truly repeats) so it reads as hype without
+// fatiguing over a long session. Patterns are 16 sixteenth-notes per bar;
+// `null` = rest (space matters — it keeps the groove from feeling relentless).
 const THEMES = {
-    menu:     { bpm: 80,  wave: 'triangle', cutoff: 2200, notes: [57, 60, 64, 67, 64, 60, 62, 65, 69, 65, 62, 60, 57, 60, 64, 67] },
-    gameplay: { bpm: 118, wave: 'triangle', cutoff: 2600, notes: [45, 57, 52, 57, 48, 60, 55, 60, 50, 62, 57, 62, 47, 59, 54, 59] },
-    boss:     { bpm: 140, wave: 'sawtooth', cutoff: 1300, notes: [38, 38, 41, 38, 36, 36, 43, 36, 38, 45, 41, 38, 36, 43, 41, 45] },
+    menu: {
+        bpm: 96, wave: 'triangle', cutoff: 2400, root: 57, scale: PENT, energy: 0.6,
+        prog: [0, 0, 3, 5],
+        lead:  [0, null, 2, null, 4, null, 2, null, 3, null, 5, null, 4, null, 2, null],
+        leadB: [4, null, 3, null, 2, null, 3, null, 1, null, 2, null, 0, null, null, null],
+        bassSteps: [0, 8], kick: [0, 8], hat: [4, 12],
+    },
+    gameplay: {
+        bpm: 128, wave: 'triangle', cutoff: 2900, root: 45, scale: PENT, energy: 1.0,
+        prog: [0, 7, 3, 5],
+        lead:  [0, null, 3, 2, null, 4, null, 5, 4, null, 2, 3, null, 2, null, 0],
+        leadB: [7, null, 5, 4, null, 5, 7, null, 9, null, 7, 5, null, 4, 2, null],
+        bassSteps: [0, 3, 6, 8, 11, 14], kick: [0, 4, 8, 12], hat: [2, 6, 10, 14],
+    },
+    boss: {
+        bpm: 152, wave: 'sawtooth', cutoff: 1600, root: 38, scale: PENT, energy: 1.12,
+        prog: [0, 0, 10, 3],
+        lead:  [0, 0, null, 3, 0, null, 2, 0, null, 3, 0, 2, null, 4, 3, 2],
+        leadB: [5, null, 4, 3, 5, null, 7, 5, null, 4, 3, null, 5, 4, 3, 0],
+        bassSteps: [0, 2, 4, 6, 8, 10, 12, 14], kick: [0, 4, 8, 12], hat: [2, 6, 10, 14],
+    },
 };
 
 export class AudioSystem {
@@ -37,6 +72,7 @@ export class AudioSystem {
         this._schedId = null;
         this._nextTime = 0;
         this._step = 0;
+        this._bar = 0;
         this._lastSfx = {};
         this._noiseBuf = null;
     }
@@ -105,17 +141,21 @@ export class AudioSystem {
     stopMusic() { this.theme = null; }
 
     // ── Music scheduler ──────────────────────────────────────────────────
+    // Steps are sixteenth-notes; 16 per bar. `_bar` advances when the step
+    // wraps so the groove can evolve across an 8-bar phrase (A/B + chord moves).
     _startScheduler() {
         this._nextTime = this.ctx.currentTime + 0.08;
         this._step = 0;
+        this._bar = 0;
         const tick = () => {
             if (!this.ctx) return;
             const horizon = this.ctx.currentTime + 0.2;
             while (this._nextTime < horizon) {
                 if (this.theme) this._scheduleStep(this._step, this._nextTime);
                 const t = THEMES[this.theme] || THEMES.menu;
-                this._nextTime += (60 / t.bpm) / 2;
+                this._nextTime += (60 / t.bpm) / 4; // sixteenth note
                 this._step = (this._step + 1) % 16;
+                if (this._step === 0) this._bar = (this._bar + 1) % 64;
             }
         };
         this._schedId = setInterval(tick, 25);
@@ -124,18 +164,44 @@ export class AudioSystem {
     _scheduleStep(step, t) {
         const def = THEMES[this.theme];
         if (!def || !this.musicBus) return;
-        const midi = def.notes[step % def.notes.length];
-        // Warm sub-bass on downbeats (soft sine, not a buzzy saw).
-        if (step % 4 === 0) this._voice(hz(midi - 12), t, 0.36, 0.15, { type: 'sine', bus: this.musicBus, cutoff: 800, attack: 0.02 });
-        // Lead / arpeggio — detuned pair through the theme's mellow cutoff.
-        const long = this.theme === 'menu';
-        this._voice(hz(midi), t, long ? 0.55 : 0.22, long ? 0.075 : 0.06, {
-            type: def.wave, bus: this.musicBus, cutoff: def.cutoff, attack: long ? 0.05 : 0.02, detune: 8,
-        });
-        // Boss: a soft low kick on the off-beat for drive (no bright static tick).
-        if (this.theme === 'boss' && step % 2 === 1) {
-            this._voice(70, t, 0.12, 0.16, { type: 'sine', bus: this.musicBus, cutoff: 500, slideTo: 45, attack: 0.004 });
+        const e = def.energy;
+        const bar = this._bar;
+        // Per-bar chord movement + an 8-bar A/B phrase so the loop keeps
+        // changing (less fatigue over a long session).
+        const chord = def.prog[bar % def.prog.length];
+        const root = def.root + chord;
+        const useB = (bar % 8) >= 4;
+        const beatDur = (60 / def.bpm) / 4;
+
+        // DRUMS — the drive. Kick = pitched sine drop; hat = a soft noise tick.
+        if (def.kick.includes(step)) this._kick(t, e);
+        if (def.hat.includes(step)) this._hat(t, e * (step % 4 === 0 ? 0.6 : 1));
+        // End-of-phrase fill: a busier hat run so the loop "breathes" + lifts.
+        if ((bar % 8) === 7 && step >= 12) this._hat(t, e * 0.7);
+
+        // BASS — pumps the chord root an octave down (warm sine).
+        if (def.bassSteps.includes(step)) {
+            this._voice(hz(degToMidi(root, def.scale, 0) - 12), t, beatDur * 1.4, 0.13 * e,
+                { type: 'sine', bus: this.musicBus, cutoff: 700, attack: 0.006 });
         }
+
+        // LEAD — A/B section, detuned pair through the theme's warm cutoff. Rests
+        // (null) leave space so the groove never feels relentless/tiring.
+        const deg = (useB ? def.leadB : def.lead)[step];
+        if (deg !== null && deg !== undefined) {
+            this._voice(hz(degToMidi(root, def.scale, deg)), t, beatDur * 1.7, 0.06 * e,
+                { type: def.wave, bus: this.musicBus, cutoff: def.cutoff, attack: 0.012, detune: 7 });
+        }
+    }
+
+    // Punchy kick: a fast sine pitch-drop through a low cutoff. Routed to the
+    // music bus so it scales with the music volume.
+    _kick(t, e = 1) {
+        this._voice(140, t, 0.15, 0.22 * e, { type: 'sine', bus: this.musicBus, cutoff: 420, slideTo: 46, attack: 0.002 });
+    }
+    // Hat: a very short filtered-noise tick for momentum.
+    _hat(t, e = 1) {
+        this._noise(t, 0.028, 0.045 * e, 8500, this.musicBus);
     }
 
     // ── Low-level voices ───────────────────────────────────────────────────
@@ -203,6 +269,12 @@ export class AudioSystem {
     coin()     { this._play('coin', 0.04, (t) => this._voice(900, t, 0.08, 0.10, { type: 'sine', slideTo: 1500, cutoff: 4000, detune: 6 })); }
     gem()      { this._play('gem', 0.05, (t) => this._voice(760, t, 0.06, 0.08, { type: 'sine', slideTo: 1040, cutoff: 4000 })); }
     streak()   { this._play('streak', 0.06, (t) => this._voice(680, t, 0.12, 0.12, { type: 'triangle', slideTo: 1320, cutoff: 3600, detune: 7 })); }
+    // ── Wand fire cues (throttled so a fast fire-rate isn't deafening) ──
+    // Cinderbolt: a soft, dry "pew". Pyre Wisp: a warm whoosh. Lightning Wand:
+    // a short crackly zap. All low-pass shaped so they stay warm, not harsh.
+    shootBolt()  { this._play('shootBolt', 0.07, (t) => this._voice(640, t, 0.07, 0.06, { type: 'triangle', slideTo: 880, cutoff: 3200, attack: 0.003 })); }
+    shootFire()  { this._play('shootFire', 0.08, (t) => { this._voice(300, t, 0.12, 0.06, { type: 'sine', slideTo: 200, cutoff: 1500, attack: 0.004 }); this._noise(t, 0.1, 0.04, 1200, this.sfxBus, 500); }); }
+    shootShock() { this._play('shootShock', 0.08, (t) => { this._voice(1200, t, 0.06, 0.05, { type: 'sawtooth', slideTo: 720, cutoff: 4200, attack: 0.002 }); this._noise(t, 0.05, 0.04, 6000, this.sfxBus); }); }
     chest()    { this._play('chest', 0.1, (t) => this._bell(t, 523)); }
     forge()    { this._play('forge', 0.06, (t) => { this._noise(t, 0.16, 0.12, 500, this.sfxBus, 1400); this._voice(220, t, 0.18, 0.12, { type: 'triangle', cutoff: 1400, detune: 9 }); }); }
     reveal()   { this._play('reveal', 0.1, (t) => { this._bell(t, 659); this._voice(988, t + 0.08, 0.3, 0.1, { type: 'sine', cutoff: 5000, detune: 6 }); }); }

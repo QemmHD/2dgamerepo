@@ -212,10 +212,12 @@ export const ENEMY = {
         boss: true,
         bossName: 'Gravemaw',
         visualScale: 1.85,
-        // Apex boss: a ground-heavy fight. Telegraphed shockwave slam, a SPIRAL
-        // of hurled boulders, a goring CHARGE that lunges through the player's
-        // position, and a bramble call that summons ground minions — plus
-        // phase-2 enrage at 50% HP and one-shot support waves at 75/50/25%.
+        // Apex boss: a ground-heavy fight with a deep, themed kit. The original
+        // four moves (slam shockwave, boulder SPIRAL, goring CHARGE, bramble
+        // summon) plus FIVE new earth attacks: erupting quake ZONES, a rolling
+        // boulder WALL with one gap, homing SPORE seekers, a fast double STOMP,
+        // and a wide GORE cone. Plus phase-2 enrage at 50%, continuous low-HP
+        // enrage (BOSS.enrage), and one-shot support waves at 75/50/25%.
         behavior: 'apexBoss',
         phase2HpFraction: 0.5,
         // Themed reinforcements (used for the opening group + threshold waves +
@@ -228,22 +230,31 @@ export const ENEMY = {
             { id: 'boulders', kind: 'fan', cooldown: 4.2, windup: 0.5, count: 11, spread: 3.4, projectileSpeed: 440, projectileDamage: 20, spiral: true, spin: 0.5 },
             { id: 'charge', kind: 'charge', cooldown: 5.5, windup: 0.45, dashSpeed: 780, dashDuration: 0.7 },
             { id: 'bramble', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
+            // ── 5 new earth moves ──
+            { id: 'quake', kind: 'zones', cooldown: 8.5, windup: 0.8, count: 5, zoneRadius: 155, spreadRadius: 380, damage: 30, warn: 0.9 },
+            { id: 'boulderWall', kind: 'wall', cooldown: 9.0, windup: 0.6, count: 13, spacing: 80, projectileSpeed: 340, projectileDamage: 22, gap: 2 },
+            { id: 'spores', kind: 'seekers', cooldown: 9.5, windup: 0.5, count: 4, projectileSpeed: 230, projectileDamage: 16, turnRate: 2.0, maxSpeed: 340, color: '#9ae66e' },
+            { id: 'stomp', kind: 'shockwave', cooldown: 7.0, windup: 0.45, damage: 26, growth: 1000, rMax: 520, band: 90 },
+            { id: 'gore', kind: 'fan', cooldown: 6.5, windup: 0.4, count: 9, spread: 1.0, projectileSpeed: 520, projectileDamage: 18 },
         ],
         phase2Attacks: ['slam', 'charge'],
     },
     stormwingAlpha: {
         hp: 1350,          // tankier (challenge pass)
-        speed: 360,        // aggressive aerial pursuer
+        speed: 315,        // aggressive aerial pursuer (was 360 — trimmed; the
+                           // 2nd boss read as too fast. Low-HP enrage adds speed back.)
         radius: 80,
         contactDamage: 26,
         xpValue: 35,
         boss: true,
         bossName: 'Vesperwing',
         visualScale: 1.55,
-        // Apex boss: a fast aerial fight. Full-circle radial volley, a rotating
-        // SPIRAL barrage, a sweeping gust shockwave, a diving CHARGE, and a
-        // wing-swarm that summons bats — plus phase-2 enrage at 50% HP and
-        // one-shot support waves at 75/50/25%.
+        // Apex boss: a fast aerial fight with a deep, themed kit. The original
+        // five moves (full-circle volley, SPIRAL barrage, gust shockwave, diving
+        // CHARGE, wing-swarm summon) plus FIVE new storm attacks: dive-bomb
+        // landing ZONES, a feather WALL with a gap, homing STORM seekers, a
+        // dense rotating CYCLONE, and a tight GALE cone. Plus phase-2 enrage at
+        // 50%, continuous low-HP enrage (BOSS.enrage), and support at 75/50/25%.
         behavior: 'apexBoss',
         phase2HpFraction: 0.5,
         supportTypes: { bat: 3, crawler: 1 },
@@ -254,6 +265,12 @@ export const ENEMY = {
             { id: 'gust', kind: 'shockwave', cooldown: 4.8, windup: 0.45, damage: 24, growth: 740, rMax: 540, band: 95 },
             { id: 'dive', kind: 'charge', cooldown: 5.2, windup: 0.4, dashSpeed: 900, dashDuration: 0.55 },
             { id: 'wingswarm', kind: 'summon', cooldown: 11.0, windup: 0.5, summonCount: 3, summonTypes: { bat: 3 } },
+            // ── 5 new storm moves ──
+            { id: 'tempest', kind: 'zones', cooldown: 8.0, windup: 0.7, count: 6, zoneRadius: 135, spreadRadius: 430, damage: 24, warn: 0.8 },
+            { id: 'featherWall', kind: 'wall', cooldown: 8.5, windup: 0.5, count: 15, spacing: 66, projectileSpeed: 420, projectileDamage: 16, gap: 2 },
+            { id: 'stormSeekers', kind: 'seekers', cooldown: 9.0, windup: 0.45, count: 5, projectileSpeed: 280, projectileDamage: 13, turnRate: 2.4, maxSpeed: 430, color: '#7fd0ff' },
+            { id: 'cyclone', kind: 'fan', cooldown: 6.0, windup: 0.4, count: 22, spread: 6.2832, projectileSpeed: 430, projectileDamage: 13, spiral: true, spin: 0.4 },
+            { id: 'gale', kind: 'fan', cooldown: 5.5, windup: 0.35, count: 7, spread: 0.7, projectileSpeed: 560, projectileDamage: 15 },
         ],
         phase2Attacks: ['volley', 'dive'],
     },
@@ -261,11 +278,13 @@ export const ENEMY = {
 
 // Boss spawn schedule + spawn placement.
 export const BOSS = {
-    spawnInterval: 120,
+    // Longer gap between bosses so the player has time to clear waves, level up,
+    // and build a loadout before the next apex fight (was 120s).
+    spawnInterval: 160,
     // Only ONE boss is ever alive; a scheduled spawn waits while one lives.
     // After a boss dies, the next can't appear for postDeathCooldown seconds
     // (prevents back-to-back bosses when a boss is killed late).
-    postDeathCooldown: 35,
+    postDeathCooldown: 45,
     spawnRingDistance: 1100,
     types: ['vinebackGoliath', 'stormwingAlpha'],
     // Late-game survivability. Boss HP scales with the run minute much harder
@@ -292,7 +311,14 @@ export const BOSS = {
     thresholdSupport: { t75: 2, t50: 2, t25: 3 },
     // Attack-cooldown multiplier at each HP threshold (lower = faster attacks).
     thresholdCadence: { t75: 0.85, t50: 0.7, t25: 0.55 },
-    enrageSpeedMul: 1.15,        // boss move-speed bump at 25%
+    // CONTINUOUS low-HP enrage (on top of the discrete thresholds above): as a
+    // boss is worn down, it gets smoothly faster, hits harder, and attacks more
+    // often — so the closer it is to death the more frantic and dangerous the
+    // fight becomes. enrageT ramps 0 (full HP) → 1 (dead) and scales:
+    //   move speed   ×(1 + enrageT·speedBonus)
+    //   contact dmg  ×(1 + enrageT·damageBonus)
+    //   attack cd    ×(1 − enrageT·cadenceCut)   (lower = faster)
+    enrage: { speedBonus: 0.5, damageBonus: 0.45, cadenceCut: 0.4 },
     supportRing: 360,            // spawn radius for support around the boss
     // Boss ARENA: when a boss spawns, the fight is sealed into a circular arena
     // (smaller than the world) centered on the player. Both the player AND the
