@@ -49,6 +49,7 @@ import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
+import { evaluateAchievements } from '../content/achievements.js';
 import { DIFFICULTY, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS } from '../config/GameConfig.js';
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
@@ -653,6 +654,21 @@ export class Game {
     }
 
     // ── 3rd-boss victory overlay ─────────────────────────────────────────
+    // Claim any newly-earned lifetime achievements + grant their coin rewards.
+    // Names are stashed on the run summary so the game-over screen can flag
+    // them; the Stats tab shows full locked/unlocked progress.
+    _checkAchievements() {
+        const earned = evaluateAchievements(this.saveSystem);
+        if (!earned.length) return;
+        let coins = 0; const names = [];
+        for (const a of earned) {
+            if (this.saveSystem.claimAchievement(a.id)) { coins += a.coins || 0; names.push(a.name); }
+        }
+        if (coins > 0) this.saveSystem.addCoins(coins);
+        this.newAchievements = names;
+        if (this.runSummary) this.runSummary.achievements = names;
+    }
+
     _showVictory() {
         this.victory = { age: 0 };
         this.audio.objective();
@@ -1183,6 +1199,44 @@ export class Game {
         return ws;
     }
 
+    // Support enemies (Healer / Shielder) buff their neighbours. Run here (not
+    // in Enemy.update) because the effect needs the full enemy list. Healers
+    // pulse HP back to nearby allies on a cadence (capped at maxHp); Shielders
+    // refresh a short damage-soak timer on allies in range. Cheap: the outer
+    // loop only does work for the (rare) support types.
+    _tickSupportEnemies(dt) {
+        const enemies = this.enemies;
+        for (const s of enemies) {
+            if (!s.active || s.behavior !== 'support') continue;
+            const def = s.def;
+            const r = def.supportRadius || 320;
+            const r2 = r * r;
+            if (def.support === 'heal') {
+                s._healAccum += dt;
+                const interval = def.healInterval || 0.5;
+                if (s._healAccum >= interval) {
+                    const amt = (def.healPerSec || 8) * s._healAccum;
+                    s._healAccum = 0;
+                    for (const a of enemies) {
+                        if (!a.active || a.hp >= a.maxHp) continue;
+                        const dx = a.x - s.x, dy = a.y - s.y;
+                        if (dx * dx + dy * dy > r2) continue;
+                        a.hp = Math.min(a.maxHp, a.hp + amt);
+                    }
+                }
+            } else if (def.support === 'shield') {
+                const mul = def.shieldMul || 0.6;
+                for (const a of enemies) {
+                    if (!a.active) continue;
+                    const dx = a.x - s.x, dy = a.y - s.y;
+                    if (dx * dx + dy * dy > r2) continue;
+                    a.shieldTimer = 0.35;
+                    a.shieldMul = mul;
+                }
+            }
+        }
+    }
+
     _spawnBoss(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
@@ -1604,6 +1658,10 @@ export class Game {
         this._runRecorded = true;
         // Award battle-pass (vigil) XP from the run and surface the gain on the
         // game-over screen.
+        // Newly-earned lifetime achievements (claim + grant coins; surfaced on
+        // the game-over summary + the Stats tab). Done after recordRun so the
+        // run's stats are already folded into lifetime totals.
+        this._checkAchievements();
         this.bpResult = awardBattlePassRun(this.saveSystem, this.runSummary);
         // Difficulty/modifier Pass-XP bonus (Hard = +50%, mods add more).
         if (this.runBonus?.xp > 0 && this.bpResult && this.bpResult.gained > 0) {
@@ -1783,6 +1841,7 @@ export class Game {
         // other kill (gems/coins/affix-death/kill-count). statusResult.killed
         // is merged into allKilled below.
         const statusResult = this._tickStatuses(dt);
+        this._tickSupportEnemies(dt);
 
         // Phase-2 enrage: a boss that just crossed its HP threshold announces
         // + shakes exactly once (latched by enrageShouted). The phase flip
