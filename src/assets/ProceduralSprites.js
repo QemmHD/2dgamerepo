@@ -412,6 +412,9 @@ export function drawWeaponSkinOverlay(ctx, ox, oy, s, skin, t = 0) {
     const accent = skin.accent || '#ffd27a';
     const glow = skin.glow || accent;
     ctx.save();
+    // Inherit the caller's alpha (e.g. the player's invincibility flash) so the
+    // whole overlay — sash, gem, halo, emblem — fades together, not just part.
+    const baseA = ctx.globalAlpha;
 
     // Diagonal sash across the torso (shoulder → opposite hip) with a lighter
     // inner stripe for depth.
@@ -445,11 +448,11 @@ export function drawWeaponSkinOverlay(ctx, ox, oy, s, skin, t = 0) {
     const halo = ctx.createRadialGradient(mx, my, 0, mx, my, ms * 1.8);
     halo.addColorStop(0, glow);
     halo.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = baseA * 0.55;
     ctx.fillStyle = halo;
     ctx.beginPath(); ctx.arc(mx, my, ms * 1.8, 0, TWO_PI); ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = baseA;
     drawWeaponEmblem(ctx, mx, my, ms, skin.emblem, accent, t);
 
     ctx.restore();
