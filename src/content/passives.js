@@ -144,6 +144,7 @@ export const PASSIVES = {
         name: 'Emberzeal',
         description: '+6% critical strike chance per level.',
         maxLevel: 5,
+        rarity: 'rare',
         apply(player) {
             player.critChance = Math.min(0.8, (player.critChance ?? 0) + 0.06);
         },
@@ -154,6 +155,7 @@ export const PASSIVES = {
         name: 'Executioner',
         description: '+35% critical strike damage per level.',
         maxLevel: 4,
+        rarity: 'epic',
         apply(player) {
             player.critMul = (player.critMul ?? 2) + 0.35;
         },
@@ -164,6 +166,7 @@ export const PASSIVES = {
         name: 'Last Light',
         description: 'Below 35% HP, deal +14% damage per level — burn brightest.',
         maxLevel: 4,
+        rarity: 'epic',
         apply(player) {
             player.lowHpDamageBonus = (player.lowHpDamageBonus ?? 0) + 0.14;
         },
@@ -175,6 +178,7 @@ export const PASSIVES = {
         name: 'Glasswick',
         description: '+22% weapon damage per level, but +7% damage taken — burn hot.',
         maxLevel: 3,
+        rarity: 'epic',
         apply(player) {
             player.damageMul *= 1.22;
             player.damageTakenMul *= 1.07;
@@ -198,10 +202,45 @@ export const PASSIVES = {
         name: 'Stoneheart',
         description: '+16 max HP and −4% damage taken per level.',
         maxLevel: 5,
+        rarity: 'rare',
         apply(player) {
             player.maxHp += 16;
             player.hp = Math.min(player.hp + 16, player.maxHp);
             player.damageTakenMul *= 0.96;
+        },
+    },
+
+    // ── More perks (lifesteal / tempo / utility) ────────────────────────
+    blooddrinker: {
+        id: 'blooddrinker',
+        name: 'Blooddrinker',
+        description: 'Heal +0.6 HP per kill per level (capped per second).',
+        maxLevel: 5,
+        rarity: 'rare',
+        apply(player) {
+            player.killHeal = (player.killHeal ?? 0) + 0.6;
+        },
+    },
+    tempo: {
+        id: 'tempo',
+        name: 'Tempo',
+        description: '−7% cooldowns and +5% move speed per level.',
+        maxLevel: 4,
+        rarity: 'uncommon',
+        apply(player) {
+            player.cooldownMul *= 0.93;
+            player.speed *= 1.05;
+        },
+    },
+    glimmer: {
+        id: 'glimmer',
+        name: 'Glimmer',
+        description: '+10% XP gain and +10% pickup range per level.',
+        maxLevel: 5,
+        rarity: 'common',
+        apply(player) {
+            player.xpMultiplier *= 1.10;
+            player.pickupRange *= 1.10;
         },
     },
 };

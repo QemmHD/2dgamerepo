@@ -1521,6 +1521,8 @@ export class Game {
             this.kills += allKilled.length;
             this._addCombo(allKilled.length);
             this.audio.kill();
+            // Blooddrinker lifesteal-on-kill (capped by the sustained-heal budget).
+            if (this.player.killHeal > 0) this.player.healSustained(this.player.killHeal * allKilled.length);
             this.waveDirector.notifyKill(allKilled.length);
             for (const e of allKilled) {
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
