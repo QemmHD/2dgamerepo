@@ -577,7 +577,7 @@ export class MenuRenderer {
         for (const bet of bets) {
             const aff = save.totalCoins >= bet && plays.remaining > 0;
             const r = { x: bx, y: fy + 96, w: bw, h: 56 };
-            this._button(ctx, r, `STAKE  ◎ ${bet}`,
+            this._button(ctx, r, `BET  ◎ ${bet}`,
                 { primary: aff, enabled: true, accent: aff ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openMines', arg: bet, fontSize: 24 });
             bx += bw + bgap;
         }
