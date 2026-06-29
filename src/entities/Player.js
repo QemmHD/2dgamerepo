@@ -9,11 +9,12 @@ import {
     xpRequired,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
-import { getMonkeyFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
+import { getCharacterFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
+import { getCharacter } from '../content/characters.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 export class Player {
-    constructor(x = PLAYER.startX, y = PLAYER.startY) {
+    constructor(x = PLAYER.startX, y = PLAYER.startY, characterId = 'monkey') {
         this.x = x;
         this.y = y;
         this.vx = 0;
@@ -21,9 +22,12 @@ export class Player {
         this.radius = PLAYER.radius;
         this.speed = PLAYER.speed;
         this.facingX = 1;
+        this.characterId = characterId;
         // Frames: [0]=idle, [1..3]=walk cycle. draw() picks one per frame
-        // based on movement state — all four are cached up-front.
-        this.frames = getMonkeyFrames();
+        // based on movement state — all four are cached up-front. The selected
+        // character recolors the shared silhouette via its palette.
+        const ch = getCharacter(characterId);
+        this.frames = getCharacterFrames(characterId, ch.palette);
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
         this.moving = false;
@@ -82,6 +86,9 @@ export class Player {
         // e.g. reduced-effects mode). { color, intensity, radius, pulse }.
         this.weaponAura = null;
         this.auraPhase = 0;
+        // Transient Shadow Dash visual (set by the ability; ticked in update,
+        // drawn as an afterimage smear along the blink path). null when idle.
+        this.dashFx = null;
     }
 
     gainXP(amount) {
@@ -152,6 +159,12 @@ export class Player {
 
         // Aura pulse phase (always advances so pulsing auras animate even idle).
         this.auraPhase += dt;
+
+        // Tick the Shadow Dash smear, then clear it when finished.
+        if (this.dashFx) {
+            this.dashFx.age += dt;
+            if (this.dashFx.age >= this.dashFx.dur) this.dashFx = null;
+        }
     }
 
     // Heal subject to the per-second sustained cap (CAPS.healPerSecond). Returns
@@ -254,9 +267,37 @@ export class Player {
         const frames = ap.furColor ? this._tintedFrames(ap.furColor) : this.frames;
         const sprite = frames[walkIdx] ?? frames[0];
 
+        // Shadow Dash afterimage smear: fading ghost copies strung along the
+        // blink path (origin → destination), drawn in world space behind the
+        // real sprite so the dash reads as a streak of motion.
+        if (this.dashFx) {
+            const df = this.dashFx;
+            const k = 1 - df.age / df.dur; // 1 → 0 over the smear's life
+            const ghosts = 4;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = 0; i < ghosts; i++) {
+                const f = i / ghosts;
+                const gx = df.fromX + (df.toX - df.fromX) * f;
+                const gy = df.fromY + (df.toY - df.fromY) * f + bobY;
+                ctx.globalAlpha = k * 0.3 * (1 - f * 0.5);
+                ctx.save();
+                ctx.translate(gx, gy);
+                if (this.facingX < 0) ctx.scale(-1, 1);
+                ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
+                ctx.restore();
+            }
+            ctx.restore();
+        }
+
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.translate(this.x, this.y + bobY);
+        // Forward smear on the live sprite for the first moments of a dash.
+        if (this.dashFx) {
+            const stretch = 1 + 0.18 * (1 - this.dashFx.age / this.dashFx.dur);
+            ctx.scale(stretch, 1 / Math.sqrt(stretch));
+        }
 
         // Cloak draped behind the body (symmetric → drawn unflipped).
         if (ap.cloakColor) this._drawCloak(ctx, ap.cloakColor);

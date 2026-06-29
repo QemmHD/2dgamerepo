@@ -166,6 +166,11 @@ export class Enemy {
             this.activeAttack = null;
             this.attackTimers = {};
             this._bossOut = null;
+            // Attack-cadence multiplier (Game lowers it at HP thresholds so a
+            // wounded boss attacks faster) + one-shot HP-threshold latches
+            // (75/50/25%) the Game polls to fire support waves + ramp aggression.
+            this.bossCadenceMul = 1;
+            this.thresholds = { t75: false, t50: false, t25: false };
             if (Array.isArray(def.attacks)) {
                 for (const a of def.attacks) {
                     this.attackTimers[a.id] = Math.random() * a.cooldown;
@@ -601,7 +606,11 @@ function runBossAI(e, dt, player, out) {
         if (e.attackTimers[atk.id] <= 0) {
             e.activeAttack = atk;
             e.bossWindupTimer = atk.windup;
-            const cadence = e.phase === 2 ? (BOSS_ATTACK.phase2CadenceMul ?? 1) : 1;
+            // Attack cadence = the FASTEST of the phase-2 enrage multiplier and
+            // the Game-set HP-threshold multiplier, so a wounded boss attacks
+            // faster and the two systems compose instead of shadowing.
+            const phaseCad = e.phase === 2 ? (BOSS_ATTACK.phase2CadenceMul ?? 1) : 1;
+            const cadence = Math.min(e.bossCadenceMul ?? 1, phaseCad);
             e.attackTimers[atk.id] = atk.cooldown * cadence;
             // Ground-decal telegraph that expands across the windup, centered
             // on the boss (it braces in place while charging, so this stays put).
@@ -610,6 +619,8 @@ function runBossAI(e, dt, player, out) {
                     out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: atk.rMax, age: 0, lifetime: atk.windup, active: true });
                 } else if (atk.kind === 'fan') {
                     out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 140, age: 0, lifetime: atk.windup, active: true, fan: true });
+                } else if (atk.kind === 'summon') {
+                    out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 160, age: 0, lifetime: atk.windup, active: true, fan: true });
                 }
             }
             break; // only one windup at a time
@@ -647,5 +658,13 @@ function commitBossAttack(e, atk, player, out) {
                 atk.projectileDamage
             ));
         }
+    } else if (atk.kind === 'summon' && out.summons) {
+        // Queue a themed minion call for the Game to fulfill (it owns spawn
+        // placement, wave scaling, and the live enemy cap).
+        out.summons.push({
+            x: e.x, y: e.y,
+            count: atk.summonCount ?? 3,
+            types: atk.summonTypes ?? null,
+        });
     }
 }

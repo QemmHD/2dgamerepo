@@ -69,7 +69,7 @@ export class WeaponSystem {
         return w.level >= weaponMaxLevel(def);
     }
 
-    update(dt, player, enemies, projectiles, obstacleSystem = null) {
+    update(dt, player, enemies, projectiles, obstacleSystem = null, particles = null) {
         const hits = [];
         const killed = [];
         // los(ex, ey) → can the player "see" that point? Walls block melee
@@ -93,6 +93,7 @@ export class WeaponSystem {
             killed,
             los,
             solidBlocked,
+            particles,
         };
         for (const w of this.owned) {
             const def = WEAPONS[w.id];
@@ -129,6 +130,7 @@ export class WeaponSystem {
             if (!fx.active) continue;
             if (fx.kind === 'pulse') drawPulse(ctx, fx);
             else if (fx.kind === 'lightning') drawLightning(ctx, fx);
+            else if (fx.kind === 'frostmote') drawFrostmote(ctx, fx);
         }
     }
 
@@ -272,6 +274,37 @@ function drawPulse(ctx, fx) {
         ctx.stroke();
     }
 
+    ctx.restore();
+}
+
+// Frostmote burst: a faint expanding chill ring + pale-blue diamond shards
+// drifting outward. Cosmetic only (the chill/damage is applied in the ability
+// update). No per-frame gradient — cheap stroked rings + small filled shards.
+function drawFrostmote(ctx, fx) {
+    const t = fx.age / fx.lifetime;
+    const alpha = (1 - t);
+    ctx.save();
+    // Soft chill ring expanding to the effect radius.
+    ctx.strokeStyle = `rgba(150, 220, 255, ${alpha * 0.4})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(fx.x, fx.y, fx.radius * (0.45 + t * 0.55), 0, TWO_PI);
+    ctx.stroke();
+    // Drifting shards.
+    for (const m of fx.motes) {
+        const dist = Math.min(m.r0 + m.spd * fx.age, fx.radius);
+        const mx = fx.x + Math.cos(m.a) * dist;
+        const my = fx.y + Math.sin(m.a) * dist;
+        const s = 4 + 5 * alpha;
+        ctx.fillStyle = `rgba(205, 240, 255, ${alpha * 0.95})`;
+        ctx.beginPath();
+        ctx.moveTo(mx, my - s);
+        ctx.lineTo(mx + s * 0.55, my);
+        ctx.lineTo(mx, my + s);
+        ctx.lineTo(mx - s * 0.55, my);
+        ctx.closePath();
+        ctx.fill();
+    }
     ctx.restore();
 }
 

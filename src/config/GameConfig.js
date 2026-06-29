@@ -192,11 +192,18 @@ export const ENEMY = {
         boss: true,
         bossName: 'Gravemaw',
         visualScale: 1.85,
-        // Apex boss: telegraphed ground shockwave + phase-2 enrage at 50% HP.
+        // Apex boss: a ground-heavy fight. Telegraphed shockwave slam, a cone
+        // of hurled boulders, and a bramble call that summons ground minions —
+        // plus phase-2 enrage at 50% HP and one-shot support waves at 75/50/25%.
         behavior: 'apexBoss',
         phase2HpFraction: 0.5,
+        // Themed reinforcements (used for the opening group + threshold waves +
+        // the Bramble Call summon). Ground-dwellers fit the Goliath's theme.
+        supportTypes: { brute: 1, crawler: 2, slime: 2 },
         attacks: [
             { id: 'slam', kind: 'shockwave', cooldown: 6.0, windup: 0.8, damage: 30, growth: 700, rMax: 520, band: 90 },
+            { id: 'boulders', kind: 'fan', cooldown: 8.5, windup: 0.7, count: 6, spread: 2.3, projectileSpeed: 300, projectileDamage: 20 },
+            { id: 'bramble', kind: 'summon', cooldown: 13.0, windup: 0.7, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
         ],
         phase2Attacks: ['slam'],
     },
@@ -209,11 +216,16 @@ export const ENEMY = {
         boss: true,
         bossName: 'Vesperwing',
         visualScale: 1.55,
-        // Apex boss: telegraphed radial projectile fan + phase-2 enrage.
+        // Apex boss: a fast aerial fight. Full-circle radial volley, a sweeping
+        // gust shockwave, and a wing-swarm that summons bats — plus phase-2
+        // enrage at 50% HP and one-shot support waves at 75/50/25%.
         behavior: 'apexBoss',
         phase2HpFraction: 0.5,
+        supportTypes: { bat: 3, crawler: 1 },
         attacks: [
             { id: 'volley', kind: 'fan', cooldown: 5.0, windup: 0.6, count: 12, spread: 6.2832 /* TWO_PI: full-circle radial */, projectileSpeed: 380, projectileDamage: 14 },
+            { id: 'gust', kind: 'shockwave', cooldown: 9.0, windup: 0.6, damage: 22, growth: 600, rMax: 440, band: 80 },
+            { id: 'wingswarm', kind: 'summon', cooldown: 11.0, windup: 0.5, summonCount: 3, summonTypes: { bat: 3 } },
         ],
         phase2Attacks: ['volley'],
     },
@@ -239,6 +251,18 @@ export const BOSS = {
     maxHpMul: 7.0,
     resistPerMinute: 0.012,
     maxResist: 0.35,
+    // A boss is a telegraphed EVENT: a warning window (BOSS INCOMING) lets the
+    // player reposition before it lands. It arrives with a themed opening
+    // group, and crossing 75 / 50 / 25% HP each fires ONE support wave + ramps
+    // aggression. All support spawns respect the live enemy cap so a boss wave
+    // pressures without flooding.
+    warningDuration: 3.0,        // seconds of "BOSS INCOMING" before it spawns
+    openingSupport: 4,           // themed minions that arrive with the boss
+    thresholdSupport: { t75: 3, t50: 4, t25: 5 },
+    // Attack-cooldown multiplier at each HP threshold (lower = faster attacks).
+    thresholdCadence: { t75: 0.85, t50: 0.7, t25: 0.55 },
+    enrageSpeedMul: 1.15,        // boss move-speed bump at 25%
+    supportRing: 360,            // spawn radius for support around the boss
     // In-world presence (drawn by Enemy.draw for bosses only): a broad
     // ground shadow + a slow ominous aura halo behind the sprite so an apex
     // predator reads as a major threat. Both use cached sprites — no
@@ -477,6 +501,41 @@ export const WAVE_LIMITS = {
     maxSpeedMultiplier: 2.2,
     maxHealthMultiplier: 6.0,
     maxEliteChance: 0.35,
+};
+
+// Pressure layers ON TOP of the time-based wave tiers to make a wave feel like
+// a thing you must CLEAR, not just outlast. Pressure rises while the field
+// fills up and you're NOT thinning it, and falls as you rack up kills — so a
+// player who clears fast stays calm while one who lets enemies pile up gets
+// squeezed (faster spawns, slightly tougher foes). It's capped and additive, so
+// it never breaks the enemy cap or the endless scaling. Resets each wave tier.
+export const WAVE_PRESSURE = {
+    enabled: true,
+    gainPerSecond: 0.07,   // pressure/sec when the field is full (scaled by crowding)
+    killRelief: 0.013,     // pressure removed per kill
+    max: 1.0,
+    crowdRefFraction: 0.5, // field is "full" at this fraction of maxAlive
+    // Effects scale linearly with pressure (0 → 1):
+    spawnRateBonus: 0.5,   // up to +50% spawn rate  (interval ×(1 − 0.5·p))
+    capBonus: 0.3,         // up to +30% to the alive cap
+    healthBonus: 0.22,     // up to +22% enemy HP
+    speedBonus: 0.1,       // up to +10% enemy speed
+    damageBonus: 0.15,     // up to +15% enemy contact damage
+};
+
+// Enemy-to-enemy separation (anti-stacking). A soft local push keeps a swarm
+// from collapsing into one pixel without forming a rigid wall that blocks the
+// map. Runs as one pass per frame over a rebuilt spatial hash so cost stays
+// ~O(N) even at the 180-enemy cap. Heavier enemies (bigger radius / bosses)
+// barely budge, so small enemies flow AROUND brutes and bosses.
+export const ENEMY_SEPARATION = {
+    enabled: true,
+    cellSize: 120,          // spatial-hash cell (~2× a typical enemy radius)
+    overlapFactor: 0.7,     // only push when centers are closer than this × (r1+r2)
+    strength: 26,           // push speed (px/s) at full overlap
+    maxPush: 60,            // hard cap on per-frame push distance contribution (px/s)
+    bossPushResist: 0.12,   // bosses take only this fraction of incoming push
+    minCountToRun: 6,       // skip the whole pass when few enemies are alive
 };
 
 // ── XP / progression / gems ────────────────────────────────────────────

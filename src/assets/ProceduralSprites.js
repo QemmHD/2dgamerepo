@@ -143,6 +143,23 @@ export function getMonkeySprite() {
     return getMonkeyFrames()[0];
 }
 
+// Per-character frames: the shared wick-keeper silhouette recolored by the
+// character's palette (see content/characters.js). Cached per character id, so
+// each is rasterized once. 'monkey' with no palette reuses the default frames.
+export function getCharacterFrames(id, palette = null) {
+    if (id === 'monkey' || !palette) return getMonkeyFrames();
+    const key = `charFrames:${id}`;
+    if (cache.has(key)) return cache.get(key);
+    const frames = [
+        addOutline(drawMonkey(SPRITE_SIZE, 0, { palette })),
+        addOutline(drawMonkey(SPRITE_SIZE, 1, { palette })),
+        addOutline(drawMonkey(SPRITE_SIZE, 2, { palette })),
+        addOutline(drawMonkey(SPRITE_SIZE, 3, { palette })),
+    ];
+    cache.set(key, frames);
+    return frames;
+}
+
 // ── Enemies ────────────────────────────────────────────────────────────
 
 function makeFrameGetter(key, count, drawer) {
@@ -286,7 +303,7 @@ function addOutline(canvas) {
 
 // ─── Player / monkey ──────────────────────────────────────────────────
 
-function drawMonkey(size, frame) {
+function drawMonkey(size, frame, opts = {}) {
     const canvas = newSpriteCanvas(size);
     const ctx = canvas.getContext('2d');
     const cx = size / 2;
@@ -298,10 +315,14 @@ function drawMonkey(size, frame) {
     const swing = Math.sin(phase);
     const bob = isIdle ? 0 : Math.abs(Math.cos(phase)) * 3;
 
-    const FUR = '#8b5a2b';
-    const FUR_DARK = '#5a3818';
-    const FUR_LIGHT = '#b07a44';
-    const FACE = '#f0d2a5';
+    // Fur/face palette can be overridden per playable character (the shared
+    // wick-keeper silhouette is recolored so each hero reads distinctly). The
+    // outfit (cloak/scarf/staff) stays constant so the cast feels like a guild.
+    const pal = opts.palette || {};
+    const FUR = pal.fur || '#8b5a2b';
+    const FUR_DARK = pal.furDark || '#5a3818';
+    const FUR_LIGHT = pal.furLight || '#b07a44';
+    const FACE = pal.face || '#f0d2a5';
     const INNER_EAR = '#d4a373';
     const EYE = '#1b1b1b';
     const CLOAK = '#3a2c5e';

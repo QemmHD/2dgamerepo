@@ -28,8 +28,8 @@ export const GEAR = {
         buffs: {}, defaultUnlocked: true,
     },
     w_frostmotes: {
-        id: 'w_frostmotes', name: 'Frostmotes', category: 'weapon', rarity: 'uncommon',
-        description: 'Start with orbiting Frostmotes. +5% pickup range.', weaponId: 'orbitingBlade',
+        id: 'w_frostmotes', name: 'Frost Glaives', category: 'weapon', rarity: 'uncommon',
+        description: 'Start with the orbiting Frost Glaives. +5% pickup range.', weaponId: 'orbitingBlade',
         buffs: { pickupPct: 0.05 },
     },
     w_beacon: {

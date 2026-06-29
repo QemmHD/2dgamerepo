@@ -15,7 +15,7 @@
 // Restart rebuilds this from scratch in Game._initRunState — wave index,
 // announcement, and the implicit gameTime reset together.
 
-import { WAVES, ENDLESS_SCALING, WAVE_LIMITS } from '../config/GameConfig.js';
+import { WAVES, ENDLESS_SCALING, WAVE_LIMITS, WAVE_PRESSURE } from '../config/GameConfig.js';
 
 const ANNOUNCEMENT_LIFETIME = 3.0;
 
@@ -23,9 +23,16 @@ export class WaveDirector {
     constructor() {
         this.currentWaveIndex = -1;
         this.announcement = null;
+        // Per-wave pressure + tracking (reset whenever the tier changes).
+        this.pressure = 0;
+        this.timeInWave = 0;
+        this.killsThisWave = 0;
+        this.spawnedThisWave = 0;
     }
 
-    update(dt, gameTime) {
+    // gameTime drives the tier; enemyCount drives pressure (a full, un-thinned
+    // field builds pressure, kills relieve it — see notifyKill).
+    update(dt, gameTime, enemyCount = 0) {
         const state = this.getState(gameTime);
         if (state.index !== this.currentWaveIndex) {
             this.currentWaveIndex = state.index;
@@ -34,13 +41,45 @@ export class WaveDirector {
                 age: 0,
                 lifetime: ANNOUNCEMENT_LIFETIME,
             };
+            // New tier → reset pressure + per-wave counters.
+            this.pressure = 0;
+            this.timeInWave = 0;
+            this.killsThisWave = 0;
+            this.spawnedThisWave = 0;
         }
+        this.timeInWave += dt;
+
+        if (WAVE_PRESSURE.enabled) {
+            // Pressure accrues only as the field fills (you're falling behind);
+            // a sparse field or a fast-clearing player keeps it near zero.
+            const ref = Math.max(1, state.baseMaxAlive * WAVE_PRESSURE.crowdRefFraction);
+            const crowding = Math.min(1, enemyCount / ref);
+            this.pressure = Math.min(
+                WAVE_PRESSURE.max,
+                this.pressure + WAVE_PRESSURE.gainPerSecond * crowding * dt
+            );
+        }
+
         if (this.announcement) {
             this.announcement.age += dt;
             if (this.announcement.age >= this.announcement.lifetime) {
                 this.announcement = null;
             }
         }
+    }
+
+    // Each kill relieves pressure (and feeds the per-wave tally). A brisk pace
+    // outruns the per-second gain; letting the field sit lets pressure climb.
+    notifyKill(n = 1) {
+        if (n <= 0) return;
+        this.killsThisWave += n;
+        if (WAVE_PRESSURE.enabled) {
+            this.pressure = Math.max(0, this.pressure - WAVE_PRESSURE.killRelief * n);
+        }
+    }
+
+    notifySpawn(n = 1) {
+        this.spawnedThisWave += n;
     }
 
     // External callers (e.g. Game on boss spawn / defeat / weapon evolution)
@@ -94,17 +133,43 @@ export class WaveDirector {
                 * ENDLESS_SCALING.damagePerMinute
         );
 
+        // Pressure layers on top: faster spawns, a higher alive cap, and a mild
+        // stat bump — all scaling 0→1 with current pressure, all still bounded
+        // by WAVE_LIMITS so the enemy cap and scaling ceilings hold.
+        const p = WAVE_PRESSURE.enabled ? this.pressure : 0;
+        const pSpawnInterval = spawnIntervalMul * (1 - WAVE_PRESSURE.spawnRateBonus * p);
+        const pMaxAlive = Math.min(
+            WAVE_LIMITS.maxEnemyCap,
+            Math.floor(maxAlive * (1 + WAVE_PRESSURE.capBonus * p))
+        );
+        const pHealthMul = Math.min(
+            WAVE_LIMITS.maxHealthMultiplier,
+            healthMul * (1 + WAVE_PRESSURE.healthBonus * p)
+        );
+        const pSpeedMul = Math.min(
+            WAVE_LIMITS.maxSpeedMultiplier,
+            speedMul * (1 + WAVE_PRESSURE.speedBonus * p)
+        );
+        // Clamp like every other pressure field so contact damage can't exceed
+        // the endless ceiling (pressure layers under, never past, the cap).
+        const pDamageMul = Math.min(
+            ENDLESS_SCALING.maxDamageMultiplier,
+            damageMul * (1 + WAVE_PRESSURE.damageBonus * p)
+        );
+
         return {
             index: wave.index,
             name: wave.name,
             announcement: wave.announcement,
-            spawnIntervalMul,
-            maxAlive,
+            spawnIntervalMul: Math.max(0.1, pSpawnInterval),
+            maxAlive: pMaxAlive,
+            baseMaxAlive: maxAlive,
             typeWeights: wave.typeWeights,
             eliteChance,
-            healthMul,
-            speedMul,
-            damageMul,
+            healthMul: pHealthMul,
+            speedMul: pSpeedMul,
+            damageMul: pDamageMul,
+            pressure: p,
         };
     }
 }

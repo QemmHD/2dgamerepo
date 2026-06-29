@@ -20,6 +20,7 @@ import {
     CAPS,
     AURA,
     RENDER,
+    ENEMY_SEPARATION,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Camera } from './Camera.js';
@@ -44,11 +45,13 @@ import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
+import { applyCharacter } from '../systems/CharacterSystem.js';
+import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
 import { openCase } from '../systems/CaseSystem.js';
 import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
-import { WEAPONS, computePlayerAura } from '../content/weapons.js';
+import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
 import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
@@ -374,7 +377,7 @@ export class Game {
     }
 
     _initRunState() {
-        this.player = new Player();
+        this.player = new Player(undefined, undefined, this.saveSystem.getSelectedCharacter());
         this.camera.follow(this.player);
 
         this.enemies = [];
@@ -383,6 +386,10 @@ export class Game {
         // Damaging area hazards (boss shockwaves) + their telegraph decals.
         // Game-owned pool; cleared here so a restart never inherits one.
         this.hazards = [];
+        // Queue of boss summon requests (drained each frame into themed spawns).
+        this.bossSummons = [];
+        // Active "BOSS INCOMING" warning (the boss spawns when this expires).
+        this.bossWarning = null;
         this.gems = [];
         this.damageNumbers = [];
 
@@ -456,6 +463,10 @@ export class Game {
     // shop button AND the RESTART game-over button.
     _startRun() {
         this._initRunState();
+        // Character base stats apply FIRST so permanent upgrades / gear /
+        // passives / run upgrades all stack cleanly on top of the hero's
+        // baseline (and the sprite already matches the selected character).
+        applyCharacter(this.player, this.saveSystem.getSelectedCharacter());
         const coinsBefore = this.player.coins ?? 0;
         applyPermanentUpgrades(this.player, this.saveSystem.data);
         // Loadout gear buffs stack ON TOP of permanent upgrades (applied after
@@ -591,6 +602,7 @@ export class Game {
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); break;
             case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); break;
+            case 'selectCharacter': this._pressFeedback(`char:${arg.id}`); this.saveSystem.setSelectedCharacter(arg.id); break;
             case 'toggleSetting': this._toggleSetting(arg); break;
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
@@ -818,11 +830,171 @@ export class Game {
         // (radial volleys go to the enemy-bolt loop; shockwaves to the hazard
         // pool). Both arrays are created once in _initRunState, so this
         // reference stays valid for the boss's whole life.
-        boss._bossOut = { enemyProjectiles: this.enemyProjectiles, hazards: this.hazards };
+        boss._bossOut = {
+            enemyProjectiles: this.enemyProjectiles,
+            hazards: this.hazards,
+            // Summon requests the boss AI queues; the Game drains + fulfils them.
+            summons: this.bossSummons,
+        };
         this.enemies.push(boss);
-        this.waveDirector.announce(`${def.bossName} approaches!`, 3.5);
+        this.waveDirector.announce(`${def.bossName} approaches!`, 3.0, '#ff5a4a');
         // A heavier, longer shake than a normal hit to telegraph the arrival.
         this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
+        // The boss arrives flanked by a themed opening group (capped).
+        this._spawnBossSupport(boss.x, boss.y, BOSS.openingSupport, def.supportTypes);
+    }
+
+    // Open the "BOSS INCOMING" warning window. The boss spawns when it expires
+    // (handled in update). Stashes the boss's display name for the overlay.
+    _startBossWarning(id) {
+        const def = ENEMY[id];
+        if (!def || !def.boss) return;
+        this.bossWarning = { id, name: def.bossName ?? id, timer: BOSS.warningDuration, total: BOSS.warningDuration };
+        this.waveDirector.announce('⚠  BOSS INCOMING  ⚠', BOSS.warningDuration, '#ff4040');
+        this._shake(SCREEN_SHAKE.intensity * 0.4, 0.3);
+    }
+
+    // Spawn `count` themed support enemies on a ring around (x,y), respecting
+    // the live alive cap so a boss wave pressures without flooding. `types` is
+    // a weight map ({ bat: 3, crawler: 1 }); falls back to slimes.
+    _spawnBossSupport(x, y, count, types) {
+        if (!count || count <= 0) return;
+        const cap = this.waveState?.maxAlive ?? 120;
+        const weights = types || { slime: 1 };
+        const ids = Object.keys(weights);
+        let live = 0;
+        for (const e of this.enemies) if (e.active) live++;
+        for (let i = 0; i < count; i++) {
+            if (live >= cap) break;
+            // Weighted type pick.
+            let total = 0;
+            for (const k of ids) total += weights[k];
+            let r = Math.random() * total;
+            let type = ids[0];
+            for (const k of ids) { r -= weights[k]; if (r <= 0) { type = k; break; } }
+            const a = (i / count) * TWO_PI + Math.random() * 0.6;
+            const rad = BOSS.supportRing * (0.6 + Math.random() * 0.6);
+            const sp = this._clearSpot(x + Math.cos(a) * rad, y + Math.sin(a) * rad, 46);
+            this.enemies.push(new Enemy(type, sp.x, sp.y, {
+                healthMul: this.waveState.healthMul,
+                speedMul: this.waveState.speedMul,
+                contactDamageMul: this.waveState.damageMul ?? 1,
+            }));
+            live++;
+        }
+    }
+
+    // Boss HP-threshold phases. Each of 75/50/25% fires exactly ONCE per boss:
+    // a themed support wave, a faster attack cadence, an announce, and (at 25%)
+    // a move-speed bump. Latched on the boss so a threshold never re-triggers.
+    _updateBossThresholds() {
+        for (const e of this.enemies) {
+            if (!e.active || !e.boss || !e.thresholds || e.maxHp <= 0) continue;
+            const frac = e.hp / e.maxHp;
+            const def = e.def;
+            if (!e.thresholds.t75 && frac <= 0.75) {
+                e.thresholds.t75 = true;
+                e.bossCadenceMul = BOSS.thresholdCadence.t75;
+                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t75, def.supportTypes);
+                this.waveDirector.announce(`${e.name.toUpperCase()} CALLS FOR AID`, 1.6, '#ffae5a');
+            }
+            if (!e.thresholds.t50 && frac <= 0.5) {
+                e.thresholds.t50 = true;
+                e.bossCadenceMul = BOSS.thresholdCadence.t50;
+                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t50, def.supportTypes);
+            }
+            if (!e.thresholds.t25 && frac <= 0.25) {
+                e.thresholds.t25 = true;
+                e.bossCadenceMul = BOSS.thresholdCadence.t25;
+                e.speed *= BOSS.enrageSpeedMul;
+                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t25, def.supportTypes);
+                this.waveDirector.announce(`${e.name.toUpperCase()} ENRAGES!`, 2.0, '#ff3326');
+                this._shake(SCREEN_SHAKE.intensity * 0.9, 0.5);
+            }
+        }
+    }
+
+    // Soft anti-stacking: one local separation pass over a per-frame spatial
+    // hash so cost stays ~O(N) even at the enemy cap. Each enemy is nudged
+    // away from nearby overlapping enemies; the push is gentle (well under
+    // chase speed) so swarms loosen without forming a rigid wall. Heavier
+    // enemies barely move (mass ∝ radius), so small foes flow around brutes,
+    // and bosses are almost immovable. Pushes are re-resolved against
+    // obstacles + world bounds so nothing gets shoved through a wall.
+    _separateEnemies(dt) {
+        const cfg = ENEMY_SEPARATION;
+        if (!cfg.enabled) return;
+        const enemies = this.enemies;
+        let active = 0;
+        for (const e of enemies) if (e.active) active++;
+        if (active < cfg.minCountToRun) return;
+
+        const cell = cfg.cellSize;
+        const grid = this._sepGrid || (this._sepGrid = new Map());
+        grid.clear();
+        for (const e of enemies) {
+            if (!e.active) continue;
+            e._pushX = 0;
+            e._pushY = 0;
+            const key = Math.floor(e.x / cell) + ',' + Math.floor(e.y / cell);
+            let b = grid.get(key);
+            if (!b) { b = []; grid.set(key, b); }
+            b.push(e);
+        }
+
+        // Accumulate push per enemy from its 3×3 cell neighborhood.
+        for (const e of enemies) {
+            if (!e.active) continue;
+            const gx = Math.floor(e.x / cell);
+            const gy = Math.floor(e.y / cell);
+            for (let oy = -1; oy <= 1; oy++) {
+                for (let ox = -1; ox <= 1; ox++) {
+                    const b = grid.get((gx + ox) + ',' + (gy + oy));
+                    if (!b) continue;
+                    for (const o of b) {
+                        if (o === e) continue;
+                        const rSum = (e.radius + o.radius) * cfg.overlapFactor;
+                        let dx = e.x - o.x;
+                        let dy = e.y - o.y;
+                        const d2 = dx * dx + dy * dy;
+                        if (d2 >= rSum * rSum) continue;
+                        let d = Math.sqrt(d2);
+                        if (d < 0.01) {
+                            // Exactly coincident — pick a deterministic-ish
+                            // jitter direction from positions so they part.
+                            dx = (e.x - o.x) + (e.radius - o.radius) * 0.01 + 0.13;
+                            dy = (e.y - o.y) - 0.07;
+                            d = Math.hypot(dx, dy) || 1;
+                        }
+                        const overlap = (rSum - d) / rSum; // 0..1
+                        // Mass-weighted share: a small enemy moves more than a
+                        // big one (share→1 when the OTHER is much bigger).
+                        const share = (2 * o.radius) / (e.radius + o.radius);
+                        const push = cfg.strength * overlap * share;
+                        e._pushX += (dx / d) * push;
+                        e._pushY += (dy / d) * push;
+                    }
+                }
+            }
+        }
+
+        // Apply capped push, then re-resolve obstacles + world bounds.
+        const halfW = WORLD_WIDTH / 2;
+        const halfH = WORLD_HEIGHT / 2;
+        for (const e of enemies) {
+            if (!e.active) continue;
+            let px = e._pushX;
+            let py = e._pushY;
+            if (px === 0 && py === 0) continue;
+            if (e.boss) { px *= cfg.bossPushResist; py *= cfg.bossPushResist; }
+            const m = Math.hypot(px, py);
+            if (m > cfg.maxPush) { const s = cfg.maxPush / m; px *= s; py *= s; }
+            e.x += px * dt;
+            e.y += py * dt;
+            const r = this.obstacleSystem.resolveCircle(e.x, e.y, e.radius);
+            e.x = clamp(r.x, -halfW + e.radius, halfW - e.radius);
+            e.y = clamp(r.y, -halfH + e.radius, halfH - e.radius);
+        }
     }
 
     _dropChest(x, y) {
@@ -1030,14 +1202,33 @@ export class Game {
 
         this.time += dt;
 
-        this.waveDirector.update(dt, this.time);
+        this.waveDirector.update(dt, this.time, this.enemies.length);
         this.waveState = this.waveDirector.getState(this.time);
 
         // One boss at a time: gate the scheduler on a live "is any boss alive"
         // check so a scheduled spawn is held (not stacked) while one is active.
+        // A scheduled boss first opens a WARNING window (BOSS INCOMING) so the
+        // player can reposition; it actually spawns when the warning expires.
         const bossAlive = this.enemies.some((e) => e.active && e.boss);
-        const bossId = this.bossDirector.update(this.time, bossAlive);
-        if (bossId) this._spawnBoss(bossId);
+        if (!bossAlive && !this.bossWarning) {
+            const bossId = this.bossDirector.update(this.time, bossAlive);
+            if (bossId) this._startBossWarning(bossId);
+        }
+        if (this.bossWarning) {
+            this.bossWarning.timer -= dt;
+            if (this.bossWarning.timer <= 0) {
+                const id = this.bossWarning.id;
+                this.bossWarning = null;
+                this._spawnBoss(id);
+            }
+        }
+        // Drain any queued boss summon requests into themed, capped spawns.
+        if (this.bossSummons.length) {
+            for (const s of this.bossSummons) this._spawnBossSupport(s.x, s.y, s.count, s.types);
+            this.bossSummons.length = 0;
+        }
+        // Boss HP-threshold phases (75/50/25%) — one-shot support + aggression.
+        this._updateBossThresholds();
 
         this.player.update(dt, this.input);
         // Late-game flattening: clamp the global stacking stats every frame
@@ -1053,9 +1244,9 @@ export class Game {
             const r = this.obstacleSystem.resolveCircle(this.player.x, this.player.y, this.player.radius);
             this.player.x = r.x; this.player.y = r.y;
         }
-        this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem);
+        this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
         const weaponResult = this.weaponSystem.update(
-            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem
+            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles
         );
 
         for (const e of this.enemies) {
@@ -1070,6 +1261,10 @@ export class Game {
             e.x = clamp(r.x, -WORLD_WIDTH / 2 + e.radius, WORLD_WIDTH / 2 - e.radius);
             e.y = clamp(r.y, -WORLD_HEIGHT / 2 + e.radius, WORLD_HEIGHT / 2 - e.radius);
         }
+        // Soft enemy-vs-enemy separation so a swarm doesn't collapse onto one
+        // pixel (runs after movement + obstacle resolve so it can't shove an
+        // enemy into a wall — its result is re-clamped to obstacles below).
+        this._separateEnemies(dt);
         // Elemental DoT (burn) is applied here, NOT in Enemy.update, because
         // a burn kill must route through the same reward pipeline as any
         // other kill (gems/coins/affix-death/kill-count). statusResult.killed
@@ -1198,6 +1393,7 @@ export class Game {
 
         if (allKilled.length > 0) {
             this.kills += allKilled.length;
+            this.waveDirector.notifyKill(allKilled.length);
             for (const e of allKilled) {
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
                 if (e.affix) this._applyAffixDeath(e);
@@ -1607,10 +1803,37 @@ export class Game {
         base.pickupCount = this.gems.length + this.coins.length + this.chests.length;
         base.particleCount = this.showDebug ? this.particles.activeCount() : 0;
         base.ownedWeapons = this.weaponSystem.snapshotForUI();
+        // Ability cooldowns for the HUD pips: one entry per owned ABILITY
+        // (def.ability) with its remaining/total cooldown + ready state. Total
+        // uses the level's base cooldown × the player's cooldown multiplier so
+        // the fill matches what the ability actually uses.
+        const cdMul = this.player.cooldownMul ?? 1;
+        const abilityCds = [];
+        for (const w of this.weaponSystem.owned) {
+            const def = WEAPONS[w.id];
+            if (!def || !def.ability) continue;
+            const lvl = def.perLevel[w.level];
+            const total = Math.max(0.01, (lvl?.cooldown ?? 1) * cdMul);
+            const remaining = Math.max(0, w.timer ?? 0);
+            abilityCds.push({
+                id: w.id,
+                name: def.name,
+                color: (WEAPON_AURA[w.id] && WEAPON_AURA[w.id].color) || '#cdd8e6',
+                remaining,
+                total,
+                ready: remaining <= 0.001,
+            });
+        }
+        base.abilityCooldowns = abilityCds;
         base.ownedPassives = this.passiveSystem.snapshotForUI();
         base.runCoins = this.player.coins ?? 0;
         base.chestLuck = this.player.chestLuck ?? 0;
         base.waveState = this.waveState;
+        // Pressure-wave tracking for the HUD (live counters + 0..1 pressure).
+        base.wavePressure = this.waveState?.pressure ?? 0;
+        base.waveKills = this.waveDirector.killsThisWave ?? 0;
+        base.waveSpawned = this.waveDirector.spawnedThisWave ?? 0;
+        base.waveTimeIn = this.waveDirector.timeInWave ?? 0;
         base.waveAnnouncement = this.waveDirector.announcement;
         base.activeBoss = this.activeBossRef ? {
             name: this.activeBossRef.name,
@@ -1619,6 +1842,9 @@ export class Game {
             phase: this.activeBossRef.phase ?? 1,
             enraged: !!this.activeBossRef.phase2Entered,
         } : null;
+        base.bossWarning = this.bossWarning
+            ? { name: this.bossWarning.name, t: 1 - this.bossWarning.timer / this.bossWarning.total }
+            : null;
         base.chestCount = this.chests.length;
         base.chestReward = this.chestReward;
         base.pendingChests = this.pendingChests;

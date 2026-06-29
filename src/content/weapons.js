@@ -53,8 +53,8 @@ export const WEAPONS = {
 
     orbitingBlade: {
         id: 'orbitingBlade',
-        name: 'Frostmotes',
-        description: 'Frozen motes orbit you, chilling what they touch.',
+        name: 'Frost Glaives',
+        description: 'Frozen glaives orbit you, chilling what they touch.',
         kind: 'orbit',
         evolvesTo: null,
         element: 'frost',
@@ -261,7 +261,7 @@ export const WEAPONS = {
     // Shadow Dash: periodically blink a short distance along your movement,
     // slashing enemies on the path. Won't dash through walls (LOS-gated).
     shadowDash: {
-        id: 'shadowDash', name: 'Shadow Dash', kind: 'special',
+        id: 'shadowDash', name: 'Shadow Dash', kind: 'special', ability: true,
         description: 'Periodically dash forward, cutting through foes.',
         maxLevel: 5,
         perLevel: [
@@ -278,7 +278,7 @@ export const WEAPONS = {
     // Cinder Aura (the "Thorn Aura" ability): a small, constant ring of heat
     // around you. Weaker than Beacon Pulse but always on.
     cinderAura: {
-        id: 'cinderAura', name: 'Cinder Aura', kind: 'pulse', element: 'fire',
+        id: 'cinderAura', name: 'Cinder Aura', kind: 'pulse', element: 'fire', ability: true,
         description: 'A constant ring of cinders burns nearby foes.',
         maxLevel: 5,
         perLevel: [
@@ -295,7 +295,7 @@ export const WEAPONS = {
     // Hearth Totem (the "Banana Totem" ability): periodically emits a
     // restorative pulse that heals you a little. Kept modest for balance.
     hearthTotem: {
-        id: 'hearthTotem', name: 'Hearth Totem', kind: 'special',
+        id: 'hearthTotem', name: 'Hearth Totem', kind: 'special', ability: true,
         description: 'Periodically drops a warm ember that mends you.',
         maxLevel: 5,
         perLevel: [
@@ -307,6 +307,25 @@ export const WEAPONS = {
             { cooldown: 4.0, heal: 15 },
         ],
         update: hearthTotemUpdate,
+    },
+
+    // Frostmote: an ice ability. On a short cadence it releases drifting frost
+    // motes around you that chill (slow) and lightly wound nearby foes. Bosses
+    // resist the chill. A pure-utility ability — strong crowd control, weak raw
+    // damage — that appears in the level-up pool like any other ability.
+    frostmote: {
+        id: 'frostmote', name: 'Frostmote', kind: 'special', element: 'frost', ability: true,
+        description: 'Release drifting frost motes that chill and wear down nearby foes.',
+        maxLevel: 5,
+        perLevel: [
+            null,
+            { cooldown: 2.2, radius: 230, damage: 6,  slowMul: 0.78, slowDuration: 1.6, motes: 5 },
+            { cooldown: 2.0, radius: 250, damage: 8,  slowMul: 0.74, slowDuration: 1.8, motes: 6 },
+            { cooldown: 1.8, radius: 270, damage: 10, slowMul: 0.70, slowDuration: 2.0, motes: 7 },
+            { cooldown: 1.6, radius: 290, damage: 13, slowMul: 0.66, slowDuration: 2.2, motes: 8 },
+            { cooldown: 1.4, radius: 310, damage: 16, slowMul: 0.60, slowDuration: 2.5, motes: 10 },
+        ],
+        update: frostmoteUpdate,
     },
 };
 
@@ -331,6 +350,7 @@ export const WEAPON_AURA = {
     shadowDash:      { color: '#9a6cff', pulse: false },
     cinderAura:      { color: '#ff7a33', pulse: false },
     hearthTotem:     { color: '#ffce6a', pulse: false },
+    frostmote:       { color: '#8fd6ff', pulse: true  }, // pale blue frost
 };
 
 // Compute the player's current aura from their owned weapons. The dominant
@@ -897,8 +917,20 @@ function shadowDashUpdate(dt, owned, ctx) {
         }
     }
 
+    const fromX = p.x, fromY = p.y;
     p.x = destX; p.y = destY;
+    // Readable dash animation: stash a short-lived smear/afterimage state the
+    // Player renders (ghost trail along the path + a forward stretch), plus a
+    // burst at the start AND arrival so the blink reads as a deliberate dash.
+    p.dashFx = {
+        age: 0, dur: 0.22,
+        fromX, fromY, toX: destX, toY: destY,
+        dirX: nx, dirY: ny,
+    };
+    ctx.effects.push({ kind: 'pulse', x: fromX, y: fromY, radius: 56, age: 0, lifetime: 0.28, active: true });
     ctx.effects.push({ kind: 'pulse', x: destX, y: destY, radius: 70, age: 0, lifetime: 0.3, active: true });
+    // Dust/sparks kicked back from the launch point.
+    if (ctx.particles && ctx.particles.dashDust) ctx.particles.dashDust(fromX, fromY, nx, ny);
     owned.timer = cfg.cooldown * (p.cooldownMul ?? 1);
 }
 
@@ -926,6 +958,43 @@ function cinderAuraUpdate(dt, owned, ctx) {
         kind: 'pulse', x: ctx.player.x, y: ctx.player.y, radius: cfg.radius,
         age: 0, lifetime: 0.3, active: true,
     });
+}
+
+// Frostmote: periodic frost burst around the player. Chills (slows) and lightly
+// damages foes in radius; bosses take a much weaker, shorter chill so they
+// can't be permanently kited. Emits drifting pale-blue shard visuals.
+function frostmoteUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    const p = ctx.player;
+    owned.timer = cfg.cooldown * (p.cooldownMul ?? 1);
+    const damage = cfg.damage * (p.damageMul ?? 1);
+    // A player frost-passive (chillStrength) deepens the chill slightly.
+    const chillBonus = p.chillStrength ?? 0;
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        if (!circleOverlap(p.x, p.y, cfg.radius, e.x, e.y, e.radius)) continue;
+        if (ctx.los && !ctx.los(e.x, e.y)) continue;
+        e.takeDamage(damage);
+        if (e.boss) {
+            // Reduced effectiveness on bosses: chill ~halfway back to normal
+            // speed and lasts half as long.
+            e.applyChill(Math.min(0.92, cfg.slowMul + (1 - cfg.slowMul) * 0.6), cfg.slowDuration * 0.5);
+        } else {
+            e.applyChill(Math.max(0.3, cfg.slowMul - chillBonus), cfg.slowDuration);
+        }
+        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
+        if (!e.active) ctx.killed.push(e);
+    }
+    // Drifting shard visual (cosmetic only). Motes spread outward to `radius`.
+    const motes = [];
+    const n = cfg.motes;
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * TWO_PI + Math.random() * 0.5;
+        motes.push({ a, r0: 18 + Math.random() * 22, spd: (cfg.radius / 0.7) * (0.7 + Math.random() * 0.4) });
+    }
+    ctx.effects.push({ kind: 'frostmote', x: p.x, y: p.y, radius: cfg.radius, motes, age: 0, lifetime: 0.7, active: true });
 }
 
 // Hearth Totem: periodic restorative pulse that mends the player a little.

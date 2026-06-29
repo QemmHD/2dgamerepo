@@ -203,6 +203,27 @@ export class ParticleSystem {
         }
     }
 
+    // Dash dust: a small fan of pale sparks kicked backward from the launch
+    // point (opposite the dash direction) so a blink reads as a burst of speed.
+    dashDust(x, y, dirX, dirY) {
+        if (!this.enabled) return;
+        const back = Math.atan2(-dirY, -dirX);
+        const n = 7;
+        for (let i = 0; i < n; i++) {
+            const p = this._spawn();
+            if (!p) break;
+            const a = back + (i / (n - 1) - 0.5) * 1.1;
+            const sp = 120 + Math.random() * 200;
+            p.x = x; p.y = y;
+            p.vx = Math.cos(a) * sp;
+            p.vy = Math.sin(a) * sp;
+            p.age = 0; p.life = 0.22 + Math.random() * 0.18;
+            p.size0 = 18 + Math.random() * 10; p.size1 = 2;
+            p.color = i % 2 ? '#c9b8ff' : '#e8e0ff';
+            p.layer = SCREEN_ADD; p.drag = 6; p.grav = 30; p.maxAlpha = 0.9;
+        }
+    }
+
     // ── Elemental emitters ───────────────────────────────────────────
     // Burn: small orange embers rising off a burning enemy. WORLD_ADD so the
     // veil dims them into ambient glow. Fired per DoT tick (budgeted by the
