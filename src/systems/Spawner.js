@@ -65,6 +65,7 @@ export class Spawner {
             enemies.push(new Enemy(type, x, y, {
                 healthMul: waveState.healthMul,
                 speedMul: waveState.speedMul,
+                contactDamageMul: waveState.damageMul ?? 1,
                 elite,
             }));
             this.spawnsTotal += 1;

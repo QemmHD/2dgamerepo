@@ -23,7 +23,7 @@
 // evolved variant (e.g. orbitingBladeUpdate runs Celestial Blades too).
 
 import { TWO_PI, circleOverlap, distanceSq } from '../core/MathUtils.js';
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KNOCKBACK, SHOCK_CFG } from '../config/GameConfig.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KNOCKBACK, SHOCK_CFG, AURA } from '../config/GameConfig.js';
 import { Projectile } from '../entities/Projectile.js';
 import { getEmberWispSprite } from '../assets/ProceduralSprites.js';
 
@@ -159,9 +159,13 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                damage: 42, cooldown: 0.18, projectileSpeed: 1400,
+                // Late-game tune: cooldown 0.18 → 0.28 (the main cause of bosses
+                // evaporating — 0.18 with the cd floor was ~580 DPS/projectile)
+                // and ricochet 4 → 3. Still a relentless barrage, no longer an
+                // instant-delete on bosses (which now have HP scaling + resist).
+                damage: 42, cooldown: 0.28, projectileSpeed: 1400,
                 pierce: 4, projectileRadius: 20, projectiles: 2, spread: 0.18,
-                ricochet: 4, ricochetRange: 420,
+                ricochet: 3, ricochetRange: 420,
             },
         ],
         update: arcaneStormUpdate,
@@ -177,8 +181,12 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                bladeCount: 8, damage: 26, orbitSpeed: 4.5,
-                orbitRadius: 165, bladeRadius: 38, hitCooldown: 0.22,
+                // Late-game tune: 8 blades @0.22s hit-cd at radius 165 formed an
+                // impenetrable wall (enemies never reached the player). Now 6
+                // blades, tighter radius, slower hit cadence → it still protects
+                // and freezes, but foes can slip through the gaps sometimes.
+                bladeCount: 6, damage: 26, orbitSpeed: 4.5,
+                orbitRadius: 150, bladeRadius: 36, hitCooldown: 0.30,
                 slowMul: 0.55, slowDuration: 1.4,
                 chillMul: 0.55, chillDuration: 1.4,
                 freezeChance: 0.10, freezeDuration: 0.5,
@@ -198,7 +206,10 @@ export const WEAPONS = {
             null,
             {
                 radius: 480, damage: 38, cooldown: 1.4,
-                healPerHit: 0.6, maxHealPerPulse: 14, visualLifetime: 0.7,
+                // maxHealPerPulse 14 → 12; combined with the global heal/s cap
+                // this lets Dawnbreaker clear space + recover from mistakes
+                // without making the player unkillable while standing in a crowd.
+                healPerHit: 0.6, maxHealPerPulse: 12, visualLifetime: 0.7,
                 shredPerStack: 0.12, shredDuration: 4.0, maxShredStacks: 6,
             },
         ],
@@ -233,7 +244,9 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                strikes: 8, damage: 42, cooldown: 0.9, range: 1400,
+                // strikes 8 → 6: still chains and feels powerful, but no longer
+                // deletes the entire screen every 0.9s (≈18 hits/cast before).
+                strikes: 6, damage: 42, cooldown: 0.9, range: 1400,
                 chainCount: 2, chainChance: 0.8, chainRange: 280, chainDamage: 28,
                 shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0,
             },
@@ -298,6 +311,56 @@ export const WEAPONS = {
 };
 
 export const WEAPON_IDS = Object.keys(WEAPONS);
+
+// ── Player aura metadata (visual only) ─────────────────────────────────
+// One entry per weapon id: the glow color radiating from the player and
+// whether it pulses. The aura is computed from the OWNED weapons (see
+// computePlayerAura) and rendered behind the player; it never affects damage,
+// pickup, or enemy behavior. Tuning constants live in GameConfig AURA.
+export const WEAPON_AURA = {
+    arcaneBolt:      { color: '#8a7bff', pulse: false }, // small blue/purple
+    arcaneStorm:     { color: '#b15cff', pulse: true  }, // strong purple electric
+    orbitingBlade:   { color: '#cdd8e6', pulse: false }, // silver/white shimmer
+    celestialBlades: { color: '#fff0b4', pulse: false }, // gold/white blades
+    holyPulse:       { color: '#ffd98a', pulse: false }, // soft warm holy
+    divineNova:      { color: '#ffe9b0', pulse: false }, // large golden radiant
+    lightningMark:   { color: '#6cc6ff', pulse: false }, // faint blue sparks
+    thunderCrown:    { color: '#7fd0ff', pulse: true  }, // electric crown
+    emberWisp:       { color: '#ff8a3c', pulse: false }, // fire
+    infernoStorm:    { color: '#ff6a2a', pulse: true  }, // raging fire
+    shadowDash:      { color: '#9a6cff', pulse: false },
+    cinderAura:      { color: '#ff7a33', pulse: false },
+    hearthTotem:     { color: '#ffce6a', pulse: false },
+};
+
+// Compute the player's current aura from their owned weapons. The dominant
+// (evolved > highest-level) weapon drives the COLOR; intensity + radius grow
+// with weapon count / total levels / evolutions, both hard-capped by AURA.
+// Returns { color, intensity, radius, pulse, label } or null if no weapons.
+export function computePlayerAura(owned) {
+    if (!owned || owned.length === 0) return null;
+    let domWeight = -1, color = '#8a7bff', label = '';
+    let totalLevels = 0, evolvedCount = 0, pulse = false;
+    for (const w of owned) {
+        const def = WEAPONS[w.id];
+        const meta = WEAPON_AURA[w.id];
+        if (!def || !meta) continue;
+        const isEvolved = !!def.evolved;
+        const lvl = w.level ?? 1;
+        const weight = (isEvolved ? 100 : 0) + lvl;
+        if (weight > domWeight) { domWeight = weight; color = meta.color; label = def.name; }
+        totalLevels += lvl;
+        if (isEvolved) evolvedCount += 1;
+        if (meta.pulse) pulse = true;
+    }
+    const extraWeapons = Math.max(0, owned.length - 1);
+    const intensity = Math.min(AURA.maxIntensity,
+        AURA.baseIntensity + AURA.perWeapon * extraWeapons
+            + AURA.perLevel * totalLevels + AURA.perEvolved * evolvedCount);
+    const radius = Math.min(AURA.maxRadius,
+        AURA.baseRadius + AURA.radiusPerWeapon * extraWeapons + AURA.radiusPerEvolved * evolvedCount);
+    return { color, intensity, radius, pulse, label };
+}
 
 // ─── Behavior functions ────────────────────────────────────────────────
 
@@ -676,8 +739,10 @@ function divineNovaUpdate(dt, owned, ctx) {
     if (hitCount > 0 && ctx.player.hp < ctx.player.maxHp) {
         const wantedHeal = (cfg.healPerHit ?? 0) * hitCount;
         const capped = Math.min(wantedHeal, cfg.maxHealPerPulse ?? wantedHeal);
-        const actual = Math.min(capped, ctx.player.maxHp - ctx.player.hp);
-        ctx.player.hp += actual;
+        // Route through the global sustained-heal cap (CAPS.healPerSecond) so
+        // rapid pulses can't out-heal a crowd.
+        if (ctx.player.healSustained) ctx.player.healSustained(capped);
+        else ctx.player.hp = Math.min(ctx.player.maxHp, ctx.player.hp + capped);
     }
 
     ctx.effects.push({

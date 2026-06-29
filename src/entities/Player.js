@@ -4,10 +4,12 @@ import {
     WORLD_WIDTH,
     WORLD_HEIGHT,
     UI,
+    CAPS,
+    AURA,
     xpRequired,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
-import { getMonkeyFrames } from '../assets/ProceduralSprites.js';
+import { getMonkeyFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 export class Player {
@@ -52,6 +54,12 @@ export class Player {
         // combat regen (Second Wind), and contact-damage reflect (Thorns).
         this.damageTakenMul = 1;
         this.regenPerSecond = 0;
+        // Sustained-heal budget: regen + Divine Nova route through
+        // healSustained() which caps total healing to CAPS.healPerSecond over a
+        // rolling 1s window. Instant heals (chests, Hearty, Ember Salve) bypass
+        // this and set hp directly.
+        this._healWindow = 1;
+        this._healedThisSec = 0;
         this.thornsReflect = 0;
 
         // Elemental passive modifiers (read by weapons / the burn DoT pass).
@@ -70,6 +78,10 @@ export class Player {
         // Appearance from equipped cosmetics; set at run start. Defaults keep
         // the base monkey look if no cosmetics are wired.
         this.appearance = null;
+        // Weapon-driven aura snapshot (set by Game each frame; null = skip,
+        // e.g. reduced-effects mode). { color, intensity, radius, pulse }.
+        this.weaponAura = null;
+        this.auraPhase = 0;
     }
 
     gainXP(amount) {
@@ -133,6 +145,26 @@ export class Player {
 
         if (this.invincibleTimer > 0) this.invincibleTimer = Math.max(0, this.invincibleTimer - dt);
         if (this.hitFlashTimer > 0) this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
+
+        // Roll the sustained-heal budget window.
+        this._healWindow -= dt;
+        if (this._healWindow <= 0) { this._healWindow += 1; this._healedThisSec = 0; }
+
+        // Aura pulse phase (always advances so pulsing auras animate even idle).
+        this.auraPhase += dt;
+    }
+
+    // Heal subject to the per-second sustained cap (CAPS.healPerSecond). Returns
+    // the amount actually healed. Used by regen + Divine Nova so the player can
+    // recover from mistakes but can't out-heal a late-game crowd by standing still.
+    healSustained(amount) {
+        if (amount <= 0 || this.hp >= this.maxHp) return 0;
+        const room = Math.max(0, CAPS.healPerSecond - this._healedThisSec);
+        const heal = Math.min(amount, room, this.maxHp - this.hp);
+        if (heal <= 0) return 0;
+        this.hp += heal;
+        this._healedThisSec += heal;
+        return heal;
     }
 
     // Build fur-tinted copies of the sprite frames once per fur color. Uses an
@@ -185,19 +217,33 @@ export class Player {
             ctx.restore();
         }
 
-        // Aura glow (world space, behind sprite).
-        if (ap.auraColor) {
-            const ar = this.spriteHalf * 1.35;
-            const g = ctx.createRadialGradient(this.x, this.y + bobY, ar * 0.2, this.x, this.y + bobY, ar);
-            g.addColorStop(0, ap.auraColor);
-            g.addColorStop(1, 'rgba(0,0,0,0)');
+        // Aura glow (world space, behind sprite). Uses CACHED glow sprites
+        // (getGlowSprite memoizes per color) instead of a per-frame radial
+        // gradient — cheaper, mobile-friendly. The weapon aura is the main
+        // glow (driven by owned weapons/evolutions); the cosmetic aura, if any,
+        // is a small inner tint so cosmetics still read. Drawn additively but
+        // capped (AURA.maxIntensity) so it never washes out the scene.
+        const cy = this.y + bobY;
+        if (this.weaponAura) {
+            const wa = this.weaponAura;
+            let inten = wa.intensity;
+            if (wa.pulse) inten *= 1 + AURA.pulseAmount * Math.sin(this.auraPhase * AURA.pulseSpeed);
+            inten = clamp(inten, 0, AURA.maxIntensity);
+            const r = wa.radius;
+            const glow = getGlowSprite(wa.color);
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = 0.35;
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y + bobY, ar, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.globalAlpha = inten;
+            ctx.drawImage(glow, this.x - r, cy - r, r * 2, r * 2);
+            ctx.restore();
+        }
+        if (ap.auraColor) {
+            const ar = this.spriteHalf * 1.1;
+            const glow = getGlowSprite(ap.auraColor);
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.28;
+            ctx.drawImage(glow, this.x - ar, cy - ar, ar * 2, ar * 2);
             ctx.restore();
         }
 

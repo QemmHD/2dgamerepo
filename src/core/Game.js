@@ -17,6 +17,8 @@ import {
     COIN,
     ELEMENT,
     BOSS_ATTACK,
+    CAPS,
+    AURA,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Camera } from './Camera.js';
@@ -45,7 +47,7 @@ import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as c
 import { openCase } from '../systems/CaseSystem.js';
 import { resolveAppearance } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
-import { WEAPONS } from '../content/weapons.js';
+import { WEAPONS, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
 import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
@@ -161,6 +163,14 @@ export class Game {
                     this.returnToShop();
                 }
                 return;
+            }
+            // Debug-only time-jump (NOT a player feature): with the debug
+            // overlay on, ] skips +60s and \ skips +300s so 5/10/20/30-min
+            // balance can be tested quickly. Gated by showDebug + live play.
+            if (this.showDebug && this.screen === 'gameplay' && !this.paused &&
+                !this.chestReward && !this.upgradeChoices) {
+                if (e.code === 'BracketRight') { e.preventDefault(); this._debugSkipTime(60); return; }
+                if (e.code === 'Backslash') { e.preventDefault(); this._debugSkipTime(300); return; }
             }
             // Pause toggle — gameplay only, never while a level-up/chest
             // overlay is up (those already freeze the world).
@@ -388,6 +398,9 @@ export class Game {
         this.chestReward = null;
         this.pendingChests = 0;
         this.chestsOpened = 0;
+        // Weapon-aura cache (recomputed only when the owned set changes).
+        this._auraSig = null;
+        this._auraSnapshot = null;
         this.coins = [];
         // Cached reference to the strongest active boss for the boss HP bar.
         this.activeBossRef = null;
@@ -700,6 +713,43 @@ export class Game {
 
     // Nudge a desired spawn point to the nearest spot not inside an obstacle.
     // Used for bosses/chests/pickups so nothing spawns trapped in a wall.
+    // Clamp the player's global stacking stats to their late-game ceilings.
+    // These fields only ever grow within a run, so a hard clamp is idempotent
+    // and safe to run every frame. Weapon per-level stats are NOT touched, so
+    // individual upgrades still feel meaningful up to the cap.
+    _applyPlayerCaps() {
+        const p = this.player;
+        if (p.damageMul > CAPS.damageMul) p.damageMul = CAPS.damageMul;
+        if (p.cooldownMul < CAPS.cooldownMulFloor) p.cooldownMul = CAPS.cooldownMulFloor;
+        if (p.speed > CAPS.moveSpeed) p.speed = CAPS.moveSpeed;
+        if (p.pickupRange > CAPS.pickupRange) p.pickupRange = CAPS.pickupRange;
+    }
+
+    // Recompute the player's weapon aura only when the owned-weapon set/levels
+    // change (cheap signature check) to avoid a per-frame object allocation.
+    // The aura is purely visual (color/intensity/radius); the snapshot is also
+    // used to tint the player's light and shown in the debug panel.
+    _updateAura() {
+        const owned = this.weaponSystem.owned;
+        let sig = '';
+        for (const w of owned) sig += w.id + w.level + ';';
+        if (sig !== this._auraSig) {
+            this._auraSig = sig;
+            this._auraSnapshot = computePlayerAura(owned);
+        }
+        // Reduced-effects (mobile/perf) skips the extra additive aura glow but
+        // still lets the player light pick up the aura tint (free).
+        this.player.weaponAura = this.reducedEffects ? null : this._auraSnapshot;
+    }
+
+    // Debug-only: advance the run clock so wave/enemy/boss time-scaling jumps
+    // ahead for balance testing. Refreshes the cached wave state immediately.
+    _debugSkipTime(seconds) {
+        this.time += seconds;
+        this.waveState = this.waveDirector.getState(this.time);
+        if (this.waveDirector.announce) this.waveDirector.announce(`⏩ +${seconds}s → ${(this.time / 60).toFixed(1)} min`, 1.5);
+    }
+
     _clearSpot(x, y, clearance) {
         const halfW = WORLD_WIDTH / 2 - clearance;
         const halfH = WORLD_HEIGHT / 2 - clearance;
@@ -727,10 +777,16 @@ export class Game {
         let x = clamp(this.player.x + Math.cos(angle) * dist, -halfW, halfW);
         let y = clamp(this.player.y + Math.sin(angle) * dist, -halfH, halfH);
         ({ x, y } = this._clearSpot(x, y, def.radius ?? 90));
+        // Boss HP scales with the run minute far harder than trash so a 20-30
+        // min boss isn't deleted instantly; a mild flat resistance ramps too.
+        const minutes = this.time / 60;
+        const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul);
         const boss = new Enemy(id, x, y, {
-            healthMul: this.waveState.healthMul,
+            healthMul: bossHpMul,
             speedMul: this.waveState.speedMul,
+            contactDamageMul: this.waveState.damageMul ?? 1,
         });
+        boss.resist = Math.min(minutes * BOSS.resistPerMinute, BOSS.maxResist);
         // Stash the stable output channels the apex-boss AI writes into
         // (radial volleys go to the enemy-bolt loop; shockwaves to the hazard
         // pool). Both arrays are created once in _initRunState, so this
@@ -957,6 +1013,13 @@ export class Game {
         if (bossId) this._spawnBoss(bossId);
 
         this.player.update(dt, this.input);
+        // Late-game flattening: clamp the global stacking stats every frame
+        // (before weapons read them). Hard caps are idempotent on these
+        // monotonic-growth fields; weapon per-level stats are unaffected.
+        this._applyPlayerCaps();
+        // Recompute the weapon-driven aura (cheap; cached unless the owned set
+        // changed). Reduced-effects mode skips the extra additive glow sprite.
+        this._updateAura();
         // Slide the player out of any wall they walked into (tangential motion
         // is preserved by resolveCircle, so they glide along obstacles).
         {
@@ -1225,10 +1288,10 @@ export class Game {
                 if (ex * ex + ey * ey < sr2) { safe = false; break; }
             }
             if (safe) {
-                this.player.hp = Math.min(
-                    this.player.maxHp,
-                    this.player.hp + this.player.regenPerSecond * dt
-                );
+                // Regen is capped by CAPS.regenPerSecond and shares the global
+                // sustained-heal budget (CAPS.healPerSecond) with Divine Nova.
+                const rate = Math.min(this.player.regenPerSecond, CAPS.regenPerSecond);
+                this.player.healSustained(rate * dt);
                 this._lastHp = this.player.hp;
             }
         }
@@ -1313,8 +1376,16 @@ export class Game {
             ctx.restore();
         }
 
-        // Player light first (always kept, exempt from caps).
-        if (L) L.addLight(this.player.x, this.player.y, Lc.playerRadius, LIGHT_COLORS.player, Lc.playerIntensity, 0);
+        // Player light first (always kept, exempt from caps). The light TINT
+        // follows the weapon aura so the glow radiating from the player changes
+        // with their build; radius stays fixed (visual only — never reveals
+        // more of the map) and the intensity bump is small + capped.
+        if (L) {
+            const aura = this._auraSnapshot;
+            const lightColor = aura ? aura.color : LIGHT_COLORS.player;
+            const lightInten = Lc.playerIntensity + (aura ? Math.min(AURA.lightIntensityBonus, aura.intensity * 0.4) : 0);
+            L.addLight(this.player.x, this.player.y, Lc.playerRadius, lightColor, lightInten, 0);
+        }
 
         for (const g of this.gems) {
             if (!cull(g)) continue;
@@ -1526,6 +1597,18 @@ export class Game {
         base.playerCooldownMul = this.player.cooldownMul;
         base.playerSpeed = this.player.speed;
         base.playerXpMul = this.player.xpMultiplier;
+        base.playerPickupRange = this.player.pickupRange;
+        base.healPerSecondCap = CAPS.healPerSecond;
+        // Enemy + boss time-scaling readouts for late-game balancing.
+        base.minute = this.time / 60;
+        base.enemyHpMul = this.waveState?.healthMul ?? 1;
+        base.enemySpeedMul = this.waveState?.speedMul ?? 1;
+        base.enemyDamageMul = this.waveState?.damageMul ?? 1;
+        base.bossHpMul = Math.min(1 + (this.time / 60) * BOSS.hpPerMinute, BOSS.maxHpMul);
+        base.bossResist = Math.min((this.time / 60) * BOSS.resistPerMinute, BOSS.maxResist);
+        base.ownedWeaponCount = this.weaponSystem.owned.length;
+        base.evolvedWeaponCount = this.weaponSystem.owned.filter((w) => WEAPONS[w.id]?.evolved).length;
+        base.auraStyle = this._auraSnapshot ? this._auraSnapshot.label : '';
         // Only the debug panel shows this, and the scan walks every
         // evolution every frame — so only pay for it when debug is on.
         base.eligibleEvolutionCount = this.showDebug ? findEligibleEvolutions(this).length : 0;

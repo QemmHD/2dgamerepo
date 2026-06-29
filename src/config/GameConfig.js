@@ -52,6 +52,41 @@ export const PLAYER = {
     hitFlashDuration: 0.18,
 };
 
+// ── Player power caps / diminishing returns ────────────────────────────
+// Late-game flattening. These cap the GLOBAL stacking sources (passives +
+// permanent upgrades + gear) so a 20-30 min build stays strong but not
+// untouchable. Weapon PER-LEVEL stats (cfg.damage, etc.) are unaffected, so
+// individual upgrades still matter. Applied once per frame by Game._applyPlayerCaps.
+export const CAPS = {
+    damageMul: 3.5,         // global weapon-damage multiplier ceiling
+    cooldownMulFloor: 0.40, // cooldowns never drop below 40% of base
+    moveSpeed: 760,         // ~1.65× base (camera/collision-safe)
+    pickupRange: 900,       // generous but doesn't vacuum the whole map
+    regenPerSecond: 6,      // sustained passive regen cap
+    healPerSecond: 14,      // TOTAL sustained healing/s (regen + Divine Nova)
+};
+
+// ── Player weapon aura (visual only) ───────────────────────────────────
+// The glow radiating from the player is driven by the weapons they own +
+// their levels + evolutions (see computePlayerAura in weapons.js). Purely
+// cosmetic — never touches damage, pickup, or enemy behavior. Intensity and
+// radius are CAPPED so the aura never washes out enemies/pickups, and a hard
+// brightness ceiling keeps it readable in a crowd.
+export const AURA = {
+    baseRadius: 150,        // world px at one L1 weapon
+    radiusPerWeapon: 14,    // + per additional owned weapon
+    radiusPerEvolved: 34,   // + per evolved weapon (stronger presence)
+    maxRadius: 300,
+    baseIntensity: 0.18,    // additive-glow alpha at one L1 weapon
+    perWeapon: 0.03,
+    perLevel: 0.006,
+    perEvolved: 0.05,
+    maxIntensity: 0.5,      // hard brightness cap (readability)
+    pulseAmount: 0.16,      // ± fraction for pulsing (electric/evolved) auras
+    pulseSpeed: 5.0,
+    lightIntensityBonus: 0.18, // max extra player-light intensity from aura
+};
+
 // ── Enemies ────────────────────────────────────────────────────────────
 export const ENEMY = {
     slime: {
@@ -161,6 +196,15 @@ export const BOSS = {
     postDeathCooldown: 35,
     spawnRingDistance: 1100,
     types: ['vinebackGoliath', 'stormwingAlpha'],
+    // Late-game survivability. Boss HP scales with the run minute much harder
+    // than trash (so a 20-30 min boss isn't deleted instantly), and a mild
+    // flat damage resistance ramps with time. Never invulnerable — just tanky.
+    //   bossHpMul = 1 + minutes * hpPerMinute  (10m→2.6×, 20m→4.2×, 30m→5.8×)
+    //   resist    = min(minutes * resistPerMinute, maxResist)
+    hpPerMinute: 0.16,
+    maxHpMul: 7.0,
+    resistPerMinute: 0.012,
+    maxResist: 0.35,
 };
 
 // Coin drops from enemies / elites / bosses. Tunable so coins feel
@@ -179,7 +223,10 @@ export const COIN = {
 export const CHEST = {
     pickupRadius: 80,
     openAnimationDuration: 0.55,
-    eliteDropChance: 0.15,
+    // Lowered 0.15 → 0.10: with elite chance ramping up late, 15% chest rolls
+    // per elite produced runaway weapon/passive upgrade flow. Boss chests stay
+    // guaranteed (handled separately in Game).
+    eliteDropChance: 0.10,
     weights: { weapon: 3, passive: 3, coins: 2, heal: 2 },
     luckUpgradeWeight: 4,
     coinReward: { min: 50, max: 100, luckBonus: 80 },
@@ -359,19 +406,27 @@ export const WAVES = [
 
 // Applied on top of the last wave's values; one tick per minute of survival
 // past the last wave's startTime. Ramps stay small so progression stays fair.
+// Late-game pressure pass: enemies must still threaten strong builds.
+// Health/elite/speed ramp steeper, and a NEW contact-damage multiplier kicks
+// in after ~15 min total (damageStartMinutesBeyond is measured past the last
+// wave's startTime, which is 5 min, so 10 → 15 min total) so late enemies
+// actually hurt instead of pinging for minute-1 damage.
 export const ENDLESS_SCALING = {
-    healthPerMinute: 0.06,
-    speedPerMinute: 0.025,
-    spawnIntervalShrinkPerMinute: 0.04,
+    healthPerMinute: 0.09,
+    speedPerMinute: 0.03,
+    spawnIntervalShrinkPerMinute: 0.045,
     capGrowthPerMinute: 4,
-    eliteChancePerMinute: 0.01,
+    eliteChancePerMinute: 0.015,
+    damageStartMinutesBeyond: 10,
+    damagePerMinute: 0.06,
+    maxDamageMultiplier: 2.5,
 };
 
 export const WAVE_LIMITS = {
     maxEnemyCap: 180,
-    maxSpeedMultiplier: 2.0,
-    maxHealthMultiplier: 4.0,
-    maxEliteChance: 0.25,
+    maxSpeedMultiplier: 2.2,
+    maxHealthMultiplier: 6.0,
+    maxEliteChance: 0.35,
 };
 
 // ── XP / progression / gems ────────────────────────────────────────────
@@ -385,11 +440,20 @@ export const WAVE_LIMITS = {
 export const XP_CURVE = {
     base: 6,
     perLevel: 4,
+    // Late-game pacing: levels up to lateStartLevel are UNCHANGED (early game
+    // stays fast/satisfying). Past it, a quadratic term steepens the curve so
+    // late power growth is steady, not explosive.
+    lateStartLevel: 12,
+    lateQuadratic: 1.6,
 };
 
-// XP needed to advance from `level` → `level + 1`.
+// XP needed to advance from `level` → `level + 1`. Linear early; a quadratic
+// term past lateStartLevel slows late leveling without touching the first
+// ~12 levels (L13→+2, L20→+102, L30→+518 on top of the linear base).
 export function xpRequired(level) {
-    return XP_CURVE.base + Math.max(0, level - 1) * XP_CURVE.perLevel;
+    const linear = XP_CURVE.base + Math.max(0, level - 1) * XP_CURVE.perLevel;
+    const over = Math.max(0, level - XP_CURVE.lateStartLevel);
+    return linear + Math.round(over * over * XP_CURVE.lateQuadratic);
 }
 
 // Slightly more medium/large gems so XP pickups feel juicy and frequent

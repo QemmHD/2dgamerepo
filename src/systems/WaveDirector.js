@@ -83,6 +83,14 @@ export class WaveDirector {
             WAVE_LIMITS.maxEliteChance,
             wave.eliteChance + minutesBeyond * ENDLESS_SCALING.eliteChancePerMinute
         );
+        // Contact-damage scaling: stays 1.0 until damageStartMinutesBeyond past
+        // the last wave (so the first ~15 min are untouched), then ramps so late
+        // enemies actually threaten strong builds. Carried into each new spawn.
+        const damageMul = Math.min(
+            ENDLESS_SCALING.maxDamageMultiplier,
+            1 + Math.max(0, minutesBeyond - ENDLESS_SCALING.damageStartMinutesBeyond)
+                * ENDLESS_SCALING.damagePerMinute
+        );
 
         return {
             index: wave.index,
@@ -94,6 +102,7 @@ export class WaveDirector {
             eliteChance,
             healthMul,
             speedMul,
+            damageMul,
         };
     }
 }
