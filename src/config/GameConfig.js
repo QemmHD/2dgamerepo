@@ -624,6 +624,26 @@ export const DAMAGE_NUMBER = {
     riseSpeed: 70,
 };
 
+// Kill-streak / combo system. Consecutive kills inside `window` seconds build a
+// combo; let the window lapse and it resets. Purely a feedback/dopamine layer
+// (an escalating, color-shifting on-screen counter + milestone callouts) — it
+// never changes damage or drops, so it can't unbalance a run. Tiers drive the
+// HUD color + milestone banners.
+export const COMBO = {
+    window: 3.0,            // seconds since last kill before the streak drops
+    minToShow: 3,           // don't clutter the HUD under this count
+    milestones: [10, 25, 50, 100, 200, 350, 500],
+    // Count thresholds → HUD color (highest reached wins). Cool→hot as it grows.
+    tiers: [
+        { at: 0,   color: '#cde4ff' },
+        { at: 10,  color: '#7fe0a0' },
+        { at: 25,  color: '#ffd166' },
+        { at: 50,  color: '#ff9a4a' },
+        { at: 100, color: '#ff5a3c' },
+        { at: 200, color: '#ff3df0' },
+    ],
+};
+
 export const HIT_FLASH_DURATION = 0.08;
 export const CONTACT_FLASH_DURATION = 0.15;
 

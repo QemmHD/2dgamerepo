@@ -21,15 +21,27 @@ export class DamageNumber {
     draw(ctx) {
         const t = this.age / this.lifetime;
         const alpha = 1 - t * t;
+        // Magnitude juice: default (white) hits scale + heat up with size so
+        // big numbers POP. Tinted numbers (burn DoT etc.) keep their color.
+        let color = this.color;
+        let size = 28;
+        if (this.color === '#ffffff') {
+            const a = this.amount;
+            if (a >= 220)      { color = '#ff4d3d'; size = 42; }
+            else if (a >= 120) { color = '#ff9a4a'; size = 37; }
+            else if (a >= 55)  { color = '#ffe066'; size = 32; }
+        }
+        // Quick scale-in pop over the first ~0.12s, then settle.
+        const pop = this.age < 0.12 ? 1.45 - (this.age / 0.12) * 0.45 : 1;
         ctx.save();
         ctx.globalAlpha = Math.max(0, alpha);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = 'bold 28px -apple-system, system-ui, Helvetica, Arial, sans-serif';
+        ctx.font = `900 ${Math.round(size * pop)}px -apple-system, system-ui, Helvetica, Arial, sans-serif`;
         ctx.strokeStyle = 'rgba(0,0,0,0.85)';
         ctx.lineWidth = 4;
         ctx.strokeText(String(this.amount), this.x, this.y);
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = color;
         ctx.fillText(String(this.amount), this.x, this.y);
         ctx.restore();
     }

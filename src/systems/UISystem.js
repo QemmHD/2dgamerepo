@@ -4,6 +4,7 @@ import {
     GAME_TITLE,
     CHEST,
     SPRITE_SS,
+    COMBO,
 } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import {
@@ -216,6 +217,9 @@ export class UISystem {
         }
 
         this._drawTopReadout(ctx, gameState);
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
+            this._drawComboMeter(ctx, gameState);
+        }
         this._drawWaveLabel(ctx, gameState);
         this._drawBossHpBar(ctx, gameState);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
@@ -297,6 +301,39 @@ export class UISystem {
         const coinW = coinSprite.width / SPRITE_SS;
         const coinH = coinSprite.height / SPRITE_SS;
         ctx.drawImage(coinSprite, cx + 16 - coinW / 2, sa.top + 78 + 2, coinW, coinH);
+        ctx.restore();
+    }
+
+    // Kill-streak meter: an escalating, color-shifting counter under the timer
+    // with a draining window bar. Pops in scale on each milestone tier and
+    // pulses faster the hotter the streak — the core "keep going" feedback.
+    _drawComboMeter(ctx, state) {
+        const combo = state.combo ?? 0;
+        if (combo < (COMBO.minToShow ?? 3)) return;
+        const sa = this.renderer.safeArea;
+        const cx = INTERNAL_WIDTH / 2;
+        const y = sa.top + 116;
+        // Pick the hottest tier the streak has reached.
+        let color = COMBO.tiers[0].color;
+        for (const t of COMBO.tiers) if (combo >= t.at) color = t.color;
+        const frac = state.comboWindow > 0 ? Math.max(0, Math.min(1, (state.comboTimer ?? 0) / state.comboWindow)) : 0;
+        // Subtle pulse that quickens with the streak size.
+        const pulse = 1 + 0.06 * Math.sin((state.time ?? 0) * (6 + combo * 0.05));
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = color;
+        ctx.font = `900 ${Math.round(38 * pulse)}px ${FONT}`;
+        ctx.fillText(`${combo}× STREAK`, cx, y);
+        ctx.shadowBlur = 0;
+        // Draining window bar beneath the text.
+        const barW = 168, barH = 6, bx = cx - barW / 2, by = y + 24;
+        ctx.fillStyle = 'rgba(255,255,255,0.14)';
+        ctx.fillRect(bx, by, barW, barH);
+        ctx.fillStyle = color;
+        ctx.fillRect(bx, by, barW * frac, barH);
         ctx.restore();
     }
 

@@ -20,6 +20,7 @@ import {
     CAPS,
     AURA,
     RENDER,
+    COMBO,
     ENEMY_SEPARATION,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
@@ -423,6 +424,11 @@ export class Game {
 
         this.time = 0;
         this.kills = 0;
+        // Kill-streak / combo state (feedback only — see COMBO config).
+        this.combo = 0;
+        this.comboTimer = 0;
+        this.comboBest = 0;
+        this._comboMilestoneIdx = 0;
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.gameOver = false;
@@ -669,6 +675,24 @@ export class Game {
     // 'levelup'). Cheap, screen-space, drawn by UISystem.
     _pushFeedback(type, life = 0.3) {
         this.feedback.push({ type, age: 0, life });
+    }
+
+    // Extend the kill streak by n kills, refresh the decay window, and fire a
+    // milestone banner when the streak crosses a configured threshold. Combo is
+    // a pure feedback layer (no damage/drop effect), so this is safe to call
+    // from the kill loop without touching balance.
+    _addCombo(n) {
+        if (n <= 0) return;
+        this.combo += n;
+        this.comboTimer = COMBO.window;
+        if (this.combo > this.comboBest) this.comboBest = this.combo;
+        const ms = COMBO.milestones;
+        while (this._comboMilestoneIdx < ms.length && this.combo >= ms[this._comboMilestoneIdx]) {
+            const reached = ms[this._comboMilestoneIdx];
+            this._comboMilestoneIdx++;
+            this.waveDirector.announce(`${reached} KILL STREAK!`, 1.4, '#ffd166');
+            this._pushFeedback('levelup', 0.3);
+        }
     }
 
     _updateFeedback(dt) {
@@ -1213,6 +1237,12 @@ export class Game {
 
         this.time += dt;
 
+        // Combo decay: the streak lapses if no kill lands inside the window.
+        if (this.comboTimer > 0) {
+            this.comboTimer -= dt;
+            if (this.comboTimer <= 0) { this.combo = 0; this._comboMilestoneIdx = 0; }
+        }
+
         this.waveDirector.update(dt, this.time, this.enemies.length);
         this.waveState = this.waveDirector.getState(this.time);
 
@@ -1375,6 +1405,11 @@ export class Game {
                 this.pendingLevelUps += levels;
                 this._pushFeedback('levelup', 0.5);
                 this.particles.levelUpBurst(this.player.x, this.player.y);
+                // QoL juice: a level-up vacuums every loose gem on the field so
+                // nothing earned is left behind while the overlay is up.
+                for (const g of this.gems) {
+                    if (g.active) { g.magnetizing = true; g.magnetSpeed = Math.max(g.magnetSpeed, 1200); }
+                }
                 if (!this.upgradeChoices) this._presentLevelUp();
             }
         }
@@ -1404,6 +1439,7 @@ export class Game {
 
         if (allKilled.length > 0) {
             this.kills += allKilled.length;
+            this._addCombo(allKilled.length);
             this.waveDirector.notifyKill(allKilled.length);
             for (const e of allKilled) {
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
@@ -1828,6 +1864,9 @@ export class Game {
         base.player = this.player;
         base.camera = this.camera;
         base.kills = this.kills;
+        base.combo = this.combo;
+        base.comboTimer = this.comboTimer;
+        base.comboWindow = COMBO.window;
         base.enemyCount = this.enemies.length;
         base.projectileCount = this.projectiles.length;
         base.gemCount = this.gems.length;

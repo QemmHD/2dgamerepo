@@ -55,6 +55,28 @@ export const CHARACTERS = {
         feature: 'hat',
         unlocked: true,
     },
+    berserker: {
+        id: 'berserker',
+        name: 'Kael',
+        title: 'The Emberfury',
+        description: 'Glass berserker. +18% damage and innate Last Light rage, but −22% HP — strongest on the brink.',
+        stats: { hpMul: 0.78, speedMul: 1.06, damageMul: 1.18, cooldownMul: 1, pickupRangeMul: 1, xpMul: 1, lowHpRageBonus: 0.15 },
+        palette: { fur: '#a23a2a', furDark: '#6e2017', furLight: '#d65a3e', face: '#f3cdb9' },
+        accent: '#ff6a3c',
+        feature: 'horns',
+        unlocked: true,
+    },
+    assassin: {
+        id: 'assassin',
+        name: 'Vesper',
+        title: 'The Keen',
+        description: 'Hooded duelist. +12% crit chance and +5% damage, slightly fragile (−10% HP).',
+        stats: { hpMul: 0.9, speedMul: 1.04, damageMul: 1.05, cooldownMul: 1, pickupRangeMul: 1, xpMul: 1, critChanceBonus: 0.12 },
+        palette: { fur: '#3a4a66', furDark: '#222d42', furLight: '#5a6e92', face: '#dfe6f2' },
+        accent: '#7fd0ff',
+        feature: 'hood',
+        unlocked: true,
+    },
 };
 
 export const CHARACTER_IDS = Object.keys(CHARACTERS);

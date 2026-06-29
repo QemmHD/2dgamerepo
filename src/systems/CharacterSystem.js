@@ -19,6 +19,10 @@ export function applyCharacter(player, characterId) {
     player.pickupRange *= s.pickupRangeMul ?? 1;
     player.xpMultiplier *= s.xpMul ?? 1;
     player.chestLuck = (player.chestLuck ?? 0) + (s.chestLuckBonus ?? 0);
+    // Offensive identity hooks (let a hero lean into the crit / low-HP-rage
+    // systems). Clamped like every other crit source.
+    player.critChance = Math.min(0.8, (player.critChance ?? 0) + (s.critChanceBonus ?? 0));
+    player.lowHpDamageBonus = (player.lowHpDamageBonus ?? 0) + (s.lowHpRageBonus ?? 0);
     // Tag the player so renders / debug can read which hero is active.
     player.characterId = c.id;
     return c;
