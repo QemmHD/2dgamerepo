@@ -201,8 +201,12 @@ export class MenuRenderer {
         // The selected starting weapon drives the themed skin overlay so the
         // preview matches the in-game look (character + cosmetics + weapon).
         const skin = resolveWeaponSkin(resolveStartingWeapon(save));
-        // Self-advancing clock for subtle idle motion in the preview motif.
-        this._t = (this._t || 0) + 0.016;
+        // Wall-clock for the preview's subtle idle motion — derived from
+        // performance.now() so it's frame-rate independent (a 120Hz display
+        // doesn't animate 2× fast). Falls back to 0 (static) when unavailable.
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+        if (this._t0 === undefined) this._t0 = now;
+        this._t = (now - this._t0) / 1000;
         this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;

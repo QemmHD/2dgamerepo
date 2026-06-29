@@ -48,6 +48,9 @@ export class Player {
         // Weapon-themed skin overlay (set by Game from the starting weapon) +
         // melee swing animation state ({ age, dir } or null).
         this.weaponSkin = null;
+        // Gated by Game from reducedEffects (mirrors the weaponAura gate) so the
+        // accessibility mode silences the extra additive overlay glow too.
+        this.skinOverlayEnabled = true;
         this.swing = null;
 
         this.level = 1;
@@ -368,7 +371,7 @@ export class Player {
         // Weapon-themed skin overlay (sash + chest gem + floating motif) drawn
         // over the body, under the hat — shared with the menu preview so the two
         // always match. Unflipped + in-character-space; t = idle clock.
-        if (this.weaponSkin) drawWeaponSkinOverlay(ctx, 0, 0, this.spriteHalf, this.weaponSkin, this.aliveTimer);
+        if (this.weaponSkin && this.skinOverlayEnabled) drawWeaponSkinOverlay(ctx, 0, 0, this.spriteHalf, this.weaponSkin, this.aliveTimer);
 
         // Accessory on the head (symmetric → drawn unflipped, on top).
         if (ap.hatShape && ap.hatShape !== 'none') this._drawHat(ctx, ap.hatShape, ap.hatColor);

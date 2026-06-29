@@ -574,6 +574,9 @@ export class Game {
         this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
         this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
         this.mapRenderer.lowQuality = this.reducedEffects;
+        // Reduced-effects silences the weapon-skin overlay's additive glow too
+        // (mirrors the weaponAura gate). Read here so a mid-session toggle wins.
+        this.player.skinOverlayEnabled = !this.reducedEffects;
         // Apply the selected biome's color grade for this run.
         this.mapRenderer.theme = getMap(this.saveSystem.getSelectedMap());
         this._lastHp = this.player.hp;
