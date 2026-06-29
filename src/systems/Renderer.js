@@ -108,9 +108,15 @@ export class Renderer {
         // goal — a 2560×1440 fit keeps dpr=2) while still bounding pathological
         // displays. Without the desktop allowance the 4K cap would wrongly
         // drop dpr below 2 on any retina monitor wider than 1920px.
-        const cap = coarse ? RENDER.maxBackingPx : RENDER.maxBackingPx * 4;
+        const cap = coarse ? RENDER.maxBackingPx : RENDER.maxBackingPx * 2;
         const budget = Math.sqrt(cap / Math.max(1, cssW * cssH));
-        dpr = Math.max(1, Math.min(dpr, budget));
+        dpr = Math.min(dpr, budget);
+        // Floor is normally 1 (never upscale-blur). But when the FPS governor
+        // requests a sub-1 cap (_dprCap < 1) on a fill-rate-bound high-res
+        // display, we intentionally render BELOW the CSS size and let the
+        // browser upscale — the only lever that helps a 4K-at-100% monitor,
+        // where the device pixel ratio is already 1.
+        dpr = Math.max(Math.min(1, this._dprCap), dpr);
         this.dpr = dpr;
 
         this.canvas.style.width = cssW + 'px';
@@ -239,7 +245,9 @@ export class Renderer {
     // FPS-governor lever: lower/raise the DPR cap to shed/restore backing
     // store cost on sustained low/high fps. No-op if the cap is unchanged.
     setDprCap(cap) {
-        const c = Math.max(1, Math.min(RENDER.maxDpr, cap));
+        // Allow sub-1 caps (down to RENDER.minDpr) so the governor can force a
+        // downscale on a fill-rate-bound high-res display as a last resort.
+        const c = Math.max(RENDER.minDpr ?? 1, Math.min(RENDER.maxDpr, cap));
         if (c === this._dprCap) return;
         this._dprCap = c;
         this.resize();

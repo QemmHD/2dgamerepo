@@ -19,6 +19,7 @@ import {
     BOSS_ATTACK,
     CAPS,
     AURA,
+    RENDER,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Camera } from './Camera.js';
@@ -474,6 +475,7 @@ export class Game {
         this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
         this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
         this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
+        this.mapRenderer.lowQuality = this.reducedEffects;
         this._lastHp = this.player.hp;
         this.screen = 'gameplay';
         // Reset the UI's per-run animation state (bar display values, boss
@@ -1731,7 +1733,7 @@ export class Game {
         else if (fps > g.upFps) { this._gfxHighTimer += dt; this._gfxLowTimer = 0; }
         else { this._gfxLowTimer = 0; this._gfxHighTimer = 0; }
 
-        if (this._gfxLowTimer >= g.sustainSeconds && this._gfxLevel < 2) {
+        if (this._gfxLowTimer >= g.sustainSeconds && this._gfxLevel < 3) {
             this._gfxLevel++;
             this._gfxLowTimer = 0;
             this._applyGfxLevel();
@@ -1744,6 +1746,12 @@ export class Game {
 
     _applyGfxLevel() {
         const lvl = this._gfxLevel;
+        // The dominant cost on a struggling machine is full-screen fill
+        // (darkness veil + additive light glows) at the backing-store
+        // resolution, so each step sheds lights AND backing pixels. The DPR
+        // ladder 2 → 2 → 1 → 0.7 is the real lever on high-res/4K PCs (level 3
+        // renders below CSS size and upscales). Sprites are supersampled, so
+        // even level 3 stays acceptably crisp.
         if (lvl === 0) {
             this.lighting.setQuality({
                 maxLights: GFX.lighting.maxLights,
@@ -1751,18 +1759,29 @@ export class Game {
                 strength: GFX.darkness.strength,
             });
             this.particles.setQuality({ max: GFX.particles.max, fog: GFX.particles.fog });
-            this.renderer.setDprCap?.(3);
+            this.renderer.setDprCap?.(RENDER.maxDpr);
         } else if (lvl === 1) {
             this.lighting.setQuality({ maxLights: 64, colorTint: false });
             this.particles.setQuality({ max: 140, fog: GFX.particles.fog });
-            this.renderer.setDprCap?.(3);
-        } else {
+            this.renderer.setDprCap?.(RENDER.maxDpr);
+        } else if (lvl === 2) {
             this.lighting.setQuality({ maxLights: 44, colorTint: false });
             this.particles.setQuality({ max: 90, fog: false });
-            // Sustained low fps: also shed backing-store fill cost by halving
-            // the DPR ceiling (the supersampled sprites still keep edges clean).
-            this.renderer.setDprCap?.(2);
+            // Drop to true 1080p-equivalent backing (dpr 1) — big fill cut on
+            // any retina/high-DPI display.
+            this.renderer.setDprCap?.(1);
+        } else {
+            // Last resort for a fill-rate-bound display (e.g. 4K at 100% OS
+            // scaling, where dpr is already 1): render BELOW CSS size and let
+            // the browser upscale. Combined with the leanest light/particle
+            // budget this reliably pulls a stuck machine back to playable.
+            this.lighting.setQuality({ maxLights: 30, colorTint: false });
+            this.particles.setQuality({ max: 70, fog: false });
+            this.renderer.setDprCap?.(RENDER.minDpr);
         }
+        // Cosmetic-but-not-free extras (decoration contact shadows) shed once
+        // the governor is actively reducing quality.
+        this.mapRenderer.lowQuality = this.reducedEffects || this._gfxLevel >= 2;
     }
 
     // True when (x, y) is within the camera view plus `margin`. Used to

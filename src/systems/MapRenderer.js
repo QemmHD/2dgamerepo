@@ -55,6 +55,9 @@ export class MapRenderer {
         // Built lazily as chunks come into view and never cleared — total
         // memory is bounded by world size (4800×2700 / 512² ≈ 50 chunks).
         this.chunkCache = new Map();
+        // Set by Game from reducedEffects / the FPS governor: when true, the
+        // cosmetic decoration contact shadows are skipped to shed fill cost.
+        this.lowQuality = false;
     }
 
     _ensureTilePattern(ctx) {
@@ -121,9 +124,10 @@ export class MapRenderer {
         const right = left + viewW;
         const bottom = top + viewH;
 
-        // Contact-shadow config + cached blob resolved once per call.
+        // Contact-shadow config + cached blob resolved once per call (skipped
+        // entirely under reduced effects / governor low-quality).
         const ds = SPRITE_FX.decorationShadow;
-        const shadowBlob = ds.enabled ? getSoftShadowSprite() : null;
+        const shadowBlob = (ds.enabled && !this.lowQuality) ? getSoftShadowSprite() : null;
 
         const cx0 = Math.floor(left / CHUNK_SIZE) - 1;
         const cy0 = Math.floor(top / CHUNK_SIZE) - 1;
