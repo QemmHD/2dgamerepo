@@ -56,7 +56,7 @@ import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
 import { OBJECTIVES, OBJECTIVE_COUNT } from '../content/objectives.js';
-import { getMap } from '../content/maps.js';
+import { getMap, MAP_ORDER, DEFAULT_MAP } from '../content/maps.js';
 import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 
@@ -177,6 +177,12 @@ export class Game {
                 }
                 return;
             }
+            if (this.victory) {
+                if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this.victoryContinue(); }
+                else if (e.code === 'KeyB') { e.preventDefault(); this.victoryToMenu(true); }
+                else if (e.code === 'KeyM' || e.code === 'Escape') { e.preventDefault(); this.victoryToMenu(false); }
+                return;
+            }
             // Debug-only time-jump (NOT a player feature): with the debug
             // overlay on, ] skips +60s and \ skips +300s so 5/10/20/30-min
             // balance can be tested quickly. Gated by showDebug + live play.
@@ -281,6 +287,17 @@ export class Game {
             return true;
         };
 
+        // 3rd-boss victory overlay buttons.
+        const tryVictoryAt = (clientX, clientY) => {
+            if (!this.victory) return false;
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            const r = this._victoryRects();
+            if (inRect(pos, r.cont, 0)) { this._pressFeedback('vContinue'); this.victoryContinue(); return true; }
+            if (inRect(pos, r.biome, 0)) { this._pressFeedback('vBiome'); this.victoryToMenu(true); return true; }
+            if (inRect(pos, r.menu, 0)) { this._pressFeedback('vMenu'); this.victoryToMenu(false); return true; }
+            return true; // consume all taps while the overlay is up
+        };
+
         // Pause overlay buttons (resume / restart / shop / shake toggle).
         const tryPauseOverlayAt = (clientX, clientY) => {
             if (!this.paused) return false;
@@ -339,6 +356,8 @@ export class Game {
                     if (tryStartScreenAt(t.clientX, t.clientY)) return;
                 } else if (this.screen === 'gameOver') {
                     if (tryRestartAt(t.clientX, t.clientY)) return;
+                } else if (this.victory) {
+                    if (tryVictoryAt(t.clientX, t.clientY)) return;
                 } else if (this.upgradeChoices) {
                     if (tryPickUpgradeAt(t.clientX, t.clientY)) return;
                 } else if (this.paused) {
@@ -359,6 +378,8 @@ export class Game {
                 tryStartScreenAt(e.clientX, e.clientY);
             } else if (this.screen === 'gameOver') {
                 tryRestartAt(e.clientX, e.clientY);
+            } else if (this.victory) {
+                tryVictoryAt(e.clientX, e.clientY);
             } else if (this.upgradeChoices) {
                 tryPickUpgradeAt(e.clientX, e.clientY);
             } else if (this.paused) {
@@ -430,6 +451,13 @@ export class Game {
         // Boss arena confinement ({ x, y, r } while a boss fight is sealed; null otherwise).
         this.arena = null;
         this.bossesDefeated = 0;
+        // Victory overlay shown once when the 3rd boss falls (Continue / new
+        // biome / main menu). _victoryShown latches so later bosses don't reopen
+        // it; _runRecorded guards against double-counting lifetime stats when a
+        // victory-leave records the run and game-over would otherwise too.
+        this.victory = null;
+        this._victoryShown = false;
+        this._runRecorded = false;
         this.runSummary = null;
 
         this.time = 0;
@@ -536,6 +564,42 @@ export class Game {
         this.resetConfirmTimer = 0;
         this.paused = false;
         this._updateJoystickEnabled();
+    }
+
+    // ── 3rd-boss victory overlay ─────────────────────────────────────────
+    _showVictory() {
+        this.victory = { age: 0 };
+        this.audio.objective();
+        this._updateJoystickEnabled();
+    }
+
+    // Continue the same run (keep the gauntlet going past 3 bosses).
+    victoryContinue() {
+        this.victory = null;
+        this.audio.click();
+        this._updateJoystickEnabled();
+    }
+
+    // Bank + RECORD the run once (so the 3 boss kills count toward lifetime
+    // unlocks — including the new biome), then return to the menu. Optionally
+    // pre-select the new map so the player lands ready to play it.
+    victoryToMenu(selectNewMap = false) {
+        if (!this._runRecorded) {
+            this.saveSystem.recordRun({
+                time: this.time, level: this.player.level, kills: this.kills,
+                bossesDefeated: this.bossesDefeated,
+                finalWave: (this.waveState?.index ?? 0) + 1,
+                finalWaveName: this.waveState?.name ?? '',
+            });
+            this._runRecorded = true;
+        }
+        // The new biome is now unlocked (3 lifetime bosses) — select it if asked.
+        if (selectNewMap) {
+            const next = MAP_ORDER.find((id) => id !== DEFAULT_MAP) || DEFAULT_MAP;
+            this.saveSystem.setSelectedMap(next);
+        }
+        this.victory = null;
+        this.returnToShop();
     }
 
     // Bank coins earned this run into the save total, exactly once (guarded
@@ -782,7 +846,7 @@ export class Game {
     _updateJoystickEnabled() {
         if (!this.input.touch) return;
         const blocked = this.screen !== 'gameplay' || this.paused ||
-            !!this.upgradeChoices || !!this.chestReward;
+            !!this.upgradeChoices || !!this.chestReward || !!this.victory;
         this.input.touch.setEnabled(!blocked);
     }
 
@@ -1159,7 +1223,7 @@ export class Game {
         const hits = [];
         const interval = ELEMENT.fire.tickInterval;
         const burnMul = this.player.burnDamageMul ?? 1;
-        let numberBudget = 6;
+        let numberBudget = 10;
         for (const e of this.enemies) {
             // Process any enemy that still carries burn DPS (burnTimer may have
             // just hit 0 — we still owe it the final partial tick below).
@@ -1209,7 +1273,17 @@ export class Game {
                 if (!o.active || o === e || o.burnTimer > 0) continue;
                 const dx = o.x - e.x, dy = o.y - e.y;
                 if (dx * dx + dy * dy > SPREAD_R2) continue;
-                o.applyBurn(e.burnDps * 0.7, Math.max(1.5, e.burnTimer * 0.8));
+                // Floor the spread DPS so it's never trivial even off a weak
+                // source, and carry most of the source's remaining duration.
+                const spreadDps = Math.max(6, e.burnDps * 0.7);
+                o.applyBurn(spreadDps, Math.max(1.5, e.burnTimer * 0.8));
+                // Immediate ignition BITE so the spread visibly hurts right away
+                // (a slow DoT alone reads as "0 damage" — and can be hidden by
+                // the per-frame damage-number budget). Routed like any burn kill.
+                const bite = spreadDps * 0.5 * burnMul;
+                o.takeDamage(bite);
+                this.damageNumbers.push(new DamageNumber(o.x, o.y - o.radius, bite, ELEMENT.fire.tint));
+                if (!o.active) killed.push(o);
                 this.particles.burnEmbers(o.x, o.y);
                 spreadBudget--;
                 break; // ignite one neighbour per burning enemy per tick
@@ -1300,8 +1374,10 @@ export class Game {
         };
 
         // Fold the run into lifetime/best records; capture which bests were
-        // beaten so the game-over summary can flag them.
-        this.newBest = this.saveSystem.recordRun(this.runSummary);
+        // beaten so the game-over summary can flag them. Skip if a victory-leave
+        // already recorded this run (so the 3 boss kills aren't counted twice).
+        this.newBest = this._runRecorded ? null : this.saveSystem.recordRun(this.runSummary);
+        this._runRecorded = true;
         // Award battle-pass (vigil) XP from the run and surface the gain on the
         // game-over screen.
         this.bpResult = awardBattlePassRun(this.saveSystem, this.runSummary);
@@ -1331,10 +1407,22 @@ export class Game {
                 if (this.resetConfirmTimer <= 0) this.resetConfirming = false;
             }
             if (this.caseAnim) {
-                const wasSpinning = this.caseAnim.age < (this.caseAnim.spinTime ?? 2.6);
+                const spinTime = this.caseAnim.spinTime ?? 2.6;
+                const wasSpinning = this.caseAnim.age < spinTime;
                 this.caseAnim.age += dt;
-                // Fire the reveal chime the instant the reel settles on the prize.
-                if (wasSpinning && this.caseAnim.age >= (this.caseAnim.spinTime ?? 2.6)) this.audio.reveal();
+                if (wasSpinning) {
+                    // Ratchet tick that SLOWS as the reel decelerates (50ms → ~270ms).
+                    const p = Math.min(1, this.caseAnim.age / spinTime);
+                    const interval = 0.05 + p * p * 0.22;
+                    this.caseAnim._tick = (this.caseAnim._tick ?? 0) + dt;
+                    if (this.caseAnim.age < spinTime && this.caseAnim._tick >= interval) {
+                        this.caseAnim._tick = 0;
+                        this.audio.spinTick();
+                    }
+                }
+                // Fire the reveal chime the instant the reel settles — its pitch/
+                // richness scales with the won rarity (better pull = bigger noise).
+                if (wasSpinning && this.caseAnim.age >= spinTime) this.audio.reveal(this.caseAnim.result?.rarity);
             }
             if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
             return;
@@ -1353,6 +1441,12 @@ export class Game {
             // Tick the chest-overlay animation but freeze gameplay so the
             // world behind it stays exactly as it was when the chest opened.
             this.chestReward.age += dt;
+            this.camera.update(dt);
+            return;
+        }
+        if (this.victory) {
+            // 3rd-boss victory overlay: freeze the world behind it.
+            this.victory.age += dt;
             this.camera.update(dt);
             return;
         }
@@ -1629,6 +1723,12 @@ export class Game {
                     // Back to the driving theme once the duel ends; lift the arena.
                     this.audio.playMusic('gameplay');
                     this.arena = null;
+                    // Clearing the 3rd boss is a milestone: open the victory
+                    // overlay (continue / new biome / main menu) once per run.
+                    if (this.bossesDefeated >= 3 && !this._victoryShown) {
+                        this._victoryShown = true;
+                        this._showVictory();
+                    }
                 } else if (e.elite) {
                     // Elites: chance at a chest, chance at a coin burst.
                     if (Math.random() < CHEST.eliteDropChance) {
@@ -2054,7 +2154,60 @@ export class Game {
 
         this.ui.draw(ctx, this._buildUIState());
 
+        if (this.victory) this._drawVictory(ctx);
+
         if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
+    }
+
+    // Layout for the victory overlay's three stacked buttons (internal coords).
+    _victoryRects() {
+        const cx = INTERNAL_WIDTH / 2;
+        const w = 560, h = 96, gap = 26;
+        const top = INTERNAL_HEIGHT / 2 - 40;
+        return {
+            cont:  { x: cx - w / 2, y: top, w, h },
+            biome: { x: cx - w / 2, y: top + (h + gap), w, h },
+            menu:  { x: cx - w / 2, y: top + (h + gap) * 2, w, h },
+        };
+    }
+
+    _drawVictory(ctx) {
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
+        const t = Math.min(1, (this.victory.age || 0) / 0.35);
+        ctx.save();
+        // Dim the world.
+        ctx.fillStyle = `rgba(8, 6, 16, ${0.78 * t})`;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = t;
+        ctx.textAlign = 'center';
+        // Title.
+        ctx.fillStyle = '#ffd98a';
+        ctx.font = 'bold 86px sans-serif';
+        ctx.fillText('VIGIL TRIUMPHANT', W / 2, H / 2 - 150);
+        ctx.fillStyle = '#cde4ff';
+        ctx.font = '34px sans-serif';
+        ctx.fillText('Three apex Hollow have fallen. A new biome opens.', W / 2, H / 2 - 96);
+
+        const r = this._victoryRects();
+        const btn = (rect, label, sub, fill, border) => {
+            ctx.fillStyle = fill;
+            ctx.strokeStyle = border;
+            ctx.lineWidth = 3;
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 16); ctx.fill(); ctx.stroke(); }
+            else { ctx.fillRect(rect.x, rect.y, rect.w, rect.h); ctx.strokeRect(rect.x, rect.y, rect.w, rect.h); }
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 38px sans-serif';
+            ctx.fillText(label, rect.x + rect.w / 2, rect.y + (sub ? 42 : 60));
+            if (sub) {
+                ctx.fillStyle = 'rgba(255,255,255,0.75)';
+                ctx.font = '22px sans-serif';
+                ctx.fillText(sub, rect.x + rect.w / 2, rect.y + 74);
+            }
+        };
+        btn(r.cont, 'CONTINUE', 'keep going — the gauntlet cycles harder', '#1d6b3a', '#7be08a');
+        btn(r.biome, 'PLAY NEW BIOME', 'Hollow Reach — the frozen vigil', '#1d4a7a', '#7fd0ff');
+        btn(r.menu, 'MAIN MENU', 'bank coins • upgrade • pick a map', '#5a3a1a', '#ffb24a');
+        ctx.restore();
     }
 
     _buildUIState() {

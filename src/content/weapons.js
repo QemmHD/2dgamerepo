@@ -184,14 +184,14 @@ export const WEAPONS = {
         // FX + a zap SFX sell it.
         perLevel: [
             null,
-            { damage: 17, cooldown: 0.52, range: 700, chainCount: 1, chainChance: 0.85, chainRange: 240, chainDamage: 11, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
-            { damage: 20, cooldown: 0.50, range: 720, chainCount: 1, chainChance: 0.88, chainRange: 250, chainDamage: 13, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
-            { damage: 24, cooldown: 0.48, range: 740, chainCount: 2, chainChance: 0.90, chainRange: 260, chainDamage: 15, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
-            { damage: 29, cooldown: 0.44, range: 760, chainCount: 2, chainChance: 0.90, chainRange: 270, chainDamage: 18, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
-            { damage: 34, cooldown: 0.40, range: 800, chainCount: 2, chainChance: 0.92, chainRange: 280, chainDamage: 21, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
-            { damage: 40, cooldown: 0.36, range: 840, chainCount: 3, chainChance: 0.92, chainRange: 290, chainDamage: 25, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
-            { damage: 47, cooldown: 0.32, range: 880, chainCount: 3, chainChance: 0.95, chainRange: 300, chainDamage: 29, shockPerStack: 0.08, maxShockStacks: 5, shockDuration: 4.0 },
-            { damage: 56, cooldown: 0.28, range: 920, chainCount: 3, chainChance: 1.0, chainRange: 320, chainDamage: 34, shockPerStack: 0.08, maxShockStacks: 5, shockDuration: 4.0 },
+            { damage: 17, cooldown: 0.52, range: 340, chainCount: 1, chainChance: 0.85, chainRange: 200, chainDamage: 11, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { damage: 20, cooldown: 0.50, range: 360, chainCount: 1, chainChance: 0.88, chainRange: 210, chainDamage: 13, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { damage: 24, cooldown: 0.48, range: 380, chainCount: 2, chainChance: 0.90, chainRange: 220, chainDamage: 15, shockPerStack: 0.08, maxShockStacks: 3, shockDuration: 4.0 },
+            { damage: 29, cooldown: 0.44, range: 400, chainCount: 2, chainChance: 0.90, chainRange: 230, chainDamage: 18, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
+            { damage: 34, cooldown: 0.40, range: 420, chainCount: 2, chainChance: 0.92, chainRange: 240, chainDamage: 21, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
+            { damage: 40, cooldown: 0.36, range: 440, chainCount: 3, chainChance: 0.92, chainRange: 250, chainDamage: 25, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
+            { damage: 47, cooldown: 0.32, range: 470, chainCount: 3, chainChance: 0.95, chainRange: 260, chainDamage: 29, shockPerStack: 0.08, maxShockStacks: 5, shockDuration: 4.0 },
+            { damage: 56, cooldown: 0.28, range: 500, chainCount: 3, chainChance: 1.0, chainRange: 280, chainDamage: 34, shockPerStack: 0.08, maxShockStacks: 5, shockDuration: 4.0 },
         ],
         update: voltWandUpdate,
     },
@@ -948,7 +948,15 @@ function voltWandUpdate(dt, owned, ctx) {
     owned.timer -= dt;
     if (owned.timer > 0) return;
 
-    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView);
+    // Tighter targeting than the other wands: only zap a husk within the
+    // wand's own (short) range AND on-screen, so it doesn't reach across the
+    // arena.
+    const rSq = (cfg.range ?? 420) * (cfg.range ?? 420);
+    const inRange = (x, y) => {
+        const dx = x - ctx.player.x, dy = y - ctx.player.y;
+        return dx * dx + dy * dy <= rSq && (!ctx.inView || ctx.inView(x, y));
+    };
+    const target = nearestEnemy(ctx.player, ctx.enemies, inRange);
     if (!target) {
         if (owned.timer < 0) owned.timer = 0;
         return;

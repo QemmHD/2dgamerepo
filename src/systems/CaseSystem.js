@@ -11,22 +11,37 @@ import { GEAR_LIST } from '../content/gear.js';
 import { COSMETIC_LIST } from '../content/cosmetics.js';
 import { RARITY_ORDER, rarityDust, rarityName } from '../content/rarities.js';
 
+// Each case now draws from a SINGLE pool kind ('gear' or 'cosmetic'), so the
+// loot you get is always the type the case is named for. Three tiers each.
 export const CASES = {
     basic: {
-        id: 'basic', name: 'Basic Case', cost: 60,
+        id: 'basic', name: 'Basic Case', cost: 60, poolKind: 'gear',
         odds: { common: 0.65, uncommon: 0.25, rare: 0.09, epic: 0.01 },
     },
     mystic: {
-        id: 'mystic', name: 'Mystic Case', cost: 180,
+        id: 'mystic', name: 'Mystic Case', cost: 180, poolKind: 'gear',
         odds: { common: 0.35, uncommon: 0.35, rare: 0.20, epic: 0.08, legendary: 0.02 },
     },
     royal: {
-        id: 'royal', name: 'Royal Case', cost: 450,
+        id: 'royal', name: 'Royal Case', cost: 450, poolKind: 'gear',
+        odds: { uncommon: 0.30, rare: 0.35, epic: 0.23, legendary: 0.10, mythic: 0.02 },
+    },
+    basicCosmetic: {
+        id: 'basicCosmetic', name: 'Basic Cosmetic Case', cost: 60, poolKind: 'cosmetic',
+        odds: { common: 0.65, uncommon: 0.25, rare: 0.09, epic: 0.01 },
+    },
+    mysticCosmetic: {
+        id: 'mysticCosmetic', name: 'Mystic Cosmetic Case', cost: 180, poolKind: 'cosmetic',
+        odds: { common: 0.35, uncommon: 0.35, rare: 0.20, epic: 0.08, legendary: 0.02 },
+    },
+    royalCosmetic: {
+        id: 'royalCosmetic', name: 'Royal Cosmetic Case', cost: 450, poolKind: 'cosmetic',
         odds: { uncommon: 0.30, rare: 0.35, epic: 0.23, legendary: 0.10, mythic: 0.02 },
     },
 };
 
-export const CASE_ORDER = ['basic', 'mystic', 'royal'];
+// Shop layout: gear tier then its cosmetic twin, per tier.
+export const CASE_ORDER = ['basic', 'basicCosmetic', 'mystic', 'mysticCosmetic', 'royal', 'royalCosmetic'];
 
 // ── Ember Forge ─────────────────────────────────────────────────────────
 // A "doesn't feel like gambling" mode: spend grindable Cinders (coins) to
@@ -42,13 +57,18 @@ CASES.forge = FORGE;       // so buildCaseReel/openCase resolve it by id
 export const FORGE_PITY = 8; // forges since the last Rare+ that force one
 
 // One flat index of everything a case can award, tagged by kind + rarity.
+// Default-unlocked gear (e.g. the Cinderbolt) is EXCLUDED — you already own it,
+// so it should never be a case pull.
 const ITEM_POOL = [
-    ...GEAR_LIST.map((g) => ({ kind: 'gear', id: g.id, rarity: g.rarity, name: g.name, category: g.category })),
+    ...GEAR_LIST.filter((g) => !g.defaultUnlocked)
+        .map((g) => ({ kind: 'gear', id: g.id, rarity: g.rarity, name: g.name, category: g.category })),
     ...COSMETIC_LIST.map((c) => ({ kind: 'cosmetic', id: c.id, rarity: c.rarity, name: c.name, category: c.category })),
 ];
 
-function poolByRarity(rarity) {
-    return ITEM_POOL.filter((i) => i.rarity === rarity);
+// Pool filtered by rarity and (optionally) kind. A null kind means "any" —
+// used by the Ember Forge, which can award either gear or cosmetics.
+function poolByRarity(rarity, kind = null) {
+    return ITEM_POOL.filter((i) => i.rarity === rarity && (!kind || i.kind === kind));
 }
 
 // Build a "spin reel": a strip of item cells the overlay scrolls past before
@@ -58,20 +78,23 @@ function poolByRarity(rarity) {
 // result has no item, so its landing cell shows the result label + rarity.
 export function buildCaseReel(caseType, result, length = 48, landingIndex = 42) {
     const def = CASES[caseType];
+    const kind = def ? (def.poolKind ?? null) : null; // gear/cosmetic-only reels
     const rarities = def ? RARITY_ORDER.filter((r) => def.odds[r]) : ['common'];
     const weighted = [];
     if (def) for (const r of rarities) for (let i = 0; i < Math.max(1, Math.round(def.odds[r] * 100)); i++) weighted.push(r);
     const reel = [];
     for (let i = 0; i < length; i++) {
         const rr = weighted.length ? weighted[Math.floor(Math.random() * weighted.length)] : 'common';
-        const pool = poolByRarity(rr);
+        const pool = poolByRarity(rr, kind);
         const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
-        reel.push({ rarity: rr, name: pick ? pick.name : rarityName(rr) });
+        // Cells carry their kind so the spin reel can draw a gear/cosmetic logo.
+        reel.push({ rarity: rr, name: pick ? pick.name : rarityName(rr), kind: pick ? pick.kind : (kind || 'coins') });
     }
     // Place the real result on the landing cell.
     reel[landingIndex] = {
         rarity: result.rarity || 'common',
         name: result.name || result.label || rarityName(result.rarity || 'common'),
+        kind: result.kind || kind || 'coins',
     };
     return { reel, landingIndex };
 }
@@ -106,14 +129,14 @@ export function openCase(save, caseType, opts = {}) {
     }
     save.incrementStat('casesOpened', 1);
 
-    return grantRarityReward(save, rollRarity(def.odds));
+    return grantRarityReward(save, rollRarity(def.odds), def.poolKind ?? null);
 }
 
 // Resolve + apply the reward for a rolled rarity (shared by cases + the forge).
 // 82% an item of that rarity (duplicates convert to coin dust); otherwise a
 // coin / battle-pass consolation so a pull always pays out something.
-function grantRarityReward(save, rarity) {
-    const pool = poolByRarity(rarity);
+function grantRarityReward(save, rarity, kind = null) {
+    const pool = poolByRarity(rarity, kind);
     if (pool.length && Math.random() < 0.82) {
         const pick = pool[Math.floor(Math.random() * pool.length)];
         const owned = pick.kind === 'gear' ? save.isGearUnlocked(pick.id) : save.isCosmeticUnlocked(pick.id);

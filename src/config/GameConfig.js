@@ -274,6 +274,36 @@ export const ENEMY = {
         ],
         phase2Attacks: ['volley', 'dive'],
     },
+    // Third boss — the climax. A grinning, many-armed orb (the "Cacklemaw")
+    // with the deepest kit in the game: a cackling radial burst, a ground gnash
+    // shockwave, drooling delayed-AoE pools, a tentacle WALL, homing gaze motes,
+    // a goring lunge, a turning spiral cackle, and a spawnling SUMMON. Slowest
+    // mover but tankiest + biggest, and it only appears as the 3rd encounter so
+    // the per-encounter tier (×2.6 HP) makes it the hardest fight by far.
+    gloomMaw: {
+        hp: 1800,
+        speed: 285,
+        radius: 120,
+        contactDamage: 32,
+        xpValue: 70,
+        boss: true,
+        bossName: 'Cacklemaw',
+        visualScale: 2.05,
+        behavior: 'apexBoss',
+        phase2HpFraction: 0.5,
+        supportTypes: { mite: 2, bat: 2, crawler: 1 },
+        attacks: [
+            { id: 'cackle', kind: 'fan', cooldown: 3.0, windup: 0.5, count: 20, spread: 6.2832, projectileSpeed: 440, projectileDamage: 16 },
+            { id: 'gnash', kind: 'shockwave', cooldown: 4.0, windup: 0.5, damage: 30, growth: 900, rMax: 600, band: 110 },
+            { id: 'spiralCackle', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 16, spread: 6.2832, projectileSpeed: 420, projectileDamage: 14, spiral: true, spin: 0.5 },
+            { id: 'lunge', kind: 'charge', cooldown: 6.0, windup: 0.45, dashSpeed: 820, dashDuration: 0.6 },
+            { id: 'drool', kind: 'zones', cooldown: 7.5, windup: 0.8, count: 6, zoneRadius: 150, spreadRadius: 420, damage: 28, warn: 0.85 },
+            { id: 'lash', kind: 'wall', cooldown: 8.0, windup: 0.55, count: 15, spacing: 74, projectileSpeed: 380, projectileDamage: 20, gap: 2 },
+            { id: 'gaze', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 250, projectileDamage: 15, turnRate: 2.4, maxSpeed: 380, color: '#cdb3ff' },
+            { id: 'spawnlings', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { mite: 3, bat: 2 } },
+        ],
+        phase2Attacks: ['cackle', 'lunge'],
+    },
 };
 
 // Boss spawn schedule + spawn placement.
@@ -286,7 +316,9 @@ export const BOSS = {
     // (prevents back-to-back bosses when a boss is killed late).
     postDeathCooldown: 45,
     spawnRingDistance: 1100,
-    types: ['vinebackGoliath', 'stormwingAlpha'],
+    // Encounter order: Gravemaw → Vesperwing → Cacklemaw (the climax 3rd boss),
+    // then it cycles. The per-encounter tier makes each successive boss tougher.
+    types: ['vinebackGoliath', 'stormwingAlpha', 'gloomMaw'],
     // Late-game survivability. Boss HP scales with the run minute much harder
     // than trash (so a 20-30 min boss isn't deleted instantly), and a mild
     // flat damage resistance ramps with time. Never invulnerable — just tanky.
@@ -324,8 +356,8 @@ export const BOSS = {
     // (smaller than the world) centered on the player. Both the player AND the
     // boss are confined to it, so you can't just run away and plink — you have
     // to dodge the boss in close quarters. Lifts on boss death.
-    arenaRadius: 860,            // confinement radius (world px) — smaller than the map
-    arenaSpawnDistance: 600,     // boss spawns this far from player (inside the ring)
+    arenaRadius: 1120,           // confinement radius (world px) — roomier so the fight has space, still < the map
+    arenaSpawnDistance: 720,     // boss spawns this far from player (inside the ring)
     arenaColor: '#ff5a3c',       // boundary ring tint
     // In-world presence (drawn by Enemy.draw for bosses only): a broad
     // ground shadow + a slow ominous aura halo behind the sprite so an apex

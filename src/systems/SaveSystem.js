@@ -48,6 +48,8 @@ function defaultData() {
             reducedEffects: false,
             volMusic: 0.7,
             volSfx: 0.8,
+            // Testing: unlock every biome regardless of boss kills.
+            unlockMaps: false,
         },
         // Character cosmetics (visual only). unlocked = owned ids; equipped =
         // one id per slot.
@@ -343,15 +345,21 @@ export class SaveSystem {
     }
 
     // ── Map selection (unlock-gated by lifetime boss kills) ──────────────
+    // A map counts as unlocked if its boss-kill threshold is met OR the testing
+    // "unlockMaps" setting is on (free unlock for trying the new biome).
+    mapUnlocked(id) {
+        return isMapUnlocked(id, this.data.stats?.totalBosses) || this.getSetting('unlockMaps') === true;
+    }
+
     getSelectedMap() {
         const id = this.data.selectedMap ?? DEFAULT_MAP;
         // Defensively fall back if a saved map isn't unlocked (e.g. after a reset).
-        return isMapUnlocked(id, this.data.stats?.totalBosses) ? id : DEFAULT_MAP;
+        return this.mapUnlocked(id) ? id : DEFAULT_MAP;
     }
 
     setSelectedMap(id) {
         if (!MAPS[id]) return false;
-        if (!isMapUnlocked(id, this.data.stats?.totalBosses)) return false;
+        if (!this.mapUnlocked(id)) return false;
         this.data.selectedMap = id;
         this.save();
         return true;
