@@ -77,6 +77,8 @@ export function prewarmSprites() {
     getChargerFrames();
     getMiteFrames();
     getJuggernautFrames();
+    getHealerFrames();
+    getShielderFrames();
     getChestFrames();
     getCoinFrames();
     getProjectileSprite();
@@ -187,6 +189,8 @@ export const getSpitterFrames = makeFrameGetter('spitterFrames', 4, drawSpitter)
 export const getChargerFrames = makeFrameGetter('chargerFrames', 2, drawCharger);
 export const getMiteFrames = makeFrameGetter('miteFrames', 4, drawMite);
 export const getJuggernautFrames = makeFrameGetter('juggernautFrames', 2, drawJuggernaut);
+export const getHealerFrames = makeFrameGetter('healerFrames', 4, drawHealer);
+export const getShielderFrames = makeFrameGetter('shielderFrames', 3, drawShielder);
 
 // Back-compat: idle frames for legacy callers.
 export function getSlimeSprite() { return getSlimeFrames()[0]; }
@@ -1488,6 +1492,121 @@ function drawCrawler(size, frame, count) {
         ctx.fill();
     }
 
+    return canvas;
+}
+
+// ─── Healer (support) ─────────────────────────────────────────────────
+// A hooded green acolyte cradling a pulsing life-orb (the heal tell). The
+// orb brightens across the 4 frames so it reads as "actively mending".
+function drawHealer(size, frame, count) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const pulse = (Math.sin((frame / count) * TWO_PI) + 1) / 2;
+
+    const ROBE = '#2f7d4a', ROBE_DARK = '#1c4d2e', ROBE_LIGHT = '#52a36c';
+    const FACE = '#cfe9d6';
+    const ORB = '#9af7b0', ORB_CORE = '#eafff0';
+
+    softShadow(ctx, cx, cy + 52, 44, 9, 0.3);
+
+    // Robe body (tapered teardrop).
+    ctx.fillStyle = ROBE;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 40);
+    ctx.quadraticCurveTo(cx + 44, cy - 6, cx + 36, cy + 54);
+    ctx.lineTo(cx - 36, cy + 54);
+    ctx.quadraticCurveTo(cx - 44, cy - 6, cx, cy - 40);
+    ctx.closePath();
+    ctx.fill();
+    // Robe shading + trim.
+    ctx.fillStyle = ROBE_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 12, cy - 8, 14, 30, -0.2, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = ROBE_DARK; ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 40);
+    ctx.quadraticCurveTo(cx + 44, cy - 6, cx + 36, cy + 54);
+    ctx.lineTo(cx - 36, cy + 54);
+    ctx.quadraticCurveTo(cx - 44, cy - 6, cx, cy - 40);
+    ctx.closePath();
+    ctx.stroke();
+    // Hood opening + face.
+    ctx.fillStyle = ROBE_DARK;
+    ctx.beginPath(); ctx.ellipse(cx, cy - 26, 18, 20, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = FACE;
+    ctx.beginPath(); ctx.ellipse(cx, cy - 22, 11, 13, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = '#1a3322';
+    ctx.beginPath(); ctx.arc(cx - 4, cy - 22, 2.4, 0, TWO_PI); ctx.arc(cx + 4, cy - 22, 2.4, 0, TWO_PI); ctx.fill();
+
+    // Pulsing life-orb cradled at the front (the heal tell).
+    const orbR = 14 + pulse * 5;
+    const g = ctx.createRadialGradient(cx, cy + 16, 2, cx, cy + 16, orbR + 8);
+    g.addColorStop(0, ORB_CORE); g.addColorStop(0.5, ORB); g.addColorStop(1, 'rgba(120,240,150,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy + 16, orbR + 8, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = ORB_CORE;
+    ctx.beginPath(); ctx.arc(cx, cy + 16, 5 + pulse * 2, 0, TWO_PI); ctx.fill();
+    // A small green cross inside the orb.
+    ctx.strokeStyle = '#2f7d4a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + 16 - 6); ctx.lineTo(cx, cy + 16 + 6);
+    ctx.moveTo(cx - 6, cy + 16); ctx.lineTo(cx + 6, cy + 16);
+    ctx.stroke();
+    return canvas;
+}
+
+// ─── Shielder (support) ───────────────────────────────────────────────
+// A squat steel-blue warden behind a big hex shield plate that shimmers
+// (the protection tell). 3 frames of a soft sheen sweep.
+function drawShielder(size, frame, count) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const t = frame / count;
+
+    const BODY = '#3a5a86', BODY_DARK = '#243a5a', BODY_LIGHT = '#5e84b8';
+    const PLATE = '#8fb6e6', PLATE_DARK = '#3f6398', FACE = '#cdddf2';
+
+    softShadow(ctx, cx, cy + 54, 52, 10, 0.32);
+
+    // Squat body.
+    ctx.fillStyle = BODY;
+    ctx.beginPath(); ctx.ellipse(cx, cy + 12, 50, 46, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath(); ctx.ellipse(cx - 14, cy - 4, 18, 14, -0.3, 0, TWO_PI); ctx.fill();
+    ctx.strokeStyle = BODY_DARK; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.ellipse(cx, cy + 12, 50, 46, 0, 0, TWO_PI); ctx.stroke();
+    // Eyes.
+    ctx.fillStyle = '#16263e';
+    ctx.beginPath(); ctx.arc(cx - 14, cy + 2, 6, 0, TWO_PI); ctx.arc(cx + 14, cy + 2, 6, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = FACE;
+    ctx.beginPath(); ctx.arc(cx - 12, cy, 2.2, 0, TWO_PI); ctx.arc(cx + 16, cy, 2.2, 0, TWO_PI); ctx.fill();
+
+    // Hex shield plate held in front.
+    const sx = cx, sy = cy + 20, sr = 34;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + i * (TWO_PI / 6);
+        const px = sx + Math.cos(a) * sr, py = sy + Math.sin(a) * sr * 0.92;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = PLATE; ctx.fill();
+    ctx.strokeStyle = PLATE_DARK; ctx.lineWidth = 4; ctx.stroke();
+    // Boss/rivet center + a sheen that sweeps across frames.
+    ctx.fillStyle = PLATE_DARK;
+    ctx.beginPath(); ctx.arc(sx, sy, 7, 0, TWO_PI); ctx.fill();
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#ffffff';
+    const sweep = -sr + t * sr * 2;
+    ctx.beginPath();
+    ctx.ellipse(sx + sweep, sy, 5, sr * 0.8, 0.3, 0, TWO_PI);
+    ctx.clip();
+    ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
+    ctx.restore();
     return canvas;
 }
 

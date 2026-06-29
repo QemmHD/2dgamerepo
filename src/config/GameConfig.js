@@ -210,6 +210,39 @@ export const ENEMY = {
         xpValue: 5,
         visualScale: 1.35,
     },
+    // Support threat (Vigil 4+): a frail acolyte that hangs back and regens
+    // nearby Hollow — kill it first or the front line never thins. Heal rate +
+    // radius are capped so clusters can't become unkillable.
+    healer: {
+        hp: 78,
+        speed: 122,
+        radius: 46,
+        contactDamage: 6,
+        xpValue: 3,
+        behavior: 'support',
+        support: 'heal',
+        keepDistance: 360,     // hangs back from the player like a spitter
+        supportRadius: 330,    // heals allies within this radius
+        healPerSec: 10,        // HP/sec restored to each ally in range (capped)
+        healInterval: 0.5,     // heal pulse cadence
+        tint: '#7be08a',
+    },
+    // Support threat (Vigil 4+): a stout warden that projects a damage-soak
+    // bubble onto nearby Hollow. The shield is a flat multiplier with a short
+    // refresh, so popping the Shielder instantly drops its protection.
+    shielder: {
+        hp: 130,
+        speed: 96,
+        radius: 56,
+        contactDamage: 9,
+        xpValue: 3,
+        behavior: 'support',
+        support: 'shield',
+        keepDistance: 300,
+        supportRadius: 300,
+        shieldMul: 0.55,       // allies in range take 55% damage while shielded
+        tint: '#7fd0ff',
+    },
     // Bosses are still Enemy instances; the `boss: true` flag flips on the
     // boss HP bar, chest drop on death, and lets the constructor pull in
     // bossName + visualScale. They scale with wave just like other enemies.
@@ -560,7 +593,7 @@ export const WAVES = [
         announcement: 'Vigil 4: Gathering Hollow — the dark presses in',
         spawnIntervalMul: 0.48,
         maxAlive: 140,
-        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24 },
+        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24, healer: 6 },
         eliteChance: 0.02,
         healthMul: 1.45,
         speedMul: 1.17,
@@ -572,7 +605,7 @@ export const WAVES = [
         announcement: 'Vigil 5: Direhusks March — the heavy Hollow arrive',
         spawnIntervalMul: 0.52,
         maxAlive: 125,
-        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8 },
+        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8, healer: 9, shielder: 8 },
         eliteChance: 0.04,
         healthMul: 1.65,
         speedMul: 1.22,

@@ -28,9 +28,20 @@ export const MAPS = {
         accent: '#7fd0ff',
         weather: 'snow',        // cool flecks falling
     },
+    crypts: {
+        id: 'crypts',
+        name: 'The Crypts',
+        subtitle: 'The Sunless Deep',
+        bg: '#08080e',
+        grade: '#4a4663',       // cold violet-grey sepulchral grade
+        gradeAlpha: 0.34,
+        unlockBosses: 6,        // a deeper biome gated behind 6 lifetime bosses
+        accent: '#b9a8e0',
+        weather: 'snow',        // pale motes read as drifting crypt-dust
+    },
 };
 
-export const MAP_ORDER = ['emberwood', 'hollowreach'];
+export const MAP_ORDER = ['emberwood', 'hollowreach', 'crypts'];
 export const DEFAULT_MAP = 'emberwood';
 
 export function getMap(id) {

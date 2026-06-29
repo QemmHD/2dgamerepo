@@ -25,6 +25,8 @@ import {
     getChargerFrames,
     getMiteFrames,
     getJuggernautFrames,
+    getHealerFrames,
+    getShielderFrames,
     getGlowSprite,
     getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
@@ -45,6 +47,8 @@ const FRAMES_BY_TYPE = {
     charger:         { get: getChargerFrames,         hz: 3 },
     mite:            { get: getMiteFrames,            hz: 14 },
     juggernaut:      { get: getJuggernautFrames,      hz: 1.2 },
+    healer:          { get: getHealerFrames,          hz: 6 },
+    shielder:        { get: getShielderFrames,        hz: 3 },
     vinebackGoliath: { get: getVinebackGoliathFrames, hz: 1.6 },
     stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 7 },
     gloomMaw:        { get: getGloomMawFrames,         hz: 4 },
@@ -178,6 +182,14 @@ export class Enemy {
         this.freezeTimer = 0;
         this.shockTimer = 0;
         this.shockStacks = 0;
+
+        // Shielder support: a transient damage-soak granted by a nearby Shielder
+        // (Game refreshes shieldTimer while in range). shieldMul < 1 reduces
+        // incoming damage. Healer support is applied directly to hp by Game.
+        this.shieldTimer = 0;
+        this.shieldMul = 1;
+        // Support behaviors throttle their own pulses (heal cadence).
+        this._healAccum = 0;
 
         // Apex-boss state machine (only bosses carry it). Phase-2 latches at
         // def.phase2HpFraction; attackTimers are seeded randomly so a fresh
@@ -338,6 +350,14 @@ export class Enemy {
                 this.windupTimer = this.def.windup;
                 this.attackTimer = this.def.chargeInterval;
             }
+        } else if (!frozen && this.behavior === 'support') {
+            // Healer/Shielder: hang back from the player (like a spitter) so it
+            // survives to keep buffing the front line. Its aura effect itself is
+            // applied by Game (which has the full enemy list).
+            const kd = this.def.keepDistance ?? 340;
+            if (len < kd - 50) { moveX = -nx; moveY = -ny; }
+            else if (len > kd + 90) { moveX = nx; moveY = ny; }
+            else { moveX = 0; moveY = 0; }
         } else if (!frozen && this.behavior === 'apexBoss') {
             // Telegraphed special attacks + phase-2 enrage. The boss chases by
             // default (moveX/moveY already = nx/ny); runBossAI drives windups
@@ -433,6 +453,7 @@ export class Enemy {
         }
         this.animTimer += dt;
         this.spawnAge += dt;
+        if (this.shieldTimer > 0) this.shieldTimer -= dt;
         // Regenerating affix: slowly knit HP back while alive (never past max).
         if (this.regenPerSecond > 0 && this.hp < this.maxHp) {
             this.hp = Math.min(this.maxHp, this.hp + this.regenPerSecond * dt);
@@ -445,6 +466,8 @@ export class Enemy {
         if (this.resist > 0) amount *= (1 - this.resist);
         // Reflective/armored elite affix: soak a chunk of every hit.
         if (this.damageTakenMul !== 1) amount *= this.damageTakenMul;
+        // Shielder aura: a transient damage-soak while a Shielder is nearby.
+        if (this.shieldTimer > 0 && this.shieldMul !== 1) amount *= this.shieldMul;
         this.hp -= amount;
         this.hitFlashTimer = HIT_FLASH_DURATION;
         this.knockbackVx += knockbackVx;
@@ -517,6 +540,20 @@ export class Enemy {
         // FREEZE = denser frosted double-ring; FIRE burn = warm pulsing halo;
         // SHOCK = yellow crackle arcs near the top.
         const baseR = this.spriteHalf * this.visualScale;
+        // Shielder aura tell: a translucent hex-blue bubble around a protected
+        // foe so the player can read "kill the Shielder first".
+        if (this.shieldTimer > 0) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = 'rgba(127, 208, 255, 0.55)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, baseR * 0.92, 0, TWO_PI);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(127, 208, 255, 0.10)';
+            ctx.beginPath();
+            ctx.arc(0, 0, baseR * 0.92, 0, TWO_PI);
+            ctx.fill();
+        }
         if (this.chillTimer > 0) {
             ctx.globalCompositeOperation = 'source-over';
             ctx.strokeStyle = hexToHalo(ELEMENT.frost.tint, 0.5);

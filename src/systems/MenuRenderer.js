@@ -26,6 +26,7 @@ import { CHARACTERS, CHARACTER_IDS, getCharacter } from '../content/characters.j
 import { getCharacterFrames, drawCloakShape, drawHatShape, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin } from '../content/weaponSkins.js';
+import { ACHIEVEMENTS } from '../content/achievements.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 
@@ -384,6 +385,31 @@ export class MenuRenderer {
             ctx.fillText(rows[i][0], x + 16, y + 25);
             ctx.fillStyle = '#fff'; ctx.font = `800 22px ${FONT}`; ctx.textAlign = 'right';
             ctx.fillText(String(rows[i][1]), x + colW - 16, y + 26);
+        }
+
+        // Achievements grid (locked = greyed, earned = gold check). Read-only.
+        const claimed = (state.saveData && state.saveData.achievements && state.saveData.achievements.claimed) || [];
+        const aTop = top + Math.ceil(rows.length / cols) * rowH + 16;
+        const earnedN = ACHIEVEMENTS.filter((a) => claimed.includes(a.id)).length;
+        ctx.fillStyle = '#ffce54'; ctx.font = `800 24px ${FONT}`; ctx.textAlign = 'left';
+        ctx.fillText(`Achievements  ${earnedN}/${ACHIEVEMENTS.length}`, c.x + 34, aTop);
+        const acols = 3, agap = 14;
+        const aW = (c.w - 68 - agap * (acols - 1)) / acols;
+        const aH = 52;
+        const arTop = aTop + 16;
+        for (let i = 0; i < ACHIEVEMENTS.length; i++) {
+            const a = ACHIEVEMENTS[i];
+            const col = i % acols, row = Math.floor(i / acols);
+            const x = c.x + 34 + col * (aW + agap), y = arTop + row * (aH + 8);
+            if (y + aH > c.y + c.h - 8) break; // clip to panel
+            const got = claimed.includes(a.id);
+            roundRectPath(ctx, x, y, aW, aH, 8);
+            ctx.fillStyle = got ? 'rgba(255,206,84,0.14)' : 'rgba(255,255,255,0.03)'; ctx.fill();
+            ctx.strokeStyle = got ? '#ffce54' : 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = got ? '#ffce54' : '#cdd6e2'; ctx.font = `800 16px ${FONT}`; ctx.textAlign = 'left';
+            ctx.fillText(`${got ? '✓ ' : ''}${a.name}`, x + 12, y + 22);
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 12px ${FONT}`;
+            ctx.fillText(a.desc.length > 38 ? a.desc.slice(0, 37) + '…' : a.desc, x + 12, y + 40);
         }
         ctx.textAlign = 'left';
     }
