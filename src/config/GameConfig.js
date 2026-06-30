@@ -231,7 +231,10 @@ export const ENEMY = {
         hp: 460,
         speed: 64,
         radius: 102,
-        contactDamage: 26,
+        // Threat is its HP wall, not its touch — contact kept near the
+        // juggernaut's so a late-game elite/frenzied dreadhulk pile can't
+        // one-shot through i-frames.
+        contactDamage: 20,
         xpValue: 6,
         visualScale: 1.5,
         tint: '#8fa3bd',
@@ -891,7 +894,13 @@ export const ENDLESS_SCALING = {
     // harder so late enemies are a real threat to a strong build, not chip.
     damageStartMinutesBeyond: 2,
     damagePerMinute: 0.085,
-    maxDamageMultiplier: 3.2,
+    // Ceiling held at 2.5 (not higher): a single crowd-capped contact hit from
+    // an elite/frenzied heavy is multiplied by elite 1.7 × frenzied 1.4 × crowd
+    // 1.9 on top of THIS, so a higher ceiling produced no-counterplay one-shots
+    // of modest builds through i-frames. 2.5 keeps the 15-min curve a real
+    // threat (~2.2× contact) while a frenzied-elite pile is a hard two-shot, not
+    // an instant delete.
+    maxDamageMultiplier: 2.5,
     // ── PACK SPAWNS: the spawner releases MORE bodies per wake the longer the
     // run goes, so pressure escalates with time on top of the faster cadence.
     // Each pack member still respects the live cap (Spawner re-checks per body),
@@ -918,7 +927,12 @@ export const ENDLESS_SCALING = {
 
 export const WAVE_LIMITS = {
     maxEnemyCap: 180,
-    maxSpeedMultiplier: 2.6,   // headroom so the twilight speed ramp isn't clamped early
+    // Held at 2.3 so the FASTEST base enemies stay outrunnable by a max-speed
+    // build: speedDemon 330×2.3 = 759 and mite 310×2.3 = 713 both sit just under
+    // the player's hard move-speed cap (CAPS.moveSpeed 760). The twilight speed
+    // ramp still climbs to this ceiling — it just can't push base trash past the
+    // player so they become un-outrunnable with no counterplay.
+    maxSpeedMultiplier: 2.3,
     maxHealthMultiplier: 7.0,
     maxEliteChance: 0.4,
 };
