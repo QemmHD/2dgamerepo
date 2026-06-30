@@ -851,10 +851,11 @@ function runBossAI(e, dt, player, out) {
                         dirX: e.bossChargeDirX, dirY: e.bossChargeDirY,
                         reach: (atk.dashSpeed ?? 600) * (atk.dashDuration ?? 0.6),
                     });
-                } else if (atk.kind === 'wall' || atk.kind === 'seekers' || atk.kind === 'zones') {
-                    // New moves: a generic windup ring so the boss visibly
-                    // charges (zones/walls/seekers paint their own danger on
-                    // commit; this just reads the wind-up).
+                } else {
+                    // Every other kind (wall / seekers / zones + the signature
+                    // moves rain / aimed / cross / spiralArms / mines): a generic
+                    // windup ring so the boss visibly charges. Each paints its own
+                    // danger on commit; this just reads the wind-up.
                     out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 170, age: 0, lifetime: atk.windup, active: true, fan: true });
                 }
             }
@@ -866,7 +867,7 @@ function runBossAI(e, dt, player, out) {
 // Fire the committed special. Shockwave pushes an expanding damaging ring
 // into the hazard pool (centered on the boss); fan pushes a radial burst of
 // EnemyProjectiles into the existing enemy-bolt loop (no new damage path).
-function commitBossAttack(e, atk, player, out) {
+export function commitBossAttack(e, atk, player, out) {
     if (!atk || !out) return;
     if (atk.kind === 'shockwave' && out.hazards) {
         out.hazards.push({
@@ -982,5 +983,81 @@ function commitBossAttack(e, atk, player, out) {
             count: atk.summonCount ?? 3,
             types: atk.summonTypes ?? null,
         });
+    } else if (atk.kind === 'aimed' && out.enemyProjectiles) {
+        // SIGNATURE — precise lead volley: a tight cluster fired straight at
+        // where the player is HEADED. Punishes standing still; read it and take
+        // one crisp sidestep. (Distinct from the radial `fan`.)
+        const lead = leadPoint(e, player, atk.projectileSpeed ?? 560);
+        const base = Math.atan2(lead.y - e.y, lead.x - e.x);
+        const count = atk.count ?? 3;
+        const spread = atk.spread ?? 0.18;
+        const spd = atk.projectileSpeed ?? 560;
+        for (let i = 0; i < count; i++) {
+            const a = base + (count > 1 ? (i / (count - 1) - 0.5) * spread : 0);
+            out.enemyProjectiles.push(new EnemyProjectile(
+                e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd, atk.projectileDamage ?? 18,
+                atk.color ? { color: atk.color } : undefined));
+        }
+    } else if (atk.kind === 'cross' && out.enemyProjectiles) {
+        // SIGNATURE — rotating lattice: bolts along N evenly-spaced axes, the
+        // whole cross turning each cast. Weave between the spinning arms.
+        const arms = atk.arms ?? 4;
+        const perArm = atk.perArm ?? 3;
+        const spd = atk.projectileSpeed ?? 360;
+        e.spiralPhase = (e.spiralPhase + (atk.spin ?? 0.4)) % TWO_PI;
+        for (let k = 0; k < arms; k++) {
+            const a = e.spiralPhase + (k / arms) * TWO_PI;
+            for (let j = 1; j <= perArm; j++) {
+                const s = spd * (0.55 + 0.45 * (j / perArm)); // staggered speeds → a line of bolts
+                out.enemyProjectiles.push(new EnemyProjectile(
+                    e.x, e.y, Math.cos(a) * s, Math.sin(a) * s, atk.projectileDamage ?? 14,
+                    atk.color ? { color: atk.color } : undefined));
+            }
+        }
+    } else if (atk.kind === 'spiralArms' && out.enemyProjectiles) {
+        // SIGNATURE — pinwheel: several streams offset around the circle, all
+        // rotating together. Orbit against the spin to thread it.
+        const arms = atk.arms ?? 3;
+        const spd = atk.projectileSpeed ?? 380;
+        e.spiralPhase = (e.spiralPhase + (atk.spin ?? 0.5)) % TWO_PI;
+        for (let k = 0; k < arms; k++) {
+            const a = e.spiralPhase + (k / arms) * TWO_PI;
+            out.enemyProjectiles.push(new EnemyProjectile(
+                e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd, atk.projectileDamage ?? 13,
+                atk.color ? { color: atk.color } : undefined));
+        }
+    } else if (atk.kind === 'rain' && out.hazards) {
+        // SIGNATURE — targeted bombardment: a cluster of delayed circles that
+        // all bloom ON the player (tight jitter), staggered so they detonate in
+        // a walking sequence. You must fully relocate, not micro-dodge.
+        const count = atk.count ?? 6;
+        const r = atk.zoneRadius ?? 120;
+        const jitter = atk.jitter ?? 150;
+        for (let i = 0; i < count; i++) {
+            const lead = leadPoint(e, player, 9999);
+            const a = Math.random() * TWO_PI;
+            const rr = Math.random() * jitter;
+            out.hazards.push({
+                kind: 'delayedZone', x: lead.x + Math.cos(a) * rr, y: lead.y + Math.sin(a) * rr,
+                r, damage: atk.damage ?? 24, age: 0,
+                lifetime: (atk.warn ?? 0.8) + i * (atk.stagger ?? 0.12),
+                hitPlayer: false, detonateAge: 0, active: true,
+            });
+        }
+    } else if (atk.kind === 'mines' && out.hazards) {
+        // SIGNATURE — area denial: a ring of delayed circles AROUND THE BOSS,
+        // forcing the player out to mid-range to keep fighting.
+        const count = atk.count ?? 8;
+        const ring = atk.ringRadius ?? 220;
+        const r = atk.zoneRadius ?? 110;
+        e.spiralPhase = (e.spiralPhase + 0.6) % TWO_PI;
+        for (let i = 0; i < count; i++) {
+            const a = (i / count) * TWO_PI + e.spiralPhase;
+            out.hazards.push({
+                kind: 'delayedZone', x: e.x + Math.cos(a) * ring, y: e.y + Math.sin(a) * ring,
+                r, damage: atk.damage ?? 22, age: 0, lifetime: atk.warn ?? 0.9,
+                hitPlayer: false, detonateAge: 0, active: true,
+            });
+        }
     }
 }

@@ -279,8 +279,11 @@ export const ENEMY = {
             { id: 'spores', kind: 'seekers', cooldown: 9.5, windup: 0.5, count: 4, projectileSpeed: 230, projectileDamage: 16, turnRate: 2.0, maxSpeed: 340, color: '#9ae66e' },
             { id: 'stomp', kind: 'shockwave', cooldown: 7.0, windup: 0.45, damage: 26, growth: 1000, rMax: 520, band: 90 },
             { id: 'gore', kind: 'fan', cooldown: 6.5, windup: 0.4, count: 9, spread: 1.0, projectileSpeed: 520, projectileDamage: 18 },
+            // SIGNATURE — Bramble Ring: roots erupt in a ring around the Goliath,
+            // forcing the player out of melee.
+            { id: 'brambleRing', kind: 'mines', cooldown: 9.0, windup: 0.9, count: 9, ringRadius: 220, zoneRadius: 120, damage: 26, warn: 0.95 },
         ],
-        phase2Attacks: ['slam', 'charge'],
+        phase2Attacks: ['slam', 'charge', 'brambleRing'],
     },
     stormwingAlpha: {
         hp: 1350,          // tankier (challenge pass)
@@ -314,8 +317,11 @@ export const ENEMY = {
             { id: 'stormSeekers', kind: 'seekers', cooldown: 9.0, windup: 0.45, count: 5, projectileSpeed: 280, projectileDamage: 13, turnRate: 2.4, maxSpeed: 430, color: '#7fd0ff' },
             { id: 'cyclone', kind: 'fan', cooldown: 6.0, windup: 0.4, count: 22, spread: 6.2832, projectileSpeed: 430, projectileDamage: 13, spiral: true, spin: 0.4 },
             { id: 'gale', kind: 'fan', cooldown: 5.5, windup: 0.35, count: 7, spread: 0.7, projectileSpeed: 560, projectileDamage: 15 },
+            // SIGNATURE — Galewind Lattice: a rotating cross of wind-blades to
+            // weave between.
+            { id: 'galeLattice', kind: 'cross', cooldown: 6.5, windup: 0.45, arms: 4, perArm: 3, projectileSpeed: 380, projectileDamage: 13, spin: 0.5, color: '#7fd0ff' },
         ],
-        phase2Attacks: ['volley', 'dive'],
+        phase2Attacks: ['volley', 'dive', 'galeLattice'],
     },
     // Third boss — the climax. A grinning, many-armed orb (the "Cacklemaw")
     // with the deepest kit in the game: a cackling radial burst, a ground gnash
@@ -344,8 +350,10 @@ export const ENEMY = {
             { id: 'lash', kind: 'wall', cooldown: 8.0, windup: 0.55, count: 15, spacing: 74, projectileSpeed: 380, projectileDamage: 20, gap: 2 },
             { id: 'gaze', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 250, projectileDamage: 15, turnRate: 2.4, maxSpeed: 380, color: '#cdb3ff' },
             { id: 'spawnlings', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { mite: 3, bat: 2 } },
+            // SIGNATURE — Maelstrom: a three-armed pinwheel of gnashing motes.
+            { id: 'maelstrom', kind: 'spiralArms', cooldown: 6.0, windup: 0.45, arms: 3, projectileSpeed: 360, projectileDamage: 14, spin: 0.6, color: '#cdb3ff' },
         ],
-        phase2Attacks: ['cackle', 'lunge'],
+        phase2Attacks: ['cackle', 'lunge', 'maelstrom'],
     },
 
     // ══ MAP 2 — The Frozen Waste (snow). Three frost bosses, a step tougher
@@ -362,6 +370,8 @@ export const ENEMY = {
             { id: 'blizzard', kind: 'seekers', cooldown: 9.0, windup: 0.5, count: 5, projectileSpeed: 250, projectileDamage: 15, turnRate: 2.2, maxSpeed: 380, color: '#aef0ff' },
             { id: 'iceWall', kind: 'wall', cooldown: 8.5, windup: 0.6, count: 14, spacing: 74, projectileSpeed: 360, projectileDamage: 20, gap: 2 },
             { id: 'rimeCall', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
+            // SIGNATURE — Ice Lance: a precise sleet spear at your lead point.
+            { id: 'iceLance', kind: 'aimed', cooldown: 5.5, windup: 0.5, count: 4, spread: 0.20, projectileSpeed: 580, projectileDamage: 19, color: '#aef0ff' },
         ],
         phase2Attacks: ['iceSlam', 'glacialCharge'],
     },
@@ -376,8 +386,10 @@ export const ENEMY = {
             { id: 'tailSweep', kind: 'shockwave', cooldown: 4.6, windup: 0.45, damage: 26, growth: 780, rMax: 560, band: 100 },
             { id: 'icicleWall', kind: 'wall', cooldown: 8.0, windup: 0.5, count: 15, spacing: 68, projectileSpeed: 420, projectileDamage: 16, gap: 2 },
             { id: 'lunge', kind: 'charge', cooldown: 5.0, windup: 0.4, dashSpeed: 900, dashDuration: 0.55 },
+            // SIGNATURE — Blizzard Pinwheel: a rotating storm of sleet streams.
+            { id: 'blizzardPinwheel', kind: 'spiralArms', cooldown: 6.0, windup: 0.5, arms: 4, projectileSpeed: 380, projectileDamage: 14, spin: 0.55, color: '#aef0ff' },
         ],
-        phase2Attacks: ['icicleVolley', 'lunge'],
+        phase2Attacks: ['icicleVolley', 'lunge', 'blizzardPinwheel'],
     },
     aurorath: {
         hp: 2100, speed: 270, radius: 118, contactDamage: 32, xpValue: 78, boss: true,
@@ -391,8 +403,10 @@ export const ENEMY = {
             { id: 'novaShock', kind: 'shockwave', cooldown: 4.0, windup: 0.5, damage: 30, growth: 920, rMax: 620, band: 115 },
             { id: 'spiralAurora', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 16, spread: 6.2832, projectileSpeed: 420, projectileDamage: 14, spiral: true, spin: 0.5 },
             { id: 'wispSummon', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { bat: 3, mite: 2 } },
+            // SIGNATURE — Aurora Crown: a ring of comets erupts around Aurorath.
+            { id: 'auroraCrown', kind: 'mines', cooldown: 8.5, windup: 0.85, count: 9, ringRadius: 230, zoneRadius: 120, damage: 30, warn: 0.85 },
         ],
-        phase2Attacks: ['auroraVolley', 'novaShock'],
+        phase2Attacks: ['auroraVolley', 'novaShock', 'auroraCrown'],
     },
 
     // ══ MAP 3 — The Sunless Night (undead/void). Tougher again. ══
@@ -408,8 +422,11 @@ export const ENEMY = {
             { id: 'skullSeekers', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 250, projectileDamage: 17, turnRate: 2.2, maxSpeed: 400, color: '#e8f0d8' },
             { id: 'graveStomp', kind: 'shockwave', cooldown: 4.2, windup: 0.5, damage: 30, growth: 940, rMax: 600, band: 110 },
             { id: 'raiseDead', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 4, summonTypes: { crawler: 2, mite: 2 } },
+            // SIGNATURE — Bone Lattice: a rotating cross of bolts; weave between
+            // the spinning arms.
+            { id: 'boneLattice', kind: 'cross', cooldown: 6.5, windup: 0.5, arms: 4, perArm: 3, projectileSpeed: 360, projectileDamage: 15, spin: 0.4, color: '#e8f0d8' },
         ],
-        phase2Attacks: ['boneFan', 'reapCharge'],
+        phase2Attacks: ['boneFan', 'reapCharge', 'boneLattice'],
     },
     mourndrift: {
         hp: 2050, speed: 342, radius: 82, contactDamage: 30, xpValue: 48, boss: true,
@@ -423,8 +440,11 @@ export const ENEMY = {
             { id: 'scytheWall', kind: 'wall', cooldown: 7.5, windup: 0.5, count: 16, spacing: 66, projectileSpeed: 430, projectileDamage: 17, gap: 2 },
             { id: 'blink', kind: 'charge', cooldown: 4.6, windup: 0.35, dashSpeed: 960, dashDuration: 0.5 },
             { id: 'spiralSouls', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 18, spread: 6.2832, projectileSpeed: 430, projectileDamage: 13, spiral: true, spin: 0.55 },
+            // SIGNATURE — Soul Rain: grief falls on the player in a staggered
+            // bombardment; keep moving to a fresh spot.
+            { id: 'soulRain', kind: 'rain', cooldown: 8.0, windup: 0.75, count: 7, zoneRadius: 120, jitter: 140, damage: 24, warn: 0.7, stagger: 0.1 },
         ],
-        phase2Attacks: ['soulVolley', 'blink'],
+        phase2Attacks: ['soulVolley', 'blink', 'soulRain'],
     },
     nihagault: {
         hp: 2600, speed: 280, radius: 122, contactDamage: 36, xpValue: 82, boss: true,
@@ -439,8 +459,11 @@ export const ENEMY = {
             { id: 'spiralVoid', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 430, projectileDamage: 14, spiral: true, spin: 0.5 },
             { id: 'devour', kind: 'charge', cooldown: 5.5, windup: 0.45, dashSpeed: 860, dashDuration: 0.6 },
             { id: 'spawnShades', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { mite: 3, bat: 2 } },
+            // SIGNATURE — Void Lance: a precise spear of dark bolts at your lead
+            // point; one read, one sidestep.
+            { id: 'voidLance', kind: 'aimed', cooldown: 5.5, windup: 0.5, count: 4, spread: 0.22, projectileSpeed: 600, projectileDamage: 20, color: '#d06bff' },
         ],
-        phase2Attacks: ['voidBurst', 'collapse'],
+        phase2Attacks: ['voidBurst', 'collapse', 'voidLance'],
     },
 
     // ══ MAP 4 — The Sunscorch Expanse (desert). The hardest trio; Solnakh is
@@ -457,8 +480,11 @@ export const ENEMY = {
             { id: 'sandstorm', kind: 'seekers', cooldown: 8.0, windup: 0.5, count: 7, projectileSpeed: 270, projectileDamage: 17, turnRate: 2.4, maxSpeed: 420, color: '#ffe09a' },
             { id: 'burrowStomp', kind: 'shockwave', cooldown: 4.0, windup: 0.45, damage: 30, growth: 980, rMax: 620, band: 110 },
             { id: 'broodCall', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 4, summonTypes: { crawler: 3, charger: 1 } },
+            // SIGNATURE — Sandstorm Spiral: a rotating pinwheel of grit you must
+            // orbit against the spin to thread.
+            { id: 'sandSpiral', kind: 'spiralArms', cooldown: 6.5, windup: 0.5, arms: 4, projectileSpeed: 360, projectileDamage: 15, spin: 0.5, color: '#ffe09a' },
         ],
-        phase2Attacks: ['sandBlast', 'goreCharge'],
+        phase2Attacks: ['sandBlast', 'goreCharge', 'sandSpiral'],
     },
     cindermaw: {
         hp: 2450, speed: 340, radius: 88, contactDamage: 34, xpValue: 52, boss: true,
@@ -472,8 +498,11 @@ export const ENEMY = {
             { id: 'obsidianWall', kind: 'wall', cooldown: 7.5, windup: 0.5, count: 16, spacing: 66, projectileSpeed: 440, projectileDamage: 18, gap: 2 },
             { id: 'fireLunge', kind: 'charge', cooldown: 4.6, windup: 0.38, dashSpeed: 940, dashDuration: 0.55 },
             { id: 'spiralFlame', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 18, spread: 6.2832, projectileSpeed: 440, projectileDamage: 14, spiral: true, spin: 0.55 },
+            // SIGNATURE — Ember Rain: a walking bombardment of cinders that
+            // blooms on the player; relocate, don't micro-dodge.
+            { id: 'emberRain', kind: 'rain', cooldown: 8.5, windup: 0.8, count: 7, zoneRadius: 115, jitter: 150, damage: 26, warn: 0.7, stagger: 0.12 },
         ],
-        phase2Attacks: ['magmaVolley', 'fireLunge'],
+        phase2Attacks: ['magmaVolley', 'fireLunge', 'emberRain'],
     },
     solnakh: {
         hp: 3100, speed: 286, radius: 124, contactDamage: 40, xpValue: 90, boss: true,
@@ -488,8 +517,11 @@ export const ENEMY = {
             { id: 'spiralSun', kind: 'fan', cooldown: 4.8, windup: 0.4, count: 22, spread: 6.2832, projectileSpeed: 440, projectileDamage: 15, spiral: true, spin: 0.5 },
             { id: 'sunLunge', kind: 'charge', cooldown: 5.0, windup: 0.4, dashSpeed: 900, dashDuration: 0.6 },
             { id: 'moteSummon', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 5, summonTypes: { mite: 3, bat: 2 } },
+            // SIGNATURE — Solar Corona: a ring of flares erupts around Solnakh,
+            // forcing the player out to mid-range.
+            { id: 'solarCorona', kind: 'mines', cooldown: 9.0, windup: 0.85, count: 10, ringRadius: 240, zoneRadius: 120, damage: 34, warn: 0.85 },
         ],
-        phase2Attacks: ['solarVolley', 'supernova'],
+        phase2Attacks: ['solarVolley', 'supernova', 'solarCorona'],
     },
 };
 
