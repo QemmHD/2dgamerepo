@@ -837,9 +837,22 @@ export const RUN_MODIFIERS = [
     { id: 'enfeebled',   name: 'Enfeebled',      desc: 'Your weapons deal 15% less damage.',  playerDamage: 0.85, xpBonus: 0.20, coinBonus: 0.15 },
     { id: 'fragile',     name: 'Glass',          desc: 'You take 30% more damage.',           playerIncoming: 1.30, xpBonus: 0.25, coinBonus: 0.15 },
     { id: 'tunnel',      name: 'Tunnel Vision',  desc: 'Pickup range halved.',                playerPickup: 0.5,  xpBonus: 0.15, coinBonus: 0.10 },
+    { id: 'juggernauts', name: 'Juggernauts',    desc: 'Enemies have +30% HP.',               hp: 1.30,          xpBonus: 0.20, coinBonus: 0.15 },
+    { id: 'onslaught',   name: 'Onslaught',      desc: 'Enemies deal +25% damage.',           damage: 1.25,      xpBonus: 0.22, coinBonus: 0.15 },
+    { id: 'relentless',  name: 'Relentless',     desc: 'Spawns come 28% faster.',             interval: 0.72,    xpBonus: 0.18, coinBonus: 0.12 },
 ];
 // Cap on the total run-XP/coin bonus from stacked modifiers (×difficulty).
-export const RUN_MODIFIER_MAX_BONUS = 1.0;
+// Raised from 1.0 so a deep Pact (many curses) keeps paying more — the climb
+// has somewhere to go. Coins fund only cosmetics + the shop (no pay-to-win),
+// so a generous ceiling is safe.
+export const RUN_MODIFIER_MAX_BONUS = 2.5;
+
+// Pact Intensity tier label, keyed off how many Trials are active. Pure
+// labelling for the menu readout (the real reward is the summed xp/coinBonus).
+const PACT_TIERS = ['—', 'I', 'I', 'II', 'II', 'III', 'III', 'IV', 'IV', 'V', 'V'];
+export function pactTier(activeCount) {
+    return PACT_TIERS[Math.min(activeCount, PACT_TIERS.length - 1)];
+}
 
 // Pressure layers ON TOP of the time-based wave tiers to make a wave feel like
 // a thing you must CLEAR, not just outlast. Pressure rises while the field

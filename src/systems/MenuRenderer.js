@@ -9,7 +9,7 @@
 // one place (here) and is never duplicated for hit-testing.
 
 import { roundRectPath, clamp01, easeOutCubic } from '../render/DrawUtils.js';
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS } from '../config/GameConfig.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS, pactTier } from '../config/GameConfig.js';
 import { rarityColor, rarityName, RARITIES } from '../content/rarities.js';
 import {
     GEAR, GEAR_CATEGORIES, GEAR_CATEGORY_LABELS, gearByCategory, buffSummary,
@@ -309,6 +309,7 @@ export class MenuRenderer {
         const top = c.y + 52;
         const avail = startY - top - 12;
         const nGear = GEAR_CATEGORIES.length;
+        const tRows = Math.ceil(RUN_MODIFIERS.length / 3); // Trials chip grid rows (3 cols)
         const N = { gearRow: 52, gearGap: 9, sec: 18, lbl: 30, biome: 60, diff: 46, chip: 38, chipGap: 8 };
         // The TRUE laid-out height for a given scale. Labels + chip rows have
         // their own lower floors (so text stays legible), which is exactly why
@@ -323,13 +324,13 @@ export class MenuRenderer {
             + N.lbl * lblScale(s) + N.biome * s + N.sec * s
             + N.lbl * lblScale(s) + N.diff * s + N.sec * s   // Patron row (reuses diff height)
             + N.lbl * lblScale(s) + N.diff * s + N.sec * s
-            + N.lbl * lblScale(s) + (2 * N.chip * chipScale(s) + N.chipGap * s);
+            + N.lbl * lblScale(s) + (tRows * N.chip * chipScale(s) + (tRows - 1) * N.chipGap * s);
         let s = 1;
         // Floor: low enough that even a degenerate ultra-short panel keeps every
         // section's row from overlapping the next (the label/chip legibility
         // floors set an irreducible minimum; six sections need more shrink room
         // than five did). Real devices land far above this.
-        const S_FLOOR = 0.14;
+        const S_FLOOR = 0.12;
         if (fitH(1) > avail) {                        // doesn't fit at full size → shrink to fit
             let lo = S_FLOOR, hi = 1;
             for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fitH(mid) <= avail) lo = mid; else hi = mid; }
@@ -429,12 +430,25 @@ export class MenuRenderer {
         }
         y += diffRow + sec;
 
-        // Trials toggles (6 chips, 3×2). Active ones glow + show the reward %.
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        const bonusPct = Math.round(activeMods.reduce((a, id) => {
-            const m = RUN_MODIFIERS.find((x) => x.id === id); return a + (m ? (m.xpBonus || 0) : 0);
-        }, 0) * 100);
-        ctx.fillText(`Trials${bonusPct > 0 ? `  (+${bonusPct}% XP)` : ''}`, innerX, y + lbl * 0.72);
+        // Trials toggles. Each active one stacks into a "Pact" — the label shows
+        // the live Pact tier + the (capped) XP & coin reward the stack pays.
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        const sumBonus = (key) => activeMods.reduce((a, id) => {
+            const m = RUN_MODIFIERS.find((x) => x.id === id); return a + (m ? (m[key] || 0) : 0);
+        }, 0);
+        const xpPct = Math.round(Math.min(sumBonus('xpBonus'), RUN_MODIFIER_MAX_BONUS) * 100);
+        const coinPct = Math.round(Math.min(sumBonus('coinBonus'), RUN_MODIFIER_MAX_BONUS) * 100);
+        const tier = pactTier(activeMods.length);
+        if (activeMods.length > 0) {
+            ctx.fillStyle = '#ffce54'; ctx.font = `800 ${fs(19)}px ${FONT}`;
+            ctx.fillText(`Trials — PACT ${tier}`, innerX, y + lbl * 0.72);
+            ctx.textAlign = 'right'; ctx.fillStyle = '#5fd36a'; ctx.font = `700 ${fs(16)}px ${FONT}`;
+            ctx.fillText(`+${xpPct}% XP   +${coinPct}% coins`, innerX + innerW, y + lbl * 0.72);
+            ctx.textAlign = 'left';
+        } else {
+            ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`;
+            ctx.fillText('Trials — stack curses to forge a Pact', innerX, y + lbl * 0.72);
+        }
         y += lbl;
         const tcols = 3, tgap = 8;
         const tW = (innerW - tgap * (tcols - 1)) / tcols;
