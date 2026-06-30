@@ -681,12 +681,14 @@ export const BOSS = {
 
 // Coin drops from enemies / elites / bosses. Tunable so coins feel
 // valuable without being a constant pickup chore.
+// Rebalanced down (~-45% battle coin income) so coins feel earned — the
+// prestige cosmetics (1k–5k) are meant to be a real grind, not a handout.
 export const COIN = {
-    normalDropChance: 0.05,
-    eliteDropChance: 0.5,
-    eliteCoinMin: 3,
-    eliteCoinMax: 5,
-    bossCoinCount: 5,
+    normalDropChance: 0.035,
+    eliteDropChance: 0.32,
+    eliteCoinMin: 2,
+    eliteCoinMax: 3,
+    bossCoinCount: 3,
     bossCoinValue: 4,
 };
 
@@ -702,7 +704,7 @@ export const CHEST = {
     eliteDropChance: 0.06,
     weights: { weapon: 3, passive: 3, coins: 2, heal: 2 },
     luckUpgradeWeight: 4,
-    coinReward: { min: 50, max: 100, luckBonus: 80 },
+    coinReward: { min: 38, max: 66, luckBonus: 55 },
     healReward: { base: 45, luckBonus: 25 },
 };
 

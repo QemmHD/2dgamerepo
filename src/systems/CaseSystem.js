@@ -60,10 +60,11 @@ export const FORGE_PITY = 8; // forges since the last Rare+ that force one
 // A Stake-style MINES gamble: stake coins on a 5×5 grid hiding a few mines.
 // Reveal safe tiles one at a time — each safe pick ratchets the multiplier up
 // (and the next pick gets riskier). Cash out anytime to bank stake × the live
-// multiplier; hit a mine and lose the stake. ~3% house edge.
+// multiplier; hit a mine and lose the stake. ~7% house edge — gambling is a
+// risky flex, not a steady coin faucet (average play loses coins over time).
 export const WAGER_BETS = [100, 500, 2000];
 export const MINES = { tiles: 25, cols: 5, mines: 6 };
-export const MINES_HOUSE = 0.97;
+export const MINES_HOUSE = 0.93;
 
 // Pre-roll the hidden mine positions (array of distinct tile indices).
 export function rollMines(count = MINES.mines, tiles = MINES.tiles) {
