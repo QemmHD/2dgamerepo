@@ -15,7 +15,7 @@ import {
 } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
-import { getCharacter } from '../content/characters.js';
+import { getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
@@ -72,6 +72,9 @@ export class Player {
         // weapon at the nearest foe; null/empty loadout → nothing in-hand drawn.
         this.loadout = null;
         this.aimAngle = Math.PI / 2; // default: aim "down" (toward the camera)
+        // Per-character weapon-hold style (grip/lift/scale/tilt/halo) — purely
+        // visual flavor so each hero wields its loadout distinctly.
+        this.hold = resolveCharacterHold(characterId);
 
         this.level = 1;
         this.xp = 0;
@@ -462,15 +465,19 @@ export class Player {
         if (!primary && halo.length) primary = halo.shift();
         if (!primary && !halo.length) return;
 
+        // Per-character hold style (grip/lift/scale/tilt/halo) → distinct flavor.
+        const H = this.hold;
+
         ctx.save();
         ctx.globalAlpha = alpha;
 
         // Floating halo: spread the secondary weapons across the upper arc so
         // they never cover the face or feet; each points radially outward and
-        // bobs gently. Behind the in-hand weapon (drawn first).
+        // bobs gently. Behind the in-hand weapon (drawn first). Radius + size
+        // come from the hold style so e.g. a brute's arsenal swings wider.
         const n = halo.length;
         if (n) {
-            const R = this.spriteHalf * 0.66;
+            const R = this.spriteHalf * H.haloR;
             const arc = Math.PI * 1.5;            // 270° fan across the top
             const start = -Math.PI / 2 - arc / 2; // centered on straight-up
             for (let i = 0; i < n; i++) {
@@ -478,17 +485,17 @@ export class Player {
                 const bob = Math.sin(this.aliveTimer * 2.2 + i * 1.3) * 2;
                 const hx = cx + Math.cos(a) * R;
                 const hy = cy + Math.sin(a) * R + bob;
-                this._drawProp(ctx, halo[i], hx, hy, a, 0.62);
+                this._drawProp(ctx, halo[i], hx, hy, a + H.tilt, 0.62 * H.haloScale);
             }
         }
 
         // Primary in-hand: anchor near the body's hands, aimed at the target.
-        // The hand sits a touch toward the aim direction (and downward to the
-        // body) so the grip reads as held rather than floating at the center.
-        const handR = this.spriteHalf * 0.18;
+        // The hand sits toward the aim direction (and down to the body) so the
+        // grip reads as held; the per-character hold tunes distance/lift/size/tilt.
+        const handR = this.spriteHalf * H.grip;
         const hx = cx + Math.cos(this.aimAngle) * handR;
-        const hy = cy + Math.sin(this.aimAngle) * handR + this.spriteHalf * 0.12;
-        this._drawProp(ctx, primary, hx, hy, this.aimAngle, 1.0);
+        const hy = cy + Math.sin(this.aimAngle) * handR + this.spriteHalf * H.lift;
+        this._drawProp(ctx, primary, hx, hy, this.aimAngle + H.tilt, H.scale);
 
         ctx.restore();
     }
