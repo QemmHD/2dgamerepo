@@ -350,10 +350,11 @@ export const ENEMY = {
             { id: 'lash', kind: 'wall', cooldown: 8.0, windup: 0.55, count: 15, spacing: 74, projectileSpeed: 380, projectileDamage: 20, gap: 2 },
             { id: 'gaze', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 250, projectileDamage: 15, turnRate: 2.4, maxSpeed: 380, color: '#cdb3ff' },
             { id: 'spawnlings', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { mite: 3, bat: 2 } },
-            // SIGNATURE — Maelstrom: a three-armed pinwheel of gnashing motes.
-            { id: 'maelstrom', kind: 'spiralArms', cooldown: 6.0, windup: 0.45, arms: 3, projectileSpeed: 360, projectileDamage: 14, spin: 0.6, color: '#cdb3ff' },
+            // SIGNATURE — Gaze Beam: a sweeping eye-laser that rotates across the
+            // arena. Don't dodge it — run AROUND the sweep.
+            { id: 'gazeBeam', kind: 'beam', cooldown: 8.5, windup: 0.6, sweep: 1.9, length: 1000, band: 30, damage: 26, warn: 0.8, duration: 1.4, color: '#cdb3ff' },
         ],
-        phase2Attacks: ['cackle', 'lunge', 'maelstrom'],
+        phase2Attacks: ['cackle', 'lunge', 'gazeBeam'],
     },
 
     // ══ MAP 2 — The Frozen Waste (snow). Three frost bosses, a step tougher
@@ -403,10 +404,11 @@ export const ENEMY = {
             { id: 'novaShock', kind: 'shockwave', cooldown: 4.0, windup: 0.5, damage: 30, growth: 920, rMax: 620, band: 115 },
             { id: 'spiralAurora', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 16, spread: 6.2832, projectileSpeed: 420, projectileDamage: 14, spiral: true, spin: 0.5 },
             { id: 'wispSummon', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { bat: 3, mite: 2 } },
-            // SIGNATURE — Aurora Crown: a ring of comets erupts around Aurorath.
-            { id: 'auroraCrown', kind: 'mines', cooldown: 8.5, windup: 0.85, count: 9, ringRadius: 230, zoneRadius: 120, damage: 30, warn: 0.85 },
+            // SIGNATURE — Aurora Beam: a sweeping ray of frozen light that rakes
+            // the arena; circle around the sweep.
+            { id: 'auroraBeam', kind: 'beam', cooldown: 8.5, windup: 0.7, sweep: 1.8, length: 1000, band: 30, damage: 28, warn: 0.85, duration: 1.5, color: '#a0ffe0' },
         ],
-        phase2Attacks: ['auroraVolley', 'novaShock', 'auroraCrown'],
+        phase2Attacks: ['auroraVolley', 'novaShock', 'auroraBeam'],
     },
 
     // ══ MAP 3 — The Sunless Night (undead/void). Tougher again. ══
@@ -459,11 +461,11 @@ export const ENEMY = {
             { id: 'spiralVoid', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 430, projectileDamage: 14, spiral: true, spin: 0.5 },
             { id: 'devour', kind: 'charge', cooldown: 5.5, windup: 0.45, dashSpeed: 860, dashDuration: 0.6 },
             { id: 'spawnShades', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { mite: 3, bat: 2 } },
-            // SIGNATURE — Void Lance: a precise spear of dark bolts at your lead
-            // point; one read, one sidestep.
-            { id: 'voidLance', kind: 'aimed', cooldown: 5.5, windup: 0.5, count: 4, spread: 0.22, projectileSpeed: 600, projectileDamage: 20, color: '#d06bff' },
+            // SIGNATURE — Void Mire: pools of collapsing dark that LINGER for
+            // seconds, eating away safe ground — route around them.
+            { id: 'voidMire', kind: 'lingering', cooldown: 9.5, windup: 0.7, count: 4, zoneRadius: 145, spread: 380, tickDamage: 11, duration: 4.5, color: '#b35bff' },
         ],
-        phase2Attacks: ['voidBurst', 'collapse', 'voidLance'],
+        phase2Attacks: ['voidBurst', 'collapse', 'voidMire'],
     },
 
     // ══ MAP 4 — The Sunscorch Expanse (desert). The hardest trio; Solnakh is
@@ -498,11 +500,11 @@ export const ENEMY = {
             { id: 'obsidianWall', kind: 'wall', cooldown: 7.5, windup: 0.5, count: 16, spacing: 66, projectileSpeed: 440, projectileDamage: 18, gap: 2 },
             { id: 'fireLunge', kind: 'charge', cooldown: 4.6, windup: 0.38, dashSpeed: 940, dashDuration: 0.55 },
             { id: 'spiralFlame', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 18, spread: 6.2832, projectileSpeed: 440, projectileDamage: 14, spiral: true, spin: 0.55 },
-            // SIGNATURE — Ember Rain: a walking bombardment of cinders that
-            // blooms on the player; relocate, don't micro-dodge.
-            { id: 'emberRain', kind: 'rain', cooldown: 8.5, windup: 0.8, count: 7, zoneRadius: 115, jitter: 150, damage: 26, warn: 0.7, stagger: 0.12 },
+            // SIGNATURE — Lava Field: molten pools that LINGER and burn, turning
+            // the floor into shrinking safe ground.
+            { id: 'lavaField', kind: 'lingering', cooldown: 9.0, windup: 0.65, count: 4, zoneRadius: 140, spread: 360, tickDamage: 12, duration: 4.0, color: '#ff7a33' },
         ],
-        phase2Attacks: ['magmaVolley', 'fireLunge', 'emberRain'],
+        phase2Attacks: ['magmaVolley', 'fireLunge', 'lavaField'],
     },
     solnakh: {
         hp: 3100, speed: 286, radius: 124, contactDamage: 40, xpValue: 90, boss: true,
@@ -517,11 +519,11 @@ export const ENEMY = {
             { id: 'spiralSun', kind: 'fan', cooldown: 4.8, windup: 0.4, count: 22, spread: 6.2832, projectileSpeed: 440, projectileDamage: 15, spiral: true, spin: 0.5 },
             { id: 'sunLunge', kind: 'charge', cooldown: 5.0, windup: 0.4, dashSpeed: 900, dashDuration: 0.6 },
             { id: 'moteSummon', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 5, summonTypes: { mite: 3, bat: 2 } },
-            // SIGNATURE — Solar Corona: a ring of flares erupts around Solnakh,
-            // forcing the player out to mid-range.
-            { id: 'solarCorona', kind: 'mines', cooldown: 9.0, windup: 0.85, count: 10, ringRadius: 240, zoneRadius: 120, damage: 34, warn: 0.85 },
+            // SIGNATURE — Solar Lance: the final boss's showpiece. A double sweep
+            // of solar fire that rakes the whole arena — keep running the arc.
+            { id: 'solarLance', kind: 'beam', cooldown: 8.0, windup: 0.7, sweep: 2.4, length: 1100, band: 34, damage: 34, warn: 0.8, duration: 1.6, color: '#ff7a2a' },
         ],
-        phase2Attacks: ['solarVolley', 'supernova', 'solarCorona'],
+        phase2Attacks: ['solarVolley', 'supernova', 'solarLance'],
     },
 };
 

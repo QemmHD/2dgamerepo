@@ -2092,6 +2092,54 @@ export class Game {
                 }
                 continue;
             }
+            // beam: a rotating laser LINE from the boss. Telegraphs during `warn`,
+            // then goes hot and sweeps across `sweep` radians. Damages the player
+            // (i-frame gated) whenever they're on the hot line within `length`.
+            if (hz.kind === 'beam') {
+                const hot = hz.age >= hz.warn;
+                const sweepT = Math.min(1, Math.max(0, (hz.age - hz.warn) / Math.max(0.001, hz.lifetime - hz.warn)));
+                hz.curAngle = hz.angle + hz.sweep * (hot ? sweepT : 0);
+                if (hot) {
+                    const dx = this.player.x - hz.x, dy = this.player.y - hz.y;
+                    const ca = Math.cos(hz.curAngle), sa = Math.sin(hz.curAngle);
+                    const along = dx * ca + dy * sa;            // distance along the beam
+                    const perp = Math.abs(dx * -sa + dy * ca);  // distance off the beam line
+                    if (along > 0 && along < hz.length && perp < hz.band + this.player.radius &&
+                        this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
+                        const dealt = this.player.takeDamage(hz.damage);
+                        if (dealt > 0) {
+                            this._playerHurtShake(dealt);
+                            this._pushFeedback('hit', 0.3);
+                            this.damageNumbers.push(new DamageNumber(
+                                this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'));
+                        }
+                    }
+                }
+                if (hz.age >= hz.lifetime) hz.active = false;
+                continue;
+            }
+            // lingering: a persistent pool that telegraphs, then SITS dealing
+            // damage-over-time (ticking every 0.4s, i-frame gated) until it fades.
+            if (hz.kind === 'lingering') {
+                if (hz.age >= hz.warn) {
+                    hz.tickTimer -= dt;
+                    if (hz.tickTimer <= 0) {
+                        hz.tickTimer = 0.4;
+                        const d = Math.hypot(this.player.x - hz.x, this.player.y - hz.y);
+                        if (d <= hz.r + this.player.radius &&
+                            this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
+                            const dealt = this.player.takeDamage(hz.tickDamage);
+                            if (dealt > 0) {
+                                this._playerHurtShake(dealt);
+                                this.damageNumbers.push(new DamageNumber(
+                                    this.player.x, this.player.y - this.player.radius, dealt, hz.color || '#ff7a33'));
+                            }
+                        }
+                    }
+                }
+                if (hz.age >= hz.lifetime) hz.active = false;
+                continue;
+            }
             // shockwave: expand and damage the player once when the ring band
             // sweeps across them.
             hz.r += hz.growth * dt;
@@ -2538,6 +2586,33 @@ export class Game {
             ctx.restore();
         }
 
+        // Lingering pools: a telegraph that fills, then a persistent burning
+        // field that pulses and fades near the end of its life. Ground decal.
+        for (const hz of this.hazards) {
+            if (!hz.active || hz.kind !== 'lingering') continue;
+            if (!this._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
+            ctx.save();
+            if (hz.age < hz.warn) {
+                const t = hz.age / hz.warn;
+                ctx.globalAlpha = 0.12 + 0.26 * t;
+                ctx.fillStyle = BOSS_ATTACK.telegraphColor;
+                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
+            } else {
+                const left = 1 - Math.min(1, (hz.age - hz.warn) / Math.max(0.001, hz.lifetime - hz.warn));
+                const pulse = 0.5 + 0.5 * Math.sin(hz.age * 6);
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = (0.18 + 0.18 * pulse) * (0.4 + 0.6 * left);
+                ctx.fillStyle = hz.color || '#ff7a33';
+                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
+                ctx.globalAlpha = (0.5 + 0.3 * pulse) * (0.4 + 0.6 * left);
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = hz.color || '#ff7a33';
+                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.stroke();
+            }
+            ctx.restore();
+            if (L && hz.age >= hz.warn) L.addLight(hz.x, hz.y, hz.r + 40, hz.color || LIGHT_COLORS.fire, 0.7, 2);
+        }
+
         // Player light first (always kept, exempt from caps). The light TINT
         // follows the weapon aura so the glow radiating from the player changes
         // with their build; radius stays fixed (visual only — never reveals
@@ -2620,6 +2695,38 @@ export class Game {
             ctx.stroke();
             ctx.restore();
             if (L) L.addLight(hz.x, hz.y, Lc.hazardRadius, LIGHT_COLORS.hazard, 0.8, 0);
+        }
+
+        // Sweeping laser beams: a thin warning line during the telegraph, then a
+        // bright hot beam that rotates across its arc. Above entities, additive.
+        for (const hz of this.hazards) {
+            if (!hz.active || hz.kind !== 'beam') continue;
+            const hot = hz.age >= hz.warn;
+            const ex = hz.x + Math.cos(hz.curAngle) * hz.length;
+            const ey = hz.y + Math.sin(hz.curAngle) * hz.length;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            if (!hot) {
+                // Telegraph: a thin, brightening warning line along the start angle.
+                const t = hz.age / hz.warn;
+                ctx.globalAlpha = 0.25 + 0.45 * t;
+                ctx.strokeStyle = BOSS_ATTACK.telegraphColor;
+                ctx.lineWidth = 2 + 3 * t;
+                ctx.beginPath(); ctx.moveTo(hz.x, hz.y); ctx.lineTo(ex, ey); ctx.stroke();
+            } else {
+                // Hot beam: a wide soft glow + a bright core.
+                ctx.globalAlpha = 0.4;
+                ctx.strokeStyle = hz.color || '#ff5a3c';
+                ctx.lineWidth = hz.band * 2;
+                ctx.lineCap = 'round';
+                ctx.beginPath(); ctx.moveTo(hz.x, hz.y); ctx.lineTo(ex, ey); ctx.stroke();
+                ctx.globalAlpha = 0.95;
+                ctx.strokeStyle = '#fff6e0';
+                ctx.lineWidth = Math.max(4, hz.band * 0.5);
+                ctx.beginPath(); ctx.moveTo(hz.x, hz.y); ctx.lineTo(ex, ey); ctx.stroke();
+            }
+            ctx.restore();
+            if (L && hot) L.addLight((hz.x + ex) / 2, (hz.y + ey) / 2, Lc.hazardRadius, hz.color || LIGHT_COLORS.hazard, 0.85, 0);
         }
 
         this.weaponSystem.drawEffects(ctx);

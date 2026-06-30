@@ -1059,5 +1059,41 @@ export function commitBossAttack(e, atk, player, out) {
                 hitPlayer: false, detonateAge: 0, active: true,
             });
         }
+    } else if (atk.kind === 'beam' && out.hazards) {
+        // SIGNATURE — a SWEEPING LASER: a solid line from the boss that telegraphs,
+        // then rotates across an arc. Genuinely different — you don't dodge a
+        // burst, you stay OFF the line and run around the sweep. Aimed to start
+        // just behind the player's lead so the sweep chases across them.
+        const lead = Math.atan2(player.y - e.y, player.x - e.x);
+        const sweep = atk.sweep ?? 1.7;
+        const dir = (e.spiralPhase % 2 < 1) ? 1 : -1; // alternate sweep direction each cast
+        e.spiralPhase = (e.spiralPhase + 1) % TWO_PI;
+        out.hazards.push({
+            kind: 'beam', x: e.x, y: e.y,
+            angle: lead - dir * sweep / 2, sweep: dir * sweep,
+            length: atk.length ?? 1000, band: atk.band ?? 30,
+            damage: atk.damage ?? 26, warn: atk.warn ?? 0.7, curAngle: lead - dir * sweep / 2,
+            age: 0, lifetime: (atk.warn ?? 0.7) + (atk.duration ?? 1.3),
+            color: atk.color ?? '#ff5a3c', active: true,
+        });
+    } else if (atk.kind === 'lingering' && out.hazards) {
+        // SIGNATURE — LINGERING FIELDS: pools that telegraph, then SIT for
+        // several seconds dealing damage-over-time. Not a burst to sidestep —
+        // they reshape the arena into shrinking safe ground you must route around.
+        const count = atk.count ?? 4;
+        const r = atk.zoneRadius ?? 135;
+        const spread = atk.spread ?? 380;
+        for (let i = 0; i < count; i++) {
+            const a = Math.random() * TWO_PI;
+            const rr = i === 0 ? 0 : spread * (0.25 + Math.random() * 0.75);
+            const cxp = (i === 0 ? player.x : player.x + Math.cos(a) * rr);
+            const cyp = (i === 0 ? player.y : player.y + Math.sin(a) * rr);
+            out.hazards.push({
+                kind: 'lingering', x: cxp, y: cyp, r,
+                tickDamage: atk.tickDamage ?? 10, warn: atk.warn ?? 0.6,
+                age: 0, lifetime: (atk.warn ?? 0.6) + (atk.duration ?? 4.0),
+                tickTimer: 0, color: atk.color ?? '#ff7a33', active: true,
+            });
+        }
     }
 }
