@@ -16,7 +16,6 @@ import { WEAPONS } from '../content/weapons.js';
 import { PASSIVES } from '../content/passives.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import {
-    MAX_WEAPON_LEVEL,
     MAX_PASSIVE_LEVEL,
     CHEST,
 } from '../config/GameConfig.js';
@@ -49,8 +48,12 @@ export function rollChestReward(game) {
 
     const luck = game.player.chestLuck ?? 0;
 
+    // Use the PER-WEAPON cap (isMaxLevel), not the global MAX_WEAPON_LEVEL:
+    // evolved weapons cap at level 1 and abilities at 5, so filtering on the
+    // global 8 would offer "upgrades" to already-maxed weapons that levelUp
+    // then silently no-ops — the chest-spams-a-full-upgrade bug.
     const upgradeableWeapons = game.weaponSystem.owned.filter(
-        (w) => w.level < MAX_WEAPON_LEVEL
+        (w) => !game.weaponSystem.isMaxLevel(w.id)
     );
     const upgradeablePassives = game.passiveSystem.owned.filter((p) => {
         const def = PASSIVES[p.id];
