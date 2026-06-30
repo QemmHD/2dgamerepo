@@ -50,6 +50,7 @@ import { rollChestReward } from '../systems/ChestRewards.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { evaluateAchievements } from '../content/achievements.js';
+import { evaluateDaily, currentDayNumber } from '../content/dailyChallenges.js';
 import { DIFFICULTY, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS } from '../config/GameConfig.js';
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
@@ -707,6 +708,25 @@ export class Game {
         if (this.runSummary) this.runSummary.achievements = names;
     }
 
+    // Evaluate today's three daily challenges against this run's summary and
+    // claim+pay any newly completed. Like achievements, names are stashed on
+    // the summary so the game-over screen can flag them; the Play tab's daily
+    // strip shows full per-day progress.
+    _checkDailyChallenges() {
+        if (!this.runSummary) return;
+        const day = currentDayNumber();
+        const state = this.saveSystem.getDailyState(day);
+        const done = evaluateDaily(day, this.runSummary, state.completed);
+        if (!done.length) return;
+        let coins = 0; const names = [];
+        for (const c of done) {
+            if (this.saveSystem.markDailyComplete(day, c.id)) { coins += c.coins || 0; names.push(c.name); }
+        }
+        if (coins > 0) this.saveSystem.addCoins(coins);
+        this.newDailies = names;
+        if (this.runSummary) this.runSummary.dailies = names;
+    }
+
     _showVictory() {
         this.victory = { age: 0 };
         this.audio.objective();
@@ -751,6 +771,7 @@ export class Game {
             };
             this.saveSystem.recordRun(this.runSummary);
             this._checkAchievements();
+            this._checkDailyChallenges();
             this._runRecorded = true;
         }
         // Clearing this map's three bosses advances the campaign — select the
@@ -1742,6 +1763,7 @@ export class Game {
         // the game-over summary + the Stats tab). Done after recordRun so the
         // run's stats are already folded into lifetime totals.
         this._checkAchievements();
+        this._checkDailyChallenges();
         this.bpResult = awardBattlePassRun(this.saveSystem, this.runSummary);
         // Difficulty/modifier Pass-XP bonus (Hard = +50%, mods add more).
         if (this.runBonus?.xp > 0 && this.bpResult && this.bpResult.gained > 0) {

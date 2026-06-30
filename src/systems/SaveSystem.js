@@ -87,6 +87,9 @@ function defaultData() {
         difficulty: 'normal',
         // Earned achievement ids (one-time milestones; see content/achievements).
         achievements: { claimed: [] },
+        // Daily challenges: which day the `completed` ids belong to (auto-reset
+        // when the day rolls; see content/dailyChallenges + getDailyState).
+        daily: { day: 0, completed: [] },
         version: 5,
     };
 }
@@ -239,7 +242,17 @@ export class SaveSystem {
                 : [],
         };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, gamble, selectedMap, difficulty, achievements, version: 5 };
+        // Daily challenges: { day (int), completed (deduped string ids) }. The
+        // day rollover/reset is handled in getDailyState (read time), not here.
+        const dd = data.daily && typeof data.daily === 'object' ? data.daily : {};
+        const daily = {
+            day: Number.isInteger(dd.day) && dd.day > 0 ? dd.day : 0,
+            completed: Array.isArray(dd.completed)
+                ? [...new Set(dd.completed.filter((s) => typeof s === 'string' && s))]
+                : [],
+        };
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, gamble, selectedMap, difficulty, achievements, daily, version: 5 };
     }
 
     save() {
@@ -451,6 +464,34 @@ export class SaveSystem {
         if (!this.data.achievements) this.data.achievements = { claimed: [] };
         if (this.data.achievements.claimed.includes(id)) return false;
         this.data.achievements.claimed.push(id);
+        this.save();
+        return true;
+    }
+
+    // ── Daily challenges ─────────────────────────────────────────────────
+    // Returns the live daily state, AUTO-RESETTING completed[] when the day
+    // rolls over (so a new day's three challenges are fresh). `day` is passed
+    // in (computed from the clock by the caller / content helper) so this stays
+    // testable without touching Date here.
+    getDailyState(day) {
+        if (!this.data.daily) this.data.daily = { day: 0, completed: [] };
+        if (this.data.daily.day !== day) {
+            this.data.daily.day = day;
+            this.data.daily.completed = [];
+            this.save();
+        }
+        return this.data.daily;
+    }
+
+    isDailyComplete(day, id) {
+        return this.getDailyState(day).completed.includes(id);
+    }
+
+    // Marks a daily challenge complete for `day`. Returns true if NEWLY done.
+    markDailyComplete(day, id) {
+        const d = this.getDailyState(day);
+        if (d.completed.includes(id)) return false;
+        d.completed.push(id);
         this.save();
         return true;
     }
