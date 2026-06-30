@@ -786,14 +786,16 @@ export function drawHatShape(ctx, ox, oy, s, shape, color) {
 // idle motion (orbit / flicker). Draws in the caller's transform at (ox,oy),
 // unit `s`. Cheap (a handful of paths) — only the single player + menu avatar
 // ever call it, so it's a live draw rather than a cached frame.
-export function drawWeaponSkinOverlay(ctx, ox, oy, s, skin, t = 0) {
+export function drawWeaponSkinOverlay(ctx, ox, oy, s, skin, t = 0, dir = 'down') {
     if (!skin) return;
+    // The held weapon now carries the weapon identity (see assets/WeaponProps),
+    // so the overlay is just themed ATTIRE: a diagonal sash + chest gem. Those
+    // are front-of-torso only — skip them on the back ('up') view rather than
+    // paint a chest sash on the hero's back. (`t` is unused now that the old
+    // floating emblem — redundant with the in-hand weapon — has been removed.)
+    if (dir === 'up') return;
     const accent = skin.accent || '#ffd27a';
-    const glow = skin.glow || accent;
     ctx.save();
-    // Inherit the caller's alpha (e.g. the player's invincibility flash) so the
-    // whole overlay — sash, gem, halo, emblem — fades together, not just part.
-    const baseA = ctx.globalAlpha;
 
     // Diagonal sash across the torso (shoulder → opposite hip) with a lighter
     // inner stripe for depth.
@@ -817,110 +819,6 @@ export function drawWeaponSkinOverlay(ctx, ox, oy, s, skin, t = 0) {
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.beginPath(); ctx.arc(ox - s * 0.04, oy + s * 0.075, s * 0.03, 0, TWO_PI); ctx.fill();
 
-    // Floating motif by the head-right, with an additive glow halo. Subtle
-    // bob/orbit from `t`.
-    const bob = Math.sin(t * 2.2) * s * 0.04;
-    const mx = ox + s * 0.5;
-    const my = oy - s * 0.5 + bob;
-    const ms = s * 0.2;
-    ctx.globalCompositeOperation = 'lighter';
-    const halo = ctx.createRadialGradient(mx, my, 0, mx, my, ms * 1.8);
-    halo.addColorStop(0, glow);
-    halo.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.globalAlpha = baseA * 0.55;
-    ctx.fillStyle = halo;
-    ctx.beginPath(); ctx.arc(mx, my, ms * 1.8, 0, TWO_PI); ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = baseA;
-    drawWeaponEmblem(ctx, mx, my, ms, skin.emblem, accent, t);
-
-    ctx.restore();
-}
-
-// Draw a single themed emblem shape centred at (mx,my), size ~ms.
-function drawWeaponEmblem(ctx, mx, my, ms, emblem, accent, t) {
-    ctx.save();
-    ctx.translate(mx, my);
-    ctx.fillStyle = accent;
-    ctx.strokeStyle = accent;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    switch (emblem) {
-        case 'flame': {
-            ctx.beginPath();
-            ctx.moveTo(0, -ms);
-            ctx.quadraticCurveTo(ms * 0.8, -ms * 0.1, ms * 0.4, ms * 0.7);
-            ctx.quadraticCurveTo(0, ms, -ms * 0.4, ms * 0.7);
-            ctx.quadraticCurveTo(-ms * 0.8, -ms * 0.1, 0, -ms);
-            ctx.fill();
-            ctx.fillStyle = 'rgba(255,240,180,0.85)';
-            ctx.beginPath(); ctx.ellipse(0, ms * 0.2, ms * 0.22, ms * 0.4, 0, 0, TWO_PI); ctx.fill();
-            break;
-        }
-        case 'bolt': {
-            ctx.beginPath();
-            ctx.moveTo(ms * 0.25, -ms); ctx.lineTo(-ms * 0.45, ms * 0.1);
-            ctx.lineTo(ms * 0.05, ms * 0.1); ctx.lineTo(-ms * 0.25, ms);
-            ctx.lineTo(ms * 0.5, -ms * 0.15); ctx.lineTo(0, -ms * 0.15);
-            ctx.closePath(); ctx.fill();
-            break;
-        }
-        case 'blade': {
-            ctx.rotate(t * 1.6); // spin
-            ctx.beginPath();
-            ctx.moveTo(0, -ms); ctx.lineTo(ms * 0.28, 0); ctx.lineTo(0, ms); ctx.lineTo(-ms * 0.28, 0);
-            ctx.closePath(); ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = ms * 0.08;
-            ctx.beginPath(); ctx.moveTo(0, -ms); ctx.lineTo(0, ms); ctx.stroke();
-            break;
-        }
-        case 'sigil': {
-            ctx.lineWidth = ms * 0.16;
-            ctx.beginPath(); ctx.arc(0, 0, ms * 0.7, 0, TWO_PI); ctx.stroke();
-            ctx.beginPath();
-            for (let i = 0; i < 4; i++) {
-                const a = t * 0.6 + i * (Math.PI / 2);
-                ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * ms * 0.7, Math.sin(a) * ms * 0.7);
-            }
-            ctx.stroke();
-            break;
-        }
-        case 'shard': {
-            for (let i = 0; i < 3; i++) {
-                const a = t * 0.8 + i * (TWO_PI / 3);
-                const dx = Math.cos(a) * ms * 0.4, dy = Math.sin(a) * ms * 0.4;
-                ctx.beginPath();
-                ctx.moveTo(dx, dy - ms * 0.5); ctx.lineTo(dx + ms * 0.22, dy);
-                ctx.lineTo(dx, dy + ms * 0.5); ctx.lineTo(dx - ms * 0.22, dy);
-                ctx.closePath(); ctx.fill();
-            }
-            break;
-        }
-        case 'crown': {
-            ctx.beginPath();
-            ctx.moveTo(-ms * 0.8, ms * 0.5); ctx.lineTo(-ms * 0.8, -ms * 0.2);
-            ctx.lineTo(-ms * 0.35, ms * 0.1); ctx.lineTo(0, -ms * 0.6);
-            ctx.lineTo(ms * 0.35, ms * 0.1); ctx.lineTo(ms * 0.8, -ms * 0.2);
-            ctx.lineTo(ms * 0.8, ms * 0.5); ctx.closePath(); ctx.fill();
-            break;
-        }
-        case 'orb':
-        default: {
-            const g = ctx.createRadialGradient(-ms * 0.2, -ms * 0.2, 0, 0, 0, ms);
-            g.addColorStop(0, 'rgba(255,255,255,0.9)');
-            g.addColorStop(0.5, accent);
-            g.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = g;
-            ctx.beginPath(); ctx.arc(0, 0, ms, 0, TWO_PI); ctx.fill();
-            // Two orbiting motes.
-            ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            for (let i = 0; i < 2; i++) {
-                const a = t * 2.4 + i * Math.PI;
-                ctx.beginPath(); ctx.arc(Math.cos(a) * ms * 0.9, Math.sin(a) * ms * 0.9, ms * 0.12, 0, TWO_PI); ctx.fill();
-            }
-            break;
-        }
-    }
     ctx.restore();
 }
 
