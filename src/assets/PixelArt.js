@@ -151,10 +151,13 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
     // ── TAIL (behind the body) ──
     if (dir === 'down') {
         p.line(31, bodyY + 8, 39, bodyY + 6, furD, 3); p.line(39, bodyY + 6, 40, bodyY - 1, furD, 3);
+        p.disc(40, bodyY - 2, 2, furL);                 // tuft
     } else if (dir === 'up') {
         p.line(cx, bodyY + 9, cx + 7, bodyY + 11, backFur, 3); p.line(cx + 7, bodyY + 11, cx + 9, bodyY + 4, backFur, 3);
+        p.disc(cx + 9, bodyY + 3, 2, shade(fur, 0.05, 'light'));
     } else { // side: tail trails behind (left)
         p.line(16, bodyY + 7, 8, bodyY + 5, furD, 3); p.line(8, bodyY + 5, 7, bodyY - 2, furD, 3);
+        p.disc(7, bodyY - 3, 2, furL);                  // tuft
     }
 
     // ── BODY ──
@@ -184,9 +187,10 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
     } else if (dir === 'side') {
         p.disc(cx - 7, headY - 1, 4, fur); p.disc(cx - 7, headY - 1, 2, dir === 'up' ? backFur : face);
     } else {
-        p.disc(cx - 11, headY - 1, 4, fur); p.disc(cx + 11, headY - 1, 4, fur);
+        // Big rounded wick-keeper ears (match the original) with inner-ear.
+        p.disc(cx - 11, headY - 1, 5, fur); p.disc(cx + 11, headY - 1, 5, fur);
         const inner = dir === 'up' ? backFur : face;
-        p.disc(cx - 11, headY - 1, 2, inner); p.disc(cx + 11, headY - 1, 2, inner);
+        p.disc(cx - 11, headY - 1, 3, inner); p.disc(cx + 11, headY - 1, 3, inner);
     }
 
     // ── HEAD ──
@@ -207,6 +211,26 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
         p.dot(fx - 1, headY + 4, faceD); p.dot(fx + 1, headY + 4, faceD);
         // open "shout" mouth on cast/hurt
         if (pose === 'cast' || pose === 'hurt') p.rect(fx - 1, headY + 6, 3, 2, '#3a1410');
+    }
+
+    // ── SCARF (the wick-keeper guild outfit — the original's signature red
+    // neckwrap, constant across the chibi cast so they read as one order) ──
+    {
+        const SC = '#c93a3a', SCD = '#7a1d1d', SCL = '#e0584f';
+        if (dir === 'up') {
+            p.rect(cx - 7, headY + 9, 14, 3, SC);
+            p.rect(cx - 7, headY + 11, 14, 1, SCD);
+            p.rect(cx - 2, headY + 12, 4, 2, SCD);      // knot at the back
+        } else {
+            const sxx = dir === 'side' ? cx + 1 : cx;
+            p.rect(sxx - 7, headY + 9, 14, 3, SC);       // neck band
+            p.rect(sxx - 7, headY + 11, 14, 1, SCD);     // shadow
+            p.rect(sxx - 6, headY + 9, 12, 1, SCL);      // highlight
+            const tlx = dir === 'side' ? cx - 3 : cx + 4; // loose tail drifts back
+            p.rect(tlx, headY + 12, 3, 5, SC);
+            p.rect(tlx, headY + 16, 3, 1, SCD);
+            p.dot(tlx + (dir === 'side' ? 0 : 2), headY + 12, SCL);
+        }
     }
 
     // ── FEATURE ACCENTS ──
