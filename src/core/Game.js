@@ -2517,13 +2517,23 @@ export class Game {
         if (this.particlesEnabled && !this.reducedEffects) this.particles.drawWorldFog(ctx, this.camera);
         this._drawWorldBounds(ctx, this.showDebug);
 
+        // Decorative floors (building interiors) are GROUND — always drawn
+        // behind every entity/wall, never y-sorted against the player (else a
+        // player above the building would push the floor into the in-front pass
+        // and paint it over enemies inside). One flat ground pass here.
+        this.obstacleSystem.forVisible(
+            this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
+            (ob) => ob.draw(ctx), (ob) => !!ob.def.decorative
+        );
+
         // Obstacles are painter's-ordered against the player: those whose feet
         // line sits ABOVE the player draw now (behind entities); those below
         // the player draw after the player so they correctly occlude them.
+        // (Decorative floors are excluded — drawn in the ground pass above.)
         const playerBaseY = this.player.y + this.player.radius;
         this.obstacleSystem.forVisible(
             this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
-            (ob) => ob.draw(ctx), (ob) => ob.baseY <= playerBaseY
+            (ob) => ob.draw(ctx), (ob) => !ob.def.decorative && ob.baseY <= playerBaseY
         );
 
         // Off-screen culling: only entities within the camera view (plus a
@@ -2700,7 +2710,7 @@ export class Game {
         // player is occluded when standing behind a wall/building.
         this.obstacleSystem.forVisible(
             this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
-            (ob) => ob.draw(ctx), (ob) => ob.baseY > playerBaseY
+            (ob) => ob.draw(ctx), (ob) => !ob.def.decorative && ob.baseY > playerBaseY
         );
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
         for (const p of this.projectiles) {

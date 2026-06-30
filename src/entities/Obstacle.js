@@ -323,6 +323,27 @@ export class Obstacle {
     // doorway gap) form a building the player walks in and out of.
     _drawBuildingWall(ctx, w, h, p) {
         const hw = w * 0.5;
+        // VERTICAL side wall (collision is tall + thin): the baseline-up slab
+        // below is for wide horizontal (front/back) walls and would render a
+        // tall side wall as a short stub. Instead draw a full-height centered
+        // strip spanning the wall's collision footprint, so side walls actually
+        // read as walls.
+        const col = this.def.col;
+        if (col && col.hh > col.hw * 1.6) {
+            const sw = col.hw * 2, sh = col.hh * 2;
+            ctx.fillStyle = p.base;
+            ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+            // Lit top edge (a thin coping running down the strip's outer side).
+            ctx.fillStyle = p.top;
+            ctx.fillRect(-sw / 2, -sh / 2, Math.max(4, sw * 0.30), sh);
+            // Mortar courses across the strip.
+            ctx.strokeStyle = p.edge; ctx.lineWidth = 2;
+            for (let yy = -sh / 2 + 16; yy < sh / 2 - 2; yy += 22) {
+                ctx.beginPath(); ctx.moveTo(-sw / 2, yy); ctx.lineTo(sw / 2, yy); ctx.stroke();
+            }
+            ctx.lineWidth = 3; ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+            return;
+        }
         // Body.
         ctx.fillStyle = p.base;
         ctx.fillRect(-hw, -h, w, h);
