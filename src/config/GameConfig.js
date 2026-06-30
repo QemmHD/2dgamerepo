@@ -151,6 +151,7 @@ export const ENEMY = {
         radius: 70,
         contactDamage: 20,
         xpValue: 3,
+        visualScale: 1.4,  // real LPC orc body — scaled up to fill the big hitbox
     },
     crawler: {
         hp: 26,

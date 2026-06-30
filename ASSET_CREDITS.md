@@ -21,13 +21,17 @@ Piskel/Pixelorama-authored sprites, Lospec palettes, Tiled tilesets, Poly Haven
 ## External assets in the build
 
 ### LPC enemy spritesheets — `src/assets/lpc/`
-Used for the **skeleton**, **zombie**, and **ember-skeleton** (runtime recolor)
-enemy models. From the Universal LPC Spritesheet Generator.
+Real **Liberated Pixel Cup** base character bodies, used for the **skeleton**,
+**ember-skeleton** (runtime orange recolor), **zombie** (LPC human body recolored
+green), and **brute** (LPC orc) enemy models. Downloaded from the Universal LPC
+Spritesheet collection ([makrohn/Universal-LPC-spritesheet](https://github.com/makrohn/Universal-LPC-spritesheet)),
+then cropped to their walk-cycle rows.
 
-| File | Authors | License |
-|---|---|---|
-| `skeleton_walk.png` | bluecarrot16; Johannes Sjölund (wulax); Stephen Challener (Redshrike) | OGA-BY 3.0 / CC-BY-SA 3.0 / GPL 3.0 |
-| `zombie_walk.png` | Redshrike; wulax; castelonia; Benjamin K. Smith (BenCreating); bluecarrot16 | OGA-BY 3.0 / CC-BY-SA 3.0 / GPL 3.0 |
+| File | Source body | Authors | License |
+|---|---|---|---|
+| `skeleton_walk.png` | LPC skeleton | Stephen Challener (Redshrike); Johannes Sjölund (wulax); LPC contributors | CC-BY-SA 3.0 / GPL 3.0 |
+| `zombie_walk.png` | LPC human (recolored) | Stephen Challener (Redshrike); LPC contributors | CC-BY-SA 3.0 / GPL 3.0 |
+| `orc_walk.png` | LPC orc | Stephen Challener (Redshrike); LPC contributors | CC-BY-SA 3.0 / GPL 3.0 |
 
 Per-asset source URLs + notes: [`src/assets/lpc/CREDITS.md`](src/assets/lpc/CREDITS.md)
 and [`src/assets/credits/assets.json`](src/assets/credits/assets.json).

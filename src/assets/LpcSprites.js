@@ -28,11 +28,16 @@ const ROW = { up: 0, left: 1, down: 2, right: 3 };
 // model id → { file, recolor? }. recolor (optional) is a {op,color,alpha}
 // tint applied per frame so one source sheet yields extra variants.
 const MODELS = {
+    // Real LPC skeleton body — bare bones, instantly readable.
     skeleton:     { file: 'skeleton_walk.png' },
-    zombie:       { file: 'zombie_walk.png' },
+    // Rotting walker: the LPC human body sheet multiplied toward sickly green
+    // so it reads as a decayed zombie rather than a living person.
+    zombie:       { file: 'zombie_walk.png', recolor: { op: 'multiply', color: '#86b85f', alpha: 0.82 } },
     // Ember-scorched skeleton: the bone sheet multiplied toward hot orange —
     // a distinct fire-themed model from the same source art.
     emberskeleton: { file: 'skeleton_walk.png', recolor: { op: 'multiply', color: '#ff7a3c', alpha: 0.85 } },
+    // Real LPC orc body — heavy green brute, used for the melee "brute" enemy.
+    orc:          { file: 'orc_walk.png' },
 };
 
 const cache = new Map();   // id → { up:[canvas], left, down, right }
