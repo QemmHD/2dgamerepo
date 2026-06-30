@@ -5,9 +5,10 @@ import { Input } from './core/Input.js';
 import { KeyboardInput } from './core/KeyboardInput.js';
 import { TouchJoystick } from './core/TouchJoystick.js';
 import { prewarmSprites, getGlowSprite } from './assets/ProceduralSprites.js';
+import { loadLpcSprites } from './assets/LpcSprites.js';
 import { WEAPON_AURA } from './content/weapons.js';
 
-function boot() {
+async function boot() {
     const canvas = document.getElementById('game');
     if (!canvas) {
         throw new Error('Canvas element #game not found');
@@ -48,6 +49,11 @@ function boot() {
     // Warm the weapon-aura glow colors too, so the first weapon pickup /
     // evolution / aura color-swap doesn't rasterize a 128px glow mid-frame.
     for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
+
+    // Load the imported LPC enemy spritesheets before the first frame. This
+    // NEVER rejects — a failed/missing PNG falls back to procedural art — so a
+    // bad asset can't block boot.
+    await loadLpcSprites();
 
     game = new Game({ renderer, input, loop });
     loop.start();

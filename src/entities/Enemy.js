@@ -42,6 +42,7 @@ import {
     getGlowSprite,
     getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
+import { getLpcFrames } from '../assets/LpcSprites.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
@@ -69,6 +70,10 @@ const FRAMES_BY_TYPE = {
     speedDemon:      { get: getSpeedDemonFrames,       hz: 16 },
     dreadhulk:       { get: getDreadhulkFrames,        hz: 1.1 },
     brawler:         { get: getBrawlerFrames,          hz: 4 },
+    // Imported LPC humanoid models — directional 8-frame walk cycles.
+    skeleton:        { get: () => getLpcFrames('skeleton'),      hz: 9, directional: true },
+    zombie:          { get: () => getLpcFrames('zombie'),        hz: 6, directional: true },
+    emberskeleton:   { get: () => getLpcFrames('emberskeleton'), hz: 10, directional: true },
     // Boss animation Hz roughly doubled so their bodies/wings/maws read as
     // alive and aggressive instead of a slow crawl (the % frames.length wrap
     // makes any Hz index-safe regardless of frame count).
@@ -178,7 +183,18 @@ export class Enemy {
             }
         }
 
-        this.frames = frameSpec.get();
+        // Directional (LPC) sprites return { up, left, down, right } frame
+        // arrays; draw() picks the row by facing. Non-directional sprites return
+        // a single flat array. We always keep this.frames as a flat array (the
+        // 'down'/front set for directional) so any flat-frame consumer is safe.
+        const raw = frameSpec.get();
+        if (frameSpec.directional) {
+            this.dirFrames = raw;
+            this.frames = raw.down;
+            this._facing = 'down';
+        } else {
+            this.frames = raw;
+        }
         this.frameHz = frameSpec.hz;
         // Random phase so adjacent enemies don't animate in lockstep —
         // gives the swarm a more natural, varied motion feel.
@@ -673,11 +689,25 @@ export class Enemy {
             sx *= 1 + 0.20 * q; sy *= 1 - 0.16 * q;
         }
         // Non-bosses lean into their horizontal movement — reads as weight.
-        if (!this.boss && this.vx) ctx.rotate(clamp(this.vx * 0.00018, -0.13, 0.13));
+        // (Directional LPC sprites already turn to face, so skip the tilt for
+        // them — it would double up with the left/right rows.)
+        if (!this.boss && !this.dirFrames && this.vx) ctx.rotate(clamp(this.vx * 0.00018, -0.13, 0.13));
         ctx.scale(this.visualScale * sx, this.visualScale * sy);
 
-        const idx = Math.floor(this.animTimer * this.frameHz) % this.frames.length;
-        const frame = this.frames[idx];
+        // Directional sprites pick the row by movement facing; flat sprites use
+        // the single frame set. Facing latches so a stationary enemy keeps its
+        // last-faced direction instead of snapping to a default.
+        let frames = this.frames;
+        if (this.dirFrames) {
+            if (Math.abs(this.vx) > 4 || Math.abs(this.vy) > 4) {
+                this._facing = Math.abs(this.vx) >= Math.abs(this.vy)
+                    ? (this.vx >= 0 ? 'right' : 'left')
+                    : (this.vy >= 0 ? 'down' : 'up');
+            }
+            frames = this.dirFrames[this._facing] || this.frames;
+        }
+        const idx = Math.floor(this.animTimer * this.frameHz) % frames.length;
+        const frame = frames[idx];
         ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
 
         // Elite shimmer + hit flash use additive 'lighter' re-draws of the
