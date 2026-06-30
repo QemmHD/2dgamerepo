@@ -562,6 +562,11 @@ export class MenuRenderer {
             ['Best Gauntlet score', s.bestGauntletScore || 0], ['Gauntlet runs', s.gauntletRuns || 0],
             ['Nightmare wins', s.hardWins || 0], ['Nightmare bosses', s.eliteBossesDefeated || 0],
         ];
+        // Pact Mastery summary (per-character highest cleared tier).
+        const pmObj = (state.saveData && state.saveData.pactMastery) || {};
+        const pmVals = Object.values(pmObj).filter((v) => Number.isFinite(v) && v > 0);
+        rows.push(['Top Pact cleared', pmVals.length ? Math.max(...pmVals) : 0]);
+        rows.push(['Pacts mastered', pmVals.length]);
         const cols = 2, gap = 24;
         const colW = (c.w - 68 - gap) / cols;
         const rowH = 46;
