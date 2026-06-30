@@ -17,6 +17,7 @@ import { TWO_PI } from '../core/MathUtils.js';
 // LPC character frames (imported playable bodies). Only called at runtime, so
 // the ProceduralSprites ↔ LpcSprites import cycle is safe (live bindings).
 import { getLpcCharacterFrames } from './LpcSprites.js';
+import { drawPixelMonkey } from './PixelArt.js';
 
 const cache = new Map();
 
@@ -149,11 +150,9 @@ export function getDecorationSprite(type) {
 
 export function getMonkeyFrames() {
     if (cache.has('monkeyFrames')) return cache.get('monkeyFrames');
+    // Pixel-art Pyra (self-outlined) — matches the imported LPC pixel cast.
     const frames = [
-        addOutline(drawMonkey(SPRITE_SIZE, 0)),
-        addOutline(drawMonkey(SPRITE_SIZE, 1)),
-        addOutline(drawMonkey(SPRITE_SIZE, 2)),
-        addOutline(drawMonkey(SPRITE_SIZE, 3)),
+        drawPixelMonkey(0), drawPixelMonkey(1), drawPixelMonkey(2), drawPixelMonkey(3),
     ];
     cache.set('monkeyFrames', frames);
     return frames;
@@ -182,12 +181,11 @@ export function getCharacterFrames(id, char = null) {
             return frames;
         }
     }
+    // Pixel-art monkey recolored by the character palette (self-outlined).
     const opts = { palette: char.palette, feature: char.feature, accent: char.accent };
     const frames = [
-        addOutline(drawMonkey(SPRITE_SIZE, 0, opts)),
-        addOutline(drawMonkey(SPRITE_SIZE, 1, opts)),
-        addOutline(drawMonkey(SPRITE_SIZE, 2, opts)),
-        addOutline(drawMonkey(SPRITE_SIZE, 3, opts)),
+        drawPixelMonkey(0, opts), drawPixelMonkey(1, opts),
+        drawPixelMonkey(2, opts), drawPixelMonkey(3, opts),
     ];
     cache.set(key, frames);
     return frames;
