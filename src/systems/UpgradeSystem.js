@@ -19,6 +19,7 @@ import { WEAPONS, WEAPON_IDS } from '../content/weapons.js';
 import { PASSIVES, PASSIVE_IDS } from '../content/passives.js';
 import { MAX_WEAPON_LEVEL, MAX_PASSIVE_LEVEL } from '../config/GameConfig.js';
 import { cardPatronMul } from '../content/patrons.js';
+import { KEYSTONES } from '../content/keystones.js';
 
 const STAT_UPGRADES = [
     {
@@ -135,6 +136,9 @@ const FALLBACK_UPGRADES = [
     },
 ];
 
+// Keystones roll a touch below a brand-new weapon — special, recipe-gated, and
+// one-time, so they never flood the draft.
+const WEIGHT_KEYSTONE = 0.75;
 const WEIGHT_NEW_WEAPON = 0.9;
 const WEIGHT_WEAPON_UPGRADE = 1.1;
 const WEIGHT_NEW_PASSIVE = 0.85;
@@ -230,6 +234,14 @@ export class UpgradeSystem {
         for (const id of PASSIVE_IDS) {
             if (ownedPassiveIds.has(id)) continue;
             pool.push(newPassiveChoice(id));
+        }
+
+        // Keystones: synergy capstones that only enter the pool once their
+        // recipe is satisfied + the level gate is met, and only once per run.
+        for (const k of KEYSTONES) {
+            if ((this.appliedCounts[`keystone:${k.id}`] ?? 0) >= 1) continue;
+            if (!k.available(game)) continue;
+            pool.push(keystoneChoice(k));
         }
 
         return pool;
@@ -353,6 +365,24 @@ function passiveUpgradeChoice(owned, def) {
         apply(game) {
             game.passiveSystem.levelUpPassive(owned.id, game.player);
         },
+    };
+}
+
+// A Keystone card — a one-time, recipe-gated synergy capstone. Tinted as the
+// rarest tier so it reads as the jackpot it is; its apply() lives in
+// content/keystones.js (mutates player stats / sets a single read-at-hook flag).
+function keystoneChoice(k) {
+    return {
+        id: `keystone:${k.id}`,
+        kind: 'keystone',
+        cardLabel: 'KEYSTONE',
+        name: k.name,
+        description: k.desc,
+        cardLevelText: 'Keystone',
+        rarity: 'mythic',
+        weight: WEIGHT_KEYSTONE,
+        maxStacks: 1,
+        apply(game) { k.apply(game); },
     };
 }
 

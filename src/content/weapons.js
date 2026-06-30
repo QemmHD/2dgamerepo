@@ -635,20 +635,31 @@ function lightningMarkUpdate(dt, owned, ctx) {
 // a shock hit on a burning enemy consumes the remaining burn for an instant
 // detonateMul × burnDps burst, then clears it. All kills route through
 // ctx.killed so gems/coins/kill-count fire normally.
-function shockStrike(target, baseDamage, cfg, ctx) {
-    const amp = 1 + (target.shockStacks || 0) * (cfg.shockPerStack ?? 0);
+export function shockStrike(target, baseDamage, cfg, ctx) {
+    const player = ctx.player;
+    // Overcharge keystone: shock builds 2 charges higher and each charge amps
+    // harder (read here, the single shock hook — no extra scan).
+    const overcharge = player?.ks_overcharge;
+    const perStack = (cfg.shockPerStack ?? 0) + (overcharge ? 0.5 : 0);
+    const amp = 1 + (target.shockStacks || 0) * perStack;
     const dmg = baseDamage * amp;
     target.takeDamage(dmg);
     ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: dmg });
     if (!target.active) { ctx.killed.push(target); }
-    if (cfg.maxShockStacks) target.applyShock(cfg.maxShockStacks, cfg.shockDuration);
+    if (cfg.maxShockStacks) target.applyShock(cfg.maxShockStacks + (overcharge ? 2 : 0), cfg.shockDuration);
     if (target.active && target.burnTimer > 0) {
-        const burst = target.burnDps * SHOCK_CFG.detonateMul;
+        // Conflagration keystone: the burn detonation erupts far brighter and
+        // relights a fresh fire (same single target — no area query added).
+        const conflag = player?.ks_conflagration;
+        const detMul = SHOCK_CFG.detonateMul * (conflag ? 2.2 : 1);
+        const burnDps = target.burnDps;
+        const burst = burnDps * detMul;
         target.takeDamage(burst);
         ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: burst });
         target.burnTimer = 0;
         target.burnDps = 0;
         target.burnTickAccum = 0;
+        if (conflag && target.active) target.applyBurn(burnDps, 2.0); // relight
         if (!target.active) ctx.killed.push(target);
     }
 }
