@@ -28,7 +28,7 @@ import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '.
 import { getHeroFrames } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
-import { drawAuraFx } from '../assets/CosmeticFx.js';
+import { drawAuraFx, drawSetBonus } from '../assets/CosmeticFx.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
@@ -581,9 +581,11 @@ export class MenuRenderer {
         const pmVals = Object.values(pmObj).filter((v) => Number.isFinite(v) && v > 0);
         rows.push(['Top Pact cleared', pmVals.length ? Math.max(...pmVals) : 0]);
         rows.push(['Pacts mastered', pmVals.length]);
-        const cols = 2, gap = 24;
-        const colW = (c.w - 68 - gap) / cols;
-        const rowH = 46;
+        // Three compact columns (was two tall ones) — frees vertical room below
+        // so the achievements grid isn't pushed off the panel.
+        const cols = 3, gap = 18;
+        const colW = (c.w - 68 - gap * (cols - 1)) / cols;
+        const rowH = 40;
         const top = statsTop0 + 66;
         for (let i = 0; i < rows.length; i++) {
             const col = i % cols, row = Math.floor(i / cols);
@@ -602,23 +604,32 @@ export class MenuRenderer {
         const earnedN = ACHIEVEMENTS.filter((a) => claimed.includes(a.id)).length;
         ctx.fillStyle = '#ffce54'; ctx.font = `800 24px ${FONT}`; ctx.textAlign = 'left';
         ctx.fillText(`Achievements  ${earnedN}/${ACHIEVEMENTS.length}`, c.x + 34, aTop);
-        const acols = 3, agap = 14;
+        const acols = 4, agap = 14;       // 4 columns → 4 rows for 16 (fits short panels)
         const aW = (c.w - 68 - agap * (acols - 1)) / acols;
-        const aH = 52;
         const arTop = aTop + 16;
+        // Adaptive badge height: shrink so EVERY achievement row fits the space
+        // left below the stats (no silent clipping); drop the desc line when the
+        // badge gets short. Reward chip stays on the name row.
+        const rowsA = Math.ceil(ACHIEVEMENTS.length / acols);
+        const availA = (c.y + c.h - 8) - arTop;
+        const aH = Math.max(34, Math.min(52, Math.floor((availA - 8 * (rowsA - 1)) / rowsA)));
+        const aShowDesc = aH >= 46;
+        const aNameY = aShowDesc ? 22 : Math.round(aH * 0.6);
         for (let i = 0; i < ACHIEVEMENTS.length; i++) {
             const a = ACHIEVEMENTS[i];
             const col = i % acols, row = Math.floor(i / acols);
             const x = c.x + 34 + col * (aW + agap), y = arTop + row * (aH + 8);
-            if (y + aH > c.y + c.h - 8) break; // clip to panel
+            if (y + aH > c.y + c.h - 6) break; // safety clip (degenerate panels)
             const got = claimed.includes(a.id);
             roundRectPath(ctx, x, y, aW, aH, 8);
             ctx.fillStyle = got ? 'rgba(255,206,84,0.14)' : 'rgba(255,255,255,0.03)'; ctx.fill();
             ctx.strokeStyle = got ? '#ffce54' : 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2; ctx.stroke();
-            ctx.fillStyle = got ? '#ffce54' : '#cdd6e2'; ctx.font = `800 16px ${FONT}`; ctx.textAlign = 'left';
-            ctx.fillText(`${got ? '✓ ' : ''}${a.name}`, x + 12, y + 22);
-            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 12px ${FONT}`;
-            ctx.fillText(a.desc.length > 38 ? a.desc.slice(0, 37) + '…' : a.desc, x + 12, y + 40);
+            ctx.fillStyle = got ? '#ffce54' : '#cdd6e2'; ctx.font = `800 ${aShowDesc ? 16 : 15}px ${FONT}`; ctx.textAlign = 'left';
+            ctx.fillText(this._ellip(ctx, `${got ? '✓ ' : ''}${a.name}`, aW - 130), x + 12, y + aNameY);
+            if (aShowDesc) {
+                ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 12px ${FONT}`;
+                ctx.fillText(a.desc.length > 38 ? a.desc.slice(0, 37) + '…' : a.desc, x + 12, y + 40);
+            }
             // If this achievement grants a cosmetic, show it (right-aligned, in
             // its rarity colour) so players can see the skin they're grinding
             // toward — a 🎁 reward target on the name row.
@@ -626,7 +637,7 @@ export class MenuRenderer {
             if (rew.length && COSMETICS[rew[0]]) {
                 const cm = COSMETICS[rew[0]];
                 ctx.fillStyle = rarityColor(cm.rarity); ctx.font = `700 13px ${FONT}`; ctx.textAlign = 'right';
-                ctx.fillText(this._ellip(ctx, `🎁 ${cm.name}`, aW - 24), x + aW - 12, y + 22);
+                ctx.fillText(this._ellip(ctx, `🎁 ${cm.name}`, aW * 0.5), x + aW - 12, y + aNameY);
                 ctx.textAlign = 'left';
             }
         }
@@ -646,6 +657,7 @@ export class MenuRenderer {
         // Animated cosmetic aura (prestige VFX) — the live preview shows the
         // exact pulse/spin/flame/rainbow/starfield effect you earn.
         if (ap.auraColor) drawAuraFx(ctx, cx, cy, r * 1.32, ap.auraColor, ap.auraFx, t, 0.42);
+        if (ap.set) drawSetBonus(ctx, cx, cy, r * 1.3, ap.set.color, t);
         // Cloak: imported LPC cape for LPC heroes (drawn at the body box so it
         // aligns), procedural drape otherwise — matches the in-game player.
         if (ap.cloakColor) {
@@ -1019,8 +1031,15 @@ export class MenuRenderer {
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#fff'; ctx.font = `800 30px ${FONT}`;
         ctx.fillText(ch.name, acx, acy + r + 30);
-        ctx.fillStyle = 'rgba(192,139,255,0.95)'; ctx.font = `700 15px ${FONT}`;
-        ctx.fillText('CUSTOMIZE  ·  LIVE PREVIEW', acx, acy + r + 52);
+        if (ap.set) {
+            // Whole themed set equipped → celebrate it (set-bonus VFX is live on
+            // the model above).
+            ctx.fillStyle = ap.set.color; ctx.font = `800 16px ${FONT}`;
+            ctx.fillText(`✦ SET COMPLETE — ${ap.set.name} ✦`, acx, acy + r + 52);
+        } else {
+            ctx.fillStyle = 'rgba(192,139,255,0.95)'; ctx.font = `700 15px ${FONT}`;
+            ctx.fillText('CUSTOMIZE  ·  LIVE PREVIEW', acx, acy + r + 52);
+        }
 
         // Equipped-slot summary — a compact sheet of the current choices.
         const sx = c.x + 28, sw = avW - 56;
@@ -1063,9 +1082,10 @@ export class MenuRenderer {
         // names + odds aren't crushed into thin slivers.
         const cols = 3;
         const rows = Math.ceil(CASE_ORDER.length / cols);
-        // Reserve a strip at the bottom for the Ember Forge.
-        const forgeH = 168;
-        const gridH = c.h - forgeH - 24;
+        // Reserve strips at the bottom for Featured Prestige + the Cinder Wager.
+        const forgeH = 144;
+        const featH = 96, featGap = 14;
+        const gridH = c.h - forgeH - 24 - featH - featGap;
         const cardW = (c.w - gap * (cols - 1)) / cols;
         const rowH = (gridH - gap * (rows - 1)) / rows;
         ctx.textBaseline = 'alphabetic';
@@ -1084,19 +1104,28 @@ export class MenuRenderer {
             const afford = save.totalCoins >= def.cost;
             const btnH = Math.min(54, rowH * 0.27);
             const br = { x: x + 30, y: y + rowH - btnH - 14, w: cardW - 60, h: btnH };
+            // Odds in TWO columns (≤3 rows) so they always fit a compact card
+            // without overlapping — even when the grid shares space with the
+            // Featured + Mines strips on short panels.
             const oddsRows = caseOddsRows(def.id);
-            const oTop = y + 62, oBot = br.y - 12;
-            const n = Math.max(1, oddsRows.length);
-            const step = Math.min(30, (oBot - oTop) / n);
-            const ofs = Math.round(Math.max(12, Math.min(19, step * 0.64)));
+            const oTop = y + 56, oBot = br.y - 6;
+            const half = Math.max(1, Math.ceil(oddsRows.length / 2));
+            // Fit the (≤3) rows fully ABOVE the OPEN button — no hard floor, so
+            // they compress on short cards instead of colliding with the button.
+            const step = Math.min(26, (oBot - oTop) / (half + 0.3));
+            const ofs = Math.round(Math.max(9, Math.min(17, step * 0.64)));
+            const colMid = x + cardW / 2;
             ctx.font = `600 ${ofs}px ${FONT}`;
-            let oy = oTop + step * 0.72;
-            for (const r of oddsRows) {
+            for (let ri = 0; ri < oddsRows.length; ri++) {
+                const r = oddsRows[ri];
+                const cc = ri < half ? 0 : 1, rr = ri - cc * half;
+                const oy = oTop + step * 0.85 + rr * step;
+                const lx = cc === 0 ? x + 26 : colMid + 10;
+                const rx = cc === 0 ? colMid - 10 : x + cardW - 26;
                 ctx.textAlign = 'left'; ctx.fillStyle = rarityColor(r.rarity);
-                ctx.fillText(rarityName(r.rarity), x + 28, oy);
+                ctx.fillText(rarityName(r.rarity), lx, oy);
                 ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.85)';
-                ctx.fillText(`${r.pct}%`, x + cardW - 28, oy);
-                oy += step;
+                ctx.fillText(`${r.pct}%`, rx, oy);
             }
             // Always clickable: an unaffordable tap surfaces a "Not enough
             // coins" toast rather than silently doing nothing.
@@ -1104,9 +1133,47 @@ export class MenuRenderer {
                 { primary: afford, enabled: true, accent: afford ? null : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: Math.round(Math.min(24, btnH * 0.44)) });
         }
 
+        // ── Featured Prestige: a spotlight on grind-worthy cosmetics with a
+        // LIVE animated preview; tapping a card jumps to the customizer to chase
+        // it. Pure marketing for the prestige layer. ──
+        const featY = c.y + gridH + featGap;
+        this._panel(ctx, c.x, featY, c.w, featH, 'rgba(24,18,34,0.92)', '#c08bff');
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#c08bff'; ctx.font = `800 22px ${FONT}`;
+        ctx.fillText('✦ FEATURED PRESTIGE', c.x + 24, featY + 30);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 15px ${FONT}`;
+        ctx.fillText('— earn the look', c.x + 360, featY + 29);
+        const feat = ['aura_prism', 'aura_inferno', 'hat_halo', 'trail_rainbow', 'fur_galaxy'];
+        const fcGap = 16, fcTop = featY + 42, fcH = featH - 42 - 12;
+        const fcW = (c.w - 48 - fcGap * (feat.length - 1)) / feat.length;
+        for (let i = 0; i < feat.length; i++) {
+            const item = COSMETICS[feat[i]]; if (!item) continue;
+            const fx = c.x + 24 + i * (fcW + fcGap);
+            roundRectPath(ctx, fx, fcTop, fcW, fcH, 10);
+            ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fill();
+            ctx.strokeStyle = rarityColor(item.rarity); ctx.lineWidth = 2; ctx.stroke();
+            const boxR = Math.min(26, fcH / 2 - 8), bcx = fx + boxR + 14, bcy = fcTop + fcH / 2;
+            ctx.save(); roundRectPath(ctx, fx, fcTop, fcW, fcH, 10); ctx.clip();
+            if (item.category === 'aura') drawAuraFx(ctx, bcx, bcy, boxR, item.color, item.fx, this._t, 0.5);
+            else { const isz = boxR * 2; this._cosmeticSwatch(ctx, item.category, item, bcx - boxR, bcy - boxR, isz); }
+            ctx.restore();
+            const tx = fx + boxR * 2 + 24, tw = fcW - (boxR * 2 + 36);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = rarityColor(item.rarity); ctx.font = `800 17px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, item.name, tw), tx, bcy - 3);
+            let pathTxt;
+            if (save.cosmetics.unlocked.includes(item.id)) pathTxt = '✓ Owned';
+            else if (item.coinCost) pathTxt = `◎ ${item.coinCost}`;
+            else if (item.achievement) { const ach = ACHIEVEMENTS.find((a) => a.id === item.achievement); pathTxt = `🏆 ${ach ? ach.name : 'Achievement'}`; }
+            else pathTxt = '🔒 Case drop';
+            ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, pathTxt, tw), tx, bcy + 19);
+            this._hot(fx, fcTop, fcW, fcH, 'tab', 'character');
+        }
+
         // ── Cinder Wager strip: a skill coin-gamble. Pick a stake, then STOP
         // the sweeping spark on the multiplier bar (center = jackpot). ──
-        const fy = c.y + gridH + 24;
+        const fy = featY + featH + 24;
         this._panel(ctx, c.x, fy, c.w, forgeH, 'rgba(30,20,14,0.92)', '#ff8a4a');
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ffb24a'; ctx.font = `800 30px ${FONT}`;

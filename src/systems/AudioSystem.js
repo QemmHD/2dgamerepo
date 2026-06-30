@@ -318,6 +318,21 @@ export class AudioSystem {
             if (tier >= 3) this._noise(t + 0.05, 0.45, 0.05, 6500, this.sfxBus); // epic+ shimmer
         });
     }
+    // Cosmetic-unlock fanfare — a bright rising arpeggio + shimmer. Every
+    // cosmetic unlock is a "moment", so it always plays the full flourish
+    // (grander than equip()'s two-note sparkle).
+    cosmeticReward() {
+        this._play('cosmeticReward', 0.12, (t) => {
+            const root = 659;                          // E5 — bright + celebratory
+            this._bell(t, root);
+            for (let i = 0; i < 5; i++) {
+                this._voice(root * Math.pow(2, i / 4), t + 0.055 * i, 0.3, 0.09,
+                    { type: 'triangle', cutoff: 4600, detune: 6 });
+            }
+            this._voice(root * 2, t + 0.28, 0.4, 0.08, { type: 'sine', cutoff: 5200, detune: 5 });
+            this._noise(t + 0.04, 0.5, 0.045, 7000, this.sfxBus); // sparkle shimmer
+        });
+    }
     objective(){ this._play('obj', 0.1, (t) => { this._voice(784, t, 0.12, 0.12, { type: 'triangle', cutoff: 3600 }); this._voice(1175, t + 0.09, 0.24, 0.12, { type: 'triangle', cutoff: 4200, detune: 6 }); }); }
     caseOpen() { this._play('caseOpen', 0.1, (t) => { this._noise(t, 0.34, 0.10, 300, this.sfxBus, 2600); this._voice(330, t, 0.2, 0.08, { type: 'sine', slideTo: 660, cutoff: 2400 }); }); }
     // A warm bell = fundamental + a quieter octave, both lightly detuned.

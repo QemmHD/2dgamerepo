@@ -740,6 +740,7 @@ export class Game {
         }
         if (coins > 0) this.saveSystem.addCoins(coins);
         this.newAchievements = names;
+        if (cosmeticNames.length && this.audio) this.audio.cosmeticReward();
         if (this.runSummary) {
             this.runSummary.achievements = names;
             if (cosmeticNames.length) this.runSummary.cosmeticUnlocks = cosmeticNames;
@@ -984,7 +985,7 @@ export class Game {
         if (!this.saveSystem.spendCoins(item.coinCost)) { this._setToast('Not enough coins'); return false; }
         if (!this.saveSystem.unlockCosmetic(item.id)) { this.saveSystem.addCoins(item.coinCost); return false; }
         this.saveSystem.equipCosmetic(item.category, item.id);
-        this.audio.equip();
+        this.audio.cosmeticReward();          // celebratory fanfare on a NEW unlock
         this._setToast(`Unlocked ${item.name}`);
         return true;
     }
