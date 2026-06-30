@@ -42,7 +42,14 @@ export class Spawner {
         }
         this.timer -= this.nextInterval;
         this.nextInterval = this._rollInterval(waveState.spawnIntervalMul);
-        this._spawnOne(player, enemies, waveState, obstacleSystem, waveDirector);
+        // Release a PACK: the longer the run goes the more bodies arrive per
+        // wake (waveState.packSize), escalating pressure over time. Re-check the
+        // live cap before EACH body so a pack can never breach maxEnemyCap.
+        const pack = Math.max(1, waveState.packSize ?? 1);
+        for (let i = 0; i < pack; i++) {
+            if (this._countAlive(enemies) >= waveState.maxAlive) break;
+            this._spawnOne(player, enemies, waveState, obstacleSystem, waveDirector);
+        }
     }
 
     _spawnOne(player, enemies, waveState, obstacleSystem, waveDirector = null) {

@@ -107,7 +107,7 @@ export class WaveDirector {
             wave.healthMul * (1 + minutesBeyond * ENDLESS_SCALING.healthPerMinute),
             WAVE_LIMITS.maxHealthMultiplier
         );
-        const speedMul = Math.min(
+        let speedMul = Math.min(
             wave.speedMul * (1 + minutesBeyond * ENDLESS_SCALING.speedPerMinute),
             WAVE_LIMITS.maxSpeedMultiplier
         );
@@ -129,21 +129,44 @@ export class WaveDirector {
         // run-scale 0.85 clamp in Game still bounds the final value). The climax
         // of a deep endless run.
         const twilight = isLast && minutesBeyond >= ENDLESS_SCALING.twilightMinutesBeyond;
+        const tMin = twilight ? minutesBeyond - ENDLESS_SCALING.twilightMinutesBeyond : 0;
         if (twilight) {
-            const tMin = minutesBeyond - ENDLESS_SCALING.twilightMinutesBeyond;
             eliteChance = Math.min(
                 ENDLESS_SCALING.twilightEliteCap,
                 Math.max(eliteChance, ENDLESS_SCALING.twilightEliteFloor + tMin * ENDLESS_SCALING.twilightEliteRampPerMin)
+            );
+            // Twilight enemies grow FASTER every minute (on top of the normal
+            // ramp), re-clamped to the speed ceiling.
+            speedMul = Math.min(
+                WAVE_LIMITS.maxSpeedMultiplier,
+                speedMul * (1 + Math.min(ENDLESS_SCALING.twilightSpeedCap, tMin * ENDLESS_SCALING.twilightSpeedPerMin))
             );
         }
         // Contact-damage scaling: stays 1.0 until damageStartMinutesBeyond past
         // the last wave (so the first ~15 min are untouched), then ramps so late
         // enemies actually threaten strong builds. Carried into each new spawn.
-        const damageMul = Math.min(
+        let damageMul = Math.min(
             ENDLESS_SCALING.maxDamageMultiplier,
             1 + Math.max(0, minutesBeyond - ENDLESS_SCALING.damageStartMinutesBeyond)
                 * ENDLESS_SCALING.damagePerMinute
         );
+        // Twilight also makes enemies hit HARDER every minute (on top of the
+        // normal damage ramp), re-clamped to the damage ceiling.
+        if (twilight) {
+            damageMul = Math.min(
+                ENDLESS_SCALING.maxDamageMultiplier,
+                damageMul * (1 + Math.min(ENDLESS_SCALING.twilightDamageCap, tMin * ENDLESS_SCALING.twilightDamagePerMin))
+            );
+        }
+        // Pack size: how many bodies the spawner releases per wake. Grows with
+        // run time (and a touch with pressure) so the field fills faster the
+        // longer you last; the Spawner re-checks the live cap per body so this
+        // never breaches maxEnemyCap.
+        const packSize = Math.max(1, Math.min(
+            ENDLESS_SCALING.maxPackSize,
+            1 + Math.floor(Math.max(0, minutesBeyond - ENDLESS_SCALING.packStartMinutesBeyond) * ENDLESS_SCALING.packPerMinute)
+                + (this.pressure >= 0.7 ? 1 : 0)
+        ));
 
         // Pressure layers on top: faster spawns, a higher alive cap, and a mild
         // stat bump — all scaling 0→1 with current pressure, all still bounded
@@ -181,6 +204,7 @@ export class WaveDirector {
             healthMul: pHealthMul,
             speedMul: pSpeedMul,
             damageMul: pDamageMul,
+            packSize,
             pressure: p,
             twilight,
         };

@@ -10,13 +10,15 @@ import { CONTACT_FLASH_DURATION, KNOCKBACK } from '../config/GameConfig.js';
 import { circleOverlap } from '../core/MathUtils.js';
 
 // How much each non-strongest overlapping enemy adds to a contact hit, and
-// the ceiling as a multiple of the single strongest enemy's damage.
-// CAP 2.5 → 1.9: at the ~40-min endless ramp peak a max elite brute hits 51,
-// so a dense pile of them capped at 51×2.5 = 127.5 could delete a full-HP
-// (100), no-mitigation player in a SINGLE i-frame window — a one-shot with no
-// counterplay. 1.9 caps that worst case at 51×1.9 ≈ 97 < 100, so a full-HP
-// player always survives one window (then has 0.8 s i-frames to escape). A
-// crowd is still far deadlier than a single enemy, so late game stays intense.
+// the ceiling as a multiple of the single strongest enemy's damage. The cap
+// bounds the crowd explosion so a dense pile is "far deadlier than one enemy"
+// without scaling with raw body count — a hit is at most 1.9× the strongest
+// toucher. NOTE: this is NOT a survive-one-window guarantee. Late-game contact
+// (base × elite 1.7 × frenzied 1.4 × endless damageMul) is intentionally heavy,
+// so a frenzied-elite heavy pile is a hard two-shot of a modest build — the
+// scaling ceilings (ENDLESS_SCALING.maxDamageMultiplier) are tuned to keep that
+// from becoming a no-counterplay one-shot, but standing in the worst pile in
+// the deep endgame is meant to be lethal.
 const CROWD_DAMAGE_FRACTION = 0.3;
 const CROWD_DAMAGE_CAP = 1.9;
 
