@@ -249,6 +249,22 @@ export const ENEMY = {
         xpValue: 3,
         tint: '#e08a4a',
     },
+    // ── Imported LPC humanoid models (real spritesheets, directional walk). ──
+    // Skeleton: a brisk humanoid raider — the headline LPC model.
+    skeleton: {
+        hp: 80, speed: 150, radius: 44, contactDamage: 14, xpValue: 3,
+        visualScale: 1.0, tint: '#e8eef0',
+    },
+    // Zombie: a slow, tanky shambler.
+    zombie: {
+        hp: 130, speed: 90, radius: 48, contactDamage: 16, xpValue: 3,
+        visualScale: 1.05, tint: '#8fbf6a',
+    },
+    // Ember Skeleton: a faster, fire-scorched skeleton for the hotter biomes.
+    emberskeleton: {
+        hp: 90, speed: 165, radius: 44, contactDamage: 16, xpValue: 3,
+        visualScale: 1.0, tint: '#ff7a3c',
+    },
     // Support threat (Vigil 4+): a frail acolyte that hangs back and regens
     // nearby Hollow — kill it first or the front line never thins. Heal rate +
     // radius are capped so clusters can't become unkillable.
@@ -847,7 +863,7 @@ export const WAVES = [
         announcement: 'Vigil 4: Gathering Hollow — the dark presses in',
         spawnIntervalMul: 0.48,
         maxAlive: 140,
-        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24, healer: 6, speedDemon: 18, brawler: 14 },
+        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24, healer: 6, speedDemon: 18, brawler: 14, skeleton: 16 },
         eliteChance: 0.02,
         healthMul: 1.45,
         speedMul: 1.17,
@@ -859,7 +875,7 @@ export const WAVES = [
         announcement: 'Vigil 5: Direhusks March — the heavy Hollow arrive',
         spawnIntervalMul: 0.52,
         maxAlive: 125,
-        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8, healer: 9, shielder: 8, speedDemon: 18, brawler: 20, dreadhulk: 6 },
+        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8, healer: 9, shielder: 8, speedDemon: 18, brawler: 20, dreadhulk: 6, skeleton: 20, zombie: 16 },
         eliteChance: 0.04,
         healthMul: 1.65,
         speedMul: 1.22,
@@ -871,7 +887,7 @@ export const WAVES = [
         announcement: 'Vigil 6: The Long Dark — hold the light!',
         spawnIntervalMul: 0.44,
         maxAlive: 145,
-        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20, mite: 28, juggernaut: 14, speedDemon: 22, brawler: 22, dreadhulk: 10 },
+        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20, mite: 28, juggernaut: 14, speedDemon: 22, brawler: 22, dreadhulk: 10, skeleton: 22, zombie: 18, emberskeleton: 16 },
         eliteChance: 0.08,
         healthMul: 1.9,
         speedMul: 1.28,
