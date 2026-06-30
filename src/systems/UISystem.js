@@ -1246,6 +1246,18 @@ export class UISystem {
         ctx.fillText('LEVEL UP', 0, 0);
         ctx.restore();
 
+        // Keystone breadcrumb — a legible hint, above the title, of any capstone
+        // that's one recipe piece short (so players know what to build toward).
+        const hints = state.keystoneHints;
+        if (Array.isArray(hints) && hints.length) {
+            ctx.globalAlpha = bg;
+            ctx.fillStyle = '#ff8fa3'; // mythic-keystone tint
+            ctx.font = `700 26px ${FONT}`;
+            const txt = hints.map((h) => `${h.name} — needs ${h.need}`).join('     ◈     ');
+            ctx.fillText(`◈ KEYSTONE WITHIN REACH ◈   ${txt}`, INTERNAL_WIDTH / 2, 140);
+            ctx.globalAlpha = 1;
+        }
+
         ctx.globalAlpha = bg;
         ctx.font = `34px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.78)';
