@@ -26,8 +26,9 @@ import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter } from '../content/characters.js';
 import { getHeroFrames, drawCloakShape, drawHatShape, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
+import { getWeaponProp } from '../assets/WeaponProps.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
-import { resolveWeaponSkin } from '../content/weaponSkins.js';
+import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
 import { pickDailyChallenges, currentDayNumber } from '../content/dailyChallenges.js';
 import { PATRONS, PATRON_IDS } from '../content/patrons.js';
@@ -236,10 +237,14 @@ export class MenuRenderer {
         } catch (e) { charSprite = null; }
         // The selected starting weapon drives the themed skin overlay so the
         // preview matches the in-game look (character + cosmetics + weapon).
-        const skin = resolveWeaponSkin(resolveStartingWeapon(save));
+        const startWeaponId = resolveStartingWeapon(save);
+        const skin = resolveWeaponSkin(startWeaponId);
+        // …and the in-hand held prop, so the preview shows the wand/staff the
+        // hero actually carries in-game.
+        const heldProp = resolveWeaponProp(startWeaponId);
         // this._t (wall-clock seconds, frame-rate independent) is set in draw()
         // and drives the avatar's subtle idle motion.
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc);
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
         ctx.fillText(`${ch.name} — ${ch.title}`, ccx, c.y + c.h * 0.46);
@@ -620,7 +625,7 @@ export class MenuRenderer {
     // cached character frame) is supplied it's drawn as the body so the menu
     // model exactly matches the selected character; otherwise a procedural
     // blob is used as a fallback.
-    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false) {
+    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null) {
         // The avatar draws the body sprite at S=r*2.4, so the shared cosmetic +
         // weapon-skin helpers (authored in sprite-half units) take s = S/2.
         const S = r * 2.4;
@@ -658,6 +663,25 @@ export class MenuRenderer {
             ctx.fillStyle = '#2a2018';
             ctx.beginPath(); ctx.arc(cx - r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2);
             ctx.arc(cx + r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2); ctx.fill();
+        }
+        // Held weapon prop in-hand (matches the in-game loadout). Anchored at a
+        // fixed jaunty down-right angle since the menu has no aim target; the
+        // prop is authored relative to the in-game spriteHalf (91), so scale it
+        // to this avatar's half-size `s`.
+        if (heldProp) {
+            const propSprite = getWeaponProp(heldProp.prop, heldProp.accent, heldProp.glow);
+            if (propSprite) {
+                const pscale = (s / 91) * 0.92;
+                const ang = 0.5;
+                const px = cx + Math.cos(ang) * s * 0.18;
+                const py = cy + Math.sin(ang) * s * 0.18 + s * 0.12;
+                ctx.save();
+                ctx.translate(px, py);
+                ctx.rotate(ang);
+                ctx.drawImage(propSprite.canvas, -propSprite.gripX * pscale, -propSprite.gripY * pscale,
+                    propSprite.w * pscale, propSprite.h * pscale);
+                ctx.restore();
+            }
         }
         // Weapon-themed skin overlay (shared with the in-game player), then hat
         // on top — identical layering + geometry so the preview never diverges.
