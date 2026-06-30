@@ -147,9 +147,9 @@ export const ENEMY = {
     },
     brute: {
         hp: 95,
-        speed: 92,
+        speed: 120,        // sped up — a big enemy that was too easy to out-walk
         radius: 70,
-        contactDamage: 18,
+        contactDamage: 20,
         xpValue: 3,
     },
     crawler: {
@@ -204,11 +204,47 @@ export const ENEMY = {
     // a wall you must kite around while it lumbers after you.
     juggernaut: {
         hp: 245,
-        speed: 52,
+        speed: 72,         // sped up — the anchor still lumbers but no longer a stationary wall
         radius: 92,
         contactDamage: 22,
         xpValue: 5,
         visualScale: 1.35,
+    },
+    // Speed demon: a tiny, blistering-fast horror that closes the gap before
+    // you can react. Dies to a sneeze, but a pack of them forces constant
+    // movement — the fast/fragile extreme.
+    speedDemon: {
+        hp: 9,
+        speed: 330,         // a touch under the player's base speed so it's
+                            // outrunnable early and only catches you as it scales
+
+        radius: 26,
+        contactDamage: 8,
+        xpValue: 1,
+        visualScale: 0.62,
+        tint: '#ff5a4a',
+    },
+    // Dreadhulk: a genuinely high-HP slow tank — a true damage wall that
+    // demands sustained fire to drop, not the juggernaut's modest pool. Slow
+    // enough to kite, tanky enough to matter.
+    dreadhulk: {
+        hp: 460,
+        speed: 64,
+        radius: 102,
+        contactDamage: 26,
+        xpValue: 6,
+        visualScale: 1.5,
+        tint: '#8fa3bd',
+    },
+    // Brawler: a mid-weight bruiser with real pace — bridges the gap between
+    // fast trash and the slow heavies, so the front line has teeth.
+    brawler: {
+        hp: 150,
+        speed: 132,
+        radius: 62,
+        contactDamage: 17,
+        xpValue: 3,
+        tint: '#e08a4a',
     },
     // Support threat (Vigil 4+): a frail acolyte that hangs back and regens
     // nearby Hollow — kill it first or the front line never thins. Heal rate +
@@ -278,7 +314,7 @@ export const ENEMY = {
             // ── 5 new earth moves ──
             { id: 'quake', kind: 'zones', cooldown: 8.5, windup: 0.8, count: 5, zoneRadius: 155, spreadRadius: 380, damage: 30, warn: 0.9 },
             { id: 'boulderWall', kind: 'wall', cooldown: 9.0, windup: 0.6, count: 13, spacing: 80, projectileSpeed: 340, projectileDamage: 22, gap: 2 },
-            { id: 'spores', kind: 'seekers', cooldown: 9.5, windup: 0.5, count: 4, projectileSpeed: 230, projectileDamage: 16, turnRate: 2.0, maxSpeed: 340, color: '#9ae66e' },
+            { id: 'spores', kind: 'seekers', cooldown: 9.5, windup: 0.5, count: 4, projectileSpeed: 360, projectileDamage: 26, turnRate: 3.2, maxSpeed: 520, color: '#9ae66e' },
             { id: 'stomp', kind: 'shockwave', cooldown: 7.0, windup: 0.45, damage: 26, growth: 1000, rMax: 520, band: 90 },
             { id: 'gore', kind: 'fan', cooldown: 6.5, windup: 0.4, count: 9, spread: 1.0, projectileSpeed: 520, projectileDamage: 18 },
             // SIGNATURE — Bramble Ring: roots erupt in a ring around the Goliath,
@@ -318,7 +354,7 @@ export const ENEMY = {
             // ── 5 new storm moves ──
             { id: 'tempest', kind: 'zones', cooldown: 8.0, windup: 0.7, count: 6, zoneRadius: 135, spreadRadius: 430, damage: 24, warn: 0.8 },
             { id: 'featherWall', kind: 'wall', cooldown: 8.5, windup: 0.5, count: 15, spacing: 66, projectileSpeed: 420, projectileDamage: 16, gap: 2 },
-            { id: 'stormSeekers', kind: 'seekers', cooldown: 9.0, windup: 0.45, count: 5, projectileSpeed: 280, projectileDamage: 13, turnRate: 2.4, maxSpeed: 430, color: '#7fd0ff' },
+            { id: 'stormSeekers', kind: 'seekers', cooldown: 9.0, windup: 0.45, count: 5, projectileSpeed: 420, projectileDamage: 24, turnRate: 3.6, maxSpeed: 600, color: '#7fd0ff' },
             { id: 'cyclone', kind: 'fan', cooldown: 6.0, windup: 0.4, count: 22, spread: 6.2832, projectileSpeed: 430, projectileDamage: 13, spiral: true, spin: 0.4 },
             { id: 'gale', kind: 'fan', cooldown: 5.5, windup: 0.35, count: 7, spread: 0.7, projectileSpeed: 560, projectileDamage: 15 },
             // SIGNATURE — Galewind Lattice: a rotating cross of wind-blades to
@@ -354,7 +390,7 @@ export const ENEMY = {
             { id: 'lunge', kind: 'charge', cooldown: 6.0, windup: 0.45, dashSpeed: 820, dashDuration: 0.6 },
             { id: 'drool', kind: 'zones', cooldown: 7.5, windup: 0.8, count: 6, zoneRadius: 150, spreadRadius: 420, damage: 28, warn: 0.85 },
             { id: 'lash', kind: 'wall', cooldown: 8.0, windup: 0.55, count: 15, spacing: 74, projectileSpeed: 380, projectileDamage: 20, gap: 2 },
-            { id: 'gaze', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 250, projectileDamage: 15, turnRate: 2.4, maxSpeed: 380, color: '#cdb3ff' },
+            { id: 'gaze', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 400, projectileDamage: 26, turnRate: 3.6, maxSpeed: 580, color: '#cdb3ff' },
             { id: 'spawnlings', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { mite: 3, bat: 2 } },
             // SIGNATURE — Gaze Beam: a sweeping eye-laser that rotates across the
             // arena. Don't dodge it — run AROUND the sweep.
@@ -374,7 +410,7 @@ export const ENEMY = {
             { id: 'shardFan', kind: 'fan', cooldown: 3.8, windup: 0.45, count: 13, spread: 3.2, projectileSpeed: 450, projectileDamage: 18 },
             { id: 'glacialCharge', kind: 'charge', cooldown: 5.2, windup: 0.45, dashSpeed: 800, dashDuration: 0.65 },
             { id: 'frostZones', kind: 'zones', cooldown: 8.0, windup: 0.8, count: 6, zoneRadius: 150, spreadRadius: 400, damage: 28, warn: 0.85 },
-            { id: 'blizzard', kind: 'seekers', cooldown: 9.0, windup: 0.5, count: 5, projectileSpeed: 250, projectileDamage: 15, turnRate: 2.2, maxSpeed: 380, color: '#aef0ff' },
+            { id: 'blizzard', kind: 'seekers', cooldown: 9.0, windup: 0.5, count: 5, projectileSpeed: 400, projectileDamage: 26, turnRate: 3.4, maxSpeed: 580, color: '#aef0ff' },
             { id: 'iceWall', kind: 'wall', cooldown: 8.5, windup: 0.6, count: 14, spacing: 74, projectileSpeed: 360, projectileDamage: 20, gap: 2 },
             { id: 'rimeCall', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 3, summonTypes: { crawler: 2, slime: 1 } },
             // SIGNATURE — Ice Lance: a precise sleet spear at your lead point.
@@ -406,7 +442,7 @@ export const ENEMY = {
             { id: 'auroraVolley', kind: 'fan', cooldown: 2.9, windup: 0.45, count: 20, spread: 6.2832, projectileSpeed: 450, projectileDamage: 15 },
             { id: 'cometZones', kind: 'zones', cooldown: 7.0, windup: 0.7, count: 7, zoneRadius: 150, spreadRadius: 440, damage: 30, warn: 0.8 },
             { id: 'crystalWall', kind: 'wall', cooldown: 8.0, windup: 0.55, count: 16, spacing: 70, projectileSpeed: 400, projectileDamage: 19, gap: 2 },
-            { id: 'shardSeekers', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 270, projectileDamage: 16, turnRate: 2.4, maxSpeed: 420, color: '#a0ffe0' },
+            { id: 'shardSeekers', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 420, projectileDamage: 28, turnRate: 3.6, maxSpeed: 600, color: '#a0ffe0' },
             { id: 'novaShock', kind: 'shockwave', cooldown: 4.0, windup: 0.5, damage: 30, growth: 920, rMax: 620, band: 115 },
             { id: 'spiralAurora', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 16, spread: 6.2832, projectileSpeed: 420, projectileDamage: 14, spiral: true, spin: 0.5 },
             { id: 'wispSummon', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { bat: 3, mite: 2 } },
@@ -427,7 +463,7 @@ export const ENEMY = {
             { id: 'graveQuake', kind: 'zones', cooldown: 7.5, windup: 0.8, count: 7, zoneRadius: 155, spreadRadius: 410, damage: 32, warn: 0.85 },
             { id: 'boneWall', kind: 'wall', cooldown: 8.0, windup: 0.6, count: 16, spacing: 72, projectileSpeed: 380, projectileDamage: 22, gap: 2 },
             { id: 'reapCharge', kind: 'charge', cooldown: 5.0, windup: 0.45, dashSpeed: 840, dashDuration: 0.7 },
-            { id: 'skullSeekers', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 250, projectileDamage: 17, turnRate: 2.2, maxSpeed: 400, color: '#e8f0d8' },
+            { id: 'skullSeekers', kind: 'seekers', cooldown: 8.5, windup: 0.5, count: 6, projectileSpeed: 420, projectileDamage: 28, turnRate: 3.5, maxSpeed: 600, color: '#e8f0d8' },
             { id: 'graveStomp', kind: 'shockwave', cooldown: 4.2, windup: 0.5, damage: 30, growth: 940, rMax: 600, band: 110 },
             { id: 'raiseDead', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 4, summonTypes: { crawler: 2, mite: 2 } },
             // SIGNATURE — Bone Lattice: a rotating cross of bolts; weave between
@@ -443,7 +479,7 @@ export const ENEMY = {
         attacks: [
             { id: 'soulVolley', kind: 'fan', cooldown: 2.8, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 460, projectileDamage: 15 },
             { id: 'phantomZones', kind: 'zones', cooldown: 7.0, windup: 0.7, count: 7, zoneRadius: 140, spreadRadius: 440, damage: 28, warn: 0.78 },
-            { id: 'spectralSeekers', kind: 'seekers', cooldown: 8.0, windup: 0.45, count: 6, projectileSpeed: 280, projectileDamage: 15, turnRate: 2.6, maxSpeed: 440, color: '#9af0ff' },
+            { id: 'spectralSeekers', kind: 'seekers', cooldown: 8.0, windup: 0.45, count: 6, projectileSpeed: 440, projectileDamage: 28, turnRate: 3.8, maxSpeed: 620, color: '#9af0ff' },
             { id: 'wail', kind: 'shockwave', cooldown: 4.2, windup: 0.45, damage: 26, growth: 820, rMax: 580, band: 100 },
             { id: 'scytheWall', kind: 'wall', cooldown: 7.5, windup: 0.5, count: 16, spacing: 66, projectileSpeed: 430, projectileDamage: 17, gap: 2 },
             { id: 'blink', kind: 'charge', cooldown: 4.6, windup: 0.35, dashSpeed: 960, dashDuration: 0.5 },
@@ -462,7 +498,7 @@ export const ENEMY = {
             { id: 'voidBurst', kind: 'fan', cooldown: 2.8, windup: 0.45, count: 24, spread: 6.2832, projectileSpeed: 460, projectileDamage: 16 },
             { id: 'gravityZones', kind: 'zones', cooldown: 6.8, windup: 0.75, count: 8, zoneRadius: 150, spreadRadius: 440, damage: 32, warn: 0.78 },
             { id: 'abyssWall', kind: 'wall', cooldown: 7.5, windup: 0.55, count: 17, spacing: 68, projectileSpeed: 400, projectileDamage: 21, gap: 2 },
-            { id: 'voidSeekers', kind: 'seekers', cooldown: 8.0, windup: 0.5, count: 7, projectileSpeed: 270, projectileDamage: 17, turnRate: 2.6, maxSpeed: 430, color: '#d06bff' },
+            { id: 'voidSeekers', kind: 'seekers', cooldown: 8.0, windup: 0.5, count: 7, projectileSpeed: 440, projectileDamage: 30, turnRate: 3.8, maxSpeed: 620, color: '#d06bff' },
             { id: 'collapse', kind: 'shockwave', cooldown: 4.0, windup: 0.5, damage: 32, growth: 980, rMax: 640, band: 120 },
             { id: 'spiralVoid', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 430, projectileDamage: 14, spiral: true, spin: 0.5 },
             { id: 'devour', kind: 'charge', cooldown: 5.5, windup: 0.45, dashSpeed: 860, dashDuration: 0.6 },
@@ -485,7 +521,7 @@ export const ENEMY = {
             { id: 'quicksand', kind: 'zones', cooldown: 7.0, windup: 0.75, count: 8, zoneRadius: 155, spreadRadius: 420, damage: 32, warn: 0.8 },
             { id: 'duneWall', kind: 'wall', cooldown: 7.5, windup: 0.55, count: 17, spacing: 70, projectileSpeed: 400, projectileDamage: 22, gap: 2 },
             { id: 'goreCharge', kind: 'charge', cooldown: 4.8, windup: 0.4, dashSpeed: 880, dashDuration: 0.7 },
-            { id: 'sandstorm', kind: 'seekers', cooldown: 8.0, windup: 0.5, count: 7, projectileSpeed: 270, projectileDamage: 17, turnRate: 2.4, maxSpeed: 420, color: '#ffe09a' },
+            { id: 'sandstorm', kind: 'seekers', cooldown: 8.0, windup: 0.5, count: 7, projectileSpeed: 430, projectileDamage: 28, turnRate: 3.6, maxSpeed: 600, color: '#ffe09a' },
             { id: 'burrowStomp', kind: 'shockwave', cooldown: 4.0, windup: 0.45, damage: 30, growth: 980, rMax: 620, band: 110 },
             { id: 'broodCall', kind: 'summon', cooldown: 11.0, windup: 0.6, summonCount: 4, summonTypes: { crawler: 3, charger: 1 } },
             // SIGNATURE — Sandstorm Spiral: a rotating pinwheel of grit you must
@@ -501,7 +537,7 @@ export const ENEMY = {
         attacks: [
             { id: 'magmaVolley', kind: 'fan', cooldown: 2.7, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 460, projectileDamage: 16 },
             { id: 'lavaZones', kind: 'zones', cooldown: 6.8, windup: 0.7, count: 8, zoneRadius: 145, spreadRadius: 440, damage: 30, warn: 0.75 },
-            { id: 'emberSeekers', kind: 'seekers', cooldown: 7.8, windup: 0.45, count: 6, projectileSpeed: 290, projectileDamage: 16, turnRate: 2.6, maxSpeed: 450, color: '#ffae5a' },
+            { id: 'emberSeekers', kind: 'seekers', cooldown: 7.8, windup: 0.45, count: 6, projectileSpeed: 440, projectileDamage: 28, turnRate: 3.7, maxSpeed: 620, color: '#ffae5a' },
             { id: 'fireShock', kind: 'shockwave', cooldown: 4.0, windup: 0.45, damage: 28, growth: 880, rMax: 600, band: 105 },
             { id: 'obsidianWall', kind: 'wall', cooldown: 7.5, windup: 0.5, count: 16, spacing: 66, projectileSpeed: 440, projectileDamage: 18, gap: 2 },
             { id: 'fireLunge', kind: 'charge', cooldown: 4.6, windup: 0.38, dashSpeed: 940, dashDuration: 0.55 },
@@ -520,7 +556,7 @@ export const ENEMY = {
             { id: 'solarVolley', kind: 'fan', cooldown: 2.6, windup: 0.45, count: 26, spread: 6.2832, projectileSpeed: 470, projectileDamage: 17 },
             { id: 'scorchZones', kind: 'zones', cooldown: 6.5, windup: 0.7, count: 9, zoneRadius: 155, spreadRadius: 450, damage: 34, warn: 0.75 },
             { id: 'blazeWall', kind: 'wall', cooldown: 7.0, windup: 0.5, count: 18, spacing: 66, projectileSpeed: 420, projectileDamage: 23, gap: 2 },
-            { id: 'mirageSeekers', kind: 'seekers', cooldown: 7.5, windup: 0.45, count: 8, projectileSpeed: 280, projectileDamage: 18, turnRate: 2.6, maxSpeed: 450, color: '#ff9a3c' },
+            { id: 'mirageSeekers', kind: 'seekers', cooldown: 7.5, windup: 0.45, count: 8, projectileSpeed: 460, projectileDamage: 32, turnRate: 3.9, maxSpeed: 640, color: '#ff9a3c' },
             { id: 'supernova', kind: 'shockwave', cooldown: 4.0, windup: 0.55, damage: 36, growth: 1040, rMax: 680, band: 125 },
             { id: 'spiralSun', kind: 'fan', cooldown: 4.8, windup: 0.4, count: 22, spread: 6.2832, projectileSpeed: 440, projectileDamage: 15, spiral: true, spin: 0.5 },
             { id: 'sunLunge', kind: 'charge', cooldown: 5.0, windup: 0.4, dashSpeed: 900, dashDuration: 0.6 },
@@ -567,6 +603,11 @@ export const BOSS = {
     // while 30 min lands exactly on the 7× ceiling.
     hpPerMinute: 0.20,
     maxHpMul: 7.0,
+    // Flat HP multiplier on EVERY boss (folded into bossHpMul in Game._spawnBoss)
+    // so a duel is a longer war of attrition instead of a quick burst-down — at
+    // every stage of the run, not just late. Tuned so fights run noticeably
+    // longer while a strong build can still close them out in a reasonable time.
+    baseHpMul: 1.5,
     // Damage RESISTANCE is the one stat that directly cancels a player's
     // damage investment — so a heavily-geared/grinded build feels like it "got
     // nothing" if the boss just soaks more. Kept LOW (was 0.012/min → 0.35 cap)
@@ -787,7 +828,7 @@ export const WAVES = [
         announcement: 'Vigil 3: Skittering Dark — Skitterlings swarm',
         spawnIntervalMul: 0.58,
         maxAlive: 125,
-        typeWeights: { slime: 45, bat: 25, crawler: 30, spitter: 15, mite: 18 },
+        typeWeights: { slime: 45, bat: 25, crawler: 30, spitter: 15, mite: 18, speedDemon: 14 },
         eliteChance: 0,
         healthMul: 1.2,
         speedMul: 1.10,
@@ -799,7 +840,7 @@ export const WAVES = [
         announcement: 'Vigil 4: Gathering Hollow — the dark presses in',
         spawnIntervalMul: 0.48,
         maxAlive: 140,
-        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24, healer: 6 },
+        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24, healer: 6, speedDemon: 18, brawler: 14 },
         eliteChance: 0.02,
         healthMul: 1.45,
         speedMul: 1.17,
@@ -811,7 +852,7 @@ export const WAVES = [
         announcement: 'Vigil 5: Direhusks March — the heavy Hollow arrive',
         spawnIntervalMul: 0.52,
         maxAlive: 125,
-        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8, healer: 9, shielder: 8 },
+        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8, healer: 9, shielder: 8, speedDemon: 18, brawler: 20, dreadhulk: 6 },
         eliteChance: 0.04,
         healthMul: 1.65,
         speedMul: 1.22,
@@ -823,7 +864,7 @@ export const WAVES = [
         announcement: 'Vigil 6: The Long Dark — hold the light!',
         spawnIntervalMul: 0.44,
         maxAlive: 145,
-        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20, mite: 28, juggernaut: 14 },
+        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20, mite: 28, juggernaut: 14, speedDemon: 22, brawler: 22, dreadhulk: 10 },
         eliteChance: 0.08,
         healthMul: 1.9,
         speedMul: 1.28,
@@ -839,28 +880,45 @@ export const WAVES = [
 // actually hurt instead of pinging for minute-1 damage.
 export const ENDLESS_SCALING = {
     healthPerMinute: 0.11,
-    speedPerMinute: 0.035,
-    spawnIntervalShrinkPerMinute: 0.05,
-    capGrowthPerMinute: 4,
+    speedPerMinute: 0.040,   // steeper so enemies keep getting faster every minute
+    // Spawn pressure RAMPS with run time: cadence shrinks faster and the alive
+    // cap climbs faster, so the longer you survive the more crowded it gets
+    // (bounded by WAVE_LIMITS / the pack ceiling below).
+    spawnIntervalShrinkPerMinute: 0.07,
+    capGrowthPerMinute: 6,
     eliteChancePerMinute: 0.018,
     // Contact-damage scaling now bites earlier (7 min total vs 15) and ramps
     // harder so late enemies are a real threat to a strong build, not chip.
     damageStartMinutesBeyond: 2,
-    damagePerMinute: 0.08,
-    maxDamageMultiplier: 3.0,
+    damagePerMinute: 0.085,
+    maxDamageMultiplier: 3.2,
+    // ── PACK SPAWNS: the spawner releases MORE bodies per wake the longer the
+    // run goes, so pressure escalates with time on top of the faster cadence.
+    // Each pack member still respects the live cap (Spawner re-checks per body),
+    // so this can never breach maxEnemyCap. Starts a few minutes past the final
+    // wave and grows toward maxPackSize.
+    packStartMinutesBeyond: 3,
+    packPerMinute: 0.25,
+    maxPackSize: 4,
     // ── TWILIGHT: the late-game climax. A set time past the final wave the
     // horde "turns" — elite chance leaps and climbs toward an elite-army cap
     // (this OVERRIDES the normal maxEliteChance; the run-scale 0.85 ceiling in
-    // Game still applies). Makes a deep endless run an earned spectacle.
+    // Game still applies), AND twilight enemies now grow in BOTH speed and
+    // damage every minute (on top of the normal ramps, re-clamped to the
+    // ceilings) so standing still in the deep endless game gets you killed.
     twilightMinutesBeyond: 4,
     twilightEliteFloor: 0.55,
     twilightEliteRampPerMin: 0.05,
     twilightEliteCap: 0.9,
+    twilightSpeedPerMin: 0.025,
+    twilightSpeedCap: 0.45,
+    twilightDamagePerMin: 0.05,
+    twilightDamageCap: 0.65,
 };
 
 export const WAVE_LIMITS = {
     maxEnemyCap: 180,
-    maxSpeedMultiplier: 2.3,
+    maxSpeedMultiplier: 2.6,   // headroom so the twilight speed ramp isn't clamped early
     maxHealthMultiplier: 7.0,
     maxEliteChance: 0.4,
 };

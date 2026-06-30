@@ -79,6 +79,9 @@ export function prewarmSprites() {
     getJuggernautFrames();
     getHealerFrames();
     getShielderFrames();
+    getSpeedDemonFrames();
+    getDreadhulkFrames();
+    getBrawlerFrames();
     getRimewardenFrames();
     getHoarfangFrames();
     getAurorathFrames();
@@ -200,6 +203,9 @@ export const getMiteFrames = makeFrameGetter('miteFrames', 4, drawMite);
 export const getJuggernautFrames = makeFrameGetter('juggernautFrames', 2, drawJuggernaut);
 export const getHealerFrames = makeFrameGetter('healerFrames', 4, drawHealer);
 export const getShielderFrames = makeFrameGetter('shielderFrames', 3, drawShielder);
+export const getSpeedDemonFrames = makeFrameGetter('speedDemonFrames', 4, drawSpeedDemon);
+export const getDreadhulkFrames = makeFrameGetter('dreadhulkFrames', 2, drawDreadhulk);
+export const getBrawlerFrames = makeFrameGetter('brawlerFrames', 2, drawBrawler);
 
 // Back-compat: idle frames for legacy callers.
 export function getSlimeSprite() { return getSlimeFrames()[0]; }
@@ -2111,6 +2117,185 @@ function drawJuggernaut(size, frame) {
     ctx.beginPath();
     ctx.arc(cx - 18, cy - 30, 7, 0, TWO_PI);
     ctx.arc(cx + 18, cy - 30, 7, 0, TWO_PI);
+    ctx.fill();
+    return canvas;
+}
+
+// Speed Demon — a tiny, blistering-fast horror: a lean dart-shaped body with
+// swept-back spines and a single furious eye. 4 frames: a fast forward lean +
+// flickering spines so it reads as "moving fast" even when still.
+function drawSpeedDemon(size, frame, count = 4) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const ph = (frame / count) * TWO_PI;
+    const dart = Math.sin(ph) * 6;
+
+    const BODY = '#7a1f1a';
+    const BODY_DARK = '#3a0d0a';
+    const BODY_LIGHT = '#ff6a4a';
+    const SPINE = '#ff8a5a';
+    const EYE = '#ffe04a';
+
+    softShadow(ctx, cx, cy + 26, 26, 6, 0.4);
+
+    // Swept-back motion spines (read as speed lines).
+    ctx.strokeStyle = SPINE;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 6, cy + i * 12);
+        ctx.lineTo(cx - 40 - dart, cy + i * 20);
+        ctx.stroke();
+    }
+
+    // Lean dart body, pointed toward travel (right).
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.moveTo(cx + 34 + dart, cy);
+    ctx.quadraticCurveTo(cx, cy - 22, cx - 26, cy - 8);
+    ctx.quadraticCurveTo(cx - 14, cy, cx - 26, cy + 8);
+    ctx.quadraticCurveTo(cx, cy + 22, cx + 34 + dart, cy);
+    ctx.fill();
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx + 4, cy - 5, 12, 5, -0.3, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx + 34 + dart, cy);
+    ctx.quadraticCurveTo(cx, cy - 22, cx - 26, cy - 8);
+    ctx.quadraticCurveTo(cx - 14, cy, cx - 26, cy + 8);
+    ctx.quadraticCurveTo(cx, cy + 22, cx + 34 + dart, cy);
+    ctx.stroke();
+
+    // One furious eye near the point.
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx + 16, cy - 2, 4.5, 0, TWO_PI);
+    ctx.fill();
+    return canvas;
+}
+
+// Dreadhulk — a genuinely huge, slow TANK: a craggy obsidian colossus, bigger
+// and darker than the juggernaut, with cold blue rune-cracks. 2 frames: a
+// heavy breathe.
+function drawDreadhulk(size, frame) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const breathe = frame === 0 ? 0 : 4;
+
+    const ROCK = '#3c4760';
+    const ROCK_DARK = '#171c2a';
+    const ROCK_LIGHT = '#6f7ea0';
+    const RUNE = '#7fc8ff';
+    const EYE = '#bfe8ff';
+
+    softShadow(ctx, cx, cy + 86, 100, 20, 0.5);
+
+    // Massive jagged shoulders.
+    ctx.fillStyle = ROCK_DARK;
+    ctx.beginPath();
+    ctx.arc(cx - 78, cy - 18, 32, 0, TWO_PI);
+    ctx.arc(cx + 78, cy - 18, 32, 0, TWO_PI);
+    ctx.fill();
+
+    // Enormous core body.
+    ctx.fillStyle = ROCK;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 10, 96 + breathe, 84 + breathe, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = ROCK_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 28, cy - 26, 44, 26, -0.3, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = ROCK_DARK;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 10, 96 + breathe, 84 + breathe, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    // Cold glowing rune-cracks.
+    ctx.strokeStyle = RUNE;
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 34, cy - 34);
+    ctx.lineTo(cx - 12, cy + 4);
+    ctx.lineTo(cx - 26, cy + 42);
+    ctx.moveTo(cx + 32, cy - 28);
+    ctx.lineTo(cx + 14, cy + 10);
+    ctx.lineTo(cx + 30, cy + 46);
+    ctx.moveTo(cx - 6, cy - 10);
+    ctx.lineTo(cx + 6, cy + 22);
+    ctx.stroke();
+
+    // Heavy brow + two cold burning eyes.
+    ctx.fillStyle = ROCK_DARK;
+    ctx.fillRect(cx - 42, cy - 46, 84, 16);
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx - 21, cy - 35, 8, 0, TWO_PI);
+    ctx.arc(cx + 21, cy - 35, 8, 0, TWO_PI);
+    ctx.fill();
+    return canvas;
+}
+
+// Brawler — a stocky mid-weight bruiser with real pace: a hunched ember-lit
+// fighter with big fists. 2 frames: a shoulder-roll swagger.
+function drawBrawler(size, frame) {
+    const canvas = newSpriteCanvas(size);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const roll = frame === 1 ? 5 : 0;
+
+    const BODY = '#9a5a2a';
+    const BODY_DARK = '#4a2810';
+    const BODY_LIGHT = '#e0974a';
+    const FIST = '#5a3418';
+    const EYE = '#ffd24a';
+
+    softShadow(ctx, cx, cy + 50, 56, 12, 0.42);
+
+    // Big fists out front (offset by the swagger roll).
+    ctx.fillStyle = FIST;
+    ctx.beginPath();
+    ctx.arc(cx - 46, cy + 18 - roll, 20, 0, TWO_PI);
+    ctx.arc(cx + 46, cy + 18 + roll, 20, 0, TWO_PI);
+    ctx.fill();
+
+    // Hunched torso.
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 8, 52, 50, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = BODY_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(cx - 14, cy - 12, 24, 16, -0.3, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = BODY_DARK;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 8, 52, 50, 0, 0, TWO_PI);
+    ctx.stroke();
+
+    // Low jutting head + brow.
+    ctx.fillStyle = BODY;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 30, 26, 22, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.fillStyle = BODY_DARK;
+    ctx.fillRect(cx - 24, cy - 38, 48, 10);
+    ctx.fillStyle = EYE;
+    ctx.beginPath();
+    ctx.arc(cx - 11, cy - 30, 5, 0, TWO_PI);
+    ctx.arc(cx + 11, cy - 30, 5, 0, TWO_PI);
     ctx.fill();
     return canvas;
 }
