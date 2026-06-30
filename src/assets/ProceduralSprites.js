@@ -16,8 +16,8 @@ import { SPRITE_SIZE, SPRITE_SS, SPRITE_FX, MAP, GEM_TIERS, LIGHT_COLORS } from 
 import { TWO_PI } from '../core/MathUtils.js';
 // LPC character frames (imported playable bodies). Only called at runtime, so
 // the ProceduralSprites ↔ LpcSprites import cycle is safe (live bindings).
-import { getLpcCharacterFrames } from './LpcSprites.js';
-import { drawPixelMonkey } from './PixelArt.js';
+import { getLpcFrames } from './LpcSprites.js';
+import { drawPixelMonkey, drawPixelHero } from './PixelArt.js';
 
 const cache = new Map();
 
@@ -163,32 +163,70 @@ export function getMonkeySprite() {
     return getMonkeyFrames()[0];
 }
 
-// Per-character frames: the shared wick-keeper silhouette recolored by the
-// character's palette (see content/characters.js). Cached per character id, so
-// each is rasterized once. 'monkey' with no palette reuses the default frames.
-export function getCharacterFrames(id, char = null) {
-    if (id === 'monkey' || !char) return getMonkeyFrames();
-    const key = `charFrames:${id}`;
+// ── Directional pose frame model ─────────────────────────────────────────
+// getHeroFrames returns a structured, cached set:
+//   { kind, dirs: { down, up, side } }, each dir = { idle:[c], walk:[c,c,c],
+//     cast:[c], hurt:[c] }.  `side` faces +x; callers flip it for left.
+// Pixel heroes get full per-direction pose art; LPC heroes get directional
+// walk built from their walk rows (cast/hurt reuse idle — Player adds the
+// transform lean/recoil), so the imported bodies stay feasible without new art.
+function buildPixelHeroSet(opts) {
+    const mk = (dir) => ({
+        idle: [drawPixelHero(opts, dir, 'idle', 0)],
+        walk: [0, 1, 2].map((f) => drawPixelHero(opts, dir, 'walk', f)),
+        cast: [drawPixelHero(opts, dir, 'cast', 0)],
+        hurt: [drawPixelHero(opts, dir, 'hurt', 0)],
+    });
+    return { kind: 'pixel', dirs: { down: mk('down'), up: mk('up'), side: mk('side') } };
+}
+
+function buildLpcHeroSet(model) {
+    const fr = getLpcFrames(model); // { up, left, down, right } of 8-frame walk arrays
+    const O = (c) => addOutline(c);
+    const pick = (arr) => {
+        if (!arr || !arr.length) return null;
+        const idle = O(arr[0]);
+        return {
+            idle: [idle],
+            walk: [O(arr[2] || arr[0]), O(arr[4] || arr[0]), O(arr[6] || arr[0])],
+            cast: [idle],
+            hurt: [idle],
+        };
+    };
+    const down = pick(fr.down);
+    if (!down) return null;            // sheet failed → fall back to pixel set
+    const up = pick(fr.up) || down;
+    const side = pick(fr.right) || down; // side faces +x; Player flips for left
+    return { kind: 'lpc', dirs: { down, up, side } };
+}
+
+export function getHeroFrames(id, char = null) {
+    const key = `heroFrames:${id}`;
     if (cache.has(key)) return cache.get(key);
-    // Imported LPC-bodied heroes: use the real spritesheet walk frames (outlined
-    // for visual consistency with the procedural cast). Falls back to the
-    // procedural silhouette below if the sheet failed to load.
-    if (char.lpc && char.lpcModel) {
-        const lpc = getLpcCharacterFrames(char.lpcModel);
-        if (lpc) {
-            const frames = lpc.map((f) => addOutline(f));
-            cache.set(key, frames);
-            return frames;
-        }
+    let set = null;
+    if (char && char.lpc && char.lpcModel) set = buildLpcHeroSet(char.lpcModel);
+    if (!set) {
+        const opts = char ? { palette: char.palette, feature: char.feature, accent: char.accent } : {};
+        set = buildPixelHeroSet(opts);
     }
-    // Pixel-art monkey recolored by the character palette (self-outlined).
-    const opts = { palette: char.palette, feature: char.feature, accent: char.accent };
-    const frames = [
-        drawPixelMonkey(0, opts), drawPixelMonkey(1, opts),
-        drawPixelMonkey(2, opts), drawPixelMonkey(3, opts),
-    ];
-    cache.set(key, frames);
-    return frames;
+    cache.set(key, set);
+    return set;
+}
+
+// Flatten every unique frame canvas in a hero set (used for fur-tint caching).
+export function heroSetFrames(set) {
+    const out = [];
+    for (const d of Object.values(set.dirs)) {
+        for (const arr of [d.idle, d.walk, d.cast, d.hurt]) for (const c of arr) if (c && !out.includes(c)) out.push(c);
+    }
+    return out;
+}
+
+// Back-compat flat array [idle, walk0, walk1, walk2] (down-facing) for any
+// consumer that still wants the old shape.
+export function getCharacterFrames(id, char = null) {
+    const d = getHeroFrames(id, char).dirs.down;
+    return [d.idle[0], d.walk[0], d.walk[1], d.walk[2]];
 }
 
 // ── Enemies ────────────────────────────────────────────────────────────

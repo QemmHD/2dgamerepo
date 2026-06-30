@@ -25,7 +25,7 @@ import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battleP
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter } from '../content/characters.js';
-import { getCharacterFrames, drawCloakShape, drawHatShape, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
+import { getHeroFrames, drawCloakShape, drawHatShape, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
@@ -228,7 +228,12 @@ export class MenuRenderer {
         // silhouette + palette), with equipped cosmetics layered over it.
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let charSprite = null;
-        try { charSprite = getCharacterFrames(ch.id, ch)[0]; } catch (e) { charSprite = null; }
+        // Front-facing idle, with a brief cast-pose flash every few seconds so
+        // the preview shows the new attack animation + matches in-game.
+        try {
+            const d = getHeroFrames(ch.id, ch).dirs.down;
+            charSprite = (this._t % 3.6) > 3.0 ? d.cast[0] : d.idle[0];
+        } catch (e) { charSprite = null; }
         // The selected starting weapon drives the themed skin overlay so the
         // preview matches the in-game look (character + cosmetics + weapon).
         const skin = resolveWeaponSkin(resolveStartingWeapon(save));
