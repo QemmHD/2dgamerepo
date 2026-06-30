@@ -141,6 +141,10 @@ export class Game {
         this.menuTab = 'play';
         // Transient pre-run "Trial" modifier selection (ids); never persisted.
         this.selectedModifiers = new Set();
+        // Pre-run Patron choice (id or null) — biases the level-up draft toward
+        // that Patron's weapons/passives. Session-local (not persisted), chosen
+        // on the Play tab; folded into committedPatrons at run start.
+        this.selectedPatron = null;
         // Run-scale layer (difficulty × modifiers); set fresh each run start.
         this.runScale = { hp: 1, speed: 1, damage: 1, elite: 1, cap: 1, interval: 1 };
         this.runBonus = { xp: 0, coin: 0 };
@@ -470,6 +474,11 @@ export class Game {
         this.gems = [];
         this.damageNumbers = [];
 
+        // Patrons committed THIS run (drives the level-up draft weighting).
+        // Reset here so a restart never inherits a stale commitment; populated
+        // from selectedPatron in _startRun.
+        this.committedPatrons = [];
+
         this.spawner = new Spawner();
         // The run begins with the weapon chosen in the loadout (defaults to the
         // Cinderbolt). Other weapons still appear as level-up choices.
@@ -586,6 +595,9 @@ export class Game {
         this.player.weaponSkin = resolveWeaponSkin(startWeaponId);
         this.playerSwingMelee = isMeleeWeapon(startWeaponId);
         this._swingCd = 0;
+        // Lock in the pre-run Patron choice for this run (PR1: a single starting
+        // Patron; later milestones can append a 2nd/3rd to committedPatrons).
+        this.committedPatrons = this.selectedPatron ? [this.selectedPatron] : [];
         // ── Difficulty + run modifiers ("Trials") ──────────────────────────
         // Fold the chosen difficulty tier and any active run modifiers into a
         // single wave-scale layer (applied to waveState each frame) + apply the
@@ -929,6 +941,12 @@ export class Game {
             case 'toggleModifier':
                 if (this.selectedModifiers.has(arg)) this.selectedModifiers.delete(arg);
                 else this.selectedModifiers.add(arg);
+                break;
+            case 'selectPatron':
+                // Tapping the active Patron again clears it (back to no allegiance).
+                // (The click sound is already played for every menu action above.)
+                this._pressFeedback(`patron:${arg.id}`);
+                this.selectedPatron = (this.selectedPatron === arg.id) ? null : arg.id;
                 break;
             case 'buyUpgrade': this._pressFeedback(`shop:${arg}`); this.buyUpgrade(arg); break;
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
@@ -2834,6 +2852,7 @@ export class Game {
             // "Vigil Endures": pre-run difficulty + active Trial modifiers.
             base.difficulty = this.saveSystem.getDifficulty();
             base.selectedModifiers = [...this.selectedModifiers];
+            base.selectedPatron = this.selectedPatron;
             return base;
         }
 

@@ -28,6 +28,7 @@ import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
 import { pickDailyChallenges, currentDayNumber } from '../content/dailyChallenges.js';
+import { PATRONS, PATRON_IDS } from '../content/patrons.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 
@@ -320,15 +321,21 @@ export class MenuRenderer {
         const fitH = (s) =>
             nGear * N.gearRow * s + (nGear - 1) * N.gearGap * s + N.sec * s
             + N.lbl * lblScale(s) + N.biome * s + N.sec * s
+            + N.lbl * lblScale(s) + N.diff * s + N.sec * s   // Patron row (reuses diff height)
             + N.lbl * lblScale(s) + N.diff * s + N.sec * s
             + N.lbl * lblScale(s) + (2 * N.chip * chipScale(s) + N.chipGap * s);
         let s = 1;
+        // Floor: low enough that even a degenerate ultra-short panel keeps every
+        // section's row from overlapping the next (the label/chip legibility
+        // floors set an irreducible minimum; six sections need more shrink room
+        // than five did). Real devices land far above this.
+        const S_FLOOR = 0.14;
         if (fitH(1) > avail) {                        // doesn't fit at full size → shrink to fit
-            let lo = 0.2, hi = 1;
+            let lo = S_FLOOR, hi = 1;
             for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fitH(mid) <= avail) lo = mid; else hi = mid; }
             s = lo;
         }
-        s = clamp(s, 0.2, 1);
+        s = clamp(s, S_FLOOR, 1);
         const lblS = lblScale(s);                     // labels shrink less (stay legible)
         const gearRow = N.gearRow * s, gearGap = N.gearGap * s, sec = N.sec * s,
             lbl = N.lbl * lblS, biomeRow = N.biome * s, diffRow = N.diff * s,
@@ -379,6 +386,29 @@ export class MenuRenderer {
             this._hot(bx, y, bw, biomeRow, 'selectMap', { id: m.id });
         }
         y += biomeRow + sec;
+
+        // Patron row (5 allegiances; one row). Selecting one biases the level-up
+        // draft toward its element/role. Tapping the active Patron clears it.
+        const selPatron = state.selectedPatron || null;
+        const pdef = selPatron ? PATRONS[selPatron] : null;
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(pdef ? `Patron — ${pdef.name}, ${pdef.title}` : 'Patron — none (balanced draft)', innerX, y + lbl * 0.72);
+        y += lbl;
+        const pW = (innerW - 10 * (PATRON_IDS.length - 1)) / PATRON_IDS.length;
+        for (let i = 0; i < PATRON_IDS.length; i++) {
+            const p = PATRONS[PATRON_IDS[i]];
+            const px = innerX + i * (pW + 10);
+            const sel = selPatron === p.id;
+            roundRectPath(ctx, px, y, pW, diffRow, 9);
+            ctx.fillStyle = sel ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)'; ctx.fill();
+            if (sel) this._selGlow(ctx, px, y, pW, diffRow, 9, p.color, t);
+            ctx.strokeStyle = sel ? p.color : 'rgba(255,255,255,0.16)'; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+            ctx.fillStyle = sel ? p.color : '#fff'; ctx.font = `700 ${fs(16)}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(p.name, px + pW / 2, y + diffRow / 2);
+            this._hot(px, y, pW, diffRow, 'selectPatron', { id: p.id });
+        }
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        y += diffRow + sec;
 
         // Difficulty row (3 tiers).
         ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
