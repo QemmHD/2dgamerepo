@@ -11,9 +11,13 @@ import {
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { Easing } from '../core/Easing.js';
 import {
-    getHeroFrames, heroSetFrames, getGlowSprite, drawWeaponSkinOverlay,
+    getHeroFrames, heroSetFrames, getGlowSprite,
 } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
+
+// Unit vector for each facing — used to seat the held weapon in the hand on the
+// "front" side of the body (rather than orbiting the centre).
+const FACING_VEC = { down: { x: 0, y: 1 }, up: { x: 0, y: -1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
@@ -75,6 +79,9 @@ export class Player {
         // Per-character weapon-hold style (grip/lift/scale/tilt/halo) — purely
         // visual flavor so each hero wields its loadout distinctly.
         this.hold = resolveCharacterHold(characterId);
+        // Paw colour for the little hand drawn gripping the held weapon (matches
+        // the hero's face/hand tone so the weapon reads as actually held).
+        this._pawColor = (ch.palette && ch.palette.face) || '#f0d2a5';
 
         this.level = 1;
         this.xp = 0;
@@ -427,10 +434,8 @@ export class Player {
         // (LPC heroes already drew their cape behind the body above.)
         if (ap.cloakColor && !this.isLpcBody && dir === 'up') this._drawCloak(ctx, ap.cloakColor, dir, flip);
 
-        // Weapon-themed skin overlay (sash + chest gem + floating motif) drawn
-        // over the body, under the hat — shared with the menu preview so the two
-        // always match. Unflipped + in-character-space; t = idle clock.
-        if (this.weaponSkin && this.skinOverlayEnabled) drawWeaponSkinOverlay(ctx, 0, 0, this.spriteHalf, this.weaponSkin, this.aliveTimer, dir);
+        // (The old themed sash + chest gem overlay was removed — the held weapon
+        // now carries the weapon identity, so the torso stays clean.)
 
         // Accessory on the head (direction-aware pixel hat, on top).
         if (ap.hatShape && ap.hatShape !== 'none') this._drawHat(ctx, ap.hatShape, ap.hatColor, dir, flip);
@@ -489,13 +494,14 @@ export class Player {
             }
         }
 
-        // Primary in-hand: anchor near the body's hands, aimed at the target.
-        // The hand sits toward the aim direction (and down to the body) so the
-        // grip reads as held; the per-character hold tunes distance/lift/size/tilt.
-        const handR = this.spriteHalf * H.grip;
-        const hx = cx + Math.cos(this.aimAngle) * handR;
-        const hy = cy + Math.sin(this.aimAngle) * handR + this.spriteHalf * H.lift;
-        this._drawProp(ctx, primary, hx, hy, this.aimAngle + H.tilt, H.scale);
+        // Primary in-hand: the hands meet at the lower-front of the body and the
+        // weapon PIVOTS there to aim — so it reads as gripped, not orbiting the
+        // centre. A little paw is drawn wrapping the grip. The per-character hold
+        // tunes the hand height / size / wrist tilt.
+        const fwd = FACING_VEC[this.facing] || FACING_VEC.down;
+        const hx = cx + fwd.x * this.spriteHalf * 0.12;
+        const hy = cy + this.spriteHalf * H.lift + fwd.y * this.spriteHalf * 0.05;
+        this._drawProp(ctx, primary, hx, hy, this.aimAngle + H.tilt, H.scale, true);
 
         ctx.restore();
     }
@@ -503,7 +509,7 @@ export class Player {
     // Draw one held prop sprite: anchor its grip at (px,py), rotate to `angle`,
     // and — while it's firing (fireFlash 0..1) — thrust it forward along its
     // own axis and burst a cached glow at the tip. `scale` shrinks halo props.
-    _drawProp(ctx, v, px, py, angle, scale) {
+    _drawProp(ctx, v, px, py, angle, scale, gripPaw = false) {
         const sprite = getWeaponProp(v.prop, v.accent, v.glow);
         if (!sprite) return;
         const flash = v.fireFlash || 0;
@@ -511,6 +517,9 @@ export class Player {
         ctx.save();
         ctx.translate(px, py);
         ctx.rotate(angle);
+        // The weapon itself (thrusts forward along its axis while firing); the
+        // muzzle flash bursts at the tip.
+        ctx.save();
         ctx.translate(thrust, 0);
         ctx.drawImage(sprite.canvas, -sprite.gripX * scale, -sprite.gripY * scale,
             sprite.w * scale, sprite.h * scale);
@@ -522,6 +531,23 @@ export class Player {
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = flash;
             ctx.drawImage(glow, tx - fr, ty - fr, fr * 2, fr * 2);
+        }
+        ctx.restore();
+        // A paw wrapping the grip, drawn LAST so the hand visibly grips OVER the
+        // handle (and stays at the hand while the weapon thrusts). Sells "held".
+        if (gripPaw) {
+            const pr = 9 * scale;
+            ctx.fillStyle = this._pawColor;
+            ctx.strokeStyle = 'rgba(40,24,12,0.85)';
+            ctx.lineWidth = Math.max(1, 1.8 * scale);
+            ctx.beginPath(); ctx.arc(0, 0, pr, 0, TWO_PI); ctx.fill(); ctx.stroke();
+            // Two faint knuckle lines so it reads as a gripping paw, not a dot.
+            ctx.strokeStyle = 'rgba(40,24,12,0.5)';
+            ctx.lineWidth = Math.max(1, scale);
+            ctx.beginPath();
+            ctx.moveTo(-pr * 0.4, -pr * 0.35); ctx.lineTo(pr * 0.55, -pr * 0.35);
+            ctx.moveTo(-pr * 0.4, pr * 0.1); ctx.lineTo(pr * 0.55, pr * 0.1);
+            ctx.stroke();
         }
         ctx.restore();
     }

@@ -25,7 +25,7 @@ import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battleP
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
-import { getHeroFrames, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
+import { getHeroFrames } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
@@ -245,7 +245,7 @@ export class MenuRenderer {
         const heldProp = resolveWeaponProp(startWeaponId);
         // this._t (wall-clock seconds, frame-rate independent) is set in draw()
         // and drives the avatar's subtle idle motion.
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id));
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
         ctx.fillText(`${ch.name} — ${ch.title}`, ccx, c.y + c.h * 0.46);
@@ -626,7 +626,7 @@ export class MenuRenderer {
     // cached character frame) is supplied it's drawn as the body so the menu
     // model exactly matches the selected character; otherwise a procedural
     // blob is used as a fallback.
-    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null, hold = null) {
+    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null, hold = null, pawColor = '#f0d2a5') {
         // The avatar draws the body sprite at S=r*2.4, so the shared cosmetic +
         // weapon-skin helpers (authored in sprite-half units) take s = S/2.
         const S = r * 2.4;
@@ -666,31 +666,35 @@ export class MenuRenderer {
             ctx.beginPath(); ctx.arc(cx - r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2);
             ctx.arc(cx + r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2); ctx.fill();
         }
-        // Held weapon prop in-hand (matches the in-game loadout). Anchored at a
-        // fixed jaunty down-right angle since the menu has no aim target; the
-        // prop is authored relative to the in-game spriteHalf (91), so scale it
-        // to this avatar's half-size `s`.
+        // Held weapon prop gripped in-hand (matches the in-game loadout). The
+        // hand sits at the lower-front of the body and the weapon angles down-out
+        // at a jaunty rest angle (the menu has no aim target); a little paw wraps
+        // the grip. Authored relative to the in-game spriteHalf (91), scaled to s.
         if (heldProp) {
             const propSprite = getWeaponProp(heldProp.prop, heldProp.accent, heldProp.glow);
             if (propSprite) {
-                // Match the in-game per-character hold (grip/lift/scale/tilt) so
-                // the preview shows how THIS hero wields the weapon.
+                // Match the in-game per-character hold (lift/scale/tilt) so the
+                // preview shows how THIS hero wields the weapon.
                 const H = hold || { grip: 0.18, lift: 0.12, scale: 1.0, tilt: 0 };
                 const pscale = (s / 91) * 0.92 * H.scale;
-                const ang = 0.5;
-                const px = cx + Math.cos(ang) * s * H.grip;
-                const py = cy + Math.sin(ang) * s * H.grip + s * H.lift;
+                const ang = 0.55;
+                const px = cx;
+                const py = cy + s * H.lift;
                 ctx.save();
                 ctx.translate(px, py);
                 ctx.rotate(ang + H.tilt);
                 ctx.drawImage(propSprite.canvas, -propSprite.gripX * pscale, -propSprite.gripY * pscale,
                     propSprite.w * pscale, propSprite.h * pscale);
+                // Gripping paw, drawn over the handle so the hand reads as holding it.
+                const pr = 9 * pscale;
+                ctx.fillStyle = pawColor; ctx.strokeStyle = 'rgba(40,24,12,0.85)';
+                ctx.lineWidth = Math.max(1, 1.8 * pscale);
+                ctx.beginPath(); ctx.arc(0, 0, pr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
                 ctx.restore();
             }
         }
-        // Weapon-themed skin overlay (shared with the in-game player), then hat
-        // on top — identical layering + geometry so the preview never diverges.
-        if (skin) drawWeaponSkinOverlay(ctx, cx, cy, s, skin, t);
+        // Accessory on the head (direction-aware pixel hat, on top). The old
+        // themed sash overlay was removed — the held weapon carries the identity.
         if (ap.hatShape && ap.hatShape !== 'none') drawPixelHat(ctx, cx, cy, s, 'down', ap.hatShape, ap.hatColor, false);
         ctx.restore();
     }
