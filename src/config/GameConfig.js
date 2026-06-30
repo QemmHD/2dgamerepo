@@ -254,7 +254,9 @@ export const ENEMY = {
         xpValue: 50,
         boss: true,
         bossName: 'Gravemaw',
-        visualScale: 1.85,
+        epithet: 'The Rootbound Tyrant',
+        tier: 2,
+        visualScale: 1.9,
         // Apex boss: a ground-heavy fight with a deep, themed kit. The original
         // four moves (slam shockwave, boulder SPIRAL, goring CHARGE, bramble
         // summon) plus FIVE new earth attacks: erupting quake ZONES, a rolling
@@ -294,7 +296,9 @@ export const ENEMY = {
         xpValue: 35,
         boss: true,
         bossName: 'Vesperwing',
-        visualScale: 1.55,
+        epithet: 'The Tempest Wing',
+        tier: 1,
+        visualScale: 1.5,
         // Apex boss: a fast aerial fight with a deep, themed kit. The original
         // five moves (full-circle volley, SPIRAL barrage, gust shockwave, diving
         // CHARGE, wing-swarm summon) plus FIVE new storm attacks: dive-bomb
@@ -337,7 +341,9 @@ export const ENEMY = {
         xpValue: 70,
         boss: true,
         bossName: 'Cacklemaw',
-        visualScale: 2.05,
+        epithet: 'The Grinning Hollow',
+        tier: 3,
+        visualScale: 2.2,
         behavior: 'apexBoss',
         phase2HpFraction: 0.5,
         supportTypes: { mite: 2, bat: 2, crawler: 1 },
@@ -361,7 +367,7 @@ export const ENEMY = {
     // than map 1's trio (the per-map tier multiplies HP/damage/speed on top). ══
     rimewarden: {
         hp: 2200, speed: 292, radius: 100, contactDamage: 30, xpValue: 54, boss: true,
-        bossName: 'Rimewarden', visualScale: 1.9, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Rimewarden', epithet: 'Warden of the Long Frost', tier: 2, visualScale: 1.92, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { brute: 1, crawler: 2, slime: 1 },
         attacks: [
             { id: 'iceSlam', kind: 'shockwave', cooldown: 3.2, windup: 0.55, damage: 32, growth: 860, rMax: 660, band: 115 },
@@ -378,7 +384,7 @@ export const ENEMY = {
     },
     hoarfang: {
         hp: 1650, speed: 330, radius: 84, contactDamage: 26, xpValue: 42, boss: true,
-        bossName: 'Hoarfang', visualScale: 1.6, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Hoarfang', epithet: 'The Sleet Serpent', tier: 1, visualScale: 1.55, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { bat: 2, crawler: 2 },
         attacks: [
             { id: 'frostBreath', kind: 'fan', cooldown: 3.0, windup: 0.4, count: 9, spread: 0.9, projectileSpeed: 540, projectileDamage: 16 },
@@ -394,7 +400,7 @@ export const ENEMY = {
     },
     aurorath: {
         hp: 2100, speed: 270, radius: 118, contactDamage: 32, xpValue: 78, boss: true,
-        bossName: 'Aurorath', visualScale: 2.05, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Aurorath', epithet: 'Light of the Dead Sky', tier: 3, visualScale: 2.18, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { bat: 2, crawler: 1, slime: 1 },
         attacks: [
             { id: 'auroraVolley', kind: 'fan', cooldown: 2.9, windup: 0.45, count: 20, spread: 6.2832, projectileSpeed: 450, projectileDamage: 15 },
@@ -414,7 +420,7 @@ export const ENEMY = {
     // ══ MAP 3 — The Sunless Night (undead/void). Tougher again. ══
     ossuar: {
         hp: 2600, speed: 300, radius: 106, contactDamage: 34, xpValue: 60, boss: true,
-        bossName: 'Ossuar', visualScale: 1.95, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Ossuar', epithet: 'The Bonecaller', tier: 2, visualScale: 1.96, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { brute: 1, crawler: 2, mite: 2 },
         attacks: [
             { id: 'boneFan', kind: 'fan', cooldown: 3.0, windup: 0.45, count: 15, spread: 3.6, projectileSpeed: 470, projectileDamage: 19 },
@@ -432,7 +438,7 @@ export const ENEMY = {
     },
     mourndrift: {
         hp: 2050, speed: 342, radius: 82, contactDamage: 30, xpValue: 48, boss: true,
-        bossName: 'Mourndrift', visualScale: 1.62, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Mourndrift', epithet: 'The Wailing Drift', tier: 1, visualScale: 1.55, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { bat: 3, mite: 1 },
         attacks: [
             { id: 'soulVolley', kind: 'fan', cooldown: 2.8, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 460, projectileDamage: 15 },
@@ -450,7 +456,7 @@ export const ENEMY = {
     },
     nihagault: {
         hp: 2600, speed: 280, radius: 122, contactDamage: 36, xpValue: 82, boss: true,
-        bossName: 'Nihagault', visualScale: 2.1, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Nihagault', epithet: 'The Hungering Void', tier: 3, visualScale: 2.22, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { mite: 3, bat: 2, crawler: 1 },
         attacks: [
             { id: 'voidBurst', kind: 'fan', cooldown: 2.8, windup: 0.45, count: 24, spread: 6.2832, projectileSpeed: 460, projectileDamage: 16 },
@@ -472,7 +478,7 @@ export const ENEMY = {
     // the game's final boss. ══
     dunescourge: {
         hp: 3000, speed: 310, radius: 108, contactDamage: 36, xpValue: 66, boss: true,
-        bossName: 'Dunescourge', visualScale: 1.95, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Dunescourge', epithet: 'Scourge of the Dunes', tier: 2, visualScale: 1.96, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { brute: 1, crawler: 2, charger: 1 },
         attacks: [
             { id: 'sandBlast', kind: 'fan', cooldown: 2.9, windup: 0.45, count: 16, spread: 3.6, projectileSpeed: 480, projectileDamage: 20 },
@@ -490,7 +496,7 @@ export const ENEMY = {
     },
     cindermaw: {
         hp: 2450, speed: 340, radius: 88, contactDamage: 34, xpValue: 52, boss: true,
-        bossName: 'Cindermaw', visualScale: 1.65, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Cindermaw', epithet: 'The Emberjaw', tier: 1, visualScale: 1.55, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { bat: 2, spitter: 1, crawler: 1 },
         attacks: [
             { id: 'magmaVolley', kind: 'fan', cooldown: 2.7, windup: 0.4, count: 20, spread: 6.2832, projectileSpeed: 460, projectileDamage: 16 },
@@ -508,7 +514,7 @@ export const ENEMY = {
     },
     solnakh: {
         hp: 3100, speed: 286, radius: 124, contactDamage: 40, xpValue: 90, boss: true,
-        bossName: 'Solnakh', visualScale: 2.15, behavior: 'apexBoss', phase2HpFraction: 0.5,
+        bossName: 'Solnakh', epithet: 'The Burning Crown', tier: 3, visualScale: 2.28, behavior: 'apexBoss', phase2HpFraction: 0.5,
         supportTypes: { brute: 1, spitter: 1, bat: 2, mite: 2 },
         attacks: [
             { id: 'solarVolley', kind: 'fan', cooldown: 2.6, windup: 0.45, count: 26, spread: 6.2832, projectileSpeed: 470, projectileDamage: 17 },
@@ -527,6 +533,17 @@ export const ENEMY = {
     },
 };
 
+// Boss difficulty tiers (within a map). Each map's roster runs 1 → 2 → 3 in
+// encounter order: a fast, fragile SKIRMISHER, then a tanky WARLORD, then the
+// arena-warping APEX with the showpiece move. The label + color drive the
+// BOSS INCOMING banner and the boss HP bar's difficulty pips so the player
+// reads the threat level at a glance.
+export const BOSS_TIERS = {
+    1: { label: 'SKIRMISHER', color: '#7be08a', pips: 1 },
+    2: { label: 'WARLORD',    color: '#ffc24a', pips: 2 },
+    3: { label: 'APEX',       color: '#ff4d4d', pips: 3 },
+};
+
 // Boss spawn schedule + spawn placement.
 export const BOSS = {
     // Longer gap between bosses so the player has time to clear waves, level up,
@@ -537,9 +554,10 @@ export const BOSS = {
     // (prevents back-to-back bosses when a boss is killed late).
     postDeathCooldown: 45,
     spawnRingDistance: 1100,
-    // Encounter order: Gravemaw → Vesperwing → Cacklemaw (the climax 3rd boss),
-    // then it cycles. The per-encounter tier makes each successive boss tougher.
-    types: ['vinebackGoliath', 'stormwingAlpha', 'gloomMaw'],
+    // Encounter order runs the map's tier ladder 1→2→3: Vesperwing (skirmisher)
+    // → Gravemaw (warlord) → Cacklemaw (apex), then it cycles. The per-encounter
+    // tier multiplier stacks ON TOP so each successive boss is tougher still.
+    types: ['stormwingAlpha', 'vinebackGoliath', 'gloomMaw'],
     // Late-game survivability. Boss HP scales with the run minute much harder
     // than trash (so a 20-30 min boss isn't deleted instantly), and a mild
     // flat damage resistance ramps with time. Never invulnerable — just tanky.

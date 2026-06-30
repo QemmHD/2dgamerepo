@@ -104,6 +104,8 @@ export class Enemy {
 
         this.type = type;
         this.name = def.bossName ?? type;
+        this.epithet = def.epithet ?? null;   // boss subtitle for the HP bar
+        this.tier = def.tier ?? null;          // boss difficulty rung (1/2/3)
         this.x = x;
         this.y = y;
         this.vx = 0;

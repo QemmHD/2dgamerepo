@@ -1469,7 +1469,7 @@ export class Game {
     _startBossWarning(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
-        this.bossWarning = { id, name: def.bossName ?? id, timer: BOSS.warningDuration, total: BOSS.warningDuration };
+        this.bossWarning = { id, name: def.bossName ?? id, epithet: def.epithet ?? null, tier: def.tier ?? null, timer: BOSS.warningDuration, total: BOSS.warningDuration };
         this.waveDirector.announce('⚠  BOSS INCOMING  ⚠', BOSS.warningDuration, '#ff4040');
         this._shake(SCREEN_SHAKE.intensity * 0.4, 0.3);
     }
@@ -3062,6 +3062,8 @@ export class Game {
         base.waveAnnouncement = this.waveDirector.announcement;
         base.activeBoss = this.activeBossRef ? {
             name: this.activeBossRef.name,
+            epithet: this.activeBossRef.epithet ?? null,
+            tier: this.activeBossRef.tier ?? null,
             hp: this.activeBossRef.hp,
             maxHp: this.activeBossRef.maxHp,
             phase: this.activeBossRef.phase ?? 1,
@@ -3070,7 +3072,8 @@ export class Game {
             y: this.activeBossRef.y,
         } : null;
         base.bossWarning = this.bossWarning
-            ? { name: this.bossWarning.name, t: 1 - this.bossWarning.timer / this.bossWarning.total }
+            ? { name: this.bossWarning.name, epithet: this.bossWarning.epithet ?? null,
+                tier: this.bossWarning.tier ?? null, t: 1 - this.bossWarning.timer / this.bossWarning.total }
             : null;
         base.chestCount = this.chests.length;
         base.chestReward = this.chestReward;
