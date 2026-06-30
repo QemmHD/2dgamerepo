@@ -162,6 +162,11 @@ export class Enemy {
         const baseInterval = def.fireInterval ?? def.chargeInterval ?? 2;
         this.attackTimer = this.behavior ? Math.random() * baseInterval : 0;
         this.windupTimer = 0;
+        // Aim direction (toward the player) latched while a spitter/charger winds
+        // up, so draw() can paint a directional attack telegraph (the charge arc
+        // + chevron). Defaults to "down" before the first wind-up.
+        this._windupAimX = 0;
+        this._windupAimY = 1;
         this.dashTimer = 0;
         this.dashDirX = 0;
         this.dashDirY = 0;
@@ -391,6 +396,7 @@ export class Enemy {
             if (this.windupTimer > 0) {
                 this.windupTimer -= dt;
                 moveX = 0; moveY = 0; // brace + telegraph while charging a shot
+                this._windupAimX = nx; this._windupAimY = ny; // track the player
                 if (this.windupTimer <= 0 && enemyProjectiles) {
                     const ps = this.def.projectileSpeed;
                     enemyProjectiles.push(
@@ -399,6 +405,7 @@ export class Enemy {
                 }
             } else if (this.attackTimer <= 0 && len <= this.def.fireRange) {
                 this.windupTimer = this.def.windup;
+                this._windupAimX = nx; this._windupAimY = ny;
                 this.attackTimer = this.def.fireInterval;
             }
         } else if (!frozen && this.behavior === 'charger') {
@@ -411,6 +418,7 @@ export class Enemy {
             } else if (this.windupTimer > 0) {
                 this.windupTimer -= dt;
                 moveX = 0; moveY = 0; // brace before the lunge
+                this._windupAimX = nx; this._windupAimY = ny; // track the player
                 if (this.windupTimer <= 0) {
                     this.dashDirX = nx;  // lock aim at dash start, then commit
                     this.dashDirY = ny;
@@ -418,6 +426,7 @@ export class Enemy {
                 }
             } else if (this.attackTimer <= 0 && len <= this.def.triggerRange) {
                 this.windupTimer = this.def.windup;
+                this._windupAimX = nx; this._windupAimY = ny;
                 this.attackTimer = this.def.chargeInterval;
             }
         } else if (!frozen && this.behavior === 'support') {
@@ -681,6 +690,43 @@ export class Enemy {
             ctx.stroke();
         }
 
+        // Attack wind-up telegraph (spitter shot / charger lunge): a charge arc
+        // that fills as the wind-up completes + a directional chevron toward the
+        // player, so a discrete attack reads and can be dodged. Bosses use their
+        // own ground telegraph (bossWindupTimer), so this only fires for the
+        // regular attackers. Pre-scale, procedural, timer-gated → free when idle.
+        if (!this.boss && this.windupTimer > 0 && this.def.windup > 0) {
+            const wp = clamp(1 - this.windupTimer / this.def.windup, 0, 1);
+            const warn = this.behavior === 'charger' ? '#ff6a3c'
+                : this.behavior === 'spitter' ? '#c97bff' : '#ffcc4a';
+            // Anchor on the collision radius (the creature's real size) so the
+            // tell hugs the enemy rather than the padded sprite frame.
+            const tr = this.radius;
+            const rr = tr * 1.32;
+            ctx.globalCompositeOperation = 'source-over';
+            // Faint full ring so the threat reads from the first frame; brightens.
+            ctx.strokeStyle = hexToHalo(warn, 0.22 + 0.4 * wp);
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(0, 0, rr, 0, TWO_PI); ctx.stroke();
+            // Charge meter: a bright arc sweeping from the top, filling to release.
+            ctx.strokeStyle = hexToHalo(warn, 0.95);
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(0, 0, rr, -Math.PI / 2, -Math.PI / 2 + wp * TWO_PI); ctx.stroke();
+            // Directional chevron toward the player — grows + brightens as it
+            // nears release, pointing where the shot/lunge will go.
+            const ang = Math.atan2(this._windupAimY, this._windupAimX);
+            const cd = tr * (1.5 + 0.55 * wp);
+            const cs = tr * (0.42 + 0.40 * wp);
+            ctx.save();
+            ctx.translate(Math.cos(ang) * cd, Math.sin(ang) * cd);
+            ctx.rotate(ang);
+            ctx.fillStyle = hexToHalo(warn, 0.5 + 0.5 * wp);
+            ctx.beginPath();
+            ctx.moveTo(cs, 0); ctx.lineTo(-cs * 0.6, cs * 0.7); ctx.lineTo(-cs * 0.6, -cs * 0.7);
+            ctx.closePath(); ctx.fill();
+            ctx.restore();
+        }
+
         // "Alive" deform: idle breathing (volume-preserving pulse so nothing
         // sits perfectly still) + a spawn-in scale pop (easeOutBack overshoot)
         // + a hit squash (stretch wide / squash flat) for the hit-flash window.
@@ -693,6 +739,11 @@ export class Enemy {
         if (this.hitFlashTimer > 0) {
             const q = this.hitFlashTimer / HIT_FLASH_DURATION;
             sx *= 1 + 0.20 * q; sy *= 1 - 0.16 * q;
+        }
+        // Wind-up anticipation: coil tighter (squat) as the attack nears release.
+        if (!this.boss && this.windupTimer > 0 && this.def.windup > 0) {
+            const wp = clamp(1 - this.windupTimer / this.def.windup, 0, 1);
+            sx *= 1 + 0.10 * wp; sy *= 1 - 0.06 * wp;
         }
         // Non-bosses lean into their horizontal movement — reads as weight.
         // (Directional LPC sprites already turn to face, so skip the tilt for
