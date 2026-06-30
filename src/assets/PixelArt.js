@@ -233,3 +233,134 @@ export function drawPixelMonkey(frame = 0, opts = {}) {
         ? drawPixelHero(opts, 'down', 'idle', 0)
         : drawPixelHero(opts, 'down', 'walk', (frame - 1) % 3);
 }
+
+// ── Pixel cosmetics (cloak + hat), direction-aware ───────────────────────
+// Authored on the SAME MONKEY_L grid + head/body anchors as drawPixelHero, so
+// they line up with the pixel body in every direction, and finished to
+// SPRITE_SIZE so the player/menu can drawImage them straight onto the body box.
+// Cached per (variant, color); never redrawn per frame.
+
+const cosmeticCache = new Map();
+
+// A draped cape. dir 'down'/'side' draw BEHIND the body (caller draws it first
+// → only the collar + hem wings peek out); 'up' draws a full back drape OVER
+// the body. `side` trails to the left (caller flips for right/left facing).
+function pixelCloak(dir, color) {
+    const dark = shade(color, 0.34, 'dark');
+    const light = shade(color, 0.26, 'light');
+    const p = pixelCanvas(MONKEY_L);
+    const cx = CX;
+    if (dir === 'side') {
+        // Cape sweeping back-and-down behind the shoulder.
+        for (let y = 22; y <= 45; y++) {
+            const t = (y - 22) / 23;
+            const right = Math.round(cx + 1);
+            const left = Math.round(cx - 2 - t * 17);
+            if (right >= left) p.rect(left, y, right - left + 1, 1, color);
+            p.rect(left, y, 2, 1, dark);            // trailing-edge shadow
+        }
+        p.rect(5, 43, 7, 3, dark);                  // weighted hem
+        p.rect(cx - 1, 22, 2, 4, light);            // lit clasp seam
+    } else {
+        const topY = dir === 'up' ? 20 : 24;
+        const hemY = dir === 'up' ? 46 : 45;
+        const topHalf = dir === 'up' ? 11 : 10;
+        const hemHalf = dir === 'up' ? 16 : 17;
+        for (let y = topY; y <= hemY; y++) {
+            const t = (y - topY) / (hemY - topY);
+            const half = Math.round(topHalf + t * (hemHalf - topHalf));
+            p.rect(cx - half, y, half * 2 + 1, 1, color);
+            p.rect(cx - half, y, 1, 1, light);      // lit outer edges
+            p.rect(cx + half, y, 1, 1, light);
+        }
+        if (dir === 'up') {
+            // Full back: a lit centre seam + symmetric fold shadows.
+            for (let y = topY + 2; y <= hemY; y++) p.rect(cx, y, 1, 1, light);
+            for (let y = topY + 4; y <= hemY; y++) { p.rect(cx - 6, y, 1, 1, dark); p.rect(cx + 6, y, 1, 1, dark); }
+        } else {
+            // Behind the body: shade the hem so the peeking wings read as cloth.
+            p.rect(cx - hemHalf, hemY, hemHalf * 2 + 1, 1, dark);
+            p.rect(cx - hemHalf, hemY - 1, 3, 1, dark);
+            p.rect(cx + hemHalf - 2, hemY - 1, 3, 1, dark);
+        }
+    }
+    outline(p, shade(color, 0.55, 'dark'));
+    return p.finish();
+}
+
+// A head accessory sitting on the pixel head (centre cx, top ~y6). cap/candle/
+// horns/crown. `dir` tweaks which face shows (no brim on the back view, etc.).
+function pixelHat(dir, shape, color) {
+    const col = color || '#ffd35a';
+    const dark = shade(col, 0.4, 'dark');
+    const light = shade(col, 0.35, 'light');
+    const p = pixelCanvas(MONKEY_L);
+    const cx = CX;
+    if (shape === 'cap') {
+        p.ell(cx, 11, 9, 7, col);                   // crown dome
+        p.ell(cx - 3, 8, 4, 3, light);              // lit highlight
+        if (dir === 'up') {
+            p.rect(cx - 9, 12, 19, 1, dark);        // back seam, no front brim
+        } else if (dir === 'side') {
+            p.rect(cx - 5, 13, 15, 2, dark);        // brim toward facing (+x)
+        } else {
+            p.rect(cx - 10, 13, 21, 2, dark);       // full front brim
+        }
+        p.disc(cx, 3, 2, light);                    // pom-pom
+    } else if (shape === 'candle') {
+        p.rect(cx - 1, 2, 3, 8, '#ece4cf');         // wax stick
+        p.rect(cx + 1, 3, 1, 6, '#c9bfa0');         // shaded side
+        p.rect(cx - 1, 4, 1, 1, '#fff7e0');         // drip highlight
+        p.ell(cx, 0, 2, 3, '#ffb24a');              // flame
+        p.dot(cx, -1, '#fff1c0');
+        p.disc(cx, 1, 1, col);                      // warm core (cosmetic colour)
+    } else if (shape === 'horns') {
+        // Two curved horns rising from the head sides.
+        p.line(cx - 7, 9, cx - 9, 4, col, 2); p.line(cx - 9, 4, cx - 8, 0, col, 2);
+        p.line(cx + 7, 9, cx + 9, 4, col, 2); p.line(cx + 9, 4, cx + 8, 0, col, 2);
+        p.dot(cx - 8, 0, light); p.dot(cx + 8, 0, light);
+        p.line(cx - 7, 9, cx - 8, 6, dark, 1); p.line(cx + 7, 9, cx + 8, 6, dark, 1);
+    } else if (shape === 'crown') {
+        p.rect(cx - 9, 9, 19, 3, col);              // band
+        p.rect(cx - 9, 9, 19, 1, light);            // lit rim
+        // three spikes
+        p.line(cx - 7, 9, cx - 7, 4, col, 2); p.dot(cx - 7, 3, light);
+        p.line(cx, 9, cx, 2, col, 2); p.dot(cx, 1, light);
+        p.line(cx + 7, 9, cx + 7, 4, col, 2); p.dot(cx + 7, 3, light);
+        p.dot(cx, 10, '#fff');                      // centre gem
+        p.dot(cx - 5, 10, dark); p.dot(cx + 5, 10, dark);
+    }
+    outline(p, shade(col, 0.6, 'dark'));
+    return p.finish();
+}
+
+function cachedCosmetic(key, build) {
+    if (cosmeticCache.has(key)) return cosmeticCache.get(key);
+    let c = null;
+    try { c = build(); } catch (e) { c = null; }
+    cosmeticCache.set(key, c);
+    return c;
+}
+
+// Draw a cached pixel cloak onto the body box centred at (ox,oy) with half-size
+// `s` (the player passes spriteHalf; the menu its avatar half). `flip` mirrors
+// horizontally about ox (for left-facing side views).
+export function drawPixelCloak(ctx, ox, oy, s, dir, color, flip = false) {
+    if (!color) return;
+    const c = cachedCosmetic(`cloak:${dir}:${color}`, () => pixelCloak(dir, color));
+    if (!c) return;
+    ctx.save();
+    if (flip) { ctx.translate(ox, 0); ctx.scale(-1, 1); ctx.translate(-ox, 0); }
+    ctx.drawImage(c, ox - s, oy - s, s * 2, s * 2);
+    ctx.restore();
+}
+
+export function drawPixelHat(ctx, ox, oy, s, dir, shape, color, flip = false) {
+    if (!shape || shape === 'none') return;
+    const c = cachedCosmetic(`hat:${dir}:${shape}:${color}`, () => pixelHat(dir, shape, color));
+    if (!c) return;
+    ctx.save();
+    if (flip) { ctx.translate(ox, 0); ctx.scale(-1, 1); ctx.translate(-ox, 0); }
+    ctx.drawImage(c, ox - s, oy - s, s * 2, s * 2);
+    ctx.restore();
+}

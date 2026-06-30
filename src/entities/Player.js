@@ -11,9 +11,9 @@ import {
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { Easing } from '../core/Easing.js';
 import {
-    getHeroFrames, heroSetFrames, getGlowSprite,
-    drawCloakShape, drawHatShape, drawWeaponSkinOverlay,
+    getHeroFrames, heroSetFrames, getGlowSprite, drawWeaponSkinOverlay,
 } from '../assets/ProceduralSprites.js';
+import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { getCharacter } from '../content/characters.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
@@ -290,17 +290,24 @@ export class Player {
         const ap = this.appearance || {};
         const bobY = this.moving ? Math.sin(this.bobTimer * 12) * 3 : 0;
 
-        // Cosmetic trail (world space, behind everything).
+        // Cosmetic trail (world space, behind everything) — chunky pixel puffs
+        // to match the pixel-art model: a center block + four smaller satellites
+        // that shrink + fade with the trail point's age.
         if (ap.trailColor && this.trailPositions.length) {
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = ap.trailColor;
             for (const t of this.trailPositions) {
                 const k = Math.max(0, 1 - t.age / 0.6);
-                ctx.globalAlpha = k * 0.4;
-                ctx.fillStyle = ap.trailColor;
-                ctx.beginPath();
-                ctx.arc(t.x, t.y + bobY, 16 * k + 4, 0, Math.PI * 2);
-                ctx.fill();
+                if (k <= 0) continue;
+                ctx.globalAlpha = k * 0.45;
+                const b = Math.round(5 + 12 * k);          // core block size
+                const px = Math.round(t.x), py = Math.round(t.y + bobY);
+                ctx.fillRect(px - b / 2, py - b / 2, b, b);
+                const s2 = Math.max(2, Math.round(b * 0.45));
+                ctx.fillRect(px - b, py - s2 / 2, s2, s2);
+                ctx.fillRect(px + b - s2, py - s2 / 2, s2, s2);
+                ctx.fillRect(px - s2 / 2, py - b, s2, s2);
             }
             ctx.restore();
         }
@@ -393,8 +400,12 @@ export class Player {
             ctx.scale(1 + b, 1 - b);
         }
 
-        // Cloak draped behind the body (symmetric → drawn unflipped).
-        if (ap.cloakColor) this._drawCloak(ctx, ap.cloakColor);
+        // Cloak: drawn BEHIND the body for the front/side views (only the collar
+        // + hem wings peek out). For the back view ('up') the per-direction PIXEL
+        // cloak drapes OVER the body (drawn after the sprite, below) so we see the
+        // full cape. LPC heroes use a single front-facing imported cape that has
+        // no back variant, so it always draws behind the body (every direction).
+        if (ap.cloakColor && (this.isLpcBody || dir !== 'up')) this._drawCloak(ctx, ap.cloakColor, dir, flip);
 
         ctx.save();
         if (flip) ctx.scale(-1, 1);
@@ -409,13 +420,17 @@ export class Player {
         }
         ctx.restore();
 
+        // Back-view pixel cloak drapes over the body (full cape facing away).
+        // (LPC heroes already drew their cape behind the body above.)
+        if (ap.cloakColor && !this.isLpcBody && dir === 'up') this._drawCloak(ctx, ap.cloakColor, dir, flip);
+
         // Weapon-themed skin overlay (sash + chest gem + floating motif) drawn
         // over the body, under the hat — shared with the menu preview so the two
         // always match. Unflipped + in-character-space; t = idle clock.
         if (this.weaponSkin && this.skinOverlayEnabled) drawWeaponSkinOverlay(ctx, 0, 0, this.spriteHalf, this.weaponSkin, this.aliveTimer);
 
-        // Accessory on the head (symmetric → drawn unflipped, on top).
-        if (ap.hatShape && ap.hatShape !== 'none') this._drawHat(ctx, ap.hatShape, ap.hatColor);
+        // Accessory on the head (direction-aware pixel hat, on top).
+        if (ap.hatShape && ap.hatShape !== 'none') this._drawHat(ctx, ap.hatShape, ap.hatColor, dir, flip);
         ctx.restore();
 
         // Held weapons (primary in-hand aimed at the target + the rest of the
@@ -504,12 +519,12 @@ export class Player {
         ctx.restore();
     }
 
-    // Cloak + hat delegate to the shared shape helpers (single source of truth
-    // with the menu preview — see ProceduralSprites.drawCloakShape/drawHatShape).
-    _drawCloak(ctx, color) {
-        // LPC heroes: draw the imported, recolored cape sprite (aligns to the
-        // LPC body). Everyone else: the procedural drape. Falls back to the
-        // drape if the cape sheet didn't load.
+    // Cloak + hat: direction-aware pixel cosmetics (drawPixelCloak/Hat, shared
+    // with the menu preview so the two never diverge). `dir` is down/up/side and
+    // `flip` mirrors the side view for left-facing.
+    _drawCloak(ctx, color, dir = 'down', flip = false) {
+        // LPC heroes keep the imported, recolored cape sprite (it aligns to the
+        // LPC body); the single front-facing cape is reused for every direction.
         if (this.isLpcBody) {
             const cape = getCloakSprite(color);
             if (cape) {
@@ -520,9 +535,11 @@ export class Player {
                 return;
             }
         }
-        drawCloakShape(ctx, 0, 0, this.spriteHalf, color);
+        drawPixelCloak(ctx, 0, 0, this.spriteHalf, dir, color, flip);
     }
-    _drawHat(ctx, shape, color) { drawHatShape(ctx, 0, 0, this.spriteHalf, shape, color); }
+    _drawHat(ctx, shape, color, dir = 'down', flip = false) {
+        drawPixelHat(ctx, 0, 0, this.spriteHalf, dir, shape, color, flip);
+    }
 
     // Spawn a melee swing toward `angle` (world radians). Game calls this on a
     // cadence while a melee/blade weapon is owned + an enemy is near. Purely
