@@ -36,6 +36,17 @@ then cropped to their walk-cycle rows.
 Per-asset source URLs + notes: [`src/assets/lpc/CREDITS.md`](src/assets/lpc/CREDITS.md)
 and [`src/assets/credits/assets.json`](src/assets/credits/assets.json).
 
+### Monster sprites — `src/assets/monsters/`
+Real animated creature sprites that **update the original procedural creatures**
+(slime, bat, crawler→snake, spitter→eyeball, mite→bee). Procedural art is the
+fallback.
+
+| Files | Source | Authors | License |
+|---|---|---|---|
+| `slime/bat/snake/eyeball/bee.png` | [\[LPC\] Monsters](https://opengameart.org/content/lpc-monsters) | Charles Sanchez (CharlesGabriel), bagzie, bluecarrot16 | CC-BY-SA 3.0 / GPL 3.0 |
+
+Per-asset notes: [`src/assets/monsters/CREDITS.md`](src/assets/monsters/CREDITS.md).
+
 ### World ground texture — `src/assets/textures/`
 Real CC0 photographic ground texture, downsized to a seamless 256×256 tile and
 recolored per biome by the map theme. Procedural ground tile is the fallback.

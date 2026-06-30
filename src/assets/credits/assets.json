@@ -63,6 +63,21 @@
       "frameHeight": 182
     },
     {
+      "id": "lpc_monsters",
+      "file": "src/assets/monsters/slime.png",
+      "usedFor": "Updated original creature enemies: slime, bat, crawler (snake), spitter (eyeball), mite (bee)",
+      "type": "enemy",
+      "source": "[LPC] Monsters (OpenGameArt)",
+      "sourceUrl": "https://opengameart.org/content/lpc-monsters",
+      "authors": ["Charles Sanchez (CharlesGabriel)", "bagzie", "bluecarrot16"],
+      "license": "CC-BY-SA-3.0 / GPL-3.0",
+      "attributionRequired": true,
+      "modified": true,
+      "modifications": "Sliced the front-facing (down) animation row from each 64px monster sheet and upscaled crisp to the sprite box. Sheets in this set: slime.png, bat.png, snake.png, eyeball.png, bee.png — same source/authors/license.",
+      "frameWidth": 64,
+      "frameHeight": 64
+    },
+    {
       "id": "tile_ground_forest",
       "file": "src/assets/textures/ground_forest.png",
       "usedFor": "World ground floor texture (recolored per biome by the map theme)",
