@@ -6,6 +6,7 @@ import { KeyboardInput } from './core/KeyboardInput.js';
 import { TouchJoystick } from './core/TouchJoystick.js';
 import { prewarmSprites, getGlowSprite } from './assets/ProceduralSprites.js';
 import { loadLpcSprites } from './assets/LpcSprites.js';
+import { loadWorldTextures } from './assets/WorldTextures.js';
 import { WEAPON_AURA } from './content/weapons.js';
 
 async function boot() {
@@ -50,10 +51,10 @@ async function boot() {
     // evolution / aura color-swap doesn't rasterize a 128px glow mid-frame.
     for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
 
-    // Load the imported LPC enemy spritesheets before the first frame. This
-    // NEVER rejects — a failed/missing PNG falls back to procedural art — so a
-    // bad asset can't block boot.
-    await loadLpcSprites();
+    // Load the imported assets (LPC enemy spritesheets + CC0 ground texture)
+    // before the first frame. Both NEVER reject — a failed/missing file falls
+    // back to procedural art — so a bad asset can't block boot.
+    await Promise.all([loadLpcSprites(), loadWorldTextures()]);
 
     game = new Game({ renderer, input, loop });
     loop.start();
