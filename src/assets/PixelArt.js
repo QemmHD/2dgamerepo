@@ -168,16 +168,16 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
     else if (dir === 'side') { p.ell(cx + 2, bodyY + 4, 5, 7, face); p.ell(cx - 5, bodyY + 5, 4, 6, furD); }
     else { p.ell(cx, bodyY + 4, 7, 7, backFur); p.ell(cx - 4, bodyY + 2, 4, 4, shade(fur, 0.32, 'dark')); }
 
-    // ── ARMS (back arm first so it sits behind body on the side view) ──
-    const raise = pose === 'cast' ? 6 : 0;
+    // ── ARMS — resting stubs only. The WEAPON arm is drawn dynamically by the
+    // Player (it reaches from the shoulder to the aimed hand and jabs forward on
+    // attack), so the body never "throws its hands up": the cast read comes from
+    // that thrust + the open mouth + a body recoil, not an arms-up pose.
     if (dir === 'side') {
-        // far arm (behind), near arm (front, toward facing on cast)
-        arm(cx - 9, -swing, pose === 'cast' ? 4 : 0, furD);
-        if (pose === 'cast') p.rect(cx + 7, bodyY - 6, 5, 5, fur); // near arm thrust up-forward
-        else arm(cx + 6, swing, 0, fur);
+        arm(cx - 9, -swing, 0, furD);
+        arm(cx + 6, swing, 0, fur);
     } else {
-        arm(cx - 11, swing, raise, dir === 'up' ? backFur : fur);
-        arm(cx + 7, -swing, raise, dir === 'up' ? backFur : fur);
+        arm(cx - 11, swing, 0, dir === 'up' ? backFur : fur);
+        arm(cx + 7, -swing, 0, dir === 'up' ? backFur : fur);
     }
 
     // ── EARS ──

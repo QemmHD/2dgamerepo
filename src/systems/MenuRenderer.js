@@ -26,7 +26,7 @@ import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getHeroFrames } from '../assets/ProceduralSprites.js';
-import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
+import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js';
@@ -673,20 +673,28 @@ export class MenuRenderer {
         if (heldProp) {
             const propSprite = getWeaponProp(heldProp.prop, heldProp.accent, heldProp.glow);
             if (propSprite) {
-                // Match the in-game per-character hold (lift/scale/tilt) so the
-                // preview shows how THIS hero wields the weapon.
+                // Match the in-game articulated hold: a forearm reaches from the
+                // shoulder to the gripping hand (at a jaunty rest angle), with the
+                // weapon + paw at the hand — so the preview shows it actually held.
                 const H = hold || { grip: 0.18, lift: 0.12, scale: 1.0, tilt: 0 };
-                const pscale = (s / 91) * 0.92 * H.scale;
-                const ang = 0.55;
-                const px = cx;
-                const py = cy + s * H.lift;
+                const k = s / 91;
+                const pscale = k * 0.92 * H.scale;
+                const ang = 0.55 + H.tilt;
+                const sxp = cx + s * 0.13, syp = cy + s * 0.06;
+                const reach = s * 0.30 * H.scale;
+                const hxp = sxp + Math.cos(ang) * reach, hyp = syp + Math.sin(ang) * reach;
+                const armCol = ap.furColor || '#8b5a2b';
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = shade(armCol, 0.42, 'dark'); ctx.lineWidth = 10 * k * H.scale;
+                ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(hxp, hyp); ctx.stroke();
+                ctx.strokeStyle = armCol; ctx.lineWidth = 6.5 * k * H.scale;
+                ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(hxp, hyp); ctx.stroke();
                 ctx.save();
-                ctx.translate(px, py);
-                ctx.rotate(ang + H.tilt);
+                ctx.translate(hxp, hyp);
+                ctx.rotate(ang);
                 ctx.drawImage(propSprite.canvas, -propSprite.gripX * pscale, -propSprite.gripY * pscale,
                     propSprite.w * pscale, propSprite.h * pscale);
-                // Gripping paw, drawn over the handle so the hand reads as holding it.
-                const pr = 9 * pscale;
+                const pr = 8 * pscale;
                 ctx.fillStyle = pawColor; ctx.strokeStyle = 'rgba(40,24,12,0.85)';
                 ctx.lineWidth = Math.max(1, 1.8 * pscale);
                 ctx.beginPath(); ctx.arc(0, 0, pr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
