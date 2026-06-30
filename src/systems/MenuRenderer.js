@@ -17,7 +17,7 @@ import {
     GEAR, GEAR_CATEGORIES, GEAR_CATEGORY_LABELS, gearByCategory, buffSummary,
 } from '../content/gear.js';
 import {
-    COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance,
+    COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement,
 } from '../content/cosmetics.js';
 import { CASES, CASE_ORDER, caseOddsRows, WAGER_BETS } from './CaseSystem.js';
 import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
@@ -619,6 +619,16 @@ export class MenuRenderer {
             ctx.fillText(`${got ? '✓ ' : ''}${a.name}`, x + 12, y + 22);
             ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 12px ${FONT}`;
             ctx.fillText(a.desc.length > 38 ? a.desc.slice(0, 37) + '…' : a.desc, x + 12, y + 40);
+            // If this achievement grants a cosmetic, show it (right-aligned, in
+            // its rarity colour) so players can see the skin they're grinding
+            // toward — a 🎁 reward target on the name row.
+            const rew = cosmeticsForAchievement(a.id);
+            if (rew.length && COSMETICS[rew[0]]) {
+                const cm = COSMETICS[rew[0]];
+                ctx.fillStyle = rarityColor(cm.rarity); ctx.font = `700 13px ${FONT}`; ctx.textAlign = 'right';
+                ctx.fillText(this._ellip(ctx, `🎁 ${cm.name}`, aW - 24), x + aW - 12, y + 22);
+                ctx.textAlign = 'left';
+            }
         }
         ctx.textAlign = 'left';
     }

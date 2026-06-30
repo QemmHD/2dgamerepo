@@ -1554,24 +1554,33 @@ export class UISystem {
             statsStartY + Math.ceil(stats.length / 2) * lineH + 20
         );
 
-        // Daily-trial reward line — celebrate any of today's challenges this run
-        // newly completed (names set on the summary at game-over). Pulses gold-
-        // green and sits in the gap between Total Coins and the loadout lists.
-        if (Array.isArray(summary.dailies) && summary.dailies.length) {
+        // Reward lines — celebrate what this run newly earned: completed daily
+        // trials, unlocked achievements, and any cosmetics those achievements
+        // granted (the grind payoff). Stacked + pulsing; the loadout lists below
+        // shift down only when more than one reward type fires (usually 0–1).
+        const rewardLines = [];
+        if (Array.isArray(summary.dailies) && summary.dailies.length)
+            rewardLines.push({ text: `✦ DAILY TRIAL — ${summary.dailies.join('  ·  ')} ✦`, color: '#5fe87a' });
+        if (Array.isArray(summary.achievements) && summary.achievements.length)
+            rewardLines.push({ text: `★ ACHIEVEMENT — ${summary.achievements.join('  ·  ')} ★`, color: '#ffce54' });
+        if (Array.isArray(summary.cosmeticUnlocks) && summary.cosmeticUnlocks.length)
+            rewardLines.push({ text: `🎁 COSMETIC UNLOCKED — ${summary.cosmeticUnlocks.join('  ·  ')}`, color: '#c08bff' });
+        const rewardBase = statsStartY + Math.ceil(stats.length / 2) * lineH + 52;
+        if (rewardLines.length) {
             const pulse = 0.7 + 0.3 * ((Math.sin(age * 5) + 1) / 2);
             ctx.save();
-            ctx.globalAlpha = tailT * pulse;
-            ctx.fillStyle = '#5fe87a';
-            ctx.font = `bold 26px ${FONT}`;
-            ctx.fillText(
-                `✦ DAILY TRIAL COMPLETE — ${summary.dailies.join('  ·  ')} ✦`,
-                INTERNAL_WIDTH / 2,
-                statsStartY + Math.ceil(stats.length / 2) * lineH + 54
-            );
+            ctx.textAlign = 'center';
+            ctx.font = `bold 25px ${FONT}`;
+            for (let i = 0; i < rewardLines.length; i++) {
+                ctx.globalAlpha = tailT * pulse;
+                ctx.fillStyle = rewardLines[i].color;
+                ctx.fillText(rewardLines[i].text, INTERNAL_WIDTH / 2, rewardBase + i * 30);
+            }
             ctx.restore();
         }
 
-        const listY = statsStartY + Math.ceil(stats.length / 2) * lineH + 80;
+        const listY = statsStartY + Math.ceil(stats.length / 2) * lineH + 80
+            + Math.max(0, rewardLines.length - 1) * 30;
         ctx.font = `bold 24px ${FONT}`;
         ctx.textAlign = 'left';
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
