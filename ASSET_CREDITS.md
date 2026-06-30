@@ -36,6 +36,16 @@ then cropped to their walk-cycle rows.
 Per-asset source URLs + notes: [`src/assets/lpc/CREDITS.md`](src/assets/lpc/CREDITS.md)
 and [`src/assets/credits/assets.json`](src/assets/credits/assets.json).
 
+### World ground texture — `src/assets/textures/`
+Real CC0 photographic ground texture, downsized to a seamless 256×256 tile and
+recolored per biome by the map theme. Procedural ground tile is the fallback.
+
+| File | Source | Author | License |
+|---|---|---|---|
+| `ground_forest.png` | [Poly Haven — Forest Ground 04](https://polyhaven.com/a/forest_ground_04) | Rob Tuytel (Poly Haven) | CC0 1.0 |
+
+Per-asset notes: [`src/assets/textures/CREDITS.md`](src/assets/textures/CREDITS.md).
+
 ## Customization pipeline
 
 External and procedural assets flow through a shared customization system:

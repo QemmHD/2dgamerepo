@@ -48,6 +48,26 @@ export const ASSET_REGISTRY = {
         paletteSlots: { primary: '#8fbf6a', shadow: '#1c2a14' },
         tags: ['undead', 'humanoid', 'zombie'],
     },
+    lpc_orc: {
+        id: 'lpc_orc', type: 'enemy', slot: null,
+        source: 'OpenGameArt / LPC', sourceUrl: 'https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles',
+        license: 'CC-BY-SA-3.0 / GPL-3.0',
+        author: 'Redshrike; LPC contributors', attributionRequired: true,
+        frameWidth: 64, frameHeight: 64,
+        animations: ['walk'], directional: true, tintable: true,
+        paletteSlots: { primary: '#5fae54', shadow: '#1c2a14' },
+        tags: ['humanoid', 'orc', 'brute'],
+    },
+    tile_ground_forest: {
+        id: 'tile_ground_forest', type: 'tile', slot: null,
+        source: 'Poly Haven', sourceUrl: 'https://polyhaven.com/a/forest_ground_04',
+        license: 'CC0-1.0',
+        author: 'Rob Tuytel (Poly Haven)', attributionRequired: false,
+        frameWidth: 256, frameHeight: 256,
+        animations: [], directional: false, tintable: true,
+        paletteSlots: { primary: '#6b5c40' },
+        tags: ['ground', 'floor', 'dirt', 'seamless', 'biome'],
+    },
 };
 
 // Shape-validate one metadata entry. Returns an array of problem strings

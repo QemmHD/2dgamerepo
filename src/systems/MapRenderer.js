@@ -18,6 +18,7 @@
 import { MAP, VIGNETTE, WORLD_WIDTH, WORLD_HEIGHT, GFX, SPRITE_FX, LIGHT_COLORS, SPRITE_SS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import { getGroundTileSprite, getDecorationSprite, getSoftShadowSprite } from '../assets/ProceduralSprites.js';
+import { getGroundTexture } from '../assets/WorldTextures.js';
 
 const CHUNK_SIZE = MAP.tileSize * MAP.chunkTilesPerSide;
 
@@ -66,7 +67,10 @@ export class MapRenderer {
     _ensureTilePattern(ctx) {
         if (this.tilePattern || this.tilePatternFailed) return;
         try {
-            const tile = getGroundTileSprite();
+            // Prefer the imported CC0 ground texture; fall back to the
+            // procedural tile if it failed to load (offline / missing deploy).
+            // Either way the biome groundFill + grade recolour it per map.
+            const tile = getGroundTexture() || getGroundTileSprite();
             this.tilePattern = ctx.createPattern(tile, 'repeat');
         } catch (_) {
             // createPattern can fail if the source canvas is 0×0 — keep
