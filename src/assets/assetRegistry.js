@@ -58,6 +58,16 @@ export const ASSET_REGISTRY = {
         paletteSlots: { primary: '#5fae54', shadow: '#1c2a14' },
         tags: ['humanoid', 'orc', 'brute'],
     },
+    gameicons_glyphs: {
+        id: 'gameicons_glyphs', type: 'icon', slot: null,
+        source: 'game-icons.net', sourceUrl: 'https://game-icons.net/',
+        license: 'CC-BY-3.0',
+        author: 'Lorc (game-icons.net)', attributionRequired: true,
+        frameWidth: 128, frameHeight: 128,
+        animations: [], directional: false, tintable: true,
+        paletteSlots: { primary: '#ffffff' },
+        tags: ['icon', 'ui', 'glyph', 'rarity', 'element'],
+    },
     tile_ground_forest: {
         id: 'tile_ground_forest', type: 'tile', slot: null,
         source: 'Poly Haven', sourceUrl: 'https://polyhaven.com/a/forest_ground_04',

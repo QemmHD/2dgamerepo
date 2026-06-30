@@ -15,6 +15,17 @@ import { RARITIES } from '../content/rarities.js';
 const ICON_PX = 64;
 const baseCache = new Map();  // baseId → base glyph canvas
 const iconCache = new Map();  // `${baseId}:${rarity}` → framed, recolored canvas
+const glyphCache = new Map(); // baseId → imported white glyph canvas (ICON_PX)
+
+// Imported icon glyphs — real CC-BY 3.0 game-icons.net art (white-on-transparent
+// so the rarity recolor reads cleanly). baseId → file. When loaded, these take
+// precedence over the procedural BASE_DRAWERS below; if a PNG fails to load the
+// procedural glyph is used instead, so the menu always has an icon.
+const GLYPH_FILES = {
+    shield: 'shield.png', spark: 'spark.png', fire: 'fire.png',
+    lightning: 'lightning.png', frost: 'frost.png', skull: 'skull.png',
+    swords: 'swords.png', staff: 'staff.png',
+};
 
 function makeCanvas(w, h) {
     const c = document.createElement('canvas');
@@ -56,11 +67,47 @@ const BASE_DRAWERS = {
 
 function getBase(baseId) {
     if (baseCache.has(baseId)) return baseCache.get(baseId);
+    // Prefer an imported game-icons.net glyph if it loaded; else draw the
+    // procedural fallback glyph.
+    const imported = glyphCache.get(baseId);
+    if (imported) { baseCache.set(baseId, imported); return imported; }
     const c = makeCanvas(ICON_PX, ICON_PX);
     const cx = c.getContext('2d');
     (BASE_DRAWERS[baseId] || BASE_DRAWERS.spark)(cx, ICON_PX);
     baseCache.set(baseId, c);
     return c;
+}
+
+function iconUrl(file) {
+    return new URL(`./icons/${file}`, import.meta.url).href;
+}
+
+function loadImage(url) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = url;
+    });
+}
+
+// Load the imported icon glyphs at boot, baked down to ICON_PX so they slot
+// straight into the recolor + frame pipeline. NEVER rejects — a missing PNG
+// just leaves that baseId on its procedural glyph. Call once before the menu
+// draws. (baseCache is populated lazily in getBase, so loading before any
+// getRarityIcon call guarantees imported glyphs win.)
+export async function loadIconGlyphs() {
+    const ids = Object.keys(GLYPH_FILES);
+    const imgs = await Promise.all(ids.map((id) => loadImage(iconUrl(GLYPH_FILES[id]))));
+    let anyOk = false;
+    ids.forEach((id, i) => {
+        if (!imgs[i]) return;
+        const c = makeCanvas(ICON_PX, ICON_PX);
+        c.getContext('2d').drawImage(imgs[i], 0, 0, ICON_PX, ICON_PX);
+        glyphCache.set(id, c);
+        anyOk = true;
+    });
+    return anyOk;
 }
 
 // A rarity-customized icon: the base glyph recolored toward the rarity color

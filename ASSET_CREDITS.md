@@ -46,6 +46,16 @@ recolored per biome by the map theme. Procedural ground tile is the fallback.
 
 Per-asset notes: [`src/assets/textures/CREDITS.md`](src/assets/textures/CREDITS.md).
 
+### UI icon glyphs — `src/assets/icons/`
+Real game-icons.net glyphs, rasterized to white-on-transparent PNGs and
+recolored by rarity/element on menu cards. Procedural glyph is the fallback.
+
+| Files | Source | Author | License |
+|---|---|---|---|
+| `shield/spark/fire/lightning/frost/skull/swords/staff.png` | [game-icons.net](https://game-icons.net/) | Lorc | CC-BY 3.0 |
+
+Per-asset notes: [`src/assets/icons/CREDITS.md`](src/assets/icons/CREDITS.md).
+
 ## Customization pipeline
 
 External and procedural assets flow through a shared customization system:
