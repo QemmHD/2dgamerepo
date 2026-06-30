@@ -60,6 +60,21 @@
       "modifications": "Downscaled the 1K seamless diffuse map to a 256x256 tile; recolored per biome at runtime via the existing map ground-fill/grade overlay.",
       "frameWidth": 256,
       "frameHeight": 256
+    },
+    {
+      "id": "gameicons_glyphs",
+      "file": "src/assets/icons/shield.png",
+      "usedFor": "UI card glyphs (gear/cosmetic/element), recolored by rarity",
+      "type": "icon",
+      "source": "game-icons.net",
+      "sourceUrl": "https://game-icons.net/",
+      "authors": ["Lorc (game-icons.net)"],
+      "license": "CC-BY-3.0",
+      "attributionRequired": true,
+      "modified": true,
+      "modifications": "Rasterized the SVGs to 128px white-on-transparent PNGs (background rect stripped); recolored by rarity at load. Other glyphs in this set: spark.png, fire.png, lightning.png, frost.png, skull.png, swords.png, staff.png — same source/author/license.",
+      "frameWidth": 128,
+      "frameHeight": 128
     }
   ]
 }

@@ -7,6 +7,7 @@ import { TouchJoystick } from './core/TouchJoystick.js';
 import { prewarmSprites, getGlowSprite } from './assets/ProceduralSprites.js';
 import { loadLpcSprites } from './assets/LpcSprites.js';
 import { loadWorldTextures } from './assets/WorldTextures.js';
+import { loadIconGlyphs } from './assets/CustomIcons.js';
 import { WEAPON_AURA } from './content/weapons.js';
 
 async function boot() {
@@ -54,7 +55,7 @@ async function boot() {
     // Load the imported assets (LPC enemy spritesheets + CC0 ground texture)
     // before the first frame. Both NEVER reject — a failed/missing file falls
     // back to procedural art — so a bad asset can't block boot.
-    await Promise.all([loadLpcSprites(), loadWorldTextures()]);
+    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs()]);
 
     game = new Game({ renderer, input, loop });
     loop.start();
