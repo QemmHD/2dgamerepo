@@ -678,10 +678,11 @@ export const COIN = {
 export const CHEST = {
     pickupRadius: 80,
     openAnimationDuration: 0.55,
-    // Lowered 0.15 → 0.10: with elite chance ramping up late, 15% chest rolls
-    // per elite produced runaway weapon/passive upgrade flow. Boss chests stay
+    // Lowered 0.15 → 0.10 → 0.06: with elite chance ramping up late, frequent
+    // elite chest rolls produced runaway upgrade flow + chest spam. 6% keeps
+    // an elite kill an occasional treat, not a steady stream. Boss chests stay
     // guaranteed (handled separately in Game).
-    eliteDropChance: 0.10,
+    eliteDropChance: 0.06,
     weights: { weapon: 3, passive: 3, coins: 2, heal: 2 },
     luckUpgradeWeight: 4,
     coinReward: { min: 50, max: 100, luckBonus: 80 },
