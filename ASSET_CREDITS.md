@@ -36,6 +36,17 @@ then cropped to their walk-cycle rows.
 Per-asset source URLs + notes: [`src/assets/lpc/CREDITS.md`](src/assets/lpc/CREDITS.md)
 and [`src/assets/credits/assets.json`](src/assets/credits/assets.json).
 
+### Boss sprites — `src/assets/bosses/`
+Real creature sprites used as all 12 **boss models** (one base creature per
+boss, recolored to theme). Bone bosses reuse the LPC skeleton. Procedural boss
+art is the fallback.
+
+| Files | Source | Authors | License |
+|---|---|---|---|
+| `man_eater_flower/ghost/pumpking/big_worm/eyeball/bat.png` | [\[LPC\] Monsters](https://opengameart.org/content/lpc-monsters) | Charles Sanchez (CharlesGabriel), bagzie, bluecarrot16 | CC-BY-SA 3.0 / GPL 3.0 |
+
+Per-boss mapping: [`src/assets/bosses/CREDITS.md`](src/assets/bosses/CREDITS.md).
+
 ### Monster sprites — `src/assets/monsters/`
 Real animated creature sprites that **update the original procedural creatures**
 (slime, bat, crawler→snake, spitter→eyeball, mite→bee). Procedural art is the

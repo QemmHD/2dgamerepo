@@ -63,6 +63,21 @@
       "frameHeight": 182
     },
     {
+      "id": "lpc_bosses",
+      "file": "src/assets/bosses/man_eater_flower.png",
+      "usedFor": "All 12 boss models (recolored per boss): man-eater flower, ghost, pumpkin, worm, eyeball, bat; bone bosses reuse the LPC skeleton",
+      "type": "boss",
+      "source": "[LPC] Monsters (OpenGameArt)",
+      "sourceUrl": "https://opengameart.org/content/lpc-monsters",
+      "authors": ["Charles Sanchez (CharlesGabriel)", "bagzie", "bluecarrot16"],
+      "license": "CC-BY-SA-3.0 / GPL-3.0",
+      "attributionRequired": true,
+      "modified": true,
+      "modifications": "Sliced an animation row from each 128px (and 64px for eyeball/bat) sheet, upscaled to the sprite box, and recolored per boss theme. Sheets: man_eater_flower.png, ghost.png, pumpking.png, big_worm.png, eyeball.png, bat.png — same source/authors/license.",
+      "frameWidth": 128,
+      "frameHeight": 128
+    },
+    {
       "id": "lpc_monsters",
       "file": "src/assets/monsters/slime.png",
       "usedFor": "Updated original creature enemies: slime, bat, crawler (snake), spitter (eyeball), mite (bee)",

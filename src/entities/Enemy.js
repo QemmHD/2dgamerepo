@@ -44,6 +44,7 @@ import {
 } from '../assets/ProceduralSprites.js';
 import { getLpcFrames } from '../assets/LpcSprites.js';
 import { getMonsterFrames } from '../assets/MonsterSprites.js';
+import { getBossFrames } from '../assets/BossSprites.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
@@ -80,18 +81,20 @@ const FRAMES_BY_TYPE = {
     // Boss animation Hz roughly doubled so their bodies/wings/maws read as
     // alive and aggressive instead of a slow crawl (the % frames.length wrap
     // makes any Hz index-safe regardless of frame count).
-    vinebackGoliath: { get: getVinebackGoliathFrames, hz: 3 },
-    stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 12 },
-    gloomMaw:        { get: getGloomMawFrames,         hz: 8 },
-    rimewarden:      { get: getRimewardenFrames,       hz: 5 },
-    hoarfang:        { get: getHoarfangFrames,         hz: 9 },
-    aurorath:        { get: getAurorathFrames,         hz: 6 },
-    ossuar:          { get: getOssuarFrames,           hz: 5 },
-    mourndrift:      { get: getMourndriftFrames,       hz: 7 },
-    nihagault:       { get: getNihagaultFrames,        hz: 8 },
-    dunescourge:     { get: getDunescourgeFrames,      hz: 9 },
-    cindermaw:       { get: getCindermawFrames,        hz: 9 },
-    solnakh:         { get: getSolnakhFrames,          hz: 6 },
+    // Each boss uses a real imported LPC monster sprite (recolored to its
+    // theme), falling back to its procedural drawer if the sheet didn't load.
+    vinebackGoliath: { get: () => getBossFrames('vinebackGoliath') || getVinebackGoliathFrames(), hz: 5 },
+    stormwingAlpha:  { get: () => getBossFrames('stormwingAlpha')  || getStormwingAlphaFrames(),  hz: 10 },
+    gloomMaw:        { get: () => getBossFrames('gloomMaw')        || getGloomMawFrames(),         hz: 6 },
+    rimewarden:      { get: () => getBossFrames('rimewarden')      || getRimewardenFrames(),       hz: 5 },
+    hoarfang:        { get: () => getBossFrames('hoarfang')        || getHoarfangFrames(),         hz: 6 },
+    aurorath:        { get: () => getBossFrames('aurorath')        || getAurorathFrames(),         hz: 5 },
+    ossuar:          { get: () => getBossFrames('ossuar')          || getOssuarFrames(),           hz: 6 },
+    mourndrift:      { get: () => getBossFrames('mourndrift')      || getMourndriftFrames(),       hz: 6 },
+    nihagault:       { get: () => getBossFrames('nihagault')       || getNihagaultFrames(),        hz: 7 },
+    dunescourge:     { get: () => getBossFrames('dunescourge')     || getDunescourgeFrames(),      hz: 6 },
+    cindermaw:       { get: () => getBossFrames('cindermaw')       || getCindermawFrames(),        hz: 6 },
+    solnakh:         { get: () => getBossFrames('solnakh')         || getSolnakhFrames(),          hz: 7 },
 };
 
 // Construction-time options:

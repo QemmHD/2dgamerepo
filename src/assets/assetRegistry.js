@@ -58,6 +58,16 @@ export const ASSET_REGISTRY = {
         paletteSlots: { primary: '#5fae54', shadow: '#1c2a14' },
         tags: ['humanoid', 'orc', 'brute'],
     },
+    lpc_bosses: {
+        id: 'lpc_bosses', type: 'boss', slot: null,
+        source: '[LPC] Monsters (OpenGameArt)', sourceUrl: 'https://opengameart.org/content/lpc-monsters',
+        license: 'CC-BY-SA-3.0 / GPL-3.0',
+        author: 'Charles Sanchez (CharlesGabriel); bagzie; bluecarrot16', attributionRequired: true,
+        frameWidth: 128, frameHeight: 128,
+        animations: ['idle'], directional: false, tintable: true,
+        paletteSlots: { primary: '#c0a040' },
+        tags: ['boss', 'flower', 'ghost', 'pumpkin', 'worm', 'eyeball', 'bat'],
+    },
     lpc_monsters: {
         id: 'lpc_monsters', type: 'enemy', slot: null,
         source: '[LPC] Monsters (OpenGameArt)', sourceUrl: 'https://opengameart.org/content/lpc-monsters',
