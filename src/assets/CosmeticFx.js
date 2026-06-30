@@ -63,6 +63,32 @@ export function drawAuraFx(ctx, cx, cy, r, color, fx, t, intensity = 0.3) {
     ctx.restore();
 }
 
+// Set-bonus flourish: a slow counter-rotating double ring of bright motes
+// around the hero, in the set's signature colour — the "you completed the whole
+// look" payoff. Drawn around the aura; cheap (a few cached glow blits).
+export function drawSetBonus(ctx, cx, cy, r, color, t) {
+    if (!color) return;
+    const glow = getGlowSprite(color);
+    if (!glow) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const N = 8;
+    for (let ring = 0; ring < 2; ring++) {
+        const dir = ring === 0 ? 1 : -1;
+        const orbit = r * (1.18 + ring * 0.16);
+        const spin = t * (0.9 + ring * 0.4) * dir;
+        for (let i = 0; i < N; i++) {
+            const a = spin + i * (TAU / N) + ring * (Math.PI / N);
+            const mx = cx + Math.cos(a) * orbit, my = cy + Math.sin(a) * orbit * 0.72;
+            const tw = 0.5 + 0.5 * Math.sin(t * 4 + i * 1.3 + ring);
+            const mr = r * (0.1 + 0.06 * tw);
+            ctx.globalAlpha = 0.25 + 0.35 * tw;
+            ctx.drawImage(glow, mx - mr, my - mr, mr * 2, mr * 2);
+        }
+    }
+    ctx.restore();
+}
+
 // Pointed 4-star sparkle path.
 function star(ctx, cx, cy, r) {
     ctx.beginPath();

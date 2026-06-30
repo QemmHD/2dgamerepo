@@ -1465,6 +1465,20 @@ export class UISystem {
         ctx.restore();
     }
 
+    // A 4-point sparkle (filled diamond + thin cross) for reward flourishes.
+    _sparkle(ctx, cx, cy, r, color, alpha = 1) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r * 0.32, cy); ctx.lineTo(cx, cy + r);
+        ctx.lineTo(cx - r * 0.32, cy); ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(cx - r, cy); ctx.lineTo(cx, cy - r * 0.32); ctx.lineTo(cx + r, cy);
+        ctx.lineTo(cx, cy + r * 0.32); ctx.closePath(); ctx.fill();
+        ctx.restore();
+    }
+
     _drawGameOverOverlay(ctx, state) {
         const summary = state.runSummary;
         const sa = this.renderer.safeArea;
@@ -1564,17 +1578,36 @@ export class UISystem {
         if (Array.isArray(summary.achievements) && summary.achievements.length)
             rewardLines.push({ text: `★ ACHIEVEMENT — ${summary.achievements.join('  ·  ')} ★`, color: '#ffce54' });
         if (Array.isArray(summary.cosmeticUnlocks) && summary.cosmeticUnlocks.length)
-            rewardLines.push({ text: `🎁 COSMETIC UNLOCKED — ${summary.cosmeticUnlocks.join('  ·  ')}`, color: '#c08bff' });
+            rewardLines.push({ text: `🎁 COSMETIC UNLOCKED — ${summary.cosmeticUnlocks.join('  ·  ')}`, color: '#c08bff', cosmetic: true });
         const rewardBase = statsStartY + Math.ceil(stats.length / 2) * lineH + 52;
         if (rewardLines.length) {
             const pulse = 0.7 + 0.3 * ((Math.sin(age * 5) + 1) / 2);
             ctx.save();
             ctx.textAlign = 'center';
-            ctx.font = `bold 25px ${FONT}`;
             for (let i = 0; i < rewardLines.length; i++) {
+                const ly = rewardBase + i * 30;
+                const cos = rewardLines[i].cosmetic;
+                ctx.font = `bold ${cos ? 27 : 25}px ${FONT}`;
                 ctx.globalAlpha = tailT * pulse;
                 ctx.fillStyle = rewardLines[i].color;
-                ctx.fillText(rewardLines[i].text, INTERNAL_WIDTH / 2, rewardBase + i * 30);
+                if (cos) {
+                    // The cosmetic-unlock line pops in with a bouncy scale + a pair
+                    // of twinkling sparkles — the grind payoff deserves a flourish.
+                    const sc = 0.55 + 0.45 * easeOutBack(tailT);
+                    const w = ctx.measureText(rewardLines[i].text).width;
+                    ctx.save();
+                    ctx.translate(INTERNAL_WIDTH / 2, ly);
+                    ctx.scale(sc, sc);
+                    ctx.fillText(rewardLines[i].text, 0, 0);
+                    ctx.restore();
+                    for (let sgn = -1; sgn <= 1; sgn += 2) {
+                        const tw = 0.5 + 0.5 * Math.sin(age * 6 + sgn * 1.7);
+                        this._sparkle(ctx, INTERNAL_WIDTH / 2 + sgn * (w * sc / 2 + 30), ly - 7,
+                            6 + 5 * tw, rewardLines[i].color, tailT * (0.5 + 0.5 * tw));
+                    }
+                } else {
+                    ctx.fillText(rewardLines[i].text, INTERNAL_WIDTH / 2, ly);
+                }
             }
             ctx.restore();
         }

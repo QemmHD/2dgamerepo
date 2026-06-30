@@ -118,6 +118,38 @@ export function cosmeticsForAchievement(achievementId) {
     return COSMETIC_LIST.filter((c) => c.achievement === achievementId).map((c) => c.id);
 }
 
+// ── Themed sets ──────────────────────────────────────────────────────────
+// Equipping all five matching pieces lights up a purely-cosmetic SET BONUS
+// flourish (an extra animated ring) in-game and in the customizer — a reason
+// to chase a whole themed look, never a stat change.
+export const COSMETIC_SETS = [
+    { id: 'inferno',  name: 'Inferno Regalia',  color: '#ff5a2a',
+      pieces: { fur: 'fur_ember', cloak: 'cloak_crimson', hat: 'hat_candle', aura: 'aura_inferno', trail: 'trail_flame' } },
+    { id: 'astral',   name: 'Astral Vigil',     color: '#9fd0ff',
+      pieces: { fur: 'fur_frost', cloak: 'cloak_frost', hat: 'hat_halo', aura: 'aura_astral', trail: 'trail_stars' } },
+    { id: 'prism',    name: 'Prismatic Apex',   color: '#ff7edb',
+      pieces: { fur: 'fur_galaxy', cloak: 'cloak_prism', hat: 'hat_crown', aura: 'aura_prism', trail: 'trail_rainbow' } },
+    { id: 'wildheart', name: 'Wildheart Bloom', color: '#5fd36a',
+      pieces: { fur: 'fur_jade', cloak: 'cloak_verdant', hat: 'hat_flower', aura: 'aura_verdant', trail: 'trail_leaf' } },
+    { id: 'gloam',    name: 'Gloambound',       color: '#9a6cff',
+      pieces: { fur: 'fur_shadow', cloak: 'cloak_shadow', hat: 'hat_horns', aura: 'aura_shadow', trail: 'trail_void' } },
+];
+
+// The set whose every piece is currently equipped, or null.
+export function activeCosmeticSet(equipped) {
+    const e = equipped ?? {};
+    for (const s of COSMETIC_SETS) {
+        if (COSMETIC_CATEGORIES.every((cat) => e[cat] === s.pieces[cat])) return s;
+    }
+    return null;
+}
+
+// How many pieces of a given set are currently equipped (for "3/5" progress).
+export function setProgress(equipped, set) {
+    const e = equipped ?? {};
+    return COSMETIC_CATEGORIES.reduce((n, cat) => n + (e[cat] === set.pieces[cat] ? 1 : 0), 0);
+}
+
 // Resolve an equipped-cosmetics map (ids) into the concrete colors/shapes the
 // Player renderer needs. Falls back to slot defaults for missing/locked ids.
 export function resolveAppearance(equipped) {
@@ -136,5 +168,6 @@ export function resolveAppearance(equipped) {
         auraFx: aura.fx ?? null,
         trailColor: trail.color,
         trailFx: trail.fx ?? null,
+        set: activeCosmeticSet(equipped),   // { id, name, color } when a full set is on
     };
 }

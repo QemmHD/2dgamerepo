@@ -15,7 +15,7 @@ import {
 } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
-import { drawAuraFx, drawTrailPoint } from '../assets/CosmeticFx.js';
+import { drawAuraFx, drawTrailPoint, drawSetBonus } from '../assets/CosmeticFx.js';
 
 // Unit vector for each facing — used to seat the held weapon in the hand on the
 // "front" side of the body (rather than orbiting the centre).
@@ -360,6 +360,9 @@ export class Player {
             // every frame so pulse/spin/flame/rainbow/starfield animate even idle.
             drawAuraFx(ctx, this.x, cy, this.spriteHalf * 1.1, ap.auraColor, ap.auraFx, this.auraPhase, 0.3);
         }
+        // Set-bonus flourish — equipping a whole themed set lights up an extra
+        // counter-rotating ring of motes in the set's colour (cosmetic only).
+        if (ap.set) drawSetBonus(ctx, this.x, cy, this.spriteHalf * 1.1, ap.set.color, this.auraPhase);
 
         // Directional facing → which dir set + horizontal flip.
         let dir = 'down', flip = false;
