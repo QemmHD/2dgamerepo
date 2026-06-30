@@ -90,7 +90,10 @@ function defaultData() {
         // Daily challenges: which day the `completed` ids belong to (auto-reset
         // when the day rolls; see content/dailyChallenges + getDailyState).
         daily: { day: 0, completed: [] },
-        version: 5,
+        // Pact Mastery: highest Pact tier (active-Trial count, 0..N) a run has
+        // CLEARED (3-boss victory) per character id — the "can't-farm" ladder.
+        pactMastery: {},
+        version: 6,
     };
 }
 
@@ -252,7 +255,18 @@ export class SaveSystem {
                 : [],
         };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, gamble, selectedMap, difficulty, achievements, daily, version: 5 };
+        // Pact Mastery: { [characterId]: highestClearedTier (non-negative int) }.
+        // Sanitize every entry; drop anything non-numeric/negative.
+        const pm = data.pactMastery && typeof data.pactMastery === 'object' ? data.pactMastery : {};
+        const pactMastery = {};
+        for (const k of Object.keys(pm)) {
+            const v = pm[k];
+            if (typeof k === 'string' && k && Number.isFinite(v) && v > 0) {
+                pactMastery[k] = Math.floor(v);
+            }
+        }
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, gamble, selectedMap, difficulty, achievements, daily, pactMastery, version: 6 };
     }
 
     save() {
@@ -494,6 +508,26 @@ export class SaveSystem {
         d.completed.push(id);
         this.save();
         return true;
+    }
+
+    // ── Pact Mastery (per-character highest cleared Pact tier) ───────────
+    getPactMastery(characterId) {
+        if (!this.data.pactMastery) this.data.pactMastery = {};
+        return this.data.pactMastery[characterId] ?? 0;
+    }
+
+    // Record a 3-boss CLEAR at `tier` (active-Trial count) for a character.
+    // Returns the number of NEW tier steps gained (0 if not a new best), so the
+    // caller can pay a one-time bounty per notch climbed.
+    recordPactClear(characterId, tier) {
+        if (!characterId || !Number.isFinite(tier) || tier <= 0) return 0;
+        if (!this.data.pactMastery) this.data.pactMastery = {};
+        const prev = this.data.pactMastery[characterId] ?? 0;
+        const t = Math.floor(tier);
+        if (t <= prev) return 0;
+        this.data.pactMastery[characterId] = t;
+        this.save();
+        return t - prev;
     }
 
     // ── Gauntlet (endless) score ─────────────────────────────────────────

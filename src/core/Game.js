@@ -757,7 +757,25 @@ export class Game {
         this.audio.objective();
         // A 3rd-boss clear on Nightmare is a bragging milestone.
         if (this.difficulty === 'hard') this.saveSystem.incrementStat('hardWins', 1);
+        this._checkPactMastery();
         this._updateJoystickEnabled();
+    }
+
+    // Pact Mastery: a 3-boss CLEAR at a Pact tier (= active-Trial count) pushes
+    // this character's mastery ladder. Each NEW notch pays a one-time coin
+    // bounty. A no-curse clear (tier 0) earns nothing here (recordPactClear
+    // guards tier<=0), so the ladder only rewards clearing WITH curses on.
+    _checkPactMastery() {
+        const tier = (this.activeModifiers ?? []).length;
+        if (tier <= 0) return;
+        const char = this.saveSystem.getSelectedCharacter();
+        const steps = this.saveSystem.recordPactClear(char, tier);
+        if (steps > 0) {
+            const bounty = steps * 80;
+            this.saveSystem.addCoins(bounty);
+            this.pactBounty = { tier, coins: bounty };
+            this.waveDirector?.announce?.(`✦ PACT ${tier} CLEARED  +${bounty} ✦`);
+        }
     }
 
     // Continue the same run (keep the gauntlet going past 3 bosses). From here
