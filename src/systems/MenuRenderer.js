@@ -11,6 +11,7 @@
 import { roundRectPath, clamp01, easeOutCubic } from '../render/DrawUtils.js';
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS, pactTier } from '../config/GameConfig.js';
 import { rarityColor, rarityName, RARITIES } from '../content/rarities.js';
+import { getRarityIcon } from '../assets/CustomIcons.js';
 import {
     GEAR, GEAR_CATEGORIES, GEAR_CATEGORY_LABELS, gearByCategory, buffSummary,
 } from '../content/gear.js';
@@ -769,6 +770,18 @@ export class MenuRenderer {
                 ctx.fillText(item.name, x + 26, iy + 26);
                 ctx.fillStyle = col; ctx.font = `600 15px ${FONT}`;
                 ctx.fillText(unlocked ? (equippedHere ? 'EQUIPPED' : rarityName(item.rarity)) : '🔒 LOCKED', x + 26, iy + 48);
+                // Customizable icon (asset pipeline): a rarity-recolored, framed
+                // glyph cached per (base, rarity). gear → shield, cosmetic →
+                // spark. Procedural base, so it's license-safe; swapping in an
+                // imported CC0 icon sheet would use the exact same call.
+                {
+                    const icon = getRarityIcon(kind === 'gear' ? 'shield' : 'spark', item.rarity);
+                    const isz = 30;
+                    ctx.save();
+                    ctx.globalAlpha = unlocked ? 1 : 0.35;
+                    ctx.drawImage(icon, x + 12 + innerW - isz - 12, iy + 12, isz, isz);
+                    ctx.restore();
+                }
                 // Gear: short effect summary so the player knows what each item
                 // grants. Buff bag → human strings; a buffless starting weapon
                 // falls back to its flavor description (trimmed to one line).

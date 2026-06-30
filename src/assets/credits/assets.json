@@ -1,0 +1,35 @@
+{
+  "_comment": "Structured registry of EXTERNAL assets used directly in the build. Every entry MUST have a license + attribution + sourceUrl. Validated by tools/validate-assets.js; human-readable mirror in ASSET_CREDITS.md. Procedural (code-drawn) art is NOT listed here — it has no external license.",
+  "assets": [
+    {
+      "id": "lpc_skeleton_walk",
+      "file": "src/assets/lpc/skeleton_walk.png",
+      "usedFor": "Enemy models: skeleton + ember-skeleton (runtime recolor)",
+      "type": "enemy",
+      "source": "Universal LPC Spritesheet Generator (Liberated Pixel Cup)",
+      "sourceUrl": "https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator",
+      "authors": ["bluecarrot16", "Johannes Sjölund (wulax)", "Stephen Challener (Redshrike)"],
+      "license": "OGA-BY-3.0 / CC-BY-SA-3.0 / GPL-3.0",
+      "attributionRequired": true,
+      "modified": true,
+      "modifications": "Sliced into directional walk frames; ember-skeleton variant is an orange multiply recolor.",
+      "frameWidth": 64,
+      "frameHeight": 64
+    },
+    {
+      "id": "lpc_zombie_walk",
+      "file": "src/assets/lpc/zombie_walk.png",
+      "usedFor": "Enemy model: zombie",
+      "type": "enemy",
+      "source": "Universal LPC Spritesheet Generator (Liberated Pixel Cup)",
+      "sourceUrl": "https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator",
+      "authors": ["Stephen Challener (Redshrike)", "Johannes Sjölund (wulax)", "Sander Frenken (castelonia)", "Benjamin K. Smith (BenCreating)", "bluecarrot16"],
+      "license": "OGA-BY-3.0 / CC-BY-SA-3.0 / GPL-3.0",
+      "attributionRequired": true,
+      "modified": true,
+      "modifications": "Sliced into directional walk frames.",
+      "frameWidth": 64,
+      "frameHeight": 64
+    }
+  ]
+}
