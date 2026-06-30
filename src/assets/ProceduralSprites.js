@@ -374,6 +374,79 @@ function drawApexBoss(size, frame, count, cfg) {
         for (let i = 0; i < 5; i++) { const ty = cy - 12 + i * 9; ctx.beginPath(); ctx.moveTo(cx - 14, ty); ctx.lineTo(cx - 8, ty + 4); ctx.lineTo(cx - 14, ty + 8); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(cx + 14, ty); ctx.lineTo(cx + 8, ty + 4); ctx.lineTo(cx + 14, ty + 8); ctx.closePath(); ctx.fill(); }
         // Ring of small eyes.
         for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + (i - 2.5) * 0.42; _eye(ctx, cx + Math.cos(a) * 30, cy + Math.sin(a) * 30 - 6, 3, p.accent, p.light); }
+    } else if (cfg.archetype === 'reaper') {
+        // Tall hooded SKELETON wielding a great scythe — grim and vertical
+        // (distinct from the floating wraith: bony body + a sweeping blade).
+        const drift = Math.sin(phase) * 3;
+        // Scythe: long shaft + curved blade arcing behind one shoulder.
+        ctx.strokeStyle = p.dark; ctx.lineWidth = 6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(cx + 30, cy + 54); ctx.lineTo(cx + 18, cy - 62); ctx.stroke();
+        ctx.fillStyle = p.accent;
+        ctx.beginPath(); ctx.moveTo(cx + 18, cy - 62);
+        ctx.quadraticCurveTo(cx - 34, cy - 72, cx - 40, cy - 34);
+        ctx.quadraticCurveTo(cx - 6, cy - 54, cx + 18, cy - 50); ctx.closePath(); ctx.fill();
+        // Tapered robe.
+        ctx.fillStyle = p.body;
+        ctx.beginPath(); ctx.moveTo(cx - 26, cy + 56); ctx.lineTo(cx - 16, cy - 30 + drift);
+        ctx.quadraticCurveTo(cx, cy - 44 + drift, cx + 16, cy - 30 + drift); ctx.lineTo(cx + 26, cy + 56); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = p.dark;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 38 + drift); ctx.lineTo(cx + 16, cy - 30 + drift); ctx.lineTo(cx + 26, cy + 56); ctx.lineTo(cx, cy + 56); ctx.closePath(); ctx.fill();
+        // Ribs.
+        ctx.strokeStyle = p.light; ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) { const yy = cy - 6 + i * 11 + drift; ctx.beginPath(); ctx.moveTo(cx - 12, yy); ctx.lineTo(cx + 12, yy); ctx.stroke(); }
+        // Skull.
+        ctx.fillStyle = p.light;
+        ctx.beginPath(); ctx.arc(cx, cy - 46 + drift, 15, 0, TWO_PI); ctx.fill();
+        ctx.fillStyle = p.dark;
+        ctx.beginPath(); ctx.ellipse(cx, cy - 39 + drift, 8, 6, 0, 0, TWO_PI); ctx.fill();
+        _eye(ctx, cx - 6, cy - 48 + drift, 3.6, p.eye, p.accent);
+        _eye(ctx, cx + 6, cy - 48 + drift, 3.6, p.eye, p.accent);
+    } else if (cfg.archetype === 'wyrm') {
+        // Winged drake — broad flapping wings + a raised horned head with a
+        // glowing maw (distinct from the coiled serpent's stacked segments).
+        const flap = Math.sin(phase * 2) * 10;
+        ctx.fillStyle = p.dark;
+        for (const s of [-1, 1]) {
+            ctx.beginPath(); ctx.moveTo(cx, cy - 6);
+            ctx.quadraticCurveTo(cx + s * 60, cy - 40 - flap, cx + s * 78, cy + 10 - flap);
+            ctx.quadraticCurveTo(cx + s * 50, cy + 6, cx, cy + 18); ctx.closePath(); ctx.fill();
+        }
+        ctx.strokeStyle = p.accent; ctx.lineWidth = 2;
+        for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx, cy - 2); ctx.lineTo(cx + s * 70, cy + 4 - flap); ctx.stroke(); }
+        // Body + belly highlight.
+        ctx.fillStyle = p.body;
+        ctx.beginPath(); ctx.ellipse(cx, cy + 12, 26, 34, 0, 0, TWO_PI); ctx.fill();
+        ctx.fillStyle = p.light; ctx.beginPath(); ctx.ellipse(cx - 6, cy + 6, 10, 16, 0, 0, TWO_PI); ctx.fill();
+        // Raised neck + head.
+        ctx.fillStyle = p.body; ctx.beginPath(); ctx.roundRect(cx - 10, cy - 40, 20, 40, 9); ctx.fill();
+        ctx.fillStyle = p.light; ctx.beginPath(); ctx.ellipse(cx, cy - 46, 18, 14, 0, 0, TWO_PI); ctx.fill();
+        ctx.fillStyle = p.accent;
+        for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 8, cy - 56); ctx.lineTo(cx + s * 16, cy - 74); ctx.lineTo(cx + s * 14, cy - 52); ctx.closePath(); ctx.fill(); }
+        ctx.fillStyle = p.accent; ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.ellipse(cx, cy - 38, 7, 4 + Math.sin(phase * 2) * 2, 0, 0, TWO_PI); ctx.fill(); ctx.globalAlpha = 1;
+        _eye(ctx, cx - 7, cy - 48, 3.6, p.eye, p.accent);
+        _eye(ctx, cx + 7, cy - 48, 3.6, p.eye, p.accent);
+    } else if (cfg.archetype === 'titan') {
+        // Broad RADIANT giant — wide armored shoulders + a spinning sun-disc
+        // halo (distinct from the tall crystalline colossus).
+        const bob = Math.sin(phase) * 3;
+        ctx.strokeStyle = p.accent; ctx.lineWidth = 5; ctx.globalAlpha = 0.8;
+        ctx.beginPath(); ctx.arc(cx, cy - 40 + bob, 30 + Math.sin(phase * 2) * 2, 0, TWO_PI); ctx.stroke(); ctx.globalAlpha = 1;
+        ctx.strokeStyle = p.accent; ctx.lineWidth = 3;
+        for (let i = 0; i < 8; i++) { const a = phase * 0.4 + i * (TWO_PI / 8); ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * 32, cy - 40 + bob + Math.sin(a) * 32); ctx.lineTo(cx + Math.cos(a) * 44, cy - 40 + bob + Math.sin(a) * 44); ctx.stroke(); }
+        ctx.fillStyle = p.dark;
+        for (const sx of [-20, 20]) { ctx.beginPath(); ctx.roundRect(cx + sx - 11, cy + 26, 22, 34, 6); ctx.fill(); }
+        ctx.fillStyle = p.body;
+        ctx.beginPath(); ctx.roundRect(cx - 38, cy - 20 + bob, 76, 60, 14); ctx.fill();
+        ctx.fillStyle = p.dark; ctx.beginPath(); ctx.roundRect(cx - 38, cy + 10 + bob, 76, 30, 12); ctx.fill();
+        ctx.fillStyle = p.light;
+        for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(cx + s * 42, cy - 20 + bob, 20, 0, TWO_PI); ctx.fill(); }
+        ctx.fillStyle = p.accent;
+        ctx.beginPath(); ctx.arc(cx, cy + 6 + bob, 11 + Math.sin(phase * 2) * 2, 0, TWO_PI); ctx.fill();
+        ctx.fillStyle = p.light;
+        ctx.beginPath(); ctx.arc(cx, cy - 40 + bob, 15, 0, TWO_PI); ctx.fill();
+        _eye(ctx, cx - 6, cy - 41 + bob, 3.4, p.eye, p.accent);
+        _eye(ctx, cx + 6, cy - 41 + bob, 3.4, p.eye, p.accent);
     } else { // 'scarab' — armored beast
         const step = Math.sin(phase * 2) * 4;
         // Legs.
@@ -408,13 +481,13 @@ const BOSS_SPRITE_CFG = {
     hoarfang:    { archetype: 'serpent',  accent: 'ice',  glow: 'rgba(140,200,255,0.20)', palette: { body: '#5f86ad', light: '#cdeafa', dark: '#37536f', accent: '#aef0ff', eye: '#0a1622' } },
     aurorath:    { archetype: 'colossus', accent: 'ice',  glow: 'rgba(160,255,224,0.22)', palette: { body: '#7fb0d8', light: '#e9f9ff', dark: '#3e6e92', accent: '#a0ffe0', eye: '#0c2030' } },
     // Night (map 3)
-    ossuar:      { archetype: 'hulk',     accent: 'bone', glow: 'rgba(180,230,200,0.18)', palette: { body: '#cfc6ad', light: '#f3eeda', dark: '#8a7f63', accent: '#bdf2d2', eye: '#1a1020' } },
+    ossuar:      { archetype: 'reaper',   accent: 'bone', glow: 'rgba(180,230,200,0.18)', palette: { body: '#cfc6ad', light: '#f3eeda', dark: '#8a7f63', accent: '#bdf2d2', eye: '#1a1020' } },
     mourndrift:  { archetype: 'wraith',   accent: 'soul', glow: 'rgba(120,160,255,0.24)', palette: { body: '#5b5f86', light: '#c2c8f2', dark: '#33365a', accent: '#9af0ff', eye: '#d8f6ff' } },
     nihagault:   { archetype: 'maw',      accent: 'void', glow: 'rgba(150,80,220,0.26)',  palette: { body: '#43325e', light: '#9a7fce', dark: '#1d142e', accent: '#d06bff', eye: '#ff5ad0' } },
     // Sand (map 4)
     dunescourge: { archetype: 'scarab',   accent: 'sand', glow: 'rgba(230,180,90,0.20)',  palette: { body: '#c89a52', light: '#f2d490', dark: '#7e5f2c', accent: '#ffe09a', eye: '#2a1808' } },
-    cindermaw:   { archetype: 'serpent',  accent: 'magma', glow: 'rgba(255,120,40,0.26)', palette: { body: '#9a4a2e', light: '#ffa459', dark: '#491c12', accent: '#ffd24a', eye: '#1a0805' } },
-    solnakh:     { archetype: 'colossus', accent: 'solar', glow: 'rgba(255,200,80,0.30)', palette: { body: '#caa23c', light: '#fff2b6', dark: '#8a6a1c', accent: '#ff7a2a', eye: '#2a1400' } },
+    cindermaw:   { archetype: 'wyrm',     accent: 'magma', glow: 'rgba(255,120,40,0.26)', palette: { body: '#9a4a2e', light: '#ffa459', dark: '#491c12', accent: '#ffd24a', eye: '#1a0805' } },
+    solnakh:     { archetype: 'titan',    accent: 'solar', glow: 'rgba(255,200,80,0.30)', palette: { body: '#caa23c', light: '#fff2b6', dark: '#8a6a1c', accent: '#ff7a2a', eye: '#2a1400' } },
 };
 
 function _bossDrawer(id) { const cfg = BOSS_SPRITE_CFG[id]; return (size, frame, count) => drawApexBoss(size, frame, count, cfg); }
