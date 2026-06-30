@@ -79,11 +79,17 @@ function entityOfCard(cardId) {
 // Weight multiplier for a level-up card given the committed patron ids.
 // Universal cards (stats, fallbacks, and any entity not in a patron pool such
 // as shadowDash) are ×1. With NO patrons committed → always 1 (regression-safe).
-export function cardPatronMul(cardId, committed) {
+//
+// `invert` is the Alter token's lens: it SWAPS favor/off-pool so the re-roll
+// leans toward your NON-committed Patrons (a deliberate splash out of your
+// lane). With no Patron committed, invert is moot and everything stays ×1.
+export function cardPatronMul(cardId, committed, invert = false) {
     if (!committed || committed.length === 0) return 1;
     const ent = entityOfCard(cardId);
     if (!ent) return 1;
     const owner = ENTITY_PATRON[ent];
     if (!owner) return 1;
-    return committed.includes(owner) ? PATRON_FAVOR : PATRON_OFFPOOL;
+    const inPool = committed.includes(owner);
+    const favored = invert ? !inPool : inPool;
+    return favored ? PATRON_FAVOR : PATRON_OFFPOOL;
 }

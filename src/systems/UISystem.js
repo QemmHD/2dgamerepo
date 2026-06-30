@@ -187,12 +187,23 @@ export class UISystem {
     }
 
     // Level-up reroll button (below the cards) + a per-card banish button.
-    getRerollButtonRect() {
+    // When the Alter token is also available, reroll + alter share the row as a
+    // centered pair (`paired`), each half-width; otherwise reroll is centered.
+    _agencyRowY() {
         const sa = this.renderer.safeArea;
         // Anchor above the bottom inset, but never lift into the card row
         // (cards aren't safe-area adjusted) — clamp to just below them.
         const cardBottom = (INTERNAL_HEIGHT - CARD_H) / 2 + 60 + CARD_H;
-        const y = Math.max(cardBottom + 16, INTERNAL_HEIGHT - 150 - sa.bottom);
+        return Math.max(cardBottom + 16, INTERNAL_HEIGHT - 150 - sa.bottom);
+    }
+    getRerollButtonRect(paired = false) {
+        const y = this._agencyRowY();
+        if (paired) return { x: INTERNAL_WIDTH / 2 - 240, y, w: 232, h: 68 };
+        return { x: INTERNAL_WIDTH / 2 - 180, y, w: 360, h: 68 };
+    }
+    getAlterButtonRect(paired = false) {
+        const y = this._agencyRowY();
+        if (paired) return { x: INTERNAL_WIDTH / 2 - 240 + 232 + 16, y, w: 232, h: 68 };
         return { x: INTERNAL_WIDTH / 2 - 180, y, w: 360, h: 68 };
     }
     getBanishButtonRect(cardRect) {
@@ -1269,14 +1280,23 @@ export class UISystem {
             ctx.restore();
         }
 
-        // Reroll button + remaining charges (only when the player has them).
+        // Reroll + Alter buttons + remaining charges (only when available). When
+        // both are present they render as a centered pair sharing the row.
         ctx.globalAlpha = bg;
         const rerolls = state.rerolls ?? 0;
+        const alters = state.alters ?? 0;
+        const paired = rerolls > 0 && alters > 0;
         if (rerolls > 0) {
-            const rr = this.getRerollButtonRect();
+            const rr = this.getRerollButtonRect(paired);
             const press = this._pressAmt(state, 'reroll');
             this._drawSummaryButton(ctx, rr, `REROLL  (${rerolls})`, '#c97bff',
                 'rgba(201, 123, 255, 0.18)', press, false);
+        }
+        if (alters > 0) {
+            const ar = this.getAlterButtonRect(paired);
+            const press = this._pressAmt(state, 'alter');
+            this._drawSummaryButton(ctx, ar, `ALTER  (${alters})`, '#5fd0c4',
+                'rgba(95, 208, 196, 0.18)', press, false);
         }
 
         ctx.globalAlpha = bg;
@@ -1286,6 +1306,7 @@ export class UISystem {
         ctx.font = `24px ${FONT}`;
         let hint = 'Tap a card  •  1 / 2 / 3';
         if (rerolls > 0) hint += '  •  R reroll';
+        if (alters > 0) hint += '  •  A alter';
         if (banishes > 0) hint += `  •  ✕ banish (${banishes})`;
         ctx.fillText(
             hint,

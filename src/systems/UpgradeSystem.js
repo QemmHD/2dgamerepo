@@ -159,14 +159,16 @@ export class UpgradeSystem {
         if (id) this.banished.add(id);
     }
 
-    rollChoices(game, count = 3) {
+    rollChoices(game, count = 3, opts = {}) {
         const pool = this._buildPool(game).filter((c) => !this.banished.has(c.id));
 
         // Patron Draft: bias the roll toward the run's committed Patron pools
         // (and away from rival Patrons). With no Patron committed this multiplier
         // is 1 for every card, so the draft is identical to the unbiased roll.
+        // opts.alter inverts the bias (the Alter token — splash out of your lane).
         const committed = game.committedPatrons || [];
-        const weightOf = (c) => (c.weight ?? 1) * cardPatronMul(c.id, committed);
+        const invert = !!opts.alter;
+        const weightOf = (c) => (c.weight ?? 1) * cardPatronMul(c.id, committed, invert);
 
         const choices = [];
         const remaining = pool.slice();
