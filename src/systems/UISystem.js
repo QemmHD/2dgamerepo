@@ -1488,6 +1488,23 @@ export class UISystem {
             statsStartY + Math.ceil(stats.length / 2) * lineH + 20
         );
 
+        // Daily-trial reward line — celebrate any of today's challenges this run
+        // newly completed (names set on the summary at game-over). Pulses gold-
+        // green and sits in the gap between Total Coins and the loadout lists.
+        if (Array.isArray(summary.dailies) && summary.dailies.length) {
+            const pulse = 0.7 + 0.3 * ((Math.sin(age * 5) + 1) / 2);
+            ctx.save();
+            ctx.globalAlpha = tailT * pulse;
+            ctx.fillStyle = '#5fe87a';
+            ctx.font = `bold 26px ${FONT}`;
+            ctx.fillText(
+                `✦ DAILY TRIAL COMPLETE — ${summary.dailies.join('  ·  ')} ✦`,
+                INTERNAL_WIDTH / 2,
+                statsStartY + Math.ceil(stats.length / 2) * lineH + 54
+            );
+            ctx.restore();
+        }
+
         const listY = statsStartY + Math.ceil(stats.length / 2) * lineH + 80;
         ctx.font = `bold 24px ${FONT}`;
         ctx.textAlign = 'left';

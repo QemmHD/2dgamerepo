@@ -27,6 +27,7 @@ import { getCharacterFrames, drawCloakShape, drawHatShape, drawWeaponSkinOverlay
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
+import { pickDailyChallenges, currentDayNumber } from '../content/dailyChallenges.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 
@@ -470,8 +471,43 @@ export class MenuRenderer {
         this._panel(ctx, c.x, c.y, c.w, c.h);
         const s = (state.saveData && state.saveData.stats) || {};
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+
+        // ── Today's Trials — three rotating daily challenges (a "come back
+        // tomorrow" loop). The pool + day's picks are deterministic; completion
+        // lives in save.daily and resets when the UTC day rolls (we treat a
+        // stale save.daily.day as "none done today" for display).
+        const day = currentDayNumber();
+        const dd = (state.saveData && state.saveData.daily) || { day: 0, completed: [] };
+        const doneToday = dd.day === day && Array.isArray(dd.completed) ? dd.completed : [];
+        const todays = pickDailyChallenges(day);
+        ctx.fillStyle = '#ffd479'; ctx.font = `800 30px ${FONT}`;
+        const doneN = todays.filter((cc) => doneToday.includes(cc.id)).length;
+        ctx.fillText(`Today's Trials  ${doneN}/${todays.length}`, c.x + 34, c.y + 44);
+        const dcGap = 14;
+        const dcW = (c.w - 68 - dcGap * (todays.length - 1)) / todays.length;
+        const dcH = 78;
+        const dcTop = c.y + 60;
+        for (let i = 0; i < todays.length; i++) {
+            const ch = todays[i];
+            const got = doneToday.includes(ch.id);
+            const x = c.x + 34 + i * (dcW + dcGap);
+            roundRectPath(ctx, x, dcTop, dcW, dcH, 10);
+            ctx.fillStyle = got ? 'rgba(95,211,106,0.14)' : 'rgba(255,212,121,0.06)'; ctx.fill();
+            ctx.strokeStyle = got ? '#5fd36a' : 'rgba(255,212,121,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.textAlign = 'left';
+            ctx.fillStyle = got ? '#5fd36a' : '#fff'; ctx.font = `800 18px ${FONT}`;
+            ctx.fillText(`${got ? '✓ ' : ''}${ch.name}`, x + 14, dcTop + 26);
+            ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.font = `500 13px ${FONT}`;
+            const desc = ch.desc.length > 34 ? ch.desc.slice(0, 33) + '…' : ch.desc;
+            ctx.fillText(desc, x + 14, dcTop + 48);
+            ctx.fillStyle = got ? 'rgba(95,211,106,0.8)' : '#ffce54'; ctx.font = `800 14px ${FONT}`;
+            ctx.fillText(got ? 'CLAIMED' : `+${ch.coins} coins`, x + 14, dcTop + 68);
+        }
+        const statsTop0 = dcTop + dcH + 22;
+
         ctx.fillStyle = '#a8d5f7'; ctx.font = `800 34px ${FONT}`;
-        ctx.fillText('Lifetime Vigil', c.x + 34, c.y + 50);
+        ctx.textAlign = 'left';
+        ctx.fillText('Lifetime Vigil', c.x + 34, statsTop0 + 30);
         const fmtTime = (sec) => { sec = Math.floor(sec || 0); const m = Math.floor(sec / 60), ss = sec % 60; return `${m}:${String(ss).padStart(2, '0')}`; };
         const rows = [
             ['Runs', s.runs || 0], ['Total kills', s.totalKills || 0],
@@ -485,7 +521,7 @@ export class MenuRenderer {
         const cols = 2, gap = 24;
         const colW = (c.w - 68 - gap) / cols;
         const rowH = 46;
-        const top = c.y + 86;
+        const top = statsTop0 + 66;
         for (let i = 0; i < rows.length; i++) {
             const col = i % cols, row = Math.floor(i / cols);
             const x = c.x + 34 + col * (colW + gap), y = top + row * rowH;
