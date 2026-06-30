@@ -312,8 +312,9 @@ function pixelCloak(dir, color) {
     return p.finish();
 }
 
-// A head accessory sitting on the pixel head (centre cx, top ~y6). cap/candle/
-// horns/crown. `dir` tweaks which face shows (no brim on the back view, etc.).
+// A head accessory sitting on the pixel head (centre cx, top ~y6). Shapes:
+// cap / candle / horns / crown / hood / tophat / flower / antlers / halo.
+// `dir` tweaks which face shows (no brim on the back view, etc.).
 function pixelHat(dir, shape, color) {
     const col = color || '#ffd35a';
     const dark = shade(col, 0.4, 'dark');
@@ -353,6 +354,74 @@ function pixelHat(dir, shape, color) {
         p.line(cx + 7, 9, cx + 7, 4, col, 2); p.dot(cx + 7, 3, light);
         p.dot(cx, 10, '#fff');                      // centre gem
         p.dot(cx - 5, 10, dark); p.dot(cx + 5, 10, dark);
+    } else if (shape === 'hood') {
+        // Cloth cowl: a drape over the crown + side panels framing the face
+        // (the muzzle stays visible). Back view drapes full.
+        if (dir === 'up') {
+            p.ell(cx, 9, 12, 9, col);               // full back drape
+            p.ell(cx, 6, 11, 5, light);             // lit crown
+            p.rect(cx - 12, 13, 24, 1, dark);       // hem shadow
+        } else {
+            p.ell(cx, 6, 12, 6, col);               // crown drape
+            p.ell(cx - 4, 4, 5, 3, light);          // lit highlight
+            if (dir === 'side') {
+                p.rect(cx - 12, 6, 4, 11, col);     // back panel (-x)
+                p.rect(cx - 12, 6, 1, 11, dark);
+                p.rect(cx + 5, 7, 3, 9, col);       // front cheek
+            } else {
+                p.rect(cx - 12, 6, 4, 11, col);     // left cheek panel
+                p.rect(cx + 8, 6, 4, 11, col);      // right cheek panel
+                p.rect(cx - 12, 6, 1, 11, dark); p.rect(cx + 11, 6, 1, 11, dark);
+            }
+            p.rect(cx - 9, 5, 18, 1, dark);         // inner brow rim
+        }
+    } else if (shape === 'tophat') {
+        // Tall stovepipe: wide brim + cylinder crown + ribbon band.
+        const brimW = dir === 'side' ? 17 : 22, bx = dir === 'side' ? cx - 9 : cx - 11;
+        p.rect(bx, 8, brimW, 2, dark);              // brim
+        p.rect(bx, 8, brimW, 1, light);             // lit brim edge
+        p.rect(cx - 6, -2, 13, 11, col);            // crown cylinder
+        p.rect(cx - 6, -2, 2, 11, light);           // lit left edge
+        p.rect(cx + 4, -2, 2, 11, dark);            // shaded right edge
+        p.rect(cx - 6, -2, 13, 1, light);           // lit top rim
+        p.rect(cx - 6, 5, 13, 2, '#c93a3a');        // red ribbon band
+        p.rect(cx - 6, 6, 13, 1, '#7a1d1d');
+    } else if (shape === 'flower') {
+        // Flower crown: a leafy band with blooms around the head.
+        const band = '#5fa64a', bandD = '#3c7a32';
+        p.rect(cx - 10, 8, 21, 2, band);
+        p.rect(cx - 10, 10, 21, 1, bandD);
+        const bloom = (bx) => { p.disc(bx, 6, 2, col); p.dot(bx, 6, light); };
+        if (dir === 'side') { bloom(cx + 5); bloom(cx - 2); p.disc(cx - 9, 7, 1, col); }
+        else { bloom(cx - 7); bloom(cx); bloom(cx + 7); }
+        p.dot(cx - 11, 9, band); p.dot(cx + 11, 9, band);   // side leaves
+    } else if (shape === 'antlers') {
+        // Branching antlers rising from the head sides.
+        p.line(cx - 6, 9, cx - 9, -2, col, 2); p.line(cx + 6, 9, cx + 9, -2, col, 2);
+        p.line(cx - 8, 3, cx - 12, 2, col, 1); p.line(cx - 8, 0, cx - 11, -3, col, 1);
+        p.line(cx + 8, 3, cx + 12, 2, col, 1); p.line(cx + 8, 0, cx + 11, -3, col, 1);
+        p.dot(cx - 9, -2, light); p.dot(cx + 9, -2, light);  // lit tips
+        p.dot(cx - 6, 9, dark); p.dot(cx + 6, 9, dark);      // base shade
+    } else if (shape === 'halo') {
+        // A glowing ring floating just above the head (hollow centre).
+        p.ell(cx, 2, 9, 4, col);                    // outer disc
+        const hctx = p.ctx; hctx.save();
+        hctx.globalCompositeOperation = 'destination-out';
+        p.ell(cx, 2, 6, 2, '#000');                 // punch the hole → ring
+        hctx.restore();
+        p.ell(cx, -2, 9, 1, light);                 // lit top rim
+    } else if (shape === 'party') {
+        // Cone party hat (stripes + pom). Funny, festive.
+        for (let yy = -2; yy <= 10; yy++) { const half = Math.round((yy + 3) / 14 * 7); p.rect(cx - half, yy, half * 2 + 1, 1, col); }
+        p.rect(cx - 7, 11, 15, 1, dark);            // base rim
+        p.dot(cx - 1, 8, light); p.dot(cx + 2, 5, light); p.dot(cx - 3, 5, light); p.dot(cx, 2, light);  // confetti dots
+        p.disc(cx, -4, 2, '#fff7e0');               // pom-pom
+    } else if (shape === 'banana') {
+        // A banana balanced on the head — peak monkey fashion.
+        const bd = '#5a3a18';
+        p.line(cx - 9, 6, cx - 3, 1, col, 3); p.line(cx - 3, 1, cx + 4, 1, col, 3); p.line(cx + 4, 1, cx + 9, 6, col, 3);
+        p.line(cx - 8, 5, cx - 3, 1, light, 1); p.line(cx + 4, 1, cx + 8, 5, light, 1);   // top highlight
+        p.rect(cx - 10, 6, 2, 2, bd); p.rect(cx + 9, 6, 2, 2, bd);                          // stem + tip
     }
     outline(p, shade(col, 0.6, 'dark'));
     return p.finish();
