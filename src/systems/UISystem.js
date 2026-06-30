@@ -5,6 +5,7 @@ import {
     CHEST,
     SPRITE_SS,
     COMBO,
+    BOSS_TIERS,
 } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import {
@@ -495,6 +496,18 @@ export class UISystem {
         ctx.globalAlpha = easeOutCubic(this.bossSlideT);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
+        // Tier + epithet line above the name: colored difficulty pips and the
+        // boss's title, so the threat tier reads at a glance during the fight.
+        const tierMeta = BOSS_TIERS[boss.tier];
+        if (tierMeta || boss.epithet) {
+            const pips = tierMeta ? '◆'.repeat(tierMeta.pips) + '◇'.repeat(3 - tierMeta.pips) : '';
+            const parts = [];
+            if (tierMeta) parts.push(`${pips} ${tierMeta.label}`);
+            if (boss.epithet) parts.push(boss.epithet);
+            ctx.fillStyle = tierMeta ? tierMeta.color : 'rgba(255,225,210,0.85)';
+            ctx.font = `italic 16px ${FONT}`;
+            ctx.fillText(parts.join('  ·  '), INTERNAL_WIDTH / 2, padTop - 30);
+        }
         // Enrage retints the name + appends an ENRAGED tag so the phase-2
         // setpiece reads clearly even before the player notices faster attacks.
         ctx.fillStyle = enraged ? '#ff3326' : '#ff6b6b';
@@ -788,10 +801,28 @@ export class UISystem {
         ctx.fillStyle = '#fff';
         ctx.font = `bold 40px ${FONT}`;
         ctx.fillText(bw.name, cx, by + 58);
+        let cursorY = by + 58;
+        // Epithet subtitle (the boss's title), dimmer + italic.
+        if (bw.epithet) {
+            cursorY += 38;
+            ctx.fillStyle = 'rgba(255,225,210,0.82)';
+            ctx.font = `italic 26px ${FONT}`;
+            ctx.fillText(bw.epithet, cx, cursorY);
+        }
+        // Difficulty tier badge: a colored label + pips so the threat level
+        // reads instantly (SKIRMISHER / WARLORD / APEX).
+        const tierMeta = BOSS_TIERS[bw.tier];
+        if (tierMeta) {
+            cursorY += 40;
+            const pips = '◆'.repeat(tierMeta.pips) + '◇'.repeat(3 - tierMeta.pips);
+            ctx.fillStyle = tierMeta.color;
+            ctx.font = `bold 24px ${FONT}`;
+            ctx.fillText(`${pips}  TIER ${bw.tier} · ${tierMeta.label}  ${pips}`, cx, cursorY);
+        }
         // Countdown bar (fills as the boss approaches).
         const barW = 360, barH = 8;
         const bx = cx - barW / 2;
-        const yy = by + 96;
+        const yy = cursorY + 36;
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
         roundRectPath(ctx, bx, yy, barW, barH, 4);
         ctx.fill();

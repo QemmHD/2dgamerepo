@@ -26,7 +26,7 @@ export const MAPS = {
         accent: '#ffd27a',
         weather: 'embers',      // warm drifting pollen/embers
         tier: 1,                // difficulty rung (1 = easiest); folds into boss + enemy scaling
-        bosses: ['vinebackGoliath', 'stormwingAlpha', 'gloomMaw'],
+        bosses: ['stormwingAlpha', 'vinebackGoliath', 'gloomMaw'],
     },
     hollowreach: {
         id: 'hollowreach',
@@ -42,7 +42,7 @@ export const MAPS = {
         accent: '#bfe3ff',
         weather: 'snow',        // falling flecks
         tier: 2,
-        bosses: ['rimewarden', 'hoarfang', 'aurorath'],
+        bosses: ['hoarfang', 'rimewarden', 'aurorath'],
     },
     crypts: {
         id: 'crypts',
@@ -58,7 +58,7 @@ export const MAPS = {
         accent: '#b9a8e0',
         weather: 'snow',        // pale motes read as drifting crypt-dust
         tier: 3,
-        bosses: ['ossuar', 'mourndrift', 'nihagault'],
+        bosses: ['mourndrift', 'ossuar', 'nihagault'],
     },
     dunes: {
         id: 'dunes',
@@ -74,7 +74,7 @@ export const MAPS = {
         accent: '#ffdf9a',
         weather: 'embers',      // shimmering heat / blown sand motes
         tier: 4,
-        bosses: ['dunescourge', 'cindermaw', 'solnakh'],
+        bosses: ['cindermaw', 'dunescourge', 'solnakh'],
     },
 };
 
