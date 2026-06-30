@@ -25,7 +25,8 @@ import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battleP
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter } from '../content/characters.js';
-import { getHeroFrames, drawCloakShape, drawHatShape, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
+import { getHeroFrames, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
+import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js';
@@ -648,7 +649,8 @@ export class MenuRenderer {
                 const dw = S * 1.32, off = S * 0.075;
                 ctx.drawImage(cape, cx - dw / 2, cy - dw / 2 + off, dw, dw);
             } else {
-                drawCloakShape(ctx, cx, cy, s, ap.cloakColor);
+                // Front-facing pixel cloak (matches in-game down-facing cloak).
+                drawPixelCloak(ctx, cx, cy, s, 'down', ap.cloakColor, false);
             }
         }
         if (sprite) {
@@ -686,7 +688,7 @@ export class MenuRenderer {
         // Weapon-themed skin overlay (shared with the in-game player), then hat
         // on top — identical layering + geometry so the preview never diverges.
         if (skin) drawWeaponSkinOverlay(ctx, cx, cy, s, skin, t);
-        if (ap.hatShape && ap.hatShape !== 'none') drawHatShape(ctx, cx, cy, s, ap.hatShape, ap.hatColor);
+        if (ap.hatShape && ap.hatShape !== 'none') drawPixelHat(ctx, cx, cy, s, 'down', ap.hatShape, ap.hatColor, false);
         ctx.restore();
     }
 
@@ -811,16 +813,29 @@ export class MenuRenderer {
                 ctx.fillText(item.name, x + 26, iy + 26);
                 ctx.fillStyle = col; ctx.font = `600 15px ${FONT}`;
                 ctx.fillText(unlocked ? (equippedHere ? 'EQUIPPED' : rarityName(item.rarity)) : '🔒 LOCKED', x + 26, iy + 48);
-                // Customizable icon (asset pipeline): a rarity-recolored, framed
-                // glyph cached per (base, rarity). gear → shield, cosmetic →
-                // spark. Procedural base, so it's license-safe; swapping in an
-                // imported CC0 icon sheet would use the exact same call.
+                // Slot icon. Cloak/hat cosmetics show a PIXEL PREVIEW of the
+                // actual accessory in its own colour (so the picker matches the
+                // in-game model); everything else uses a rarity-recolored,
+                // framed glyph cached per (base, rarity) — gear → shield,
+                // other cosmetics → spark (license-safe procedural base).
                 {
-                    const icon = getRarityIcon(kind === 'gear' ? 'shield' : 'spark', item.rarity);
                     const isz = 30;
+                    const ix = x + 12 + innerW - isz - 12, iyy = iy + 12;
                     ctx.save();
                     ctx.globalAlpha = unlocked ? 1 : 0.35;
-                    ctx.drawImage(icon, x + 12 + innerW - isz - 12, iy + 12, isz, isz);
+                    const showCloak = kind === 'cosmetic' && cat === 'cloak' && item.color;
+                    const showHat = kind === 'cosmetic' && cat === 'hat' && item.shape && item.shape !== 'none';
+                    if (showCloak || showHat) {
+                        // Clip to the icon box, then draw the (larger) pixel
+                        // cosmetic centred on its content so it reads as a swatch.
+                        ctx.beginPath(); ctx.rect(ix, iyy, isz, isz); ctx.clip();
+                        const ps = isz * 0.78, icx = ix + isz / 2, icy = iyy + isz / 2;
+                        if (showCloak) drawPixelCloak(ctx, icx, icy - ps * 0.34, ps, 'down', item.color, false);
+                        else drawPixelHat(ctx, icx, icy + ps * 0.36, ps, 'down', item.shape, item.color, false);
+                    } else {
+                        const icon = getRarityIcon(kind === 'gear' ? 'shield' : 'spark', item.rarity);
+                        ctx.drawImage(icon, ix, iyy, isz, isz);
+                    }
                     ctx.restore();
                 }
                 // Gear: short effect summary so the player knows what each item
