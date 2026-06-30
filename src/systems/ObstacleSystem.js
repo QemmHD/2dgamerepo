@@ -206,10 +206,27 @@ export class ObstacleSystem {
             addWall(wx, cy - (dHalf + iHH) / 2, half, segHH);
             addWall(wx, cy + (dHalf + iHH) / 2, half, segHH);
         };
-        addH(cy - iHH - half, doorSide === 'top');
-        addH(cy + iHH + half, doorSide === 'bottom');
-        addV(cx - iHW - half, doorSide === 'left');
-        addV(cx + iHW + half, doorSide === 'right');
+        // Houses now open from BOTH the top and the bottom — a walk-through
+        // refuge you can enter from either side and pass straight through (the
+        // side walls stay solid so big enemies can't follow through the narrow
+        // door). doorSide is no longer used for the horizontal walls.
+        addH(cy - iHH - half, true);   // top doorway
+        addH(cy + iHH + half, true);   // bottom doorway
+        addV(cx - iHW - half, false);  // solid left
+        addV(cx + iHW + half, false);  // solid right
+
+        // Interior decoration: a non-colliding floor decal (rug + hearth +
+        // a furniture silhouette) so a house reads as lived-in, not an empty
+        // box. Drawn under entities; never blocks movement, LOS, or spawns.
+        const floor = {
+            type: 'buildingFloor', shape: 'rect', decorative: true,
+            col: { hw: iHW, hh: iHH }, size: { w: iHW * 2, h: iHH * 2 },
+            blocksLOS: false, palette,
+        };
+        const fob = new Obstacle(floor, cx, cy);
+        fob.palette = palette;
+        fob.baseY = cy - iHH;   // sort behind the player/walls (floor layer)
+        this.obstacles.push(fob);
     }
 
     // True if any already-placed obstacle's footprint overlaps the bbox. Used
@@ -240,6 +257,10 @@ export class ObstacleSystem {
     _buildGrid() {
         this.grid.clear();
         for (const ob of this.obstacles) {
+            // Decorative obstacles (e.g. building-interior floor decals) are
+            // never inserted, so collision / LOS / spawn scans ignore them
+            // entirely — they exist only for rendering.
+            if (ob.def.decorative) continue;
             const b = ob.bounds();
             const gx0 = Math.floor(b.minX / GRID_CELL), gx1 = Math.floor(b.maxX / GRID_CELL);
             const gy0 = Math.floor(b.minY / GRID_CELL), gy1 = Math.floor(b.maxY / GRID_CELL);

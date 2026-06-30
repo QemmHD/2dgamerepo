@@ -737,7 +737,10 @@ export const ENEMY_PROJECTILE = {
 //   FIRE:  burn damage-over-time carried on the projectile.
 //   SHOCK: stacking damage-amp read at hit time; also detonates burn.
 export const ELEMENT = {
-    fire:   { tint: '#ff7a33', tickInterval: 0.25 },
+    // Fire's burn DoT scales UP with run progress so it stays relevant in later
+    // rounds instead of falling off against scaled enemy HP: burn ×(1 +
+    // bossesDefeated·burnPerBoss + minutes·burnPerMinute), capped at burnScaleMax.
+    fire:   { tint: '#ff7a33', tickInterval: 0.25, burnPerBoss: 0.18, burnPerMinute: 0.03, burnScaleMax: 3.0 },
     // Frost CHILL now STACKS: each frost hit while chilled deepens the slow by
     // chillPerStack (up to chillMaxStacks), floored at chillFloor so chill alone
     // never fully freezes. Gives frost real depth (was overwrite-only) and a
@@ -1049,6 +1052,16 @@ export const GEM = {
 };
 
 export const GEM_TIERS = ['small', 'medium', 'large'];
+
+// Rare health pickup: on a kill, a small chance (about as rare as the red large
+// XP gem) to drop a Health Orb that restores a flat chunk of HP on pickup. An
+// instant heal (bypasses the sustained-heal cap), so it's a welcome but
+// unreliable top-up — never something to farm. Suppressed at full HP so it
+// isn't wasted.
+export const HEALTH_DROP = {
+    chance: 0.02,   // ~2% per kill, on par with the large-gem drop weight
+    heal: 30,
+};
 
 export const MAGNET = {
     initialSpeed: 150,

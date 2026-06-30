@@ -116,10 +116,18 @@ export function applyPermanentUpgrades(player, saveData) {
     }
 }
 
+// How hard the cost curve steepens with depth. Each owned level multiplies the
+// next purchase's base cost super-linearly, so going deep into an upgrade costs
+// progressively more (L0 ×1.0, L5 ×1.9, L10 ×2.8, L19 ×4.42). Keeps the first
+// few stacks affordable while making a maxed track a serious coin sink.
+const COST_DEPTH_STEEPEN = 0.18;
+
 // Cost for the NEXT purchase given the player's current level. Returns
 // Infinity once the upgrade is at max level (so the shop UI can render
-// "MAX" and refuse purchases).
+// "MAX" and refuse purchases). The SINGLE source of truth for price — the
+// shop display AND the purchase deduction both call this, so they never drift.
 export function nextCost(upgrade, currentLevel) {
     if (currentLevel >= upgrade.maxLevel) return Infinity;
-    return upgrade.costAt(currentLevel);
+    const base = upgrade.costAt(currentLevel);
+    return Math.round(base * (1 + currentLevel * COST_DEPTH_STEEPEN));
 }
