@@ -792,6 +792,14 @@ export const ENDLESS_SCALING = {
     damageStartMinutesBeyond: 2,
     damagePerMinute: 0.08,
     maxDamageMultiplier: 3.0,
+    // ── TWILIGHT: the late-game climax. A set time past the final wave the
+    // horde "turns" — elite chance leaps and climbs toward an elite-army cap
+    // (this OVERRIDES the normal maxEliteChance; the run-scale 0.85 ceiling in
+    // Game still applies). Makes a deep endless run an earned spectacle.
+    twilightMinutesBeyond: 4,
+    twilightEliteFloor: 0.55,
+    twilightEliteRampPerMin: 0.05,
+    twilightEliteCap: 0.9,
 };
 
 export const WAVE_LIMITS = {

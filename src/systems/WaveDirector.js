@@ -120,10 +120,22 @@ export class WaveDirector {
             Math.floor(wave.maxAlive + minutesBeyond * ENDLESS_SCALING.capGrowthPerMinute),
             WAVE_LIMITS.maxEnemyCap
         );
-        const eliteChance = Math.min(
+        let eliteChance = Math.min(
             WAVE_LIMITS.maxEliteChance,
             wave.eliteChance + minutesBeyond * ENDLESS_SCALING.eliteChancePerMinute
         );
+        // TWILIGHT: a set time past the FINAL wave the horde "turns" — elite
+        // chance leaps past the normal cap toward an elite-army ceiling (the
+        // run-scale 0.85 clamp in Game still bounds the final value). The climax
+        // of a deep endless run.
+        const twilight = isLast && minutesBeyond >= ENDLESS_SCALING.twilightMinutesBeyond;
+        if (twilight) {
+            const tMin = minutesBeyond - ENDLESS_SCALING.twilightMinutesBeyond;
+            eliteChance = Math.min(
+                ENDLESS_SCALING.twilightEliteCap,
+                Math.max(eliteChance, ENDLESS_SCALING.twilightEliteFloor + tMin * ENDLESS_SCALING.twilightEliteRampPerMin)
+            );
+        }
         // Contact-damage scaling: stays 1.0 until damageStartMinutesBeyond past
         // the last wave (so the first ~15 min are untouched), then ramps so late
         // enemies actually threaten strong builds. Carried into each new spawn.
@@ -170,6 +182,7 @@ export class WaveDirector {
             speedMul: pSpeedMul,
             damageMul: pDamageMul,
             pressure: p,
+            twilight,
         };
     }
 }
