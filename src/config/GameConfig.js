@@ -642,7 +642,11 @@ export const ENEMY_PROJECTILE = {
 //   SHOCK: stacking damage-amp read at hit time; also detonates burn.
 export const ELEMENT = {
     fire:   { tint: '#ff7a33', tickInterval: 0.25 },
-    frost:  { tint: '#7fe0ff' },
+    // Frost CHILL now STACKS: each frost hit while chilled deepens the slow by
+    // chillPerStack (up to chillMaxStacks), floored at chillFloor so chill alone
+    // never fully freezes. Gives frost real depth (was overwrite-only) and a
+    // payoff for sustained frost pressure. (Hard freeze stays its own channel.)
+    frost:  { tint: '#7fe0ff', chillMaxStacks: 5, chillPerStack: 0.07, chillFloor: 0.24 },
     freeze: { tint: '#bfe8ff' },
     shock:  { tint: '#ffe066' },
 };

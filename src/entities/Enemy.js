@@ -197,6 +197,7 @@ export class Enemy {
         this.burnTickAccum = 0;
         this.chillTimer = 0;
         this.chillMul = 1;
+        this.chillStacks = 0;   // FROST chill stacking — deepens the slow
         this.freezeTimer = 0;
         this.shockTimer = 0;
         this.shockStacks = 0;
@@ -270,7 +271,13 @@ export class Enemy {
     // longest refreshes. Bosses are floored so they're only nudged.
     applyChill(mul, dur) {
         const m = this.boss ? Math.max(mul, 0.80) : mul;
-        if (this.chillTimer <= 0 || m < this.chillMul) this.chillMul = m;
+        // Reset stacks if chill had lapsed, then add one (capped). Each frost
+        // hit while already chilled deepens the slow (see chillK in update).
+        if (this.chillTimer <= 0) { this.chillMul = m; this.chillStacks = 1; }
+        else {
+            if (m < this.chillMul) this.chillMul = m;          // deepest base wins
+            if (this.chillStacks < ELEMENT.frost.chillMaxStacks) this.chillStacks += 1;
+        }
         if (dur > this.chillTimer) this.chillTimer = dur;
     }
 
@@ -307,7 +314,14 @@ export class Enemy {
         // stays intact and the debuffs reverse cleanly). Deepest-per-channel
         // wins within each; the product is the move speed.
         const slowK = this.slowTimer > 0 ? this.slowMul : 1;
-        const chillK = this.chillTimer > 0 ? this.chillMul : 1;
+        // Chill deepens with stacks: base slow, minus chillPerStack for each
+        // stack beyond the first, floored so chill alone never fully freezes.
+        // Bosses floor at their base (chillMul), so stacks can't deepen them —
+        // they stay "only nudged" as before.
+        const chillFloor = this.boss ? this.chillMul : ELEMENT.frost.chillFloor;
+        const chillK = this.chillTimer > 0
+            ? Math.max(chillFloor, this.chillMul - (this.chillStacks - 1) * ELEMENT.frost.chillPerStack)
+            : 1;
         let moveX = nx;        // default plain chase
         let moveY = ny;
         let spd = this.speed * slowK * chillK;
@@ -451,7 +465,7 @@ export class Enemy {
         // accumulator can't leak into the next burn.
         if (this.chillTimer > 0) {
             this.chillTimer -= dt;
-            if (this.chillTimer <= 0) { this.chillTimer = 0; this.chillMul = 1; }
+            if (this.chillTimer <= 0) { this.chillTimer = 0; this.chillMul = 1; this.chillStacks = 0; }
         }
         if (this.freezeTimer > 0) {
             this.freezeTimer -= dt;
