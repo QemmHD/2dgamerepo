@@ -14,6 +14,7 @@ import {
     getHeroFrames, heroSetFrames, getGlowSprite,
     drawCloakShape, drawHatShape, drawWeaponSkinOverlay,
 } from '../assets/ProceduralSprites.js';
+import { getWeaponProp } from '../assets/WeaponProps.js';
 import { getCharacter } from '../content/characters.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
@@ -65,6 +66,12 @@ export class Player {
         // accessibility mode silences the extra additive overlay glow too.
         this.skinOverlayEnabled = true;
         this.swing = null;
+        // Held-weapon loadout: an array of { prop, accent, glow, kind, isPrimary,
+        // fireFlash } from WeaponSystem.getOwnedVisuals(), set by Game each
+        // frame. aimAngle (world radians, also set by Game) points the primary
+        // weapon at the nearest foe; null/empty loadout → nothing in-hand drawn.
+        this.loadout = null;
+        this.aimAngle = Math.PI / 2; // default: aim "down" (toward the camera)
 
         this.level = 1;
         this.xp = 0;
@@ -411,8 +418,90 @@ export class Player {
         if (ap.hatShape && ap.hatShape !== 'none') this._drawHat(ctx, ap.hatShape, ap.hatColor);
         ctx.restore();
 
+        // Held weapons (primary in-hand aimed at the target + the rest of the
+        // owned loadout in a floating halo). World-space so they rotate to the
+        // aim angle independent of the body flip. Drawn over the body, under the
+        // swing arc.
+        if (this.loadout && this.loadout.length) this._drawHeldWeapons(ctx, bobY, alpha);
+
         // Melee swing arc (world-space, additive) on top of everything.
         if (this.swing) this._drawSwing(ctx);
+    }
+
+    // Draw the owned loadout on the body: the primary weapon held in-hand and
+    // pointed at the aim target (with a forward thrust + tip muzzle flash while
+    // it's firing), and every other owned weapon floating in a tidy halo, each
+    // flicking outward when it fires. Orbit weapons are skipped here — their
+    // spinning blade ring (drawn by WeaponSystem) already IS their visual.
+    _drawHeldWeapons(ctx, bobY, alpha) {
+        const cx = this.x, cy = this.y + bobY;
+        let primary = null;
+        const halo = [];
+        for (const v of this.loadout) {
+            if (!v || !v.prop || v.kind === 'orbit') continue;
+            if (v.isPrimary && !primary) primary = v;
+            else halo.push(v);
+        }
+        // If the equipped weapon is an orbit type (no in-hand prop), promote the
+        // first halo weapon to the hand so the hero still visibly wields one.
+        if (!primary && halo.length) primary = halo.shift();
+        if (!primary && !halo.length) return;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Floating halo: spread the secondary weapons across the upper arc so
+        // they never cover the face or feet; each points radially outward and
+        // bobs gently. Behind the in-hand weapon (drawn first).
+        const n = halo.length;
+        if (n) {
+            const R = this.spriteHalf * 0.66;
+            const arc = Math.PI * 1.5;            // 270° fan across the top
+            const start = -Math.PI / 2 - arc / 2; // centered on straight-up
+            for (let i = 0; i < n; i++) {
+                const a = n === 1 ? -Math.PI / 2 : start + (i / (n - 1)) * arc;
+                const bob = Math.sin(this.aliveTimer * 2.2 + i * 1.3) * 2;
+                const hx = cx + Math.cos(a) * R;
+                const hy = cy + Math.sin(a) * R + bob;
+                this._drawProp(ctx, halo[i], hx, hy, a, 0.62);
+            }
+        }
+
+        // Primary in-hand: anchor near the body's hands, aimed at the target.
+        // The hand sits a touch toward the aim direction (and downward to the
+        // body) so the grip reads as held rather than floating at the center.
+        const handR = this.spriteHalf * 0.18;
+        const hx = cx + Math.cos(this.aimAngle) * handR;
+        const hy = cy + Math.sin(this.aimAngle) * handR + this.spriteHalf * 0.12;
+        this._drawProp(ctx, primary, hx, hy, this.aimAngle, 1.0);
+
+        ctx.restore();
+    }
+
+    // Draw one held prop sprite: anchor its grip at (px,py), rotate to `angle`,
+    // and — while it's firing (fireFlash 0..1) — thrust it forward along its
+    // own axis and burst a cached glow at the tip. `scale` shrinks halo props.
+    _drawProp(ctx, v, px, py, angle, scale) {
+        const sprite = getWeaponProp(v.prop, v.accent, v.glow);
+        if (!sprite) return;
+        const flash = v.fireFlash || 0;
+        const thrust = Easing.outQuad(flash) * 12 * scale;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(angle);
+        ctx.translate(thrust, 0);
+        ctx.drawImage(sprite.canvas, -sprite.gripX * scale, -sprite.gripY * scale,
+            sprite.w * scale, sprite.h * scale);
+        if (flash > 0) {
+            const tx = (sprite.tipX - sprite.gripX) * scale;
+            const ty = (sprite.tipY - sprite.gripY) * scale;
+            const fr = (16 + 12 * flash) * scale;
+            const glow = getGlowSprite(v.glow);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = flash;
+            ctx.drawImage(glow, tx - fr, ty - fr, fr * 2, fr * 2);
+        }
+        ctx.restore();
     }
 
     // Cloak + hat delegate to the shared shape helpers (single source of truth

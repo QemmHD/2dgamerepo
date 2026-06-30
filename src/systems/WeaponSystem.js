@@ -10,6 +10,13 @@
 
 import { MAX_WEAPON_LEVEL, INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
 import { compactInPlace, TWO_PI } from '../core/MathUtils.js';
+import { resolveWeaponProp } from '../content/weaponSkins.js';
+
+// How long a weapon's "just fired" flick (in-hand thrust + tip muzzle flash)
+// reads for after it shoots. A real fire resets the weapon timer to its
+// cooldown (≥0.24s), so a jump this big in one frame is an unambiguous fire.
+const FIRE_FLASH_DUR = 0.14;
+const FIRE_DELTA = 0.05;
 
 // Auto-aim weapons only acquire targets within the visible viewport (the
 // camera follows the player, so the player is the screen center). A small
@@ -32,6 +39,10 @@ export class WeaponSystem {
         // Bumped whenever the owned set / a weapon level / an evolution changes,
         // so consumers (the aura) can detect changes without a per-frame scan.
         this.version = 0;
+        // Cached held-weapon visuals (rebuilt on version change — see
+        // getOwnedVisuals). -1 forces a build on first request.
+        this._visuals = [];
+        this._visualsVersion = -1;
         // The run's starting weapon comes from the equipped loadout gear; falls
         // back to the Cinderbolt if the id is missing/unknown.
         this.addWeapon(WEAPONS[startingWeaponId] ? startingWeaponId : 'arcaneBolt');
@@ -118,7 +129,17 @@ export class WeaponSystem {
         };
         for (const w of this.owned) {
             const def = WEAPONS[w.id];
+            // Decay the held-weapon fire flick + clear the per-frame fired flag,
+            // then watch the cooldown timer: a behavior that fires resets its
+            // timer up to the cooldown, so a big positive jump means "fired".
+            if (w.fireFlash > 0) w.fireFlash = Math.max(0, w.fireFlash - dt);
+            w.firedThisFrame = false;
+            const prevTimer = w.timer;
             if (def && def.update) def.update(dt, w, ctx);
+            if (w.timer > prevTimer + FIRE_DELTA) {
+                w.firedThisFrame = true;
+                w.fireFlash = FIRE_FLASH_DUR;
+            }
         }
         this._updateEffects(dt);
         return { hits, killed };
@@ -153,6 +174,36 @@ export class WeaponSystem {
             else if (fx.kind === 'lightning') drawLightning(ctx, fx);
             else if (fx.kind === 'frostmote') drawFrostmote(ctx, fx);
         }
+    }
+
+    // Held-weapon visuals for the player to draw the loadout in-hand / in a
+    // halo. The stable per-weapon descriptor (id/prop/accent/glow/kind/primary)
+    // is rebuilt only when the owned set changes (version bump); each frame we
+    // just refresh the transient `fireFlash` (0..1) so there's no per-frame
+    // allocation. owned[0] is the equipped/primary weapon. Descriptors with no
+    // prop (e.g. Cinder Aura, Shadow Dash) are omitted — those read as aura.
+    getOwnedVisuals() {
+        if (this._visualsVersion !== this.version) {
+            this._visualsVersion = this.version;
+            this._visuals = [];
+            for (let i = 0; i < this.owned.length; i++) {
+                const w = this.owned[i];
+                const propInfo = resolveWeaponProp(w.id);
+                if (!propInfo) continue;
+                const def = WEAPONS[w.id];
+                this._visuals.push({
+                    w,
+                    prop: propInfo.prop,
+                    accent: propInfo.accent,
+                    glow: propInfo.glow,
+                    kind: def?.kind ?? 'special',
+                    isPrimary: i === 0,
+                    fireFlash: 0,
+                });
+            }
+        }
+        for (const v of this._visuals) v.fireFlash = (v.w.fireFlash || 0) / FIRE_FLASH_DUR;
+        return this._visuals;
     }
 
     // Snapshot used by UI to list owned weapons with level / max / evolved.

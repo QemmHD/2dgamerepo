@@ -2002,6 +2002,29 @@ export class Game {
             dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio
         );
 
+        // Held weapons: aim the loadout at the nearest enemy (the primary wand
+        // points at what it shoots; the halo bobs around the body). With no
+        // target, weapons rest along the hero's facing so they never snap to a
+        // stale angle. Snapshot the owned visuals for Player.draw, and hold the
+        // cast pose whenever the primary weapon fires this frame.
+        this.player.loadout = this.weaponSystem.getOwnedVisuals();
+        let aimBest = null, aimD = Infinity;
+        for (const e of this.enemies) {
+            if (!e.active) continue;
+            const dx = e.x - this.player.x, dy = e.y - this.player.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < aimD) { aimD = d2; aimBest = e; }
+        }
+        if (aimBest) {
+            this.player.aimAngle = Math.atan2(aimBest.y - this.player.y, aimBest.x - this.player.x);
+        } else {
+            const f = this.player.facing;
+            this.player.aimAngle = f === 'up' ? -Math.PI / 2 : f === 'left' ? Math.PI
+                : f === 'right' ? 0 : Math.PI / 2;
+        }
+        const primaryWeapon = this.weaponSystem.owned[0];
+        if (primaryWeapon && primaryWeapon.firedThisFrame) this.player.triggerCast();
+
         for (const e of this.enemies) {
             if (!e.active) continue;
             e.update(dt, this.player, this.enemyProjectiles, this.obstacleSystem);
