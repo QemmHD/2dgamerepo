@@ -38,10 +38,19 @@ const MODELS = {
     emberskeleton: { file: 'skeleton_walk.png', recolor: { op: 'multiply', color: '#ff7a3c', alpha: 0.85 } },
     // Real LPC orc body — heavy green brute, used for the melee "brute" enemy.
     orc:          { file: 'orc_walk.png' },
+    // Plain LPC human body (the same sheet the zombie uses, un-recolored) —
+    // the base for the LPC "knight" playable hero.
+    human:        { file: 'zombie_walk.png' },
 };
 
 const cache = new Map();   // id → { up:[canvas], left, down, right }
 let loaded = false;
+
+// Recolorable LPC back-cape (the "cloak" cosmetic for LPC-bodied heroes). A
+// single SPRITE_SIZE front-facing cape sprite; getCloakSprite tints it per
+// cloak colour and caches. White source → multiply recolor keeps the folds.
+const CLOAK_FILE = 'cloak_back.png';
+let cloakBase = null;
 
 function lpcUrl(file) {
     return new URL(`./lpc/${file}`, import.meta.url).href;
@@ -77,7 +86,10 @@ function sliceDir(img, rowIdx, recolor) {
 export async function loadLpcSprites() {
     if (loaded) return true;
     const ids = Object.keys(MODELS);
-    const imgs = await Promise.all(ids.map((id) => loadImage(lpcUrl(MODELS[id].file))));
+    const [imgs, cloakImg] = await Promise.all([
+        Promise.all(ids.map((id) => loadImage(lpcUrl(MODELS[id].file)))),
+        loadImage(lpcUrl(CLOAK_FILE)),
+    ]);
     let anyOk = false;
     ids.forEach((id, i) => {
         const img = imgs[i];
@@ -91,8 +103,34 @@ export async function loadLpcSprites() {
         });
         anyOk = true;
     });
+    if (cloakImg) {
+        // The cape PNG is already authored at SPRITE_SIZE; bake to a canvas so
+        // recolorCanvas can tint it.
+        const c = document.createElement('canvas');
+        c.width = SPRITE_SIZE; c.height = SPRITE_SIZE;
+        c.getContext('2d').drawImage(cloakImg, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
+        cloakBase = c;
+    }
     loaded = true;
     return anyOk;
+}
+
+// Recolored LPC cape sprite for a given cloak colour (cached). Returns null if
+// the cape PNG didn't load (callers fall back to the procedural cloak shape).
+export function getCloakSprite(color) {
+    if (!cloakBase || !color) return null;
+    return recolorCanvas(cloakBase, { op: 'multiply', color, alpha: 1 }, `lpccloak:${color}`);
+}
+
+// Four-frame walk set for an LPC-bodied playable character (front/down facing,
+// sampled from the 8-frame cycle to match the [idle, walk, walk, walk] shape
+// the player/menu expect). Returns null if the model didn't load.
+export function getLpcCharacterFrames(model) {
+    const hit = cache.get(model);
+    if (!hit) return null;
+    const d = hit.down;
+    // sample 4 of the 8 frames; index 0 reads as a near-idle stance
+    return [d[0], d[2], d[4], d[6]];
 }
 
 // Is `id` a known LPC model? (Used to validate enemy wiring.)

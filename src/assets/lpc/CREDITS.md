@@ -53,3 +53,13 @@ LPC **orc** body — walk cycle.
 - **Licenses:** CC-BY-SA 3.0 / GPL 3.0
 - **Source file:** `body/male/orc.png` from the repo above
 - **Origin:** https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+
+## cloak_back.png  (recolorable cloak cosmetic for LPC-bodied heroes)
+
+LPC **behind-body cape** — the front (down) standing frame, cropped to a single
+182×182 sprite and recolored per equipped cloak colour at runtime.
+
+- **Authors:** Liberated Pixel Cup contributors
+- **Licenses:** CC-BY-SA 3.0 / GPL 3.0
+- **Source file:** `behind_body/cape/normal/female/cape_white.png` from the repo above
+- **Origin:** https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles

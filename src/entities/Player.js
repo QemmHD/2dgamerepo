@@ -15,6 +15,7 @@ import {
     drawCloakShape, drawHatShape, drawWeaponSkinOverlay,
 } from '../assets/ProceduralSprites.js';
 import { getCharacter } from '../content/characters.js';
+import { getCloakSprite } from '../assets/LpcSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 // Player melee swing animation timing.
@@ -35,6 +36,9 @@ export class Player {
         // character recolors the shared silhouette via its palette.
         const ch = getCharacter(characterId);
         this.frames = getCharacterFrames(characterId, ch);
+        // LPC-bodied heroes get the imported cape sprite for their cloak (it
+        // aligns to the LPC body); the chibi cast keeps the procedural drape.
+        this.isLpcBody = !!ch.lpc;
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
         // Free-running clock (advances even while idle) for the idle breath.
@@ -385,7 +389,22 @@ export class Player {
 
     // Cloak + hat delegate to the shared shape helpers (single source of truth
     // with the menu preview — see ProceduralSprites.drawCloakShape/drawHatShape).
-    _drawCloak(ctx, color) { drawCloakShape(ctx, 0, 0, this.spriteHalf, color); }
+    _drawCloak(ctx, color) {
+        // LPC heroes: draw the imported, recolored cape sprite (aligns to the
+        // LPC body). Everyone else: the procedural drape. Falls back to the
+        // drape if the cape sheet didn't load.
+        if (this.isLpcBody) {
+            const cape = getCloakSprite(color);
+            if (cape) {
+                // Draw the cape a touch larger than the body and nudged down so
+                // it flares out behind the hero instead of hiding behind them.
+                const dw = SPRITE_SIZE * 1.32, off = SPRITE_SIZE * 0.075;
+                ctx.drawImage(cape, -dw / 2, -dw / 2 + off, dw, dw);
+                return;
+            }
+        }
+        drawCloakShape(ctx, 0, 0, this.spriteHalf, color);
+    }
     _drawHat(ctx, shape, color) { drawHatShape(ctx, 0, 0, this.spriteHalf, shape, color); }
 
     // Spawn a melee swing toward `angle` (world radians). Game calls this on a
