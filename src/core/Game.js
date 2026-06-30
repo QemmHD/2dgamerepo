@@ -59,7 +59,7 @@ import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
 import { openCase, buildCaseReel, MINES, MINES_HOUSE, rollMines, minesRawMultiplier } from '../systems/CaseSystem.js';
-import { resolveAppearance } from '../content/cosmetics.js';
+import { resolveAppearance, cosmeticsForAchievement, COSMETICS } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
@@ -727,13 +727,23 @@ export class Game {
     _checkAchievements() {
         const earned = evaluateAchievements(this.saveSystem);
         if (!earned.length) return;
-        let coins = 0; const names = [];
+        let coins = 0; const names = []; const cosmeticNames = [];
         for (const a of earned) {
-            if (this.saveSystem.claimAchievement(a.id)) { coins += a.coins || 0; names.push(a.name); }
+            if (this.saveSystem.claimAchievement(a.id)) {
+                coins += a.coins || 0; names.push(a.name);
+                // Some achievements also award a cosmetic — unlock it now (it
+                // persists), so it appears unlocked in the customizer/shop.
+                for (const cid of cosmeticsForAchievement(a.id)) {
+                    if (this.saveSystem.unlockCosmetic(cid) && COSMETICS[cid]) cosmeticNames.push(COSMETICS[cid].name);
+                }
+            }
         }
         if (coins > 0) this.saveSystem.addCoins(coins);
         this.newAchievements = names;
-        if (this.runSummary) this.runSummary.achievements = names;
+        if (this.runSummary) {
+            this.runSummary.achievements = names;
+            if (cosmeticNames.length) this.runSummary.cosmeticUnlocks = cosmeticNames;
+        }
     }
 
     // Evaluate today's three daily challenges against this run's summary and
@@ -961,6 +971,24 @@ export class Game {
         return true;
     }
 
+    // Buy a coin-priced cosmetic, then equip it. Mirrors buyUpgrade's
+    // spend→apply→refund-on-failure safety so coins are never taken without
+    // the item actually unlocking. Already-owned items just equip (free).
+    _buyCosmetic(arg) {
+        const item = COSMETICS[arg && arg.id];
+        if (!item) return false;
+        if (this.saveSystem.isCosmeticUnlocked(item.id)) {
+            this.saveSystem.equipCosmetic(item.category, item.id); this.audio.equip(); return true;
+        }
+        if (!item.coinCost) return false;                         // not a coin item
+        if (!this.saveSystem.spendCoins(item.coinCost)) { this._setToast('Not enough coins'); return false; }
+        if (!this.saveSystem.unlockCosmetic(item.id)) { this.saveSystem.addCoins(item.coinCost); return false; }
+        this.saveSystem.equipCosmetic(item.category, item.id);
+        this.audio.equip();
+        this._setToast(`Unlocked ${item.name}`);
+        return true;
+    }
+
     requestResetSave() {
         if (this.resetConfirming) {
             this.saveSystem.reset();
@@ -999,6 +1027,7 @@ export class Game {
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
             case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); this.audio.equip(); break;
+            case 'buyCosmetic': this._pressFeedback(`cos:${arg && arg.id}`); this._buyCosmetic(arg); break;
             case 'selectCharacter': this._pressFeedback(`char:${arg.id}`); this.saveSystem.setSelectedCharacter(arg.id); break;
             case 'selectMap': {
                 this._pressFeedback(`map:${arg.id}`);

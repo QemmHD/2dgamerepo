@@ -15,6 +15,7 @@ import {
 } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
+import { drawAuraFx, drawTrailPoint } from '../assets/CosmeticFx.js';
 
 // Unit vector for each facing — used to seat the held weapon in the hand on the
 // "front" side of the body (rather than orbiting the centre).
@@ -320,19 +321,16 @@ export class Player {
         // that shrink + fade with the trail point's age.
         if (ap.trailColor && this.trailPositions.length) {
             ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.fillStyle = ap.trailColor;
-            for (const t of this.trailPositions) {
+            const fx = ap.trailFx;
+            const tp = this.trailPositions;
+            for (let i = 0; i < tp.length; i++) {
+                const t = tp[i];
                 const k = Math.max(0, 1 - t.age / 0.6);
                 if (k <= 0) continue;
-                ctx.globalAlpha = k * 0.45;
+                ctx.globalAlpha = k * (fx === 'hearts' ? 0.7 : 0.45);
                 const b = Math.round(5 + 12 * k);          // core block size
                 const px = Math.round(t.x), py = Math.round(t.y + bobY);
-                ctx.fillRect(px - b / 2, py - b / 2, b, b);
-                const s2 = Math.max(2, Math.round(b * 0.45));
-                ctx.fillRect(px - b, py - s2 / 2, s2, s2);
-                ctx.fillRect(px + b - s2, py - s2 / 2, s2, s2);
-                ctx.fillRect(px - s2 / 2, py - b, s2, s2);
+                drawTrailPoint(ctx, px, py, b, k, ap.trailColor, fx, this.auraPhase, i);
             }
             ctx.restore();
         }
@@ -358,13 +356,9 @@ export class Player {
             ctx.restore();
         }
         if (ap.auraColor) {
-            const ar = this.spriteHalf * 1.1;
-            const glow = getGlowSprite(ap.auraColor);
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = 0.28;
-            ctx.drawImage(glow, this.x - ar, cy - ar, ar * 2, ar * 2);
-            ctx.restore();
+            // Animated cosmetic aura (the prestige VFX layer). auraPhase advances
+            // every frame so pulse/spin/flame/rainbow/starfield animate even idle.
+            drawAuraFx(ctx, this.x, cy, this.spriteHalf * 1.1, ap.auraColor, ap.auraFx, this.auraPhase, 0.3);
         }
 
         // Directional facing → which dir set + horizontal flip.

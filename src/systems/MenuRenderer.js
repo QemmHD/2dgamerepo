@@ -28,6 +28,7 @@ import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '.
 import { getHeroFrames } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
+import { drawAuraFx } from '../assets/CosmeticFx.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
@@ -632,13 +633,9 @@ export class MenuRenderer {
         const S = r * 2.4;
         const s = S / 2;
         ctx.save();
-        if (ap.auraColor) {
-            const g = ctx.createRadialGradient(cx, cy, r * 0.3, cx, cy, r * 1.4);
-            g.addColorStop(0, ap.auraColor); g.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.4;
-            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill();
-            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-        }
+        // Animated cosmetic aura (prestige VFX) — the live preview shows the
+        // exact pulse/spin/flame/rainbow/starfield effect you earn.
+        if (ap.auraColor) drawAuraFx(ctx, cx, cy, r * 1.32, ap.auraColor, ap.auraFx, t, 0.42);
         // Cloak: imported LPC cape for LPC heroes (drawn at the body box so it
         // aligns), procedural drape otherwise — matches the in-game player.
         if (ap.cloakColor) {
@@ -786,8 +783,10 @@ export class MenuRenderer {
     }
 
     // ── LOADOUT / CHARACTER shared grid ──────────────────────────────────
-    _drawItemGrid(ctx, state, kind) {
-        const c = this._contentRect();
+    // `rect` lets the CHARACTER customizer constrain the cosmetic columns to
+    // the right of the live model; LOADOUT passes none → full content rect.
+    _drawItemGrid(ctx, state, kind, rect = null) {
+        const c = rect || this._contentRect();
         const save = state.saveData;
         const cats = kind === 'gear' ? GEAR_CATEGORIES : COSMETIC_CATEGORIES;
         const labels = kind === 'gear' ? GEAR_CATEGORY_LABELS : COSMETIC_CATEGORY_LABELS;
@@ -796,6 +795,21 @@ export class MenuRenderer {
         const itemsFor = kind === 'gear' ? gearByCategory : cosmeticsByCategory;
 
         const colW = (c.w - (cats.length - 1) * 18) / cats.length;
+        const ig = 8;
+        // Cosmetic rows shrink to fit the WHOLE category in the column (no
+        // scroll, nothing clipped) — the safe-area can make the content rect
+        // shorter than it looks, so size off the most-populated category.
+        let cih = 56;
+        if (kind !== 'gear') {
+            const maxN = Math.max(1, ...cats.map((cc) => itemsFor(cc).length));
+            const availH = c.h - 56 - 8;
+            // Size so the WHOLE tallest category fits (the clip below would
+            // otherwise drop the last cards — e.g. coin/achievement cosmetics
+            // whose card is their only unlock surface). The min is just a
+            // sanity floor for degenerate (sub-360px) content rects; realistic
+            // phone-landscape heights land ~30–40px and still fit all items.
+            cih = Math.max(24, Math.min(58, Math.floor((availH - ig * (maxN - 1)) / maxN)));
+        }
         ctx.textBaseline = 'alphabetic';
         for (let ci = 0; ci < cats.length; ci++) {
             const cat = cats[ci];
@@ -809,48 +823,64 @@ export class MenuRenderer {
             // Gear cards are taller so each can carry a short line describing
             // what its buffs actually DO (the player asked for this); cosmetics
             // have no buffs, so they stay compact.
-            const ih = kind === 'gear' ? 88 : 64, ig = 10;
+            const ih = kind === 'gear' ? 88 : cih;
             const innerW = colW - 24;
+            // Card text/swatch positions scale with the (possibly compact) row.
+            const nameY = kind === 'gear' ? 26 : Math.round(ih * 0.42);
+            const statusY = kind === 'gear' ? 48 : Math.round(ih * 0.78);
+            const isz = kind === 'gear' ? 30 : Math.min(30, ih - 18);
             for (const item of items) {
                 if (iy + ih > c.y + c.h - 8) break; // clip to column
                 const unlocked = isUnlocked(item.id);
                 const equippedHere = equipped[cat] === item.id;
                 const col = rarityColor(item.rarity);
+                // Unlock state → status line + how the card behaves. Cosmetics
+                // can be owned, bought with coins, earned via an achievement, or
+                // found only in cases; gear keeps its simpler owned/locked read.
+                let statusText, statusCol, action = null;
+                if (equippedHere) { statusText = 'EQUIPPED'; statusCol = '#ffce54'; }
+                else if (unlocked) {
+                    statusText = rarityName(item.rarity); statusCol = col;
+                    action = kind === 'gear' ? 'equipGear' : 'equipCosmetic';
+                } else if (kind === 'cosmetic' && item.coinCost) {
+                    const afford = save.totalCoins >= item.coinCost;
+                    statusText = `◎ ${item.coinCost}`;
+                    statusCol = afford ? '#ffd86b' : 'rgba(255,216,107,0.4)';
+                    action = 'buyCosmetic';
+                } else if (kind === 'cosmetic' && item.achievement) {
+                    const ach = ACHIEVEMENTS.find((a) => a.id === item.achievement);
+                    statusText = `🏆 ${ach ? ach.name : 'Achievement'}`;
+                    statusCol = 'rgba(168,213,247,0.92)';
+                } else {
+                    statusText = kind === 'cosmetic' ? '🔒 Case drop' : '🔒 LOCKED';
+                    statusCol = 'rgba(255,255,255,0.5)';
+                }
+                const buyable = action === 'buyCosmetic';
+                const lit = unlocked || buyable;       // full-opacity (vs faded-locked)
+                const dim = lit ? 1 : 0.4;
                 roundRectPath(ctx, x + 12, iy, innerW, ih, 10);
-                ctx.fillStyle = equippedHere ? 'rgba(255,206,84,0.16)' : 'rgba(255,255,255,0.04)';
+                ctx.fillStyle = equippedHere ? 'rgba(255,206,84,0.16)'
+                    : buyable ? 'rgba(255,216,107,0.06)' : 'rgba(255,255,255,0.04)';
                 ctx.fill();
-                ctx.strokeStyle = equippedHere ? '#ffce54' : unlocked ? col : 'rgba(255,255,255,0.08)';
+                ctx.strokeStyle = equippedHere ? '#ffce54' : unlocked ? col
+                    : buyable ? 'rgba(255,216,107,0.5)' : 'rgba(255,255,255,0.08)';
                 ctx.lineWidth = equippedHere ? 3 : 2; ctx.stroke();
                 ctx.textAlign = 'left';
-                ctx.globalAlpha = unlocked ? 1 : 0.4;
-                ctx.fillStyle = unlocked ? '#fff' : 'rgba(255,255,255,0.6)';
-                ctx.font = `700 20px ${FONT}`;
-                ctx.fillText(item.name, x + 26, iy + 26);
-                ctx.fillStyle = col; ctx.font = `600 15px ${FONT}`;
-                ctx.fillText(unlocked ? (equippedHere ? 'EQUIPPED' : rarityName(item.rarity)) : '🔒 LOCKED', x + 26, iy + 48);
-                // Slot icon. Cloak/hat cosmetics show a PIXEL PREVIEW of the
-                // actual accessory in its own colour (so the picker matches the
-                // in-game model); everything else uses a rarity-recolored,
-                // framed glyph cached per (base, rarity) — gear → shield,
-                // other cosmetics → spark (license-safe procedural base).
+                ctx.globalAlpha = dim;
+                ctx.fillStyle = lit ? '#fff' : 'rgba(255,255,255,0.7)';
+                ctx.font = `700 ${kind === 'gear' ? 20 : Math.min(20, Math.round(ih * 0.36))}px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, item.name, innerW - 56), x + 26, iy + nameY);
+                ctx.fillStyle = statusCol; ctx.font = `600 ${kind === 'gear' ? 15 : Math.min(15, Math.round(ih * 0.28))}px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, statusText, innerW - 30), x + 26, iy + statusY);
+                // Slot icon / swatch. Cosmetics show a representative preview of
+                // the actual item (pixel cloak/hat, fur tint disc, aura glow,
+                // trail puffs); gear shows a rarity-recolored shield glyph.
                 {
-                    const isz = 30;
-                    const ix = x + 12 + innerW - isz - 12, iyy = iy + 12;
+                    const ix = x + 12 + innerW - isz - 12, iyy = iy + (kind === 'gear' ? 12 : Math.round((ih - isz) / 2));
                     ctx.save();
-                    ctx.globalAlpha = unlocked ? 1 : 0.35;
-                    const showCloak = kind === 'cosmetic' && cat === 'cloak' && item.color;
-                    const showHat = kind === 'cosmetic' && cat === 'hat' && item.shape && item.shape !== 'none';
-                    if (showCloak || showHat) {
-                        // Clip to the icon box, then draw the (larger) pixel
-                        // cosmetic centred on its content so it reads as a swatch.
-                        ctx.beginPath(); ctx.rect(ix, iyy, isz, isz); ctx.clip();
-                        const ps = isz * 0.78, icx = ix + isz / 2, icy = iyy + isz / 2;
-                        if (showCloak) drawPixelCloak(ctx, icx, icy - ps * 0.34, ps, 'down', item.color, false);
-                        else drawPixelHat(ctx, icx, icy + ps * 0.36, ps, 'down', item.shape, item.color, false);
-                    } else {
-                        const icon = getRarityIcon(kind === 'gear' ? 'shield' : 'spark', item.rarity);
-                        ctx.drawImage(icon, ix, iyy, isz, isz);
-                    }
+                    ctx.globalAlpha = dim;
+                    if (kind === 'cosmetic') this._cosmeticSwatch(ctx, cat, item, ix, iyy, isz);
+                    else ctx.drawImage(getRarityIcon('shield', item.rarity), ix, iyy, isz, isz);
                     ctx.restore();
                 }
                 // Gear: short effect summary so the player knows what each item
@@ -879,17 +909,140 @@ export class MenuRenderer {
                     for (let li = 0; li < lines.length; li++) ctx.fillText(lines[li], x + 26, iy + 68 + li * 16);
                 }
                 ctx.globalAlpha = 1;
-                if (unlocked && !equippedHere) {
-                    this._hot(x + 12, iy, colW - 24, ih,
-                        kind === 'gear' ? 'equipGear' : 'equipCosmetic', { category: cat, id: item.id });
-                }
+                if (action) this._hot(x + 12, iy, innerW, ih, action, { category: cat, id: item.id });
                 iy += ih + ig;
             }
         }
     }
 
     _drawLoadout(ctx, state) { this._drawItemGrid(ctx, state, 'gear'); }
-    _drawCharacter(ctx, state) { this._drawItemGrid(ctx, state, 'cosmetic'); }
+
+    // Truncate `txt` with an ellipsis so it fits `maxW` at the CURRENT font.
+    _ellip(ctx, txt, maxW) {
+        if (ctx.measureText(txt).width <= maxW) return txt;
+        let s = String(txt);
+        while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+        return s + '…';
+    }
+
+    // A small representative preview of a cosmetic for the picker/summary: a
+    // pixel cloak/hat, a fur tint disc, an aura glow, or trail puffs. "None"
+    // items (no color/shape) get a hollow slashed ring. Caller controls alpha.
+    _cosmeticSwatch(ctx, cat, item, ix, iyy, isz) {
+        const icx = ix + isz / 2, icy = iyy + isz / 2;
+        const isNone = cat === 'hat' ? (!item.shape || item.shape === 'none')
+            : (cat === 'cloak' || cat === 'trail') ? !item.color : false;
+        if (isNone) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(icx, icy, isz * 0.34, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(icx - isz * 0.24, icy + isz * 0.24); ctx.lineTo(icx + isz * 0.24, icy - isz * 0.24); ctx.stroke();
+            return;
+        }
+        if (cat === 'cloak') {
+            ctx.save(); ctx.beginPath(); ctx.rect(ix, iyy, isz, isz); ctx.clip();
+            const ps = isz * 0.78; drawPixelCloak(ctx, icx, icy - ps * 0.34, ps, 'down', item.color, false);
+            ctx.restore(); return;
+        }
+        if (cat === 'hat') {
+            ctx.save(); ctx.beginPath(); ctx.rect(ix, iyy, isz, isz); ctx.clip();
+            const ps = isz * 0.78; drawPixelHat(ctx, icx, icy + ps * 0.36, ps, 'down', item.shape, item.color, false);
+            ctx.restore(); return;
+        }
+        if (cat === 'aura') {
+            const col = item.color || '#ff9a3c';
+            const g = ctx.createRadialGradient(icx, icy, 2, icx, icy, isz * 0.5);
+            g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(icx, icy, isz * 0.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = col; ctx.beginPath(); ctx.arc(icx, icy, 3.5, 0, Math.PI * 2); ctx.fill();
+            return;
+        }
+        if (cat === 'trail') {
+            const baseA = ctx.globalAlpha;
+            ctx.fillStyle = item.color;
+            for (let d = 0; d < 3; d++) {
+                ctx.globalAlpha = baseA * (1 - d * 0.28);
+                ctx.beginPath(); ctx.arc(ix + 7 + d * 8, icy, Math.max(1.6, 5 - d * 1.3), 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.globalAlpha = baseA; return;
+        }
+        // fur (and any fallback): a tint disc; natural (no color) gets a slash.
+        ctx.fillStyle = item.color || '#b98a5a';
+        ctx.beginPath(); ctx.arc(icx, icy, isz * 0.42, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+        if (!item.color) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(icx - isz * 0.24, icy + isz * 0.24); ctx.lineTo(icx + isz * 0.24, icy - isz * 0.24); ctx.stroke();
+        }
+    }
+
+    // ── CHARACTER — a live customizer: the model on the LEFT updates the
+    // instant you click an item; the cosmetic pickers sit on the RIGHT, on the
+    // SAME page (no drilling into a separate preview screen). ────────────────
+    _drawCharacter(ctx, state) {
+        const c = this._contentRect();
+        const save = state.saveData;
+        const avW = Math.min(560, Math.max(360, c.w * 0.33));
+        const gap = 32;
+
+        // Left: live model + equipped-slot summary.
+        this._panel(ctx, c.x, c.y, avW, c.h, 'rgba(20,16,28,0.82)', 'rgba(192,139,255,0.22)');
+        const ch = getCharacter(save.selectedCharacter);
+        const ap = resolveAppearance(save.cosmetics.equipped);
+        const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
+        let charSprite = null;
+        try {
+            const d = getHeroFrames(ch.id, ch).dirs.down;
+            charSprite = (this._t % 4.0) > 3.4 ? d.cast[0] : d.idle[0];
+        } catch (e) { charSprite = null; }
+        const startWeaponId = resolveStartingWeapon(save);
+        const heldProp = resolveWeaponProp(startWeaponId);
+        const acx = c.x + avW / 2;
+        const r = Math.min(150, avW * 0.26);
+        const acy = c.y + 40 + r;
+        // Soft stage disc beneath the model (scaled arc — no ctx.ellipse).
+        ctx.save();
+        ctx.translate(acx, acy + r * 0.9); ctx.scale(1, 0.3);
+        ctx.fillStyle = 'rgba(192,139,255,0.12)';
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.92, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        this._drawAvatar(ctx, acx, acy, r, avatarAp, charSprite, null, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#fff'; ctx.font = `800 30px ${FONT}`;
+        ctx.fillText(ch.name, acx, acy + r + 30);
+        ctx.fillStyle = 'rgba(192,139,255,0.95)'; ctx.font = `700 15px ${FONT}`;
+        ctx.fillText('CUSTOMIZE  ·  LIVE PREVIEW', acx, acy + r + 52);
+
+        // Equipped-slot summary — a compact sheet of the current choices.
+        const sx = c.x + 28, sw = avW - 56;
+        const sy = acy + r + 70;
+        const n = COSMETIC_CATEGORIES.length;
+        const rgap = 12;
+        const avail = (c.y + c.h - 16) - sy;
+        const rowH = Math.max(30, Math.min(60, (avail - rgap * (n - 1)) / n));
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < n; i++) {
+            const cat = COSMETIC_CATEGORIES[i];
+            const ry = sy + i * (rowH + rgap);
+            if (ry + rowH > c.y + c.h - 8) break;
+            const item = COSMETICS[save.cosmetics.equipped[cat]] || { color: null };
+            roundRectPath(ctx, sx, ry, sw, rowH, 9);
+            ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(192,139,255,0.22)'; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.save();
+            this._cosmeticSwatch(ctx, cat, item, sx + 10, ry + (rowH - 26) / 2, 26);
+            ctx.restore();
+            ctx.textAlign = 'left';
+            ctx.fillStyle = 'rgba(205,214,226,0.7)'; ctx.font = `700 15px ${FONT}`;
+            ctx.fillText(COSMETIC_CATEGORY_LABELS[cat], sx + 46, ry + rowH / 2);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#fff'; ctx.font = `600 16px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, item.name || '—', sw - 150), sx + sw - 14, ry + rowH / 2);
+        }
+
+        // Right: the cosmetic pickers, on the same page.
+        const rRect = { x: c.x + avW + gap, y: c.y, w: c.w - avW - gap, h: c.h };
+        this._drawItemGrid(ctx, state, 'cosmetic', rRect);
+    }
 
     // ── SHOP (cases) ─────────────────────────────────────────────────────
     _drawShop(ctx, state) {
