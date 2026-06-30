@@ -59,7 +59,7 @@ const CHASER_BRAIN_RANGE = 1500;
 const FRAMES_BY_TYPE = {
     slime:           { get: getSlimeFrames,           hz: 5 },
     bat:             { get: getBatFrames,             hz: 10 },
-    brute:           { get: getBruteFrames,           hz: 1.4 },
+    brute:           { get: () => getLpcFrames('orc'), hz: 7, directional: true },
     crawler:         { get: getCrawlerFrames,         hz: 9 },
     spitter:         { get: getSpitterFrames,         hz: 4 },
     charger:         { get: getChargerFrames,         hz: 3 },
