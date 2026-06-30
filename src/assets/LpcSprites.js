@@ -138,6 +138,14 @@ export function isLpcModel(id) {
     return Object.prototype.hasOwnProperty.call(MODELS, id);
 }
 
+// Did `id`'s real spritesheet actually load? (False when the PNG failed —
+// offline/missing deploy/headless. Callers that must NOT show the brute
+// stand-in, e.g. LPC-bodied playable heroes, gate on this and fall back to
+// their own art instead.)
+export function isLpcLoaded(id) {
+    return cache.has(id);
+}
+
 // Directional frame set for an LPC model: { up, left, down, right } each an
 // array of SPRITE_SIZE canvases. If the sheet failed to load (or we're headless
 // with no Image), every direction falls back to a procedural sprite so callers

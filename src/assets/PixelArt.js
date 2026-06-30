@@ -97,14 +97,32 @@ function shade(hex, amt, toward) {
     return `rgb(${m(r)},${m(g)},${m(b)})`;
 }
 
-// ── Pixel monkey (Pyra) ─────────────────────────────────────────────────
-// A chunky pixel-art take on the wick-keeper monkey, drawn at the same head-
-// up / body-down proportions as the old chibi so the hat sits on the head and
-// the cloak drapes behind — i.e. all cosmetics still line up. `opts.palette`
-// (fur/furDark/furLight/face), `opts.accent`, and `opts.feature` recolor it so
-// the other heroes stay distinct (elf/orc/wizard/… are this monkey recolored).
+// ── Pixel hero (Pyra & the recolored cast) ──────────────────────────────
+// A chunky pixel-art wick-keeper monkey drawn at fixed head-up / body-down
+// proportions (so hats sit on the head and cloaks drape behind in every pose).
+// Now DIRECTIONAL + POSED:
+//   dir  ∈ {down, up, side}   (left = caller flips `side`; right = `side`)
+//   pose ∈ {idle, walk, cast, hurt}   (walk has 3 frames; others 1)
+// `opts.palette` (fur/furDark/furLight/face), `opts.accent`, `opts.feature`
+// recolor it so every hero stays distinct (elf ears / orc tusks / wizard hat…).
 const MONKEY_L = 48;
-export function drawPixelMonkey(frame = 0, opts = {}) {
+const HEAD_Y = 16, BODY_Y = 30, CX = 24;
+
+// Two small dark eyes facing the camera (down) with a white glint; `wince`
+// turns them into squinting slashes for the hurt pose.
+function heroEyes(p, ex, ey, wince) {
+    if (wince) {
+        p.rect(ex - 6, ey, 3, 1, '#1b1b1b'); p.rect(ex - 5, ey - 1, 1, 1, '#1b1b1b'); p.rect(ex - 3, ey - 1, 1, 1, '#1b1b1b');
+        p.rect(ex + 3, ey, 3, 1, '#1b1b1b'); p.rect(ex + 3, ey - 1, 1, 1, '#1b1b1b'); p.rect(ex + 5, ey - 1, 1, 1, '#1b1b1b');
+        return;
+    }
+    p.rect(ex - 5, ey, 3, 3, '#1b1b1b');
+    p.rect(ex + 2, ey, 3, 3, '#1b1b1b');
+    p.dot(ex - 4, ey, '#ffffff');
+    p.dot(ex + 3, ey, '#ffffff');
+}
+
+export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0) {
     const pal = opts.palette || {};
     const fur = pal.fur || '#8b5a2b';
     const furD = pal.furDark || shade(fur, 0.4, 'dark');
@@ -113,72 +131,105 @@ export function drawPixelMonkey(frame = 0, opts = {}) {
     const faceD = shade(face, 0.25, 'dark');
     const accent = opts.accent || '#ffb24a';
     const feature = opts.feature || null;
+    const backFur = shade(fur, 0.18, 'dark');   // up/back view reads shaded
 
     const p = pixelCanvas(MONKEY_L);
-    const cx = 24;
-    // Idle bob: frames 0..3, gentle 1px vertical + tiny arm swing.
-    const bob = [0, 1, 0, -1][frame % 4] || 0;
-    const armSwing = [0, 1, 0, -1][frame % 4] || 0;
-    const headY = 16 + bob;
-    const bodyY = 30 + bob;
+    const cx = CX;
+    const walk = pose === 'walk';
+    const swing = walk ? [-2, 0, 2][frame % 3] : 0;   // arm swing
+    const bob = walk ? [0, -1, 0][frame % 3] : 0;
+    const headY = HEAD_Y + bob;
+    const bodyY = BODY_Y + bob;
+    const facing = dir === 'side';                     // side faces +x (right)
 
-    // Tail (behind body, one side) — a curling fur strip.
-    p.line(31, bodyY + 8, 39, bodyY + 6, furD, 3);
-    p.line(39, bodyY + 6, 40, bodyY - 1, furD, 3);
+    // Arm helper: a fur stub; `up`>0 raises it (cast), `dy` swings it (walk).
+    const arm = (ax, dy, raise, col) => {
+        if (raise) p.rect(ax, bodyY - 4 - raise, 4, 8, col);
+        else p.rect(ax, bodyY + 1 + dy, 4, 9, col);
+    };
 
-    // Body / torso.
-    p.ell(cx, bodyY + 4, 9, 9, fur);
-    p.rect(cx - 8, bodyY - 2, 16, 8, fur);
-    // belly highlight + lower shade
-    p.ell(cx, bodyY + 3, 5, 6, face);          // light belly
-    p.ell(cx + 4, bodyY + 6, 4, 5, furD);      // shade side
-
-    // Arms (swing slightly per frame).
-    p.rect(cx - 11, bodyY + 1 + armSwing, 4, 9, fur);
-    p.rect(cx + 7, bodyY + 1 - armSwing, 4, 9, fur);
-
-    // Ears.
-    if (feature === 'ears') { // elf — tall pointed ears
-        p.sym(7, headY - 8, 3, 10, fur);
-        p.sym(8, headY - 6, 1, 6, face);
-    } else {
-        p.disc(cx - 11, headY - 1, 4, fur);
-        p.disc(cx + 11, headY - 1, 4, fur);
-        p.disc(cx - 11, headY - 1, 2, face);
-        p.disc(cx + 11, headY - 1, 2, face);
+    // ── TAIL (behind the body) ──
+    if (dir === 'down') {
+        p.line(31, bodyY + 8, 39, bodyY + 6, furD, 3); p.line(39, bodyY + 6, 40, bodyY - 1, furD, 3);
+    } else if (dir === 'up') {
+        p.line(cx, bodyY + 9, cx + 7, bodyY + 11, backFur, 3); p.line(cx + 7, bodyY + 11, cx + 9, bodyY + 4, backFur, 3);
+    } else { // side: tail trails behind (left)
+        p.line(16, bodyY + 7, 8, bodyY + 5, furD, 3); p.line(8, bodyY + 5, 7, bodyY - 2, furD, 3);
     }
 
-    // Head.
-    p.disc(cx, headY, 10, fur);
-    p.ell(cx - 4, headY - 4, 5, 4, furL);       // top-left highlight
-    p.ell(cx + 5, headY + 3, 4, 4, furD);       // bottom-right shade
-    // Face mask (muzzle).
-    p.ell(cx, headY + 2, 7, 6, face);
-    p.ell(cx, headY + 5, 4, 3, faceD);          // muzzle shade
-    // Brow ridge.
-    p.rect(cx - 7, headY - 3, 14, 2, furD);
+    // ── BODY ──
+    const bodyCol = dir === 'up' ? backFur : fur;
+    p.ell(cx, bodyY + 4, 9, 9, bodyCol);
+    p.rect(cx - 8, bodyY - 2, 16, 8, bodyCol);
+    if (dir === 'down') { p.ell(cx, bodyY + 3, 5, 6, face); p.ell(cx + 4, bodyY + 6, 4, 5, furD); }
+    else if (dir === 'side') { p.ell(cx + 2, bodyY + 4, 5, 7, face); p.ell(cx - 5, bodyY + 5, 4, 6, furD); }
+    else { p.ell(cx, bodyY + 4, 7, 7, backFur); p.ell(cx - 4, bodyY + 2, 4, 4, shade(fur, 0.32, 'dark')); }
 
-    // Eyes + highlight.
-    p.rect(cx - 5, headY - 1, 3, 3, '#1b1b1b');
-    p.rect(cx + 2, headY - 1, 3, 3, '#1b1b1b');
-    p.dot(cx - 4, headY - 1, '#ffffff');
-    p.dot(cx + 3, headY - 1, '#ffffff');
-    // Nose dots.
-    p.dot(cx - 1, headY + 4, faceD);
-    p.dot(cx + 1, headY + 4, faceD);
+    // ── ARMS (back arm first so it sits behind body on the side view) ──
+    const raise = pose === 'cast' ? 6 : 0;
+    if (dir === 'side') {
+        // far arm (behind), near arm (front, toward facing on cast)
+        arm(cx - 9, -swing, pose === 'cast' ? 4 : 0, furD);
+        if (pose === 'cast') p.rect(cx + 7, bodyY - 6, 5, 5, fur); // near arm thrust up-forward
+        else arm(cx + 6, swing, 0, fur);
+    } else {
+        arm(cx - 11, swing, raise, dir === 'up' ? backFur : fur);
+        arm(cx + 7, -swing, raise, dir === 'up' ? backFur : fur);
+    }
 
-    // Feature accents.
-    if (feature === 'tusks') { p.sym(cx - 6 + 12, headY + 6, 2, 3, '#f3ead2'); p.rect(cx - 6, headY + 6, 2, 3, '#f3ead2'); }
+    // ── EARS ──
+    if (feature === 'ears') { // elf — tall pointed ears
+        if (dir === 'side') { p.rect(cx - 9, headY - 9, 3, 10, fur); p.rect(cx - 8, headY - 7, 1, 6, face); }
+        else { p.sym(7, headY - 8, 3, 10, fur); if (dir === 'down') p.sym(8, headY - 6, 1, 6, face); }
+    } else if (dir === 'side') {
+        p.disc(cx - 7, headY - 1, 4, fur); p.disc(cx - 7, headY - 1, 2, dir === 'up' ? backFur : face);
+    } else {
+        p.disc(cx - 11, headY - 1, 4, fur); p.disc(cx + 11, headY - 1, 4, fur);
+        const inner = dir === 'up' ? backFur : face;
+        p.disc(cx - 11, headY - 1, 2, inner); p.disc(cx + 11, headY - 1, 2, inner);
+    }
+
+    // ── HEAD ──
+    p.disc(cx, headY, 10, dir === 'up' ? backFur : fur);
+    p.ell(cx - 4, headY - 4, 5, 4, dir === 'up' ? shade(fur, 0.05, 'light') : furL);
+    p.ell(cx + 5, headY + 3, 4, 4, furD);
+
+    if (dir === 'up') {
+        // back of head — no face; a small fur crown swirl only.
+        p.ell(cx, headY - 1, 6, 5, shade(fur, 0.1, 'dark'));
+    } else {
+        const fx = dir === 'side' ? cx + 2 : cx;   // muzzle shifts toward facing
+        p.ell(fx, headY + 2, dir === 'side' ? 6 : 7, 6, face);
+        p.ell(fx, headY + 5, 4, 3, faceD);
+        p.rect(cx - 7, headY - 3, 14, 2, furD);    // brow ridge
+        const ex = dir === 'side' ? cx + 1 : cx;
+        heroEyes(p, ex, headY - 1, pose === 'hurt');
+        p.dot(fx - 1, headY + 4, faceD); p.dot(fx + 1, headY + 4, faceD);
+        // open "shout" mouth on cast/hurt
+        if (pose === 'cast' || pose === 'hurt') p.rect(fx - 1, headY + 6, 3, 2, '#3a1410');
+    }
+
+    // ── FEATURE ACCENTS ──
+    if (feature === 'tusks' && dir !== 'up') { p.rect(cx - 6, headY + 6, 2, 3, '#f3ead2'); p.rect(cx + 4, headY + 6, 2, 3, '#f3ead2'); }
     if (feature === 'horns') { p.line(cx - 7, headY - 8, cx - 10, headY - 12, accent, 2); p.line(cx + 7, headY - 8, cx + 10, headY - 12, accent, 2); }
     if (feature === 'hood') { p.rect(cx - 11, headY - 9, 22, 6, furD); p.ell(cx, headY - 6, 11, 5, furD); }
     if (feature === 'hat') { p.rect(cx - 9, headY - 10, 18, 3, accent); p.ell(cx, headY - 12, 7, 4, accent); }
 
-    // Ember mark on the brow (Pyra's spark) unless a hat/hood covers it.
+    // Ember mark (Pyra's spark) — brow when facing the camera, crown when away.
     if (feature !== 'hat' && feature !== 'hood') {
-        p.rect(cx - 1, headY - 6, 2, 2, accent);
-        p.dot(cx, headY - 7, shade(accent, 0.4, 'light'));
+        const my = dir === 'up' ? headY - 2 : headY - 6;
+        p.rect(cx - 1, my, 2, 2, accent);
+        p.dot(cx, my - 1, shade(accent, 0.4, 'light'));
     }
 
     outline(p, shade(fur, 0.62, 'dark'));
     return p.finish();
+}
+
+// Back-compat: the original 4-frame monkey (frame 0 = idle, 1..3 = walk),
+// front-facing. Consumers that still want a flat array use getCharacterFrames.
+export function drawPixelMonkey(frame = 0, opts = {}) {
+    return frame === 0
+        ? drawPixelHero(opts, 'down', 'idle', 0)
+        : drawPixelHero(opts, 'down', 'walk', (frame - 1) % 3);
 }

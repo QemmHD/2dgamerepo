@@ -11,7 +11,7 @@ import {
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { Easing } from '../core/Easing.js';
 import {
-    getCharacterFrames, getGlowSprite,
+    getHeroFrames, heroSetFrames, getGlowSprite,
     drawCloakShape, drawHatShape, drawWeaponSkinOverlay,
 } from '../assets/ProceduralSprites.js';
 import { getCharacter } from '../content/characters.js';
@@ -20,6 +20,8 @@ import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
 // Player melee swing animation timing.
 const SWING_DUR = 0.3;
+// How long the cast (attack) pose holds after a primary-weapon shot.
+const CAST_DUR = 0.22;
 
 export class Player {
     constructor(x = PLAYER.startX, y = PLAYER.startY, characterId = 'monkey') {
@@ -30,25 +32,32 @@ export class Player {
         this.radius = PLAYER.radius;
         this.speed = PLAYER.speed;
         this.facingX = 1;
+        // 4-way facing for the directional sprite model: 'down'|'up'|'left'|'right'.
+        // Kept between moves so an idle hero keeps the last-faced direction.
+        this.facing = 'down';
         this.characterId = characterId;
-        // Frames: [0]=idle, [1..3]=walk cycle. draw() picks one per frame
-        // based on movement state — all four are cached up-front. The selected
-        // character recolors the shared silhouette via its palette.
+        // Directional pose frame model: { dirs:{down,up,side}, each = {idle,
+        // walk:[3], cast, hurt} }. draw() picks dir+state by facing/animState.
         const ch = getCharacter(characterId);
-        this.frames = getCharacterFrames(characterId, ch);
+        this.heroFrames = getHeroFrames(characterId, ch);
+        this._allHeroFrames = heroSetFrames(this.heroFrames);
         // LPC-bodied heroes get the imported cape sprite for their cloak (it
         // aligns to the LPC body); the chibi cast keeps the procedural drape.
         this.isLpcBody = !!ch.lpc;
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
+        // Attack(cast) pose timer. Set by a melee swing now (triggerSwing); the
+        // ranged/primary-weapon fire hook that calls triggerCast() lands in PR-B
+        // (held weapons). While >0 the hero holds the cast pose.
+        this.castTimer = 0;
         // Free-running clock (advances even while idle) for the idle breath.
         this.aliveTimer = 0;
         this.moving = false;
         // Cosmetic trail: recent positions, drawn as a fading wake.
         this.trailPositions = [];
         this._trailTick = 0;
-        // Lazily-built fur-tinted sprite frames (keyed by color).
-        this._tintCache = { color: null, frames: null };
+        // Lazily-built fur-tint lookup (origCanvas → tinted copy), keyed by color.
+        this._tintCache = { color: null, map: null };
         // Weapon-themed skin overlay (set by Game from the starting weapon) +
         // melee swing animation state ({ age, dir } or null).
         this.weaponSkin = null;
@@ -185,7 +194,13 @@ export class Player {
         if (this.moving) this.bobTimer += dt;
         this.aliveTimer += dt;
         if (this.swing) { this.swing.age += dt; if (this.swing.age >= SWING_DUR) this.swing = null; }
-        if (move.x !== 0) this.facingX = move.x < 0 ? -1 : 1;
+        if (this.castTimer > 0) this.castTimer = Math.max(0, this.castTimer - dt);
+        // 4-way facing from the movement vector (dominant axis); kept when idle.
+        if (this.moving) {
+            if (Math.abs(this.vx) >= Math.abs(this.vy)) this.facing = this.vx < 0 ? 'left' : 'right';
+            else this.facing = this.vy < 0 ? 'up' : 'down';
+            this.facingX = this.vx < 0 ? -1 : (this.vx > 0 ? 1 : this.facingX);
+        }
 
         // Record a sparse trail (cosmetic only) while moving.
         if (this.appearance && this.appearance.trailColor) {
@@ -229,15 +244,16 @@ export class Player {
         return heal;
     }
 
-    // Build fur-tinted copies of the sprite frames once per fur color. Uses an
-    // offscreen canvas + 'source-atop' so only the sprite pixels are tinted
-    // (transparent background stays clear). Falls back to untinted on failure
-    // (e.g. headless render harness without a real canvas).
-    _tintedFrames(color) {
-        if (this._tintCache.color === color) return this._tintCache.frames || this.frames;
-        let out = null;
+    // Build fur-tinted copies of EVERY directional pose frame once per fur
+    // color, returning a Map(origCanvas → tintedCanvas). 'source-atop' tints
+    // only the sprite pixels (transparent margin stays clear). Returns null on
+    // failure (e.g. headless harness) so draw() falls back to the untinted frame.
+    _tintMap(color) {
+        if (this._tintCache.color === color) return this._tintCache.map;
+        let map = null;
         try {
-            out = this.frames.map((f) => {
+            map = new Map();
+            for (const f of this._allHeroFrames) {
                 const c = document.createElement('canvas');
                 c.width = f.width; c.height = f.height;
                 const cx = c.getContext('2d');
@@ -247,12 +263,15 @@ export class Player {
                 cx.globalAlpha = 0.42;
                 cx.fillStyle = color;
                 cx.fillRect(0, 0, c.width, c.height);
-                return c;
-            });
-        } catch (e) { out = null; }
-        this._tintCache = { color, frames: out };
-        return out || this.frames;
+                map.set(f, c);
+            }
+        } catch (e) { map = null; }
+        this._tintCache = { color, map };
+        return map;
     }
+
+    // Hold the cast (attack) pose briefly; called when the primary weapon fires.
+    triggerCast() { this.castTimer = CAST_DUR; }
 
     draw(ctx) {
         let alpha = 1;
@@ -309,12 +328,21 @@ export class Player {
             ctx.restore();
         }
 
-        // 3 walk frames cycled at ~6 Hz, idle when standing still.
-        const walkIdx = this.moving
-            ? 1 + (Math.floor(this.bobTimer * 6) % 3)
-            : 0;
-        const frames = ap.furColor ? this._tintedFrames(ap.furColor) : this.frames;
-        const sprite = frames[walkIdx] ?? frames[0];
+        // Directional facing → which dir set + horizontal flip.
+        let dir = 'down', flip = false;
+        if (this.facing === 'up') dir = 'up';
+        else if (this.facing === 'left') { dir = 'side'; flip = true; }
+        else if (this.facing === 'right') dir = 'side';
+        // Animation state precedence: hurt > cast > walk > idle.
+        let state = 'idle', idx = 0;
+        if (this.hitFlashTimer > 0) state = 'hurt';
+        else if (this.castTimer > 0) state = 'cast';
+        else if (this.moving) { state = 'walk'; idx = Math.floor(this.bobTimer * 6) % 3; }
+        const dset = this.heroFrames.dirs[dir] || this.heroFrames.dirs.down;
+        const poseArr = dset[state] || dset.idle;
+        const orig = poseArr[idx % poseArr.length] || poseArr[0];
+        const tintMap = ap.furColor ? this._tintMap(ap.furColor) : null;
+        const sprite = (tintMap && tintMap.get(orig)) || orig;
 
         // Shadow Dash afterimage smear: fading ghost copies strung along the
         // blink path (origin → destination), drawn in world space behind the
@@ -332,7 +360,7 @@ export class Player {
                 ctx.globalAlpha = k * 0.3 * (1 - f * 0.5);
                 ctx.save();
                 ctx.translate(gx, gy);
-                if (this.facingX < 0) ctx.scale(-1, 1);
+                if (flip) ctx.scale(-1, 1);
                 ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
                 ctx.restore();
             }
@@ -362,7 +390,7 @@ export class Player {
         if (ap.cloakColor) this._drawCloak(ctx, ap.cloakColor);
 
         ctx.save();
-        if (this.facingX < 0) ctx.scale(-1, 1);
+        if (flip) ctx.scale(-1, 1);
         ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
         // Hit flash via an additive re-draw of the sprite (no ctx.filter —
         // see Enemy.draw for the iOS rationale).
@@ -412,6 +440,7 @@ export class Player {
     // cosmetic. A fresh swing restarts the arc so it stays in rhythm.
     triggerSwing(angle) {
         this.swing = { age: 0, dir: angle };
+        this.castTimer = CAST_DUR;   // a melee swing also holds the attack pose
     }
 
     // The slash arc + blade trail + leading flash, drawn in world space at the
