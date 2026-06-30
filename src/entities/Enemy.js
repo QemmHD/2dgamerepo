@@ -36,6 +36,9 @@ import {
     getJuggernautFrames,
     getHealerFrames,
     getShielderFrames,
+    getSpeedDemonFrames,
+    getDreadhulkFrames,
+    getBrawlerFrames,
     getGlowSprite,
     getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
@@ -58,18 +61,24 @@ const FRAMES_BY_TYPE = {
     juggernaut:      { get: getJuggernautFrames,      hz: 1.2 },
     healer:          { get: getHealerFrames,          hz: 6 },
     shielder:        { get: getShielderFrames,        hz: 3 },
-    vinebackGoliath: { get: getVinebackGoliathFrames, hz: 1.6 },
-    stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 7 },
-    gloomMaw:        { get: getGloomMawFrames,         hz: 4 },
-    rimewarden:      { get: getRimewardenFrames,       hz: 2.2 },
-    hoarfang:        { get: getHoarfangFrames,         hz: 5 },
-    aurorath:        { get: getAurorathFrames,         hz: 3 },
-    ossuar:          { get: getOssuarFrames,           hz: 2 },
-    mourndrift:      { get: getMourndriftFrames,       hz: 3.5 },
-    nihagault:       { get: getNihagaultFrames,        hz: 4 },
-    dunescourge:     { get: getDunescourgeFrames,      hz: 5 },
-    cindermaw:       { get: getCindermawFrames,        hz: 5 },
-    solnakh:         { get: getSolnakhFrames,          hz: 3 },
+    speedDemon:      { get: getSpeedDemonFrames,       hz: 16 },
+    dreadhulk:       { get: getDreadhulkFrames,        hz: 1.1 },
+    brawler:         { get: getBrawlerFrames,          hz: 4 },
+    // Boss animation Hz roughly doubled so their bodies/wings/maws read as
+    // alive and aggressive instead of a slow crawl (the % frames.length wrap
+    // makes any Hz index-safe regardless of frame count).
+    vinebackGoliath: { get: getVinebackGoliathFrames, hz: 3 },
+    stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 12 },
+    gloomMaw:        { get: getGloomMawFrames,         hz: 8 },
+    rimewarden:      { get: getRimewardenFrames,       hz: 5 },
+    hoarfang:        { get: getHoarfangFrames,         hz: 9 },
+    aurorath:        { get: getAurorathFrames,         hz: 6 },
+    ossuar:          { get: getOssuarFrames,           hz: 5 },
+    mourndrift:      { get: getMourndriftFrames,       hz: 7 },
+    nihagault:       { get: getNihagaultFrames,        hz: 8 },
+    dunescourge:     { get: getDunescourgeFrames,      hz: 9 },
+    cindermaw:       { get: getCindermawFrames,        hz: 9 },
+    solnakh:         { get: getSolnakhFrames,          hz: 6 },
 };
 
 // Construction-time options:
@@ -944,12 +953,12 @@ export function commitBossAttack(e, atk, player, out) {
         // player, so you can't just stand still after the first dodge.
         const count = atk.count ?? 4;
         const base = Math.atan2(player.y - e.y, player.x - e.x);
-        const spd = atk.projectileSpeed ?? 250;
+        const spd = atk.projectileSpeed ?? 420;
         for (let i = 0; i < count; i++) {
             const a = base + (count > 1 ? (i / (count - 1) - 0.5) * 1.6 : 0);
             out.enemyProjectiles.push(new EnemyProjectile(
-                e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd, atk.projectileDamage ?? 14, {
-                    homing: true, turnRate: atk.turnRate ?? 2.2, maxSpeed: atk.maxSpeed ?? 360,
+                e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd, atk.projectileDamage ?? 26, {
+                    homing: true, turnRate: atk.turnRate ?? 3.6, maxSpeed: atk.maxSpeed ?? 600,
                     color: atk.color, lifetime: 5.0,
                 }));
         }

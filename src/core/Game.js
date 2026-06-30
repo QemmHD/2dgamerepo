@@ -1436,7 +1436,9 @@ export class Game {
         const mt = this.mapTier ?? 1;
         const mapHpMul = 1 + (mt - 1) * 0.07;
         const mapDmgMul = 1 + (mt - 1) * 0.04;
-        const bossHpMul = Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul * (this.runScale?.hp ?? 1) * mapHpMul;
+        // baseHpMul lengthens EVERY boss fight (early and late) by a flat factor
+        // so a duel is a real war of attrition, not a quick burst-down.
+        const bossHpMul = (BOSS.baseHpMul ?? 1) * Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul * (this.runScale?.hp ?? 1) * mapHpMul;
         const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.12) * mapDmgMul;
         const boss = new Enemy(id, x, y, {
             healthMul: bossHpMul,
