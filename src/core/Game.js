@@ -51,6 +51,7 @@ import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { evaluateAchievements } from '../content/achievements.js';
 import { evaluateDaily, currentDayNumber } from '../content/dailyChallenges.js';
+import { keystoneBreadcrumbs } from '../content/keystones.js';
 import { DIFFICULTY, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS } from '../config/GameConfig.js';
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
@@ -2986,6 +2987,13 @@ export class Game {
         base.upgradeChoices = this.upgradeChoices;
         base.upgradeCounts = this.upgradeSystem.appliedCounts;
         base.pendingLevelUps = this.pendingLevelUps;
+        // Keystone breadcrumbs (only while the level-up overlay is up): which
+        // recipe-gated capstones are one piece short, so the screen can hint
+        // what to build toward. Cheap; computed only during a level-up.
+        if (this.upgradeChoices) {
+            const counts = this.upgradeSystem.appliedCounts;
+            base.keystoneHints = keystoneBreadcrumbs(this, (id) => (counts[`keystone:${id}`] ?? 0) >= 1, 2);
+        }
         base.levelUpAge = this.levelUpAge;
         base.gameOver = this.gameOver;
         base.gameOverAge = this.gameOverAge;
