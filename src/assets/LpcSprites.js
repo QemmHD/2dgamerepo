@@ -18,6 +18,7 @@
 
 import { SPRITE_SIZE } from '../config/GameConfig.js';
 import { getBruteFrames } from './ProceduralSprites.js';
+import { recolorCanvas } from '../render/recolor.js';
 
 const CELL = 64;          // LPC source cell size
 const COLS = 9, ROWS = 4; // walk sheet grid
@@ -50,7 +51,9 @@ function loadImage(url) {
     });
 }
 
-// Slice one direction's 8 walk frames, upscaled crisp to SPRITE_SIZE.
+// Slice one direction's 8 walk frames, upscaled crisp to SPRITE_SIZE. An
+// optional recolor spec ({op,color,alpha}) is applied via the shared recolor
+// utility (same path the customizable-icon/cosmetic system uses).
 function sliceDir(img, rowIdx, recolor) {
     const frames = [];
     for (const col of WALK_COLS) {
@@ -59,19 +62,7 @@ function sliceDir(img, rowIdx, recolor) {
         const cx = c.getContext('2d');
         cx.imageSmoothingEnabled = false; // nearest-neighbour upscale → crisp
         cx.drawImage(img, col * CELL, rowIdx * CELL, CELL, CELL, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
-        if (recolor) {
-            cx.globalCompositeOperation = recolor.op;
-            cx.globalAlpha = recolor.alpha ?? 1;
-            cx.fillStyle = recolor.color;
-            cx.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
-            // Clip the tint to the sprite's own pixels (don't paint the
-            // transparent margin).
-            cx.globalCompositeOperation = 'destination-in';
-            cx.globalAlpha = 1;
-            cx.drawImage(img, col * CELL, rowIdx * CELL, CELL, CELL, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
-            cx.globalCompositeOperation = 'source-over';
-        }
-        frames.push(c);
+        frames.push(recolor ? recolorCanvas(c, recolor) : c);
     }
     return frames;
 }
