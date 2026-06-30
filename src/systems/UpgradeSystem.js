@@ -18,6 +18,7 @@ import { pickWeighted } from '../core/MathUtils.js';
 import { WEAPONS, WEAPON_IDS } from '../content/weapons.js';
 import { PASSIVES, PASSIVE_IDS } from '../content/passives.js';
 import { MAX_WEAPON_LEVEL, MAX_PASSIVE_LEVEL } from '../config/GameConfig.js';
+import { cardPatronMul } from '../content/patrons.js';
 
 const STAT_UPGRADES = [
     {
@@ -157,10 +158,16 @@ export class UpgradeSystem {
     rollChoices(game, count = 3) {
         const pool = this._buildPool(game).filter((c) => !this.banished.has(c.id));
 
+        // Patron Draft: bias the roll toward the run's committed Patron pools
+        // (and away from rival Patrons). With no Patron committed this multiplier
+        // is 1 for every card, so the draft is identical to the unbiased roll.
+        const committed = game.committedPatrons || [];
+        const weightOf = (c) => (c.weight ?? 1) * cardPatronMul(c.id, committed);
+
         const choices = [];
         const remaining = pool.slice();
         while (choices.length < count && remaining.length > 0) {
-            const picked = pickWeighted(remaining);
+            const picked = pickWeighted(remaining, weightOf);
             if (!picked) break;
             choices.push(picked);
             remaining.splice(remaining.indexOf(picked), 1);
