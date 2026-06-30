@@ -24,7 +24,7 @@ import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
-import { CHARACTERS, CHARACTER_IDS, getCharacter } from '../content/characters.js';
+import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getHeroFrames, drawWeaponSkinOverlay } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
@@ -245,7 +245,7 @@ export class MenuRenderer {
         const heldProp = resolveWeaponProp(startWeaponId);
         // this._t (wall-clock seconds, frame-rate independent) is set in draw()
         // and drives the avatar's subtle idle motion.
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp);
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id));
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
         ctx.fillText(`${ch.name} — ${ch.title}`, ccx, c.y + c.h * 0.46);
@@ -626,7 +626,7 @@ export class MenuRenderer {
     // cached character frame) is supplied it's drawn as the body so the menu
     // model exactly matches the selected character; otherwise a procedural
     // blob is used as a fallback.
-    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null) {
+    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null, hold = null) {
         // The avatar draws the body sprite at S=r*2.4, so the shared cosmetic +
         // weapon-skin helpers (authored in sprite-half units) take s = S/2.
         const S = r * 2.4;
@@ -673,13 +673,16 @@ export class MenuRenderer {
         if (heldProp) {
             const propSprite = getWeaponProp(heldProp.prop, heldProp.accent, heldProp.glow);
             if (propSprite) {
-                const pscale = (s / 91) * 0.92;
+                // Match the in-game per-character hold (grip/lift/scale/tilt) so
+                // the preview shows how THIS hero wields the weapon.
+                const H = hold || { grip: 0.18, lift: 0.12, scale: 1.0, tilt: 0 };
+                const pscale = (s / 91) * 0.92 * H.scale;
                 const ang = 0.5;
-                const px = cx + Math.cos(ang) * s * 0.18;
-                const py = cy + Math.sin(ang) * s * 0.18 + s * 0.12;
+                const px = cx + Math.cos(ang) * s * H.grip;
+                const py = cy + Math.sin(ang) * s * H.grip + s * H.lift;
                 ctx.save();
                 ctx.translate(px, py);
-                ctx.rotate(ang);
+                ctx.rotate(ang + H.tilt);
                 ctx.drawImage(propSprite.canvas, -propSprite.gripX * pscale, -propSprite.gripY * pscale,
                     propSprite.w * pscale, propSprite.h * pscale);
                 ctx.restore();
