@@ -523,6 +523,8 @@ export class Game {
         this.comboTimer = 0;
         this.comboBest = 0;
         this._comboMilestoneIdx = 0;
+        // Twilight (elite-army endgame) one-shot announce latch.
+        this._twilightAnnounced = false;
         // Run objectives: ids completed this run + the list (for the game-over
         // summary). Repeatable each run.
         this._objDone = new Set();
@@ -803,6 +805,16 @@ export class Game {
     // accessibility toggle so disabling shake silences everything.
     _addTrauma(amount) {
         if (this.shakeEnabled) this.camera.addTrauma(amount);
+    }
+
+    // Player-hit shake SCALED by how big the hit was (fraction of max HP), so a
+    // boss slam feels far heavier than chip damage — and a big hit adds a brief
+    // freeze-frame. Capped so it never whites the screen out.
+    _playerHurtShake(dealt) {
+        const frac = Math.min(1, (dealt || 0) / Math.max(1, this.player.maxHp));
+        const mul = 0.5 + frac * 1.7;
+        this._shake(SCREEN_SHAKE.intensity * mul, SCREEN_SHAKE.duration * (0.8 + frac * 0.7));
+        if (frac > 0.18) this._hitStop(Math.min(0.1, frac * 0.2));
     }
 
     // Freeze the sim for `sec` seconds (kept as a max so a big hit landing
@@ -1832,6 +1844,13 @@ export class Game {
 
         this.waveDirector.update(dt, this.time, this.enemies.length);
         this.waveState = this._applyRunScale(this.waveDirector.getState(this.time));
+        // TWILIGHT onset — announce the elite-army climax once, with a cue.
+        if (this.waveState.twilight && !this._twilightAnnounced) {
+            this._twilightAnnounced = true;
+            this.waveDirector.announce('✦ TWILIGHT — THE HORDE TURNS ✦', 3.6, '#c97bff');
+            this.audio.bossSpawn();
+            this._shake(SCREEN_SHAKE.intensity * 0.7, 0.5);
+        }
 
         // One boss at a time: gate the scheduler on a live "is any boss alive"
         // check so a scheduled spawn is held (not stacked) while one is active.
@@ -1977,7 +1996,7 @@ export class Game {
                     if (d <= hz.r && this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
                         const dealt = this.player.takeDamage(hz.damage);
                         if (dealt > 0) {
-                            this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+                            this._playerHurtShake(dealt);
                             this._pushFeedback('hit', 0.32);
                             this.damageNumbers.push(new DamageNumber(
                                 this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'));
@@ -2003,7 +2022,7 @@ export class Game {
                     const dealt = this.player.takeDamage(hz.damage);
                     if (dealt > 0) {
                         hz.hitPlayer = true;
-                        this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+                        this._playerHurtShake(dealt);
                         this._pushFeedback('hit', 0.32);
                         this.damageNumbers.push(new DamageNumber(
                             this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'
@@ -2029,6 +2048,9 @@ export class Game {
                 this.pendingLevelUps += levels;
                 this._pushFeedback('levelup', 0.5);
                 this.audio.levelUp();
+                // A brief freeze-frame punches the level-up into a "moment"
+                // before the upgrade overlay opens (skipped under reduced-effects).
+                this._hitStop(0.07);
                 this.particles.levelUpBurst(this.player.x, this.player.y);
                 this._spawnRing(this.player.x, this.player.y, {
                     maxR: 200, width: 9, life: 0.6, color: '#8fe1ff', ease: 'outCubic',
@@ -2145,7 +2167,7 @@ export class Game {
             }
         }
         if (collisionResult.playerHit) {
-            this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
+            this._playerHurtShake(collisionResult.playerDamageTaken);
             this._pushFeedback('hit', 0.32);
             this.damageNumbers.push(new DamageNumber(
                 this.player.x,
