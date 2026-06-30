@@ -46,8 +46,9 @@ export class Player {
         this.isLpcBody = !!ch.lpc;
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
-        // Attack(cast) pose timer — set by triggerCast() when the primary
-        // weapon fires; while >0 the hero holds the cast pose.
+        // Attack(cast) pose timer. Set by a melee swing now (triggerSwing); the
+        // ranged/primary-weapon fire hook that calls triggerCast() lands in PR-B
+        // (held weapons). While >0 the hero holds the cast pose.
         this.castTimer = 0;
         // Free-running clock (advances even while idle) for the idle breath.
         this.aliveTimer = 0;

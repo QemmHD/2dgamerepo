@@ -16,7 +16,7 @@ import { SPRITE_SIZE, SPRITE_SS, SPRITE_FX, MAP, GEM_TIERS, LIGHT_COLORS } from 
 import { TWO_PI } from '../core/MathUtils.js';
 // LPC character frames (imported playable bodies). Only called at runtime, so
 // the ProceduralSprites ↔ LpcSprites import cycle is safe (live bindings).
-import { getLpcFrames } from './LpcSprites.js';
+import { getLpcFrames, isLpcLoaded } from './LpcSprites.js';
 import { drawPixelMonkey, drawPixelHero } from './PixelArt.js';
 
 const cache = new Map();
@@ -70,6 +70,7 @@ export function getGlowSprite(color) {
 // is a one-time cost and later calls are free Map hits.
 export function prewarmSprites() {
     getMonkeyFrames();
+    getHeroFrames('monkey');   // warm the default directional pose set at boot
     getSlimeFrames();
     getBatFrames();
     getBruteFrames();
@@ -180,9 +181,18 @@ function buildPixelHeroSet(opts) {
     return { kind: 'pixel', dirs: { down: mk('down'), up: mk('up'), side: mk('side') } };
 }
 
+// Copy a canvas so addOutline (which mutates in place) never touches the
+// SHARED cached LPC frames the enemies also draw.
+function copyCanvas(src) {
+    const c = document.createElement('canvas');
+    c.width = src.width; c.height = src.height;
+    c.getContext('2d').drawImage(src, 0, 0);
+    return c;
+}
+
 function buildLpcHeroSet(model) {
     const fr = getLpcFrames(model); // { up, left, down, right } of 8-frame walk arrays
-    const O = (c) => addOutline(c);
+    const O = (c) => addOutline(copyCanvas(c)); // outline a COPY — never the shared enemy canvas
     const pick = (arr) => {
         if (!arr || !arr.length) return null;
         const idle = O(arr[0]);
@@ -204,7 +214,9 @@ export function getHeroFrames(id, char = null) {
     const key = `heroFrames:${id}`;
     if (cache.has(key)) return cache.get(key);
     let set = null;
-    if (char && char.lpc && char.lpcModel) set = buildLpcHeroSet(char.lpcModel);
+    // Only use the LPC body if its sheet actually loaded; otherwise fall through
+    // to the recolored pixel hero (NOT the brute stand-in getLpcFrames returns).
+    if (char && char.lpc && char.lpcModel && isLpcLoaded(char.lpcModel)) set = buildLpcHeroSet(char.lpcModel);
     if (!set) {
         const opts = char ? { palette: char.palette, feature: char.feature, accent: char.accent } : {};
         set = buildPixelHeroSet(opts);
