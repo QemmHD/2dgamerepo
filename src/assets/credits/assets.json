@@ -47,6 +47,22 @@
       "frameHeight": 64
     },
     {
+      "id": "lpc_cloak_back",
+      "file": "src/assets/lpc/cloak_back.png",
+      "usedFor": "Recolorable cloak cosmetic for the LPC-bodied playable heroes (menu + in-game)",
+      "type": "cosmetic",
+      "slot": "cloak",
+      "source": "Universal LPC Spritesheet (Liberated Pixel Cup base assets)",
+      "sourceUrl": "https://github.com/makrohn/Universal-LPC-spritesheet",
+      "authors": ["Liberated Pixel Cup contributors"],
+      "license": "CC-BY-SA-3.0 / GPL-3.0",
+      "attributionRequired": true,
+      "modified": true,
+      "modifications": "Cropped the front (down) standing frame from the LPC behind-body cape sheet into a single 182x182 sprite; recolored per equipped cloak colour at runtime.",
+      "frameWidth": 182,
+      "frameHeight": 182
+    },
+    {
       "id": "tile_ground_forest",
       "file": "src/assets/textures/ground_forest.png",
       "usedFor": "World ground floor texture (recolored per biome by the map theme)",

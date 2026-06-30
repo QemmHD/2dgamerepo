@@ -12,6 +12,7 @@ import { roundRectPath, clamp01, easeOutCubic } from '../render/DrawUtils.js';
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS, pactTier } from '../config/GameConfig.js';
 import { rarityColor, rarityName, RARITIES } from '../content/rarities.js';
 import { getRarityIcon } from '../assets/CustomIcons.js';
+import { getCloakSprite } from '../assets/LpcSprites.js';
 import {
     GEAR, GEAR_CATEGORIES, GEAR_CATEGORY_LABELS, gearByCategory, buffSummary,
 } from '../content/gear.js';
@@ -233,7 +234,7 @@ export class MenuRenderer {
         const skin = resolveWeaponSkin(resolveStartingWeapon(save));
         // this._t (wall-clock seconds, frame-rate independent) is set in draw()
         // and drives the avatar's subtle idle motion.
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t);
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
         ctx.fillText(`${ch.name} — ${ch.title}`, ccx, c.y + c.h * 0.46);
@@ -614,7 +615,7 @@ export class MenuRenderer {
     // cached character frame) is supplied it's drawn as the body so the menu
     // model exactly matches the selected character; otherwise a procedural
     // blob is used as a fallback.
-    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0) {
+    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false) {
         // The avatar draws the body sprite at S=r*2.4, so the shared cosmetic +
         // weapon-skin helpers (authored in sprite-half units) take s = S/2.
         const S = r * 2.4;
@@ -627,8 +628,19 @@ export class MenuRenderer {
             ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill();
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
         }
-        // Cloak (shared shape — matches the in-game player exactly).
-        if (ap.cloakColor) drawCloakShape(ctx, cx, cy, s, ap.cloakColor);
+        // Cloak: imported LPC cape for LPC heroes (drawn at the body box so it
+        // aligns), procedural drape otherwise — matches the in-game player.
+        if (ap.cloakColor) {
+            const cape = isLpc ? getCloakSprite(ap.cloakColor) : null;
+            if (cape) {
+                // Flared a touch larger + nudged down so it drapes behind the
+                // hero (matches Player._drawCloak exactly).
+                const dw = S * 1.32, off = S * 0.075;
+                ctx.drawImage(cape, cx - dw / 2, cy - dw / 2 + off, dw, dw);
+            } else {
+                drawCloakShape(ctx, cx, cy, s, ap.cloakColor);
+            }
+        }
         if (sprite) {
             // Real character sprite as the body, sized to the avatar box.
             ctx.drawImage(sprite, cx - S / 2, cy - S / 2, S, S);

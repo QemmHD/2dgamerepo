@@ -14,6 +14,9 @@
 
 import { SPRITE_SIZE, SPRITE_SS, SPRITE_FX, MAP, GEM_TIERS, LIGHT_COLORS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
+// LPC character frames (imported playable bodies). Only called at runtime, so
+// the ProceduralSprites ↔ LpcSprites import cycle is safe (live bindings).
+import { getLpcCharacterFrames } from './LpcSprites.js';
 
 const cache = new Map();
 
@@ -168,6 +171,17 @@ export function getCharacterFrames(id, char = null) {
     if (id === 'monkey' || !char) return getMonkeyFrames();
     const key = `charFrames:${id}`;
     if (cache.has(key)) return cache.get(key);
+    // Imported LPC-bodied heroes: use the real spritesheet walk frames (outlined
+    // for visual consistency with the procedural cast). Falls back to the
+    // procedural silhouette below if the sheet failed to load.
+    if (char.lpc && char.lpcModel) {
+        const lpc = getLpcCharacterFrames(char.lpcModel);
+        if (lpc) {
+            const frames = lpc.map((f) => addOutline(f));
+            cache.set(key, frames);
+            return frames;
+        }
+    }
     const opts = { palette: char.palette, feature: char.feature, accent: char.accent };
     const frames = [
         addOutline(drawMonkey(SPRITE_SIZE, 0, opts)),

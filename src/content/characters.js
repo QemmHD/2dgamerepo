@@ -77,6 +77,46 @@ export const CHARACTERS = {
         feature: 'hood',
         unlocked: true,
     },
+
+    // ── Imported LPC-bodied heroes ──────────────────────────────────────
+    // Real Liberated Pixel Cup character bodies (CC-BY-SA 3.0 / GPL 3.0 — see
+    // ASSET_CREDITS.md), not the chibi wick-keeper silhouette. `lpc: true` +
+    // `lpcModel` route getCharacterFrames() to the imported sprite, and the
+    // recolorable LPC cloak cosmetic layers properly on these full-body frames.
+    // accent / palette.face still feed the HUD + menu chrome.
+    lpcKnight: {
+        id: 'lpcKnight',
+        name: 'Sir Aldric',
+        title: 'The Vanguard',
+        description: 'Imported LPC vanguard. Sturdy all-rounder: +15% HP. Cloaks fit him properly.',
+        stats: { hpMul: 1.15, speedMul: 1, damageMul: 1, cooldownMul: 1, pickupRangeMul: 1, xpMul: 1 },
+        palette: { fur: '#c9b48f', furDark: '#7a6b50', furLight: '#e6d6b2', face: '#f0d2a5' },
+        accent: '#ffd27a',
+        lpc: true, lpcModel: 'human',
+        unlocked: true,
+    },
+    lpcWarchief: {
+        id: 'lpcWarchief',
+        name: 'Brakka',
+        title: 'The Warchief',
+        description: 'Imported LPC orc warchief. +30% HP, +12% damage, −8% move speed.',
+        stats: { hpMul: 1.30, speedMul: 0.92, damageMul: 1.12, cooldownMul: 1, pickupRangeMul: 1, xpMul: 1 },
+        palette: { fur: '#5fae54', furDark: '#356b30', furLight: '#82c873', face: '#cdd9a0' },
+        accent: '#9be36a',
+        lpc: true, lpcModel: 'orc',
+        unlocked: true,
+    },
+    lpcRevenant: {
+        id: 'lpcRevenant',
+        name: 'Morthys',
+        title: 'The Revenant',
+        description: 'Imported LPC revenant. Glass cannon: +15% damage and −10% cooldowns, −20% HP.',
+        stats: { hpMul: 0.80, speedMul: 1.05, damageMul: 1.15, cooldownMul: 0.90, pickupRangeMul: 1, xpMul: 1 },
+        palette: { fur: '#e8eef0', furDark: '#8a929a', furLight: '#ffffff', face: '#e8eef0' },
+        accent: '#cfe8ee',
+        lpc: true, lpcModel: 'skeleton',
+        unlocked: true,
+    },
 };
 
 export const CHARACTER_IDS = Object.keys(CHARACTERS);
