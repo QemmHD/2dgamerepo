@@ -44,6 +44,7 @@ import {
 } from '../assets/ProceduralSprites.js';
 import { getLpcFrames } from '../assets/LpcSprites.js';
 import { getMonsterFrames } from '../assets/MonsterSprites.js';
+import { getPixelBossFrames } from '../assets/PixelBosses.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 
@@ -80,18 +81,20 @@ const FRAMES_BY_TYPE = {
     // Boss animation Hz roughly doubled so their bodies/wings/maws read as
     // alive and aggressive instead of a slow crawl (the % frames.length wrap
     // makes any Hz index-safe regardless of frame count).
-    vinebackGoliath: { get: getVinebackGoliathFrames, hz: 3 },
-    stormwingAlpha:  { get: getStormwingAlphaFrames,  hz: 12 },
-    gloomMaw:        { get: getGloomMawFrames,         hz: 8 },
-    rimewarden:      { get: getRimewardenFrames,       hz: 5 },
-    hoarfang:        { get: getHoarfangFrames,         hz: 9 },
-    aurorath:        { get: getAurorathFrames,         hz: 6 },
-    ossuar:          { get: getOssuarFrames,           hz: 5 },
-    mourndrift:      { get: getMourndriftFrames,       hz: 7 },
-    nihagault:       { get: getNihagaultFrames,        hz: 8 },
-    dunescourge:     { get: getDunescourgeFrames,      hz: 9 },
-    cindermaw:       { get: getCindermawFrames,        hz: 9 },
-    solnakh:         { get: getSolnakhFrames,          hz: 6 },
+    // Hand-drawn pixel-art bosses (unique per boss), each falling back to its
+    // procedural drawer. Low Hz — these are 2-frame idle loops.
+    vinebackGoliath: { get: () => getPixelBossFrames('vinebackGoliath') || getVinebackGoliathFrames(), hz: 2.5 },
+    stormwingAlpha:  { get: () => getPixelBossFrames('stormwingAlpha')  || getStormwingAlphaFrames(),  hz: 6 },
+    gloomMaw:        { get: () => getPixelBossFrames('gloomMaw')        || getGloomMawFrames(),         hz: 3 },
+    rimewarden:      { get: () => getPixelBossFrames('rimewarden')      || getRimewardenFrames(),       hz: 2.5 },
+    hoarfang:        { get: () => getPixelBossFrames('hoarfang')        || getHoarfangFrames(),         hz: 4 },
+    aurorath:        { get: () => getPixelBossFrames('aurorath')        || getAurorathFrames(),         hz: 3 },
+    ossuar:          { get: () => getPixelBossFrames('ossuar')          || getOssuarFrames(),           hz: 3 },
+    mourndrift:      { get: () => getPixelBossFrames('mourndrift')      || getMourndriftFrames(),       hz: 3 },
+    nihagault:       { get: () => getPixelBossFrames('nihagault')       || getNihagaultFrames(),        hz: 4 },
+    dunescourge:     { get: () => getPixelBossFrames('dunescourge')     || getDunescourgeFrames(),      hz: 4 },
+    cindermaw:       { get: () => getPixelBossFrames('cindermaw')       || getCindermawFrames(),        hz: 5 },
+    solnakh:         { get: () => getPixelBossFrames('solnakh')         || getSolnakhFrames(),          hz: 5 },
 };
 
 // Construction-time options:
