@@ -50,6 +50,11 @@ import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 // How long the spawn-in scale pop lasts (seconds). easeOutBack overshoot.
 const SPAWN_POP_DUR = 0.28;
 
+// Plain chasers within this range of the player get the "smarter" chase
+// (intercept lead + weave + obstacle steering). Far-off trash keeps the cheap
+// straight chase, so the per-frame cost stays bounded at the enemy cap.
+const CHASER_BRAIN_RANGE = 1500;
+
 const FRAMES_BY_TYPE = {
     slime:           { get: getSlimeFrames,           hz: 5 },
     bat:             { get: getBatFrames,             hz: 10 },
@@ -417,12 +422,23 @@ export class Enemy {
             }
         }
 
-        // Big-body obstacle avoidance: bosses and juggernauts are wide enough to
-        // wedge against buildings on a straight chase. When the path directly
-        // ahead is blocked, rotate the move heading to the nearest clear angle
-        // so they flow AROUND cover instead of grinding into it (and getting
-        // stuck). Skipped while dashing/bracing (they commit their heading).
-        if (obstacleSystem && (this.boss || this.radius >= 85) && (moveX || moveY) && spd > 0 &&
+        // Smarter trash: a plain chaser (no behavior) near the player leads the
+        // player's movement a little (cut-off pursuit, not psychic) and weaves
+        // so a swarm approaches as a thinking pack instead of one dead-straight
+        // radial line. Faded out up close so it commits to the kill. Cheap
+        // vector math, gated to nearby enemies.
+        const isPlainChaser = !this.boss && !this.behavior;
+        if (!frozen && isPlainChaser && (moveX || moveY) && spd > 0 && len < CHASER_BRAIN_RANGE) {
+            const b = chaserBrain(this, player, len, nx, ny);
+            moveX = b.x; moveY = b.y;
+        }
+
+        // Obstacle avoidance: bosses/juggernauts (wide bodies) AND nearby plain
+        // chasers rotate their heading to the nearest clear angle when the path
+        // ahead is blocked, so they flow AROUND buildings instead of grinding
+        // into cover. Skipped while dashing/bracing (they commit their heading).
+        const wantsSteer = this.boss || this.radius >= 85 || (isPlainChaser && len < CHASER_BRAIN_RANGE);
+        if (obstacleSystem && wantsSteer && (moveX || moveY) && spd > 0 &&
             this.bossDashTimer <= 0 && this.bossWindupTimer <= 0 && !this.activeAttack) {
             const steered = steerAround(this.x, this.y, moveX, moveY, this.radius, obstacleSystem);
             moveX = steered.x; moveY = steered.y;
@@ -770,6 +786,35 @@ function bossLead(e, player, dist) {
     const dx = lead.x - e.x, dy = lead.y - e.y;
     const len = Math.hypot(dx, dy) || 1;
     return { x: dx / len, y: dy / len };
+}
+
+// Smarter plain-chaser heading: a MILD cut-off lead (blend of straight chase +
+// intercept aim, so it heads you off without being psychic) plus a subtle
+// perpendicular weave that fades to nothing up close (commits to the kill
+// instead of circling). Returns a unit heading vector.
+function chaserBrain(e, player, dist, nx, ny) {
+    let hx = nx, hy = ny;
+    const pvx = player.vx ?? 0, pvy = player.vy ?? 0;
+    if (pvx || pvy) {
+        // Lead time scales with the gap but is clamped short so it intercepts
+        // the player's path a little, not their position across the map.
+        const t = Math.min(0.6, dist / Math.max(160, e.speed * 2));
+        const lx = player.x + pvx * t - e.x;
+        const ly = player.y + pvy * t - e.y;
+        const ll = Math.hypot(lx, ly) || 1;
+        hx = 0.6 * (lx / ll) + 0.4 * nx;  // 60% intercept / 40% straight
+        hy = 0.6 * (ly / ll) + 0.4 * ny;
+    }
+    // Weave: perpendicular oscillation, faded in only beyond ~120px so the
+    // approach reads as alive but the kill blow goes straight in.
+    const closeK = Math.min(1, Math.max(0, (dist - 120) / 240));
+    if (closeK > 0) {
+        const w = Math.sin(e.animTimer * 3 + e.animOffset) * 0.3 * closeK;
+        const px = -hy, py = hx;
+        hx += px * w; hy += py * w;
+    }
+    const hl = Math.hypot(hx, hy) || 1;
+    return { x: hx / hl, y: hy / hl };
 }
 
 const STEER_ANGLES = [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.1, -2.1];

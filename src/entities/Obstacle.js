@@ -41,6 +41,14 @@ export class Obstacle {
         ctx.save();
         ctx.translate(this.x, this.y);
 
+        // Interior floor decal: a flat lived-in floor (rug + hearth + furniture),
+        // drawn centered with NO grounding shadow (it lies ON the ground).
+        if (this.type === 'buildingFloor') {
+            this._drawBuildingFloor(ctx, w, h, palette);
+            ctx.restore();
+            return;
+        }
+
         // Grounding shadow at the base.
         ctx.fillStyle = 'rgba(0,0,0,0.32)';
         ctx.beginPath();
@@ -336,5 +344,51 @@ export class Obstacle {
             }
         }
         ctx.lineWidth = 3; ctx.strokeRect(-hw, -h, w, h);
+    }
+
+    // Interior floor of an enterable house: a plank floor with a woven rug, a
+    // glowing hearth at the back wall, and a small table — so a house reads as
+    // lived-in. Drawn centered (origin = interior center); never collides.
+    _drawBuildingFloor(ctx, w, h, p) {
+        const hw = w / 2, hh = h / 2;
+        // Plank floor (slightly inset so the walls frame it).
+        ctx.fillStyle = '#5a4632';
+        ctx.fillRect(-hw + 6, -hh + 6, w - 12, h - 12);
+        ctx.strokeStyle = 'rgba(30,22,14,0.5)';
+        ctx.lineWidth = 2;
+        for (let yy = -hh + 6 + 22; yy < hh - 6; yy += 22) {
+            ctx.beginPath(); ctx.moveTo(-hw + 6, yy); ctx.lineTo(hw - 6, yy); ctx.stroke();
+        }
+        // Woven rug, centered.
+        const rw = w * 0.42, rh = h * 0.34;
+        ctx.fillStyle = '#7a2d3a';
+        ctx.fillRect(-rw / 2, -rh / 2, rw, rh);
+        ctx.strokeStyle = '#d9a23c'; ctx.lineWidth = 3;
+        ctx.strokeRect(-rw / 2 + 5, -rh / 2 + 5, rw - 10, rh - 10);
+        ctx.fillStyle = '#9a3a48';
+        ctx.fillRect(-rw / 2 + 12, -rh / 2 + 12, rw - 24, rh - 24);
+
+        // Hearth at the back (top) wall: a stone fireplace with a warm glow.
+        const hx = 0, hy = -hh + 16;
+        const g = ctx.createRadialGradient(hx, hy, 4, hx, hy, 46);
+        g.addColorStop(0, 'rgba(255,170,70,0.55)');
+        g.addColorStop(1, 'rgba(255,120,40,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(hx, hy, 46, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = p.base || '#6b6f78';
+        ctx.fillRect(hx - 26, hy - 8, 52, 20);
+        ctx.fillStyle = '#ff8a3c';
+        ctx.fillRect(hx - 14, hy - 2, 28, 12);
+        ctx.fillStyle = '#ffd24a';
+        ctx.fillRect(hx - 7, hy + 1, 14, 8);
+
+        // A small table + stool to one side.
+        const tx = hw * 0.5, ty = hh * 0.35;
+        ctx.fillStyle = '#6e5436';
+        ctx.fillRect(tx - 22, ty - 14, 44, 28);
+        ctx.fillStyle = '#85643f';
+        ctx.fillRect(tx - 22, ty - 14, 44, 6);
+        ctx.fillStyle = '#5a4632';
+        ctx.beginPath(); ctx.arc(tx - 36, ty + 6, 9, 0, Math.PI * 2); ctx.fill();
     }
 }

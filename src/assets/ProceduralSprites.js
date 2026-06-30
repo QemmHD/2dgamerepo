@@ -93,6 +93,7 @@ export function prewarmSprites() {
     getSolnakhFrames();
     getChestFrames();
     getCoinFrames();
+    getHealthOrbFrames();
     getProjectileSprite();
     getEmberWispSprite();
     getGroundTileSprite();
@@ -528,6 +529,13 @@ export function getCoinFrames() {
 }
 
 export function getCoinSprite() { return getCoinFrames()[0]; }
+
+export function getHealthOrbFrames() {
+    if (cache.has('healthOrbFrames')) return cache.get('healthOrbFrames');
+    const frames = [drawHealthOrb(0), drawHealthOrb(1)];
+    cache.set('healthOrbFrames', frames);
+    return frames;
+}
 
 export function getXPGemSprite(tier) {
     const key = `gem:${tier}`;
@@ -3028,6 +3036,40 @@ function drawChest(frame) {
 }
 
 // ─── Coin (spin frames) ───────────────────────────────────────────────
+
+// Rare health pickup: a glowing red life-orb with a white medic cross.
+// 2 frames: a gentle pulse (bigger cross glow on frame 1).
+function drawHealthOrb(frame) {
+    const W = 34;
+    const canvas = ssCanvas(W, W);
+    const ctx = canvas.getContext('2d');
+    const cx = W / 2, cy = W / 2;
+    const pulse = frame === 0 ? 0 : 1;
+
+    // Outer life glow.
+    const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, W / 2);
+    glow.addColorStop(0, 'rgba(255,160,170,0.95)');
+    glow.addColorStop(0.5, 'rgba(255,70,90,0.6)');
+    glow.addColorStop(1, 'rgba(255,60,80,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, W);
+
+    // Orb body.
+    const r = 10 + pulse;
+    ctx.fillStyle = '#e23b4e';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = '#ff8090';
+    ctx.beginPath(); ctx.arc(cx - 3, cy - 3, r * 0.5, 0, TWO_PI); ctx.fill();
+    ctx.strokeStyle = '#7a1420'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TWO_PI); ctx.stroke();
+
+    // White medic cross.
+    ctx.fillStyle = '#ffffff';
+    const t = 3, a = 7;
+    ctx.fillRect(cx - t / 2, cy - a / 2, t, a);
+    ctx.fillRect(cx - a / 2, cy - t / 2, a, t);
+    return canvas;
+}
 
 function drawCoin(frame, count) {
     const W = 32;

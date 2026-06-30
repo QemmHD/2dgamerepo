@@ -744,12 +744,13 @@ function emberWispUpdate(dt, owned, ctx) {
     const len = Math.hypot(dx, dy) || 1;
     const vx = (dx / len) * cfg.projectileSpeed;
     const vy = (dy / len) * cfg.projectileSpeed;
+    const burnScale = ctx.player.fireRoundScale ?? 1;
     ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
         damage: cfg.damage * dmgMul,
         radius: cfg.projectileRadius,
         pierce: cfg.pierce,
         element: 'fire',
-        burnDps: cfg.burnDps,
+        burnDps: cfg.burnDps * burnScale,
         burnDuration: cfg.burnDuration,
         sprite: getEmberWispSprite(),
     }));
@@ -777,6 +778,7 @@ function infernoStormUpdate(dt, owned, ctx) {
     const baseAngle = Math.atan2(dy, dx);
     const count = cfg.projectiles ?? 1;
     const spread = cfg.spread ?? 0;
+    const burnScale = ctx.player.fireRoundScale ?? 1;
 
     for (let i = 0; i < count; i++) {
         const offset = count > 1 ? (i - (count - 1) / 2) * spread : 0;
@@ -788,7 +790,7 @@ function infernoStormUpdate(dt, owned, ctx) {
             radius: cfg.projectileRadius,
             pierce: cfg.pierce,
             element: 'fire',
-            burnDps: cfg.burnDps,
+            burnDps: cfg.burnDps * burnScale,
             burnDuration: cfg.burnDuration,
             sprite: getEmberWispSprite(),
         }));

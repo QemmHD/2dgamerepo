@@ -11,6 +11,7 @@ import {
     SCREEN_SHAKE,
     GEM,
     GEM_TIERS,
+    HEALTH_DROP,
     ENEMY,
     BOSS,
     CHEST,
@@ -31,6 +32,7 @@ import { Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
 import { Chest } from '../entities/Chest.js';
 import { Coin } from '../entities/Coin.js';
+import { HealthOrb } from '../entities/HealthOrb.js';
 import { EnemyProjectile } from '../entities/EnemyProjectile.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 import { Spawner } from '../systems/Spawner.js';
@@ -517,6 +519,7 @@ export class Game {
         this._auraVersion = -1;
         this._auraSnapshot = null;
         this.coins = [];
+        this.healthOrbs = [];
         // Cached reference to the strongest active boss for the boss HP bar.
         this.activeBossRef = null;
         // Boss arena confinement ({ x, y, r } while a boss fight is sealed; null otherwise).
@@ -945,7 +948,9 @@ export class Game {
         if (!upgrade) return false;
         const cur = this.saveSystem.getUpgradeLevel(id);
         if (cur >= upgrade.maxLevel) return false;
-        const cost = upgrade.costAt(cur);
+        // Use nextCost (NOT costAt) so the deducted price matches what the shop
+        // shows — both carry the deep-level steepening.
+        const cost = nextCost(upgrade, cur);
         if (!this.saveSystem.spendCoins(cost)) return false;
         // Refund if the persist step can't apply (e.g. an upgrade id missing
         // from the save schema) so coins are never taken without an upgrade.
@@ -1985,6 +1990,14 @@ export class Game {
         if (!bossOnField) {
             this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
         }
+        // Fire burn scales with run progress (boss clears + minutes) so the
+        // FIRE line keeps biting through scaled late-game enemy HP. Read by the
+        // ember/inferno weapons off the player (their shared ctx carrier).
+        const fc = ELEMENT.fire;
+        this.player.fireRoundScale = Math.min(
+            fc.burnScaleMax ?? 3.0,
+            1 + this.bossesDefeated * (fc.burnPerBoss ?? 0) + (this.time / 60) * (fc.burnPerMinute ?? 0)
+        );
         const weaponResult = this.weaponSystem.update(
             dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio
         );
@@ -2207,6 +2220,23 @@ export class Game {
             }
         }
 
+        // Health-orb pickup — an instant heal (bypasses the sustained cap, by
+        // design — it's a rare reward, not a sustain source).
+        for (const h of this.healthOrbs) {
+            if (!h.active) continue;
+            const heal = h.update(dt, this.player);
+            if (heal > 0) {
+                const before = this.player.hp;
+                this.player.hp = Math.min(this.player.maxHp, this.player.hp + heal);
+                const gained = Math.round(this.player.hp - before);
+                if (gained > 0) {
+                    this.damageNumbers.push(new DamageNumber(this.player.x, this.player.y - this.player.radius, gained, '#6bff8a'));
+                }
+                this.particles.pickupSparkle(h.x, h.y, '#6bff8a');
+                this.audio.coin();
+            }
+        }
+
         const collisionResult = this.collisionSystem.resolve(
             dt, this.player, this.enemies, this.projectiles
         );
@@ -2231,6 +2261,10 @@ export class Game {
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
                 if (e.affix) this._applyAffixDeath(e);
                 this._dropGem(e.x, e.y);
+                // Rare health orb (skipped at full HP so it's never wasted).
+                if (this.player.hp < this.player.maxHp && Math.random() < HEALTH_DROP.chance) {
+                    this.healthOrbs.push(new HealthOrb(e.x, e.y));
+                }
                 if (e.boss) {
                     // Bosses always drop a chest + a coin burst.
                     this.bossesDefeated += 1;
@@ -2395,6 +2429,7 @@ export class Game {
         compactInPlace(this.damageNumbers);
         compactInPlace(this.chests);
         compactInPlace(this.coins);
+        compactInPlace(this.healthOrbs);
 
         // Heal flash: any net HP rise this frame (level-up heal, chest heal)
         // fires a green feedback pulse. Tracked centrally so individual
@@ -2636,6 +2671,11 @@ export class Game {
             c.draw(ctx);
             if (L) L.addLight(c.x, c.y, Lc.coinRadius, LIGHT_COLORS.coin, 0.8, 1);
         }
+        for (const h of this.healthOrbs) {
+            if (!cull(h)) continue;
+            h.draw(ctx);
+            if (L) L.addLight(h.x, h.y, Lc.coinRadius, '#6bff8a', 0.85, 1);
+        }
         for (const c of this.chests) {
             if (!cull(c)) continue;
             c.draw(ctx);
@@ -2760,6 +2800,7 @@ export class Game {
             this.player.drawDebug(ctx);
             for (const g of this.gems) if (cull(g)) g.drawDebug(ctx);
             for (const c of this.coins) if (cull(c)) c.drawDebug(ctx);
+            for (const h of this.healthOrbs) if (cull(h)) h.drawDebug(ctx);
             for (const c of this.chests) if (cull(c)) c.drawDebug(ctx);
             for (const e of this.enemies) if (cull(e)) e.drawDebug(ctx);
             for (const p of this.projectiles) if (cull(p)) p.drawDebug(ctx);
@@ -3027,7 +3068,7 @@ export class Game {
         // activeCount scans the particle pool).
         base.enemyProjectileCount = this.enemyProjectiles.length;
         base.hazardCount = this.hazards.length;
-        base.pickupCount = this.gems.length + this.coins.length + this.chests.length;
+        base.pickupCount = this.gems.length + this.coins.length + this.chests.length + this.healthOrbs.length;
         base.particleCount = this.showDebug ? this.particles.activeCount() : 0;
         base.ownedWeapons = this.weaponSystem.snapshotForUI();
         // Ability cooldowns for the HUD pips: one entry per owned ABILITY
