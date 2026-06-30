@@ -141,7 +141,9 @@ export class Player {
         if (this.invincibleTimer > 0 || this.hp <= 0) return 0;
         // Thick Hide reduces all incoming damage uniformly (contact, enemy
         // bolts, boss) since every source routes through here.
-        const incoming = amount * (this.damageTakenMul ?? 1);
+        // Aegis keystone: an extra cut below half HP (read here, the one sink).
+        const aegis = (this.ks_aegis && this.maxHp > 0 && this.hp / this.maxHp <= 0.5) ? 0.65 : 1;
+        const incoming = amount * (this.damageTakenMul ?? 1) * aegis;
         const dealt = Math.min(incoming, this.hp);
         this.hp -= dealt;
         if (this.hp < 0) this.hp = 0;

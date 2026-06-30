@@ -44,6 +44,8 @@ const RARITY_COLORS = {
     uncommon: { border: '#5fe87a', accent: '#bff7c8', glow: 'rgba(95,232,122,0.18)' },
     rare:     { border: '#5fc7ff', accent: '#bfeaff', glow: 'rgba(95,199,255,0.22)' },
     epic:     { border: '#c97bff', accent: '#e8c8ff', glow: 'rgba(201,123,255,0.28)' },
+    legendary:{ border: '#ffce54', accent: '#fff0c2', glow: 'rgba(255,206,84,0.34)' },
+    mythic:   { border: '#ff4d6d', accent: '#ffd0d9', glow: 'rgba(255,77,109,0.40)' },
 };
 
 export class UISystem {
