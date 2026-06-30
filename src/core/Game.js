@@ -257,6 +257,9 @@ export class Game {
                 } else if (e.code === 'KeyR') {
                     e.preventDefault();
                     this.rerollChoices();
+                } else if (e.code === 'KeyA') {
+                    e.preventDefault();
+                    this.alterChoices();
                 }
             }
         });
@@ -309,11 +312,17 @@ export class Game {
                     return true;
                 }
             }
-            // Reroll button last, with exact bounds (no slop) so it can't
-            // steal taps from the bottom edge of the cards.
+            // Reroll + Alter buttons last, with exact bounds (no slop) so they
+            // can't steal taps from the bottom edge of the cards. When both are
+            // available they share the row as a centered pair.
+            const paired = this.rerolls > 0 && this.alters > 0;
             if (this.rerolls > 0) {
-                const rr = this.ui.getRerollButtonRect();
+                const rr = this.ui.getRerollButtonRect(paired);
                 if (inRect(pos, rr, 0)) { this._pressFeedback('reroll'); this.rerollChoices(); return true; }
+            }
+            if (this.alters > 0) {
+                const ar = this.ui.getAlterButtonRect(paired);
+                if (inRect(pos, ar, 0)) { this._pressFeedback('alter'); this.alterChoices(); return true; }
             }
             return true;
         };
@@ -565,6 +574,7 @@ export class Game {
         // Level-up agency resources (granted from the shop in _startRun).
         this.rerolls = 0;
         this.banishes = 0;
+        this.alters = 0;
         // Records beaten this run (set at game-over for the NEW BEST banner).
         this.newBest = null;
 
@@ -647,6 +657,8 @@ export class Game {
         // is discoverable, plus whatever the shop granted onto the player.
         this.rerolls = 1 + (this.player.rerolls ?? 0);
         this.banishes = this.player.banishes ?? 0;
+        // 1 free Alter baseline (re-roll favoring your off-Patron options).
+        this.alters = 1 + (this.player.alters ?? 0);
         // Screen-shake preference (accessibility) read from the save.
         this.shakeEnabled = this.saveSystem.getSetting('screenShake') !== false;
         // Performance / accessibility toggles read once per run.
@@ -880,6 +892,17 @@ export class Game {
         if (!this.upgradeChoices || this.rerolls <= 0) return;
         this.rerolls -= 1;
         const choices = this.upgradeSystem.rollChoices(this, 3);
+        this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
+    }
+
+    // Alter the current offer (costs one alter charge): re-roll with the Patron
+    // bias INVERTED, so the new cards lean toward your non-committed Patrons —
+    // a deliberate splash out of your lane. With no Patron committed it behaves
+    // like a plain re-roll.
+    alterChoices() {
+        if (!this.upgradeChoices || this.alters <= 0) return;
+        this.alters -= 1;
+        const choices = this.upgradeSystem.rollChoices(this, 3, { alter: true });
         this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
     }
 
@@ -2973,6 +2996,7 @@ export class Game {
         base.shakeEnabled = this.shakeEnabled;
         base.rerolls = this.rerolls;
         base.banishes = this.banishes;
+        base.alters = this.alters;
         return base;
     }
 
