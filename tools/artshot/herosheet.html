@@ -16,7 +16,8 @@ import { Game } from '/src/core/Game.js';
 import { Input } from '/src/core/Input.js';
 import { KeyboardInput } from '/src/core/KeyboardInput.js';
 import { TouchJoystick } from '/src/core/TouchJoystick.js';
-import { prewarmSprites } from '/src/assets/ProceduralSprites.js';
+import { prewarmSprites, clearHeroFrameCache } from '/src/assets/ProceduralSprites.js';
+import { loadHeroAiSprites } from '/src/assets/HeroAiSprites.js';
 import { resolveAppearance } from '/src/content/cosmetics.js';
 
 const ERR = [];
@@ -32,6 +33,7 @@ async function boot() {
     let game;
     const loop = { stop() {}, start() {}, fps: 60 };
     prewarmSprites();
+    await loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); });
     game = new Game({ renderer, input, loop });
     game.showDebug = false;
     game._startRun();

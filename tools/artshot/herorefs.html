@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /><title>hero refs</title></head>
+<body>
+<script type="module">
+// Renders the CURRENT procedural hero body (idle + walk-mid + cast + hurt per
+// direction) onto white 1024px reference boards and PUTs them to serve.py —
+// image-to-image references for the AI HQ-pixel body upgrade.
+window.AudioContext = undefined; window.webkitAudioContext = undefined;
+import { getHeroFrames } from '/src/assets/ProceduralSprites.js';
+import { CHARACTERS } from '/src/content/characters.js';
+
+const char = CHARACTERS.monkey;
+const set = getHeroFrames('monkey', char);
+const jobs = [];
+for (const dir of ['down', 'up', 'side']) {
+    const d = set.dirs[dir];
+    // 2×2 board: idle | walk-mid(bobbed) | cast | hurt — the exact four poses
+    // the AI must reproduce per grid, so panel layout matches the target grid.
+    const frames = [d.idle[0], d.walk[1], d.cast[0], d.hurt[0]];
+    const cv = document.createElement('canvas');
+    cv.width = 1024; cv.height = 1024;
+    const cx = cv.getContext('2d');
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, 1024, 1024);
+    cx.imageSmoothingEnabled = false;
+    frames.forEach((f, i) => {
+        const px = (i % 2) * 512 + 64, py = ((i / 2) | 0) * 512 + 64;
+        cx.drawImage(f, px, py, 384, 384);
+    });
+    jobs.push(new Promise((res) => cv.toBlob((b) =>
+        fetch('/__save/ref_' + dir + '.png', { method: 'PUT', body: b }).then(() => res()), 'image/png')));
+}
+Promise.all(jobs).then(() => { document.title = 'DONE'; });
+</script>
+</body>
+</html>

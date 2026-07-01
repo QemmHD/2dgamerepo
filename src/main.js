@@ -10,6 +10,8 @@ import { loadWorldTextures } from './assets/WorldTextures.js';
 import { loadIconGlyphs } from './assets/CustomIcons.js';
 import { loadMonsterSprites } from './assets/MonsterSprites.js';
 import { loadEnemyAiSprites } from './assets/EnemySprites.js';
+import { loadHeroAiSprites } from './assets/HeroAiSprites.js';
+import { clearHeroFrameCache } from './assets/ProceduralSprites.js';
 import { WEAPON_AURA } from './content/weapons.js';
 import { COSMETICS } from './content/cosmetics.js';
 import { PRISM_COLORS } from './assets/CosmeticFx.js';
@@ -63,7 +65,10 @@ async function boot() {
     // Load the imported assets (LPC enemy spritesheets + CC0 ground texture)
     // before the first frame. Both NEVER reject — a failed/missing file falls
     // back to procedural art — so a bad asset can't block boot.
-    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites()]);
+    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites(),
+        // HQ AI hero body: after it loads, drop any hero frame sets the prewarm
+        // cached so the next build uses the AI base (procedural stays fallback).
+        loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); })]);
 
     game = new Game({ renderer, input, loop });
     loop.start();

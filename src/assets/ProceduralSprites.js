@@ -18,6 +18,7 @@ import { TWO_PI } from '../core/MathUtils.js';
 // the ProceduralSprites ↔ LpcSprites import cycle is safe (live bindings).
 import { getLpcFrames, isLpcLoaded } from './LpcSprites.js';
 import { drawPixelMonkey, drawPixelHero } from './PixelArt.js';
+import { getAiHeroFrames } from './HeroAiSprites.js';
 
 const cache = new Map();
 
@@ -227,12 +228,22 @@ export function getHeroFrames(id, char = null) {
     // Only use the LPC body if its sheet actually loaded; otherwise fall through
     // to the recolored pixel hero (NOT the brute stand-in getLpcFrames returns).
     if (char && char.lpc && char.lpcModel && isLpcLoaded(char.lpcModel)) set = buildLpcHeroSet(char.lpcModel);
+    // Pixel-bodied heroes prefer the HQ AI body sheets (shared base + per-hero
+    // tint/feature composite); null until loaded / on failure → procedural.
+    if (!set) set = getAiHeroFrames(id, char);
     if (!set) {
         const opts = char ? { palette: char.palette, feature: char.feature, accent: char.accent } : {};
         set = buildPixelHeroSet(opts);
     }
     cache.set(key, set);
     return set;
+}
+
+// Drop cached hero frame sets so the next getHeroFrames rebuilds them — called
+// after the AI hero sheets finish loading (boot prewarm may have cached the
+// procedural sets first).
+export function clearHeroFrameCache() {
+    for (const k of [...cache.keys()]) if (k.startsWith('heroFrames:')) cache.delete(k);
 }
 
 // Flatten every unique frame canvas in a hero set (used for fur-tint caching).
