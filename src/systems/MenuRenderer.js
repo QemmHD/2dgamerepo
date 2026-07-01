@@ -542,8 +542,17 @@ export class MenuRenderer {
         }
         ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
         ctx.fillText(this._ellip(ctx, `${ch.name} — ${ch.title}`, cardW - 44), ccx, nameY);
-        ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 18px ${FONT}`;
-        this._wrapText(ctx, ch.description, ccx, c.y + c.h * 0.51, cardW - 60, 22, 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 17px ${FONT}`;
+        this._wrapText(ctx, ch.description, ccx, c.y + c.h * 0.485, cardW - 60, 22, 2);
+        // Hero SIGNATURE — its defining identity (accent name + flavor blurb),
+        // the mechanical fingerprint applied at run start by CharacterSystem.
+        if (ch.signature) {
+            ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = ch.accent || '#ffce54'; ctx.font = `800 18px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, `✦ ${ch.signature.name}`, cardW - 44), ccx, c.y + c.h * 0.55);
+            ctx.fillStyle = 'rgba(255,238,196,0.85)'; ctx.font = `500 15px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, ch.signature.blurb, cardW - 48), ccx, c.y + c.h * 0.578);
+        }
 
         // Character picker: a 3-wide grid of every selectable hero. Fit-driven —
         // chipH fills the band between the CHARACTER label and the Battle Pass
@@ -551,7 +560,10 @@ export class MenuRenderer {
         // grid ALWAYS sits above the Battle Pass label even when a large vertical
         // safe-area shrinks the card (font/swatch scale down instead of the grid
         // overflowing). The 14px floor is only a degenerate-panel sanity minimum.
-        const labelY = c.y + c.h * 0.58;
+        // labelY sits BELOW the signature block (name 0.55h + blurb 0.578h); the
+        // grid is fit-driven (chipH capped/floored) between here and the BP bar,
+        // so pushing the label down just trims chip height on short cards.
+        const labelY = c.y + c.h * 0.62;
         ctx.font = `700 18px ${FONT}`;
         ctx.fillStyle = '#cdd6e2'; ctx.textAlign = 'left';
         ctx.fillText('CHARACTER', c.x + 30, labelY);

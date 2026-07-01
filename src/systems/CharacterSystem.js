@@ -22,8 +22,23 @@ export function applyCharacter(player, characterId) {
     // Offensive identity hooks (let a hero lean into the crit / low-HP-rage
     // systems). Clamped like every other crit source.
     player.critChance = Math.min(0.8, (player.critChance ?? 0) + (s.critChanceBonus ?? 0));
+    player.critMul = (player.critMul ?? 2) + (s.critMulBonus ?? 0);
     player.lowHpDamageBonus = (player.lowHpDamageBonus ?? 0) + (s.lowHpRageBonus ?? 0);
-    // Tag the player so renders / debug can read which hero is active.
+    // Signature identity: pre-seed the same bounded modifier systems that
+    // passives / relics / pacts feed, so a hero plays distinctly from frame one
+    // and everything still stacks on top (all += / *= like every other source).
+    // regen + kill-heal route through the sustained-heal cap; nothing here is
+    // raw runaway damage.
+    player.regenPerSecond = (player.regenPerSecond ?? 0) + (s.regenBonus ?? 0);
+    player.killHeal = (player.killHeal ?? 0) + (s.killHealBonus ?? 0);
+    player.thornsReflect = (player.thornsReflect ?? 0) + (s.thornsBonus ?? 0);
+    player.damageTakenMul = (player.damageTakenMul ?? 1) * (s.damageTakenMul ?? 1);
+    player.coinMul = (player.coinMul ?? 1) * (s.coinMul ?? 1);
+    player.burnDamageMul = (player.burnDamageMul ?? 1) * (s.burnDamageMul ?? 1);
+    player.chillStrength = (player.chillStrength ?? 0) + (s.chillBonus ?? 0);
+    if (s.aegis) player.ks_aegis = true;   // the below-half-HP damage cut (see takeDamage)
+    // Tag the player so renders / debug can read which hero is active + its signature.
     player.characterId = c.id;
+    player.signature = c.signature || null;
     return c;
 }
