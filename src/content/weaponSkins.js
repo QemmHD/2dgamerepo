@@ -54,6 +54,20 @@ const EVOLVED_TO_BASE = {
     thunderCrown: 'lightningMark',
 };
 
+// FUSED weapons get their own held-prop themes (shape from the dominant
+// parent, colours from the fusion's identity) — without these a fused primary
+// left the hero EMPTY-HANDED mid-run (resolveWeaponProp returned null).
+const FUSED_PROPS = {
+    cinderlance:   { prop: 'staff',  accent: '#ff7a3c', glow: '#ffb060' },  // piercing blaze bolts
+    stormlance:    { prop: 'staff',  accent: '#9a6cff', glow: '#7fd0ff' },  // arcane bolts arcing shock
+    emberstorm:    { prop: 'rod',    accent: '#ff7a3c', glow: '#ffe14a' },  // storm-strikes detonating fire
+    voltpyre:      { prop: 'rod',    accent: '#ffe14a', glow: '#ff5a2a' },  // scorching shock bolts
+    cinderhalo:    { prop: 'glaive', accent: '#ff9a5c', glow: '#9fe8ff' },  // chilling ember orbit
+    glacialbeacon: { prop: 'glaive', accent: '#9fe8ff', glow: '#cdf3ff' },  // deep-freeze glaive ring
+    judgmentpulse: { prop: 'sigil',  accent: '#ffe9a8', glow: '#ffd0a8' },  // armor-flaying holy pulse
+    stormglaive:   { prop: 'glaive', accent: '#cfe0ff', glow: '#7fd0ff' },  // storm-branded sweeps
+};
+
 // Resolve a weapon id (base, evolved, or unknown) to a skin theme. Falls back to
 // the Arcanist theme so the overlay is always defined.
 export function resolveWeaponSkin(weaponId) {
@@ -71,6 +85,7 @@ export function isMeleeWeapon(weaponId) {
 // Evolved variants inherit their base weapon's prop via EVOLVED_TO_BASE so an
 // evolution keeps the right wand/glaive/sigil in hand.
 export function resolveWeaponProp(weaponId) {
+    if (FUSED_PROPS[weaponId]) return FUSED_PROPS[weaponId];
     const base = EVOLVED_TO_BASE[weaponId] || weaponId;
     const skin = WEAPON_SKINS[base];
     if (skin && skin.prop) return { prop: skin.prop, accent: skin.accent, glow: skin.glow };
