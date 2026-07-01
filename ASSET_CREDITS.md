@@ -67,6 +67,23 @@ recolored by rarity/element on menu cards. Procedural glyph is the fallback.
 
 Per-asset notes: [`src/assets/icons/CREDITS.md`](src/assets/icons/CREDITS.md).
 
+### SFX one-shots — `src/assets/audio/sfx/`
+Real **CC0** one-shot samples layered over the procedural audio engine for the
+most tactile cues (a punch on kill/hurt, coin/purchase handling, a metal
+equip/latch, UI click/hover, gem ping, reroll scratch). Music and all fanfares
+stay **fully procedural**; if a sample isn't loaded the cue falls back to its
+synthesized voice, so audio never goes silent. All from **Kenney.nl** (CC0 1.0,
+attribution appreciated but not required), copied unchanged and pitch-jittered /
+gain-trimmed at runtime.
+
+| Files | Source | Author | License |
+|---|---|---|---|
+| `impactPunch_{medium,heavy}_*.ogg` | [Kenney — Impact Sounds](https://kenney.nl/assets/impact-sounds) | Kenney (Kenney.nl) | CC0 1.0 |
+| `handleCoins*.ogg`, `handleSmallLeather*.ogg`, `metalClick.ogg`, `metalLatch.ogg` | [Kenney — RPG Audio](https://kenney.nl/assets/rpg-audio) | Kenney (Kenney.nl) | CC0 1.0 |
+| `click_*.ogg`, `tick_*.ogg`, `glass_*.ogg`, `scratch_*.ogg` | [Kenney — Interface Sounds](https://kenney.nl/assets/interface-sounds) | Kenney (Kenney.nl) | CC0 1.0 |
+
+Per-asset notes: [`src/assets/audio/CREDITS.md`](src/assets/audio/CREDITS.md).
+
 ## Customization pipeline
 
 External and procedural assets flow through a shared customization system:
