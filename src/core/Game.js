@@ -24,6 +24,7 @@ import {
     COMBO,
     ENEMY_SEPARATION,
     COMPOSURE,
+    WICK_ROADS,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Easing } from './Easing.js';
@@ -32,6 +33,7 @@ import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
 import { Chest } from '../entities/Chest.js';
+import { Shrine } from '../entities/Shrine.js';
 import { Coin } from '../entities/Coin.js';
 import { HealthOrb } from '../entities/HealthOrb.js';
 import { EnemyProjectile } from '../entities/EnemyProjectile.js';
@@ -50,6 +52,7 @@ import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { AudioSystem } from '../systems/AudioSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
+import { rollAltarChoices } from '../systems/WickRoadsSystem.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { evaluateAchievements } from '../content/achievements.js';
@@ -228,7 +231,7 @@ export class Game {
             // overlay on, ] skips +60s and \ skips +300s so 5/10/20/30-min
             // balance can be tested quickly. Gated by showDebug + live play.
             if (this.showDebug && this.screen === 'gameplay' && !this.paused &&
-                !this.chestReward && !this.upgradeChoices) {
+                !this.chestReward && !this.upgradeChoices && !this.altar) {
                 if (e.code === 'BracketRight') { e.preventDefault(); this._debugSkipTime(60); return; }
                 if (e.code === 'Backslash') { e.preventDefault(); this._debugSkipTime(300); return; }
                 // Discrete jump-to-minute keys (7/8/9/0 → 5/10/20/30 min) so a
@@ -240,7 +243,7 @@ export class Game {
             }
             // Pause toggle — gameplay only, never while a level-up/chest
             // overlay is up (those already freeze the world).
-            if (!this.chestReward && !this.upgradeChoices &&
+            if (!this.chestReward && !this.upgradeChoices && !this.altar &&
                 (e.code === 'KeyP' || e.code === 'Escape')) {
                 e.preventDefault();
                 this.togglePause();
@@ -252,6 +255,12 @@ export class Game {
                     e.preventDefault();
                     this._dismissChestReward();
                 }
+                return;
+            }
+            if (this.altar) {
+                if (e.code === 'Digit1' || e.code === 'Numpad1') { e.preventDefault(); this.selectAltar(0); }
+                else if (e.code === 'Digit2' || e.code === 'Numpad2') { e.preventDefault(); this.selectAltar(1); }
+                else if (e.code === 'Digit3' || e.code === 'Numpad3') { e.preventDefault(); this.selectAltar(2); }
                 return;
             }
             if (this.upgradeChoices) {
@@ -335,6 +344,23 @@ export class Game {
                 if (inRect(pos, ar, 0)) { this._pressFeedback('alter'); this.alterChoices(); return true; }
             }
             return true;
+        };
+
+        // Wick Shrine altar overlay — pick one relic card (mirrors the level-up
+        // card hit-test). Consumes all taps while up so nothing bleeds through.
+        const tryPickAltarAt = (clientX, clientY) => {
+            if (!this.altar) return false;
+            const pos = this.renderer.clientToInternal(clientX, clientY);
+            const rects = this.ui.getLevelUpCardRects(this.altar.choices.length);
+            for (let i = 0; i < rects.length; i++) {
+                const r = rects[i];
+                if (pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h) {
+                    this._pressFeedback(`altar:${i}`);
+                    this.selectAltar(i);
+                    return true;
+                }
+            }
+            return true; // consume taps while the overlay is up
         };
 
         // 3rd-boss victory overlay buttons.
@@ -422,6 +448,8 @@ export class Game {
                     if (tryVictoryAt(t.clientX, t.clientY)) return;
                 } else if (this.upgradeChoices) {
                     if (tryPickUpgradeAt(t.clientX, t.clientY)) return;
+                } else if (this.altar) {
+                    if (tryPickAltarAt(t.clientX, t.clientY)) return;
                 } else if (this.paused) {
                     if (tryPauseOverlayAt(t.clientX, t.clientY)) return;
                 } else {
@@ -444,6 +472,8 @@ export class Game {
                 tryVictoryAt(e.clientX, e.clientY);
             } else if (this.upgradeChoices) {
                 tryPickUpgradeAt(e.clientX, e.clientY);
+            } else if (this.altar) {
+                tryPickAltarAt(e.clientX, e.clientY);
             } else if (this.paused) {
                 tryPauseOverlayAt(e.clientX, e.clientY);
             } else {
@@ -457,7 +487,7 @@ export class Game {
         // can't take unfair damage (the loop keeps stepping otherwise).
         const autoPause = () => {
             if (this.screen === 'gameplay' && !this.gameOver &&
-                !this.upgradeChoices && !this.chestReward && !this.paused) {
+                !this.upgradeChoices && !this.chestReward && !this.altar && !this.paused) {
                 this.paused = true;
                 this._updateJoystickEnabled();
             }
@@ -523,6 +553,14 @@ export class Game {
         this.chestReward = null;
         this.pendingChests = 0;
         this.chestsOpened = 0;
+        // Wick Roads: shrines are walk-onto altars (the chest's sibling on a boss
+        // kill); `altar` is the active pick-one overlay ({ choices, age }, null when
+        // closed); pendingAltars queues shrines walked onto while an overlay is up;
+        // _runRelics tracks relic ids claimed this run so a shrine never re-offers one.
+        this.shrines = [];
+        this.altar = null;
+        this.pendingAltars = 0;
+        this._runRelics = [];
         // Weapon-aura cache (recomputed only when weaponSystem.version changes).
         this._auraVersion = -1;
         this._auraSnapshot = null;
@@ -1288,7 +1326,7 @@ export class Game {
     _updateJoystickEnabled() {
         if (!this.input.touch) return;
         const blocked = this.screen !== 'gameplay' || this.paused ||
-            !!this.upgradeChoices || !!this.chestReward || !!this.victory;
+            !!this.upgradeChoices || !!this.chestReward || !!this.altar || !!this.victory;
         this.input.touch.setEnabled(!blocked);
     }
 
@@ -1306,10 +1344,11 @@ export class Game {
         this.upgradeSystem.apply(upgrade, this);
         this.audio.upgrade();
         this.setUpgradeChoices(null);
-        // Drain pending level-ups first, then move on to any queued chests
-        // so the player isn't tossed between overlay types mid-stream.
+        // Drain pending level-ups first, then move on to any queued chests /
+        // altars so the player isn't tossed between overlay types mid-stream.
         if (this.pendingLevelUps > 0) this._presentLevelUp();
         else if (this.pendingChests > 0) this._presentChest();
+        else if (this.pendingAltars > 0) this._presentAltar();
     }
 
     _presentChest() {
@@ -1341,6 +1380,40 @@ export class Game {
         this._updateJoystickEnabled();
         if (this.pendingChests > 0) this._presentChest();
         else if (this.pendingLevelUps > 0) this._presentLevelUp();
+        else if (this.pendingAltars > 0) this._presentAltar();
+    }
+
+    // ── Wick Roads altar overlay ──────────────────────────────────────────
+    // Opens the pick-one shrine overlay (freezes the world exactly like the
+    // chest/level-up overlays — via the update gate + joystick disable + input
+    // ownership — WITHOUT touching this.paused).
+    setAltar(choices) {
+        this.altar = (choices && choices.length) ? { choices, age: 0 } : null;
+        this._updateJoystickEnabled();
+    }
+
+    _presentAltar() {
+        if (this.pendingAltars <= 0) return;
+        this.pendingAltars -= 1;
+        const choices = rollAltarChoices(this, WICK_ROADS.altarChoices);
+        if (!choices.length) return;   // pool dry (all relics claimed) → skip
+        this.setAltar(choices);
+    }
+
+    selectAltar(idx) {
+        if (!this.altar) return;
+        const choice = this.altar.choices[idx];
+        if (!choice) return;
+        choice.apply(this);
+        this.audio.upgrade();
+        this.waveDirector.announce(`RELIC — ${choice.name.toUpperCase()}`, 2.4, '#ff9ecf');
+        this.setAltar(null);
+        // Drain any queued overlays so the player is never stranded mid-sequence
+        // (altars first, then level-ups, then chests — the same discipline the
+        // other overlays use).
+        if (this.pendingAltars > 0) this._presentAltar();
+        else if (this.pendingLevelUps > 0) this._presentLevelUp();
+        else if (this.pendingChests > 0) this._presentChest();
     }
 
     // Nudge a desired spawn point to the nearest spot not inside an obstacle.
@@ -1709,6 +1782,21 @@ export class Game {
         this.chests.push(new Chest(s.x, s.y));
     }
 
+    // Boss reward: spawn a treasure chest AND a Wick Shrine to either side of the
+    // death point. They're linked as siblings — walking onto one claims it and
+    // despawns the other, so the player PICKS ONE (chest reward or relic altar).
+    _dropBossReward(x, y) {
+        const off = WICK_ROADS.bossRewardOffset;
+        const cs = this._clearSpot(x - off, y, 40);
+        const ss = this._clearSpot(x + off, y, 40);
+        const chest = new Chest(cs.x, cs.y);
+        const shrine = new Shrine(ss.x, ss.y);
+        chest._sibling = shrine;
+        shrine._sibling = chest;
+        this.chests.push(chest);
+        this.shrines.push(shrine);
+    }
+
     _dropCoin(x, y, value = 1) {
         if (this.obstacleSystem.isBlocked(x, y, 18)) { const s = this._clearSpot(x, y, 18); x = s.x; y = s.y; }
         this.coins.push(new Coin(x, y, value));
@@ -1862,6 +1950,8 @@ export class Game {
         this.pendingLevelUps = 0;
         this.chestReward = null;
         this.pendingChests = 0;
+        this.altar = null;
+        this.pendingAltars = 0;
 
         // Bank run coins to total — exactly once (the helper is guarded by
         // bankedThisRun, which also covers abandoning via the pause overlay).
@@ -1982,6 +2072,13 @@ export class Game {
             // Tick the chest-overlay animation but freeze gameplay so the
             // world behind it stays exactly as it was when the chest opened.
             this.chestReward.age += dt;
+            this.camera.update(dt);
+            return;
+        }
+        if (this.altar) {
+            // Wick Shrine altar overlay — freeze the world behind it (same as
+            // chest/level-up); only the overlay animation + camera tick.
+            this.altar.age += dt;
             this.camera.update(dt);
             return;
         }
@@ -2385,12 +2482,14 @@ export class Game {
                     this.healthOrbs.push(new HealthOrb(e.x, e.y));
                 }
                 if (e.boss) {
-                    // Bosses always drop a chest + a coin burst.
+                    // Bosses drop a coin burst + a PICK-ONE reward: a treasure
+                    // chest OR a Wick Shrine (relic altar), spawned side by side —
+                    // claiming one despawns the other.
                     this.bossesDefeated += 1;
                     // Arm the post-death cooldown so the next boss doesn't
                     // chain in immediately after a late kill.
                     this.bossDirector.notifyBossDefeated(this.time);
-                    this._dropChest(e.x, e.y);
+                    this._dropBossReward(e.x, e.y);
                     this._dropCoinBurst(e.x, e.y, COIN.bossCoinCount, COIN.bossCoinValue);
                     // Setpiece payoff: a banner, a heavy layered burst, and a
                     // strong shake so an apex kill lands.
@@ -2484,6 +2583,8 @@ export class Game {
             if (!c.active) continue;
             if (c.update(dt, this.player)) {
                 this.pendingChests += 1;
+                // Claiming the chest despawns its sibling shrine (boss pick-one).
+                if (c._sibling && c._sibling.active) c._sibling.active = false;
                 // Pop of golden sparkle the instant the chest is grabbed (the
                 // reward overlay follows, but the world gets immediate feedback).
                 this.particles.pickupSparkle(c.x, c.y, '#ffd166');
@@ -2491,8 +2592,24 @@ export class Game {
                 this.audio.chest();
             }
         }
-        if (this.pendingChests > 0 && !this.chestReward && !this.upgradeChoices) {
+        // Wick Shrine pickup: walking onto a shrine queues the pick-one altar and
+        // (for a boss pick-one) despawns its sibling chest.
+        for (const s of this.shrines) {
+            if (!s.active) continue;
+            if (s.update(dt, this.player)) {
+                this.pendingAltars += 1;
+                if (s._sibling && s._sibling.active) s._sibling.active = false;
+                this.particles.pickupSparkle(s.x, s.y, '#ff9ecf');
+                this.particles.pickupSparkle(s.x, s.y - 8, '#ffd3ec');
+                this.audio.chest();
+            }
+        }
+        // Present whichever reward overlay is queued — only one is ever open at a
+        // time (mutually exclusive with chest/level-up).
+        if (this.pendingChests > 0 && !this.chestReward && !this.upgradeChoices && !this.altar) {
             this._presentChest();
+        } else if (this.pendingAltars > 0 && !this.chestReward && !this.upgradeChoices && !this.altar) {
+            this._presentAltar();
         }
 
         // Melee swing animation: when the chosen starting weapon is a
@@ -2548,6 +2665,7 @@ export class Game {
         compactInPlace(this.gems);
         compactInPlace(this.damageNumbers);
         compactInPlace(this.chests);
+        compactInPlace(this.shrines);
         compactInPlace(this.coins);
         compactInPlace(this.healthOrbs);
 
@@ -2811,6 +2929,11 @@ export class Game {
             c.draw(ctx);
             if (L) L.addLight(c.x, c.y, Lc.chestRadius, LIGHT_COLORS.chest, 0.9, 1);
         }
+        for (const s of this.shrines) {
+            if (!cull(s)) continue;
+            s.draw(ctx);
+            if (L) L.addLight(s.x, s.y, Lc.chestRadius, LIGHT_COLORS.shrine, 0.9, 1);
+        }
         for (const e of this.enemies) {
             if (!cull(e)) continue;
             e.draw(ctx);
@@ -2932,6 +3055,7 @@ export class Game {
             for (const c of this.coins) if (cull(c)) c.drawDebug(ctx);
             for (const h of this.healthOrbs) if (cull(h)) h.drawDebug(ctx);
             for (const c of this.chests) if (cull(c)) c.drawDebug(ctx);
+            for (const s of this.shrines) if (cull(s)) s.drawDebug(ctx);
             for (const e of this.enemies) if (cull(e)) e.drawDebug(ctx);
             for (const p of this.projectiles) if (cull(p)) p.drawDebug(ctx);
             for (const ep of this.enemyProjectiles) if (cull(ep)) ep.drawDebug(ctx);
@@ -3384,6 +3508,8 @@ export class Game {
         base.chestCount = this.chests.length;
         base.chestReward = this.chestReward;
         base.pendingChests = this.pendingChests;
+        base.altar = this.altar;
+        base.pendingAltars = this.pendingAltars;
         base.nextBossTime = this.bossDirector.getNextSpawnTime();
         // Boss scheduler state for the debug panel: live count + why a spawn
         // is/ isn't happening + when the next one is eligible.
