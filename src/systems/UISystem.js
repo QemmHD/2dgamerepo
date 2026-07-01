@@ -295,28 +295,28 @@ export class UISystem {
         }
 
         this._drawTopReadout(ctx, gameState);
-        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
             this._drawComboMeter(ctx, gameState);
         }
         this._drawWaveLabel(ctx, gameState);
         this._drawBossHpBar(ctx, gameState);
-        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
             this._drawBossArrow(ctx, gameState);
         }
         this._drawLoadoutChips(ctx, gameState);
-        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.paused) {
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar && !gameState.paused) {
             this._drawAbilityCooldowns(ctx, gameState);
         }
         this._drawHpBar(ctx, gameState);
         this._drawXPBar(ctx, gameState);
         this._drawDebugPanel(ctx, gameState);
         this._drawDebugButton(ctx, gameState);
-        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.paused) {
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar && !gameState.paused) {
             this._drawPauseButton(ctx, gameState);
         }
         this._drawControlHint(ctx, gameState);
 
-        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward) {
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
             this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
             this._drawBossWarning(ctx, gameState);
         }
@@ -329,11 +329,13 @@ export class UISystem {
             if (hpRatio > 0 && hpRatio < 0.3) this._drawLowHpVignette(ctx, hpRatio);
         }
 
-        // Overlay priority: game-over > chest > level-up > pause.
+        // Overlay priority: game-over > chest > altar > level-up > pause.
         if (gameState.gameOver) {
             this._drawGameOverOverlay(ctx, gameState);
         } else if (gameState.chestReward) {
             this._drawChestOverlay(ctx, gameState);
+        } else if (gameState.altar) {
+            this._drawAltarOverlay(ctx, gameState);
         } else if (gameState.upgradeChoices) {
             this._drawLevelUpOverlay(ctx, gameState);
         } else if (gameState.paused) {
@@ -1484,6 +1486,70 @@ export class UISystem {
             INTERNAL_HEIGHT - 56 - this.renderer.safeArea.bottom
         );
 
+        ctx.restore();
+    }
+
+    // Wick Shrine altar overlay — a pick-one relic offering. Reuses the level-up
+    // card layout + card renderer so relic cards read identically to upgrades,
+    // with a distinct relic-pink title so the moment feels its own.
+    _drawAltarOverlay(ctx, state) {
+        const altar = state.altar;
+        if (!altar || !altar.choices) return;
+        const choices = altar.choices;
+        const age = altar.age ?? 1;
+
+        ctx.save();
+        const bg = easeOutQuad(clamp01(age / 0.18));
+        ctx.fillStyle = `rgba(14, 8, 16, ${0.82 * bg})`;
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const titleScale = easeOutBack(clamp01(age / 0.22));
+        ctx.save();
+        ctx.translate(INTERNAL_WIDTH / 2, 210);
+        ctx.scale(titleScale, titleScale);
+        ctx.font = `bold 96px ${FONT}`;
+        ctx.fillStyle = '#ff9ecf';
+        ctx.fillText('WICK SHRINE', 0, 0);
+        ctx.restore();
+
+        ctx.globalAlpha = bg;
+        ctx.font = `34px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.78)';
+        ctx.fillText('Claim a relic — it lasts the whole run', INTERNAL_WIDTH / 2, 290);
+        ctx.globalAlpha = 1;
+
+        const rects = this.getLevelUpCardRects(choices.length);
+        for (let i = 0; i < rects.length; i++) {
+            const cardT = easeOutBack(clamp01((age - i * 0.06) / 0.32));
+            if (cardT <= 0) continue;
+            const r = rects[i];
+            const cxp = r.x + r.w / 2;
+            const cyp = r.y + r.h / 2;
+            const press = this._pressAmt(state, `altar:${i}`);
+            const scale = (0.9 + 0.1 * cardT) * (1 - 0.04 * press);
+            const slideY = (1 - cardT) * 40;
+
+            ctx.save();
+            ctx.globalAlpha = clamp01(cardT);
+            ctx.translate(cxp, cyp + slideY);
+            ctx.scale(scale, scale);
+            ctx.translate(-cxp, -cyp);
+            this._drawUpgradeCard(ctx, r, choices[i], i, null);
+            ctx.restore();
+        }
+
+        ctx.globalAlpha = bg;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = 'rgba(255,255,255,0.65)';
+        ctx.font = `24px ${FONT}`;
+        ctx.fillText(
+            'Tap a relic  •  1 / 2 / 3',
+            INTERNAL_WIDTH / 2,
+            INTERNAL_HEIGHT - 56 - this.renderer.safeArea.bottom
+        );
         ctx.restore();
     }
 

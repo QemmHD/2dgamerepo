@@ -1256,11 +1256,24 @@ export const GFX = {
 };
 
 // Light colors per emitter kind. Hex #rrggbb so the buffer can derive rgba.
+// ── Wick Roads (mid-run altar decisions) ─────────────────────────────────
+// On a boss kill the player is offered a CHOICE: walk onto the treasure chest
+// OR the Wick Shrine (picking one despawns the other). The shrine opens a
+// pick-one altar overlay — for now a relic tier (the persistent in-run item
+// class). Values are deliberately conservative; later Wick Roads phases layer
+// pacts / fusion / branching roads onto this same spine.
+export const WICK_ROADS = {
+    shrinePickupRadius: 46,   // walk-onto trigger radius (matches chest feel)
+    bossRewardOffset: 96,     // chest + shrine spawn this far to either side of the boss
+    altarChoices: 3,          // relic cards offered per shrine
+};
+
 export const LIGHT_COLORS = {
     player: '#ffe6b0',
     projectile: '#ffd27a',
     coin: '#ffd166',
     chest: '#ffe08a',
+    shrine: '#ff9ecf',        // Wick Shrine — relic-pink ember glow
     candle: '#ff9a4a',
     enemyEye: '#ff6a5a',
     boss: '#ff8a5a',
