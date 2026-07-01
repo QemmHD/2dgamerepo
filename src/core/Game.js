@@ -561,6 +561,7 @@ export class Game {
         this.altar = null;
         this.pendingAltars = 0;
         this._runRelics = [];
+        this._runPacts = [];
         // Weapon-aura cache (recomputed only when weaponSystem.version changes).
         this._auraVersion = -1;
         this._auraSnapshot = null;
@@ -1411,6 +1412,11 @@ export class Game {
             this.waveDirector.announce(`⚔ FUSED — ${choice.name.toUpperCase()} ⚔`, 3.0, '#ffd3ec');
             this._pushFeedback('levelup', 0.4);
             this.particles.levelUpBurst(this.player.x, this.player.y);
+        } else if (choice.kind === 'pact') {
+            // A devil's-bargain — a heavier, ashen callout + shake for the weight.
+            this.waveDirector.announce(`☠ PACT SWORN — ${choice.name.toUpperCase()} ☠`, 3.0, '#c97bff');
+            this._pushFeedback('levelup', 0.4);
+            this._shake(SCREEN_SHAKE.intensity * 0.5, 0.35);
         } else {
             // Relic: record the claim in the lifetime codex; a first-ever discovery
             // gets a brighter callout + a reward flash so it feels earned.

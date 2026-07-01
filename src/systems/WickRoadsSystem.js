@@ -9,6 +9,7 @@
 
 import { RELICS, getRelic } from '../content/relics.js';
 import { FUSIONS, findEligibleFusions } from '../content/fusions.js';
+import { PACTS, getPact } from '../content/pacts.js';
 import { WEAPONS } from '../content/weapons.js';
 
 // Rarity draft weights (rarer = less likely to be offered).
@@ -58,20 +59,44 @@ function fusionToChoice(f) {
     };
 }
 
-// Weighted, distinct draw of up to `count` choices. A single eligible fusion (if
-// any) is offered — never more than one, and never forced — with the remaining
-// slots filled by weighted relics; if the relic pool is exhausted, extra fusions
-// backfill so the altar is never empty.
+function pactToChoice(pact) {
+    return {
+        id: `pact:${pact.id}`,
+        kind: 'pact',
+        pactId: pact.id,
+        rarity: pact.rarity,
+        cardLabel: 'ASHEN PACT',
+        cardLevelText: 'Devil’s bargain',
+        name: pact.name,
+        description: `⚠ ${pact.curse}   ✦ ${pact.boon}`,
+        apply(game) {
+            const p = getPact(pact.id);
+            if (!p) return;
+            p.apply(game);
+            if (!Array.isArray(game._runPacts)) game._runPacts = [];
+            game._runPacts.push(pact.id);
+        },
+    };
+}
+
+// Weighted, distinct draw of up to `count` choices. At most ONE eligible fusion
+// AND at most ONE unclaimed pact are offered (each random, neither forced); the
+// remaining slots are weighted relics. If a pool runs dry the others backfill so
+// the altar is never empty. Never offers a claimed relic/pact or a forged fusion.
 export function rollAltarChoices(game, count = 3) {
-    const owned = new Set(Array.isArray(game._runRelics) ? game._runRelics : []);
-    const relicPool = RELICS.filter((r) => !owned.has(r.id));
+    const ownedRelics = new Set(Array.isArray(game._runRelics) ? game._runRelics : []);
+    const takenPacts = new Set(Array.isArray(game._runPacts) ? game._runPacts : []);
+    const relicPool = RELICS.filter((r) => !ownedRelics.has(r.id));
     const fusionPool = findEligibleFusions(game).map(fusionToChoice);
+    const pactPool = PACTS.filter((p) => !takenPacts.has(p.id)).map(pactToChoice);
     const chosen = [];
 
-    // Reserve at most ONE slot for a random eligible fusion.
-    if (fusionPool.length > 0) {
-        const i = (Math.random() * fusionPool.length) | 0;
-        chosen.push(fusionPool.splice(i, 1)[0]);
+    // Reserve at most ONE random eligible fusion, and ONE random unclaimed pact.
+    if (fusionPool.length > 0 && chosen.length < count) {
+        chosen.push(fusionPool.splice((Math.random() * fusionPool.length) | 0, 1)[0]);
+    }
+    if (pactPool.length > 0 && chosen.length < count) {
+        chosen.push(pactPool.splice((Math.random() * pactPool.length) | 0, 1)[0]);
     }
 
     // Fill remaining slots with weighted, distinct relics.
@@ -88,10 +113,9 @@ export function rollAltarChoices(game, count = 3) {
         relicPool.splice(idx, 1);
     }
 
-    // Late-game backfill: if relics ran dry, offer any remaining eligible fusions.
-    while (chosen.length < count && fusionPool.length > 0) {
-        chosen.push(fusionPool.shift());
-    }
+    // Late-game backfill (relic pool dry): offer any remaining fusions, then pacts.
+    while (chosen.length < count && fusionPool.length > 0) chosen.push(fusionPool.shift());
+    while (chosen.length < count && pactPool.length > 0) chosen.push(pactPool.shift());
 
     return chosen;
 }
