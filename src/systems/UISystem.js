@@ -17,7 +17,7 @@ import {
     easeOutBack,
     easeOutQuad,
 } from '../render/DrawUtils.js';
-import { getChestSprite, getCoinSprite } from '../assets/ProceduralSprites.js';
+import { getChestSprite, getCoinSprite, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { MenuRenderer } from './MenuRenderer.js';
 
 const DEBUG_BUTTON_SIZE = 96;
@@ -61,6 +61,10 @@ export class UISystem {
         this.dispBossRatio = 1;
         this.bossName = null;
         this.bossSlideT = 0;
+        // Level-up flash (XP bar): stamp of the last level-up + last seen level,
+        // so a fresh run never flashes on frame 0.
+        this._xpFlash = -1;
+        this._lastLevel = null;
 
         // The redesigned tabbed main menu. Owns its own clickable hotspots,
         // which Game's pointer handler reads to dispatch menu actions.
@@ -75,6 +79,66 @@ export class UISystem {
         this.dispBossRatio = 1;
         this.bossName = null;
         this.bossSlideT = 0;
+        this._lastLevel = player?.level ?? 1;
+        this._xpFlash = -1;
+    }
+
+    // ── HUD "ember forge" primitives (local — do NOT reuse MenuRenderer's, which
+    // mutate menu-only caches) ─────────────────────────────────────────────
+    // Smoked-glass plate matching the menu panel recipe.
+    _hudGlassPlate(ctx, x, y, w, h, r = 12, opts = {}) {
+        const g = ctx.createLinearGradient(0, y, 0, y + h);
+        g.addColorStop(0, 'rgba(24,18,18,0.94)'); g.addColorStop(1, 'rgba(12,10,12,0.96)');
+        roundRectPath(ctx, x, y, w, h, r); ctx.fillStyle = g; ctx.fill();
+        ctx.save(); roundRectPath(ctx, x, y, w, h, r); ctx.clip();
+        const gg = ctx.createLinearGradient(0, y, 0, y + h * 0.4);
+        gg.addColorStop(0, 'rgba(255,255,255,0.05)'); gg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gg; ctx.fillRect(x, y, w, h * 0.4); ctx.restore();
+        roundRectPath(ctx, x + 1.5, y + 1.5, w - 3, h - 3, Math.max(2, r - 1));
+        ctx.strokeStyle = 'rgba(255,140,60,0.10)'; ctx.lineWidth = 1.5; ctx.stroke();
+        roundRectPath(ctx, x, y, w, h, r);
+        ctx.strokeStyle = opts.stroke || 'rgba(255,180,120,0.10)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    // One additive cached-glow blit (caller owns composite='lighter' + reset).
+    _hudGlow(ctx, x, y, r, color, alpha) {
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.drawImage(getGlowSprite(color), x - r, y - r, r * 2, r * 2);
+    }
+    // Recessed glass gutter drawn OUTSIDE the bar rect (geometry-neutral).
+    _hudBarTrack(ctx, barLeft, barY, barW, barH) {
+        roundRectPath(ctx, barLeft - 4, barY - 4, barW + 8, barH + 8, 12);
+        ctx.fillStyle = 'rgba(10,8,10,0.7)'; ctx.fill();
+        roundRectPath(ctx, barLeft - 4, barY - 4, barW + 8, barH + 8, 12);
+        ctx.strokeStyle = 'rgba(255,180,120,0.10)'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    // Faint segment ticks over a bar (texture, clipped to the rounded rect).
+    _hudBarTicks(ctx, barLeft, barY, barW, barH, n) {
+        ctx.save();
+        roundRectPath(ctx, barLeft, barY, barW, barH, Math.min(9, barH / 2)); ctx.clip();
+        ctx.strokeStyle = 'rgba(0,0,0,0.26)'; ctx.lineWidth = 1;
+        for (let i = 1; i < n; i++) {
+            const x = barLeft + (barW * i) / n;
+            ctx.beginPath(); ctx.moveTo(x, barY + 3); ctx.lineTo(x, barY + barH - 3); ctx.stroke();
+        }
+        ctx.restore();
+    }
+    // Small procedural heart sigil (HP fill-tip end-cap).
+    _hudHeartSigil(ctx, x, y, size, tint) {
+        const s = size / 2;
+        ctx.save(); ctx.translate(x, y);
+        ctx.beginPath();
+        ctx.moveTo(0, s * 0.9);
+        ctx.bezierCurveTo(-s * 1.3, -s * 0.3, -s * 0.5, -s * 1.1, 0, -s * 0.35);
+        ctx.bezierCurveTo(s * 0.5, -s * 1.1, s * 1.3, -s * 0.3, 0, s * 0.9);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill();
+        ctx.strokeStyle = tint; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.restore();
+    }
+    // Text with a cheap dark underlayer (crisp without per-frame shadowBlur).
+    _textWithShadow(ctx, text, x, y, color) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(text, x + 1.5, y + 1.5);
+        ctx.fillStyle = color; ctx.fillText(text, x, y);
     }
 
     getDebugButtonRect() {
@@ -287,35 +351,63 @@ export class UISystem {
         const cx = INTERNAL_WIDTH / 2;
 
         ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-
-        // Drop shadow for legibility over the bright/dark world.
-        ctx.shadowColor = 'rgba(0,0,0,0.6)';
-        ctx.shadowBlur = 8;
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 58px ${MONO}`;
-        ctx.fillText(formatTime(state.time), cx, sa.top + 14);
-        ctx.shadowBlur = 0;
-
-        // Kills · Coins line.
-        ctx.font = `bold 24px ${FONT}`;
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.fillText(
-            `${state.kills} KILLS`,
-            cx - 90,
-            sa.top + 78
-        );
+        // Framed glass cluster: timer · divider · KILLS · coins. Replaces the old
+        // floating shadowBlur text (which was the HUD's one Canvas2D hotspot).
+        const timer = formatTime(state.time);
+        const killsVal = `${state.kills}`;
+        const killsLbl = ' KILLS';
+        const coinVal = `${state.runCoins ?? 0}`;
         const coinSprite = getCoinSprite();
-        const coinText = `${state.runCoins ?? 0}`;
-        ctx.fillStyle = '#ffd166';
-        ctx.textAlign = 'left';
-        ctx.fillText(coinText, cx + 40, sa.top + 78);
-        // Coin source is supersampled (SPRITE_SS×) — draw at logical size.
-        const coinW = coinSprite.width / SPRITE_SS;
-        const coinH = coinSprite.height / SPRITE_SS;
-        ctx.drawImage(coinSprite, cx + 16 - coinW / 2, sa.top + 78 + 2, coinW, coinH);
-        ctx.restore();
+        const coinW = coinSprite.width / SPRITE_SS, coinH = coinSprite.height / SPRITE_SS;
+        const gap = 24, padX = 28;
+        const measure = (tfont) => {
+            ctx.font = `800 ${tfont}px ${MONO}`; const tw = ctx.measureText(timer).width;
+            ctx.font = `800 22px ${FONT}`; const kv = ctx.measureText(killsVal).width;
+            ctx.font = `700 16px ${FONT}`; const kl = ctx.measureText(killsLbl).width;
+            ctx.font = `800 24px ${MONO}`; const cv = ctx.measureText(coinVal).width;
+            const coinSeg = coinW + 8 + cv;
+            return { tw, kv, kl, cv, coinSeg, content: tw + gap + 2 + gap + (kv + kl) + gap + coinSeg };
+        };
+        // Shrink the timer font (only) before the plate could reach the two
+        // top-right buttons on a wide safe-area — never move the buttons.
+        let tf = 50, mm = measure(tf);
+        const leftmostBtn = INTERNAL_WIDTH - sa.right - 2 * (DEBUG_BUTTON_SIZE + DEBUG_BUTTON_MARGIN) - 16;
+        // Hard ceiling: a centred plate whose half-width reaches leftmostBtn — so
+        // the plate right edge can NEVER cross into the top-right buttons, even at
+        // an absurd right safe-area (no floor that could override this).
+        const maxPlateW = Math.max(0, 2 * (leftmostBtn - cx));
+        while (tf > 40 && (padX * 2 + mm.content) > maxPlateW) { tf -= 2; mm = measure(tf); }
+        const plateW = Math.min(maxPlateW, padX * 2 + mm.content);
+        const plateH = 84, plateY = sa.top + 8, plateX = cx - plateW / 2;
+        this._hudGlassPlate(ctx, plateX, plateY, plateW, plateH, 20);
+        // Clip the content to the plate so, in the degenerate too-narrow case, the
+        // (fixed-width) kills/coin segments can't spill past the plate → buttons.
+        ctx.save();
+        roundRectPath(ctx, plateX, plateY, plateW, plateH, 20); ctx.clip();
+        const midY = plateY + plateH / 2;
+        ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+        let x = plateX + padX;
+        // Timer (warm under-glow instead of shadowBlur).
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._hudGlow(ctx, x + mm.tw / 2, midY, 82, '#ff7a1e', 0.10);
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
+        ctx.font = `800 ${tf}px ${MONO}`;
+        this._textWithShadow(ctx, timer, x, midY, '#fff');
+        x += mm.tw + gap;
+        // Divider.
+        ctx.fillStyle = 'rgba(255,180,120,0.18)'; ctx.fillRect(x, midY - plateH * 0.25, 2, plateH * 0.5);
+        x += 2 + gap;
+        // Kills.
+        ctx.font = `800 22px ${FONT}`; this._textWithShadow(ctx, killsVal, x, midY, '#fff'); x += mm.kv;
+        ctx.font = `700 16px ${FONT}`; this._textWithShadow(ctx, killsLbl, x, midY, 'rgba(255,255,255,0.62)'); x += mm.kl + gap;
+        // Coin.
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._hudGlow(ctx, x + coinW / 2, midY, 34, '#ffd86b', 0.12);
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
+        ctx.drawImage(coinSprite, x, midY - coinH / 2, coinW, coinH); x += coinW + 8;
+        ctx.font = `800 24px ${MONO}`; this._textWithShadow(ctx, coinVal, x, midY, '#ffd166');
+        ctx.restore();   // content clip
+        ctx.restore();   // method save
     }
 
     // Kill-streak meter: an escalating, color-shifting counter under the timer
@@ -940,13 +1032,17 @@ export class UISystem {
             border = `rgba(255, 80, 90, ${0.6 + 0.35 * p})`;
         }
 
+        const midY = barY + layout.barH / 2;
         ctx.save();
-        ctx.font = `bold 30px ${FONT}`;
-        ctx.fillStyle = '#fff';
-        ctx.textBaseline = 'middle';
-        ctx.textAlign = 'left';
-        ctx.fillText('HP', layout.padL, barY + layout.barH / 2);
-
+        // Low-HP frame glow (additive, same 9Hz pulse as the border).
+        if (target < 0.3) {
+            const lp = 0.5 + 0.5 * Math.sin(state.time * 9);
+            ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.10 + 0.10 * lp;
+            ctx.drawImage(getGlowSprite('#ff5a4a'), barLeft - 24, barY - 24, barW + 48, layout.barH + 48);
+            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
+        }
+        // Glass gutter + fill + segment ticks.
+        this._hudBarTrack(ctx, barLeft, barY, barW, layout.barH);
         drawStatBar(ctx, barLeft, barY, barW, layout.barH, target, fill, {
             radius: 9,
             chip: this.dispHpRatio,
@@ -954,15 +1050,23 @@ export class UISystem {
             border,
             borderWidth: 2,
         });
-
-        ctx.fillStyle = '#fff';
+        this._hudBarTicks(ctx, barLeft, barY, barW, layout.barH, 10);
+        // Heart end-cap riding the fill tip (tinted to the HP band).
+        if (target > 0.02) {
+            const capX = Math.max(barLeft + 9, Math.min(barRight - 9, barLeft + barW * target));
+            const tint = target < 0.3 ? '#ff5a4a' : target < 0.6 ? '#ff8a3a' : '#74e890';
+            const lp = 0.5 + 0.5 * Math.sin(state.time * 9);
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            this._hudGlow(ctx, capX, midY, 22, tint, 0.30 + (target < 0.3 ? 0.25 * lp : 0));
+            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
+            this._hudHeartSigil(ctx, capX, midY, 18, tint);
+        }
+        // Gold label + readout pill.
+        ctx.font = `bold 30px ${FONT}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+        this._textWithShadow(ctx, 'HP', layout.padL, midY, '#ffce7a');
+        this._hudGlassPlate(ctx, barRight + 8, barY - 4, layout.readoutW - 16, layout.barH + 8, 10, { stroke: 'rgba(255,180,120,0.12)' });
         ctx.font = `22px ${MONO}`;
-        ctx.textAlign = 'left';
-        ctx.fillText(
-            `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`,
-            barRight + 16,
-            barY + layout.barH / 2
-        );
+        this._textWithShadow(ctx, `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`, barRight + 20, midY, '#fff');
         ctx.restore();
     }
 
@@ -980,26 +1084,49 @@ export class UISystem {
             : 0;
         // Smoothly sweep toward the target (and back down on level-up).
         this.dispXpRatio = lerp(this.dispXpRatio, target, 0.2);
+        // Fire a self-clearing flash when the level ticks up (not on frame 0).
+        if (this._lastLevel != null && state.player.level > this._lastLevel) this._xpFlash = state.time;
+        this._lastLevel = state.player.level;
 
+        const midY = barY + layout.barH / 2;
         ctx.save();
-        ctx.font = `bold 30px ${FONT}`;
-        ctx.fillStyle = '#fff';
-        ctx.textBaseline = 'middle';
-        ctx.textAlign = 'left';
-        ctx.fillText(`LV ${state.player.level}`, layout.padL, barY + layout.barH / 2);
-
+        // Glass gutter + fill (cool blue — a hard hue split from the warm HP) + ticks.
+        this._hudBarTrack(ctx, barLeft, barY, barW, layout.barH);
         drawStatBar(ctx, barLeft, barY, barW, layout.barH, this.dispXpRatio,
             { from: '#3aa8ff', to: '#7fdcff' },
             { radius: 9, border: 'rgba(255,255,255,0.42)', borderWidth: 2 });
-
-        ctx.fillStyle = '#fff';
+        this._hudBarTicks(ctx, barLeft, barY, barW, layout.barH, 10);
+        // Leading-edge comet (clipped so it can't spill past the rounded caps).
+        if (this.dispXpRatio > 0.01 && this.dispXpRatio < 0.995) {
+            ctx.save();
+            roundRectPath(ctx, barLeft - 6, barY - 12, barW + 12, layout.barH + 24, 12); ctx.clip();
+            ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.6;
+            const ex = barLeft + barW * this.dispXpRatio;
+            ctx.drawImage(getGlowSprite('#bfe8ff'), ex - 22, barY - 12, 44, layout.barH + 24);
+            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
+        }
+        // Level-up flash (0.5s, self-clearing).
+        if (this._xpFlash >= 0 && (state.time - this._xpFlash) < 0.5) {
+            const fa = (1 - (state.time - this._xpFlash) / 0.5) * 0.5;
+            ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fa;
+            ctx.drawImage(getGlowSprite('#ffd06a'), barLeft - 30, barY - 20, barW + 60, layout.barH + 40);
+            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
+        }
+        // LV badge chip (within the label slot).
+        this._hudGlassPlate(ctx, layout.padL - 2, barY - 4, 118, layout.barH + 8, 10);
+        ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+        ctx.font = `700 15px ${FONT}`;
+        this._textWithShadow(ctx, 'LV', layout.padL + 12, midY, 'rgba(255,255,255,0.62)');
+        const numX = layout.padL + 44;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._hudGlow(ctx, numX + 14, midY, 20, '#ffd06a', 0.14);
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
+        ctx.font = `800 26px ${MONO}`;
+        this._textWithShadow(ctx, `${state.player.level}`, numX, midY, '#ffd06a');
+        // Readout pill.
+        this._hudGlassPlate(ctx, barRight + 8, barY - 4, layout.readoutW - 16, layout.barH + 8, 10, { stroke: 'rgba(255,180,120,0.12)' });
         ctx.font = `22px ${MONO}`;
-        ctx.textAlign = 'left';
-        ctx.fillText(
-            `${Math.floor(state.player.xp)} / ${state.player.xpToNext}`,
-            barRight + 16,
-            barY + layout.barH / 2
-        );
+        this._textWithShadow(ctx, `${Math.floor(state.player.xp)} / ${state.player.xpToNext}`, barRight + 20, midY, '#fff');
         ctx.restore();
     }
 
