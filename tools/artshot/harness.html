@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>EMBERWAKE art harness</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  #stage { position: fixed; inset: 0; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<!--
+  Headless art-screenshot harness (dev tooling — NOT deployed; Pages ships src/).
+  Boots the real Game.js, starts a run, steps the sim synchronously to a chosen
+  game-time, then renders one frame for a screenshot. Used by the higgsfield
+  AI-art loop (screenshot -> Nano Banana 2 improve -> implement -> verify).
+
+  Serve the repo ROOT with tools/artshot/serve.py, then screenshot:
+    chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
+      --mute-audio --autoplay-policy=no-user-gesture-required \
+      --disable-background-networking --disable-component-update \
+      --force-device-scale-factor=1 --window-size=1600,900 \
+      --virtual-time-budget=12000 --user-data-dir=<tmp> --screenshot=<out.png> \
+      "http://127.0.0.1:PORT/tools/artshot/harness.html?seconds=35"
+
+  Query params:
+    seconds  game-time to simulate before the shot (default 12)
+    badge    "1" stamps an EXC:<n> exception-count badge top-left (self-check)
+    screen   "menu" to shoot the main menu instead of a run; with tab=<name>
+-->
+<div id="stage"><canvas id="game"></canvas></div>
+<script type="module">
+// Neutralize WebAudio: a live real-time AudioContext keeps the renderer's event
+// loop busy and prevents --virtual-time-budget from fast-forwarding (the page
+// hangs). AudioSystem feature-detects window.AudioContext at runtime and no-ops
+// cleanly when it's absent, so gameplay/visuals are unaffected.
+window.AudioContext = undefined;
+window.webkitAudioContext = undefined;
+
+import { Renderer } from '../../src/systems/Renderer.js';
+import { GameLoop } from '../../src/core/GameLoop.js';
+import { Game } from '../../src/core/Game.js';
+import { Input } from '../../src/core/Input.js';
+import { KeyboardInput } from '../../src/core/KeyboardInput.js';
+import { TouchJoystick } from '../../src/core/TouchJoystick.js';
+import { prewarmSprites, getGlowSprite } from '../../src/assets/ProceduralSprites.js';
+import { loadLpcSprites } from '../../src/assets/LpcSprites.js';
+import { loadWorldTextures } from '../../src/assets/WorldTextures.js';
+import { loadIconGlyphs } from '../../src/assets/CustomIcons.js';
+import { loadMonsterSprites } from '../../src/assets/MonsterSprites.js';
+import { WEAPON_AURA } from '../../src/content/weapons.js';
+
+const ERR = [];
+window.__ERR = ERR;
+window.addEventListener('error', (e) => ERR.push(String(e.message || e.error || e)));
+window.addEventListener('unhandledrejection', (e) => ERR.push('promise: ' + String(e.reason)));
+
+const params = new URLSearchParams(location.search);
+const SECONDS = parseFloat(params.get('seconds') || '12');
+const BADGE = params.get('badge') === '1';
+const SCREEN = params.get('screen') || 'run';   // 'run' | 'menu'
+const TAB = params.get('tab') || 'play';
+const DT = 1 / 60;
+const TOTAL_FRAMES = Math.round(SECONDS / DT);
+
+async function boot() {
+    const canvas = document.getElementById('game');
+    const renderer = new Renderer(canvas);
+    const keyboard = new KeyboardInput();
+    const touch = new TouchJoystick(renderer);
+    const input = new Input({ keyboard, touch });
+
+    let game;
+    const loop = new GameLoop({ update: (dt) => game.update(dt), render: () => game.render() });
+
+    prewarmSprites();
+    for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
+    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites()]);
+
+    game = new Game({ renderer, input, loop });
+    game.showDebug = false;          // no debug grid/HUD in the art frame
+
+    if (SCREEN === 'menu') {
+        game.screen = 'start';
+        game.menuTab = TAB;
+        // Tick a few frames so menu intro animations settle.
+        for (let i = 0; i < 90; i++) { try { game.update(DT); } catch (e) { ERR.push('menu ' + i + ': ' + String(e && e.stack || e)); break; } }
+        game.render();
+    } else {
+        game._startRun();                // default hero (monkey "Pyra"), default map
+        game.player.damageTakenMul = 0;  // harness godmode: survive the swarm for the shot
+
+        // Deterministic SYNCHRONOUS stepping: a virtual-time budget can cut off a
+        // long rAF chain mid-run, so we step the sim in a tight loop instead (a
+        // synchronous loop never yields, so the budget can't interrupt it). Paused
+        // overlays (level-up / chest / shrine) are auto-dismissed so the sim keeps
+        // advancing to a real swarm instead of freezing on the first level-up.
+        for (let i = 0; i < TOTAL_FRAMES; i++) {
+            try {
+                game.update(DT);
+                if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);
+                if (game.chestReward && game._dismissChestReward) game._dismissChestReward();
+                if (game.altar && game.selectAltar) game.selectAltar(0);
+                if (game.victory) break;
+            } catch (e) {
+                ERR.push('frame ' + i + ': ' + String(e && e.stack || e));
+                break;
+            }
+        }
+        game.render();
+    }
+
+    // Final frame is on the canvas. Optionally stamp an exception badge.
+    if (BADGE) {
+        const ctx = renderer.ctx;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.font = 'bold 22px monospace';
+        ctx.textBaseline = 'top';
+        const msg = 'EXC: ' + ERR.length + (ERR.length ? ' | ' + ERR[0].slice(0, 80) : '');
+        ctx.fillStyle = ERR.length ? '#ff2b2b' : '#39ff67';
+        ctx.fillRect(6, 6, ctx.measureText(msg).width + 16, 30);
+        ctx.fillStyle = '#000';
+        ctx.fillText(msg, 14, 10);
+    }
+    document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1);
+    window.__done = true;
+}
+
+boot().catch((e) => { ERR.push('boot: ' + String(e && e.stack || e)); document.title = 'BOOTFAIL'; });
+</script>
+</body>
+</html>
