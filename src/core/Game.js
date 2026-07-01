@@ -23,6 +23,7 @@ import {
     RENDER,
     COMBO,
     ENEMY_SEPARATION,
+    COMPOSURE,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Easing } from './Easing.js';
