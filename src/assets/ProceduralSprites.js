@@ -127,6 +127,11 @@ export const PARTICLE_GLOW_COLORS = [
     // Boss in-world aura halo (base + enraged) — prewarmed so the first
     // boss spawn never rasterizes a 128px glow mid-frame.
     '#b41f2e',
+    // Ember-forge UI glows: the Mines overlay reveal/bust/multiplier blooms and
+    // the HUD low-HP / level-up / coin / XP-comet glows, so the first juice
+    // moment never rasterizes a 128px gradient mid-frame.
+    '#ff7a1e', '#ffd06a', '#ffb257', '#ff8a3a', '#74e890', '#b6ffcf',
+    '#fff1c8', '#ff5a4a', '#ffd86b',
 ];
 
 // ── Ground tile ────────────────────────────────────────────────────────
