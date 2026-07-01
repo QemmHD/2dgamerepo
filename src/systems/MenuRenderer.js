@@ -19,7 +19,7 @@ import {
 import {
     COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement,
 } from '../content/cosmetics.js';
-import { CASES, CASE_ORDER, caseOddsRows, WAGER_BETS } from './CaseSystem.js';
+import { CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining, CASE_PITY, WAGER_BETS } from './CaseSystem.js';
 import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
 import { rewardLabel } from './BattlePassSystem.js';
@@ -1095,37 +1095,78 @@ export class MenuRenderer {
             const x = c.x + col * (cardW + gap);
             const y = c.y + row * (rowH + gap);
             this._panel(ctx, x, y, cardW, rowH, 'rgba(18,22,30,0.9)');
+            const midX = x + cardW / 2;
+            const innerX = x + 30, innerW = cardW - 60;
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#fff'; ctx.font = `800 26px ${FONT}`;
-            ctx.fillText(def.name, x + cardW / 2, y + 40);
-            // OPEN button anchored at the card bottom; the odds rows fill the
-            // space BETWEEN the title and the button (spacing compresses to fit)
-            // so the lower rarities never render behind the button.
+            ctx.fillStyle = '#fff'; ctx.font = `800 25px ${FONT}`;
+            ctx.fillText(def.name, midX, y + 34);
+            // "up to ★ <TOP RARITY>" aspiration tag under the title — the ceiling
+            // reward, in its own colour, so the chase target reads at a glance.
+            const topR = caseTopRarity(def.id);
+            ctx.font = `800 14px ${FONT}`; ctx.fillStyle = rarityColor(topR);
+            ctx.fillText(`up to ★ ${rarityName(topR).toUpperCase()}`, midX, y + 53);
+            // OPEN button anchored at the card bottom; everything above adapts to
+            // whatever height remains, so nothing collides on short panels where
+            // the grid shares space with the Featured + Mines strips.
             const afford = save.totalCoins >= def.cost;
-            const btnH = Math.min(54, rowH * 0.27);
-            const br = { x: x + 30, y: y + rowH - btnH - 14, w: cardW - 60, h: btnH };
-            // Odds in TWO columns (≤3 rows) so they always fit a compact card
-            // without overlapping — even when the grid shares space with the
-            // Featured + Mines strips on short panels.
-            const oddsRows = caseOddsRows(def.id);
-            const oTop = y + 56, oBot = br.y - 6;
-            const half = Math.max(1, Math.ceil(oddsRows.length / 2));
-            // Fit the (≤3) rows fully ABOVE the OPEN button — no hard floor, so
-            // they compress on short cards instead of colliding with the button.
-            const step = Math.min(26, (oBot - oTop) / (half + 0.3));
-            const ofs = Math.round(Math.max(9, Math.min(17, step * 0.64)));
-            const colMid = x + cardW / 2;
-            ctx.font = `600 ${ofs}px ${FONT}`;
-            for (let ri = 0; ri < oddsRows.length; ri++) {
-                const r = oddsRows[ri];
-                const cc = ri < half ? 0 : 1, rr = ri - cc * half;
-                const oy = oTop + step * 0.85 + rr * step;
-                const lx = cc === 0 ? x + 26 : colMid + 10;
-                const rx = cc === 0 ? colMid - 10 : x + cardW - 26;
-                ctx.textAlign = 'left'; ctx.fillStyle = rarityColor(r.rarity);
-                ctx.fillText(rarityName(r.rarity), lx, oy);
-                ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.85)';
-                ctx.fillText(`${r.pct}%`, rx, oy);
+            const btnH = Math.max(38, Math.min(52, rowH * 0.27));
+            const br = { x: innerX, y: y + rowH - btnH - 10, w: innerW, h: btnH };
+            // ── The middle band between the tag and the OPEN button holds the
+            // odds bar + the bad-luck pity meter, laid out from the BOTTOM up so
+            // neither can ever collide with the button on short (large-safe-area)
+            // cards. Each element is dropped before it would overlap — the same
+            // graceful-compression behaviour the odds table used to have. ──
+            const mTop = y + 58, mBot = br.y - 8, band = mBot - mTop;
+            // Bad-luck pity meter (the addictive hook): live "Rare+ guaranteed in
+            // N" readout nearest the button. Full text+bar when there's room, a
+            // compact text-only line when cramped, dropped entirely when tiny.
+            const cap = CASE_PITY[def.id] || 12;
+            const remain = casePityRemaining(save, def.id);
+            const frac = clamp01((cap - remain) / cap);
+            const soon = remain === 1;
+            // The pity meter is the priority element (the hook), so it claims the
+            // band bottom first; the odds bar only fills whatever is left above.
+            let pityTop = mBot;   // lower bound for the odds bar above
+            if (band >= 12) {
+                const full = band >= 24;
+                pityTop = mBot - (full ? 18 : 13);
+                ctx.textAlign = 'center'; ctx.font = `700 ${full ? 12 : 11}px ${FONT}`;
+                ctx.fillStyle = soon ? '#ffd24a' : remain <= 3 ? '#ff9a4a' : 'rgba(255,255,255,0.55)';
+                ctx.fillText(soon ? '★ GUARANTEED RARE+ NEXT ★' : `◆ Rare+ guaranteed in ${remain}`, midX, full ? mBot - 8 : mBot - 3);
+                if (full) {
+                    const pBarY = mBot - 3;
+                    roundRectPath(ctx, innerX, pBarY, innerW, 3, 1.5); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+                    if (frac > 0) { roundRectPath(ctx, innerX, pBarY, innerW * frac, 3, 1.5); ctx.fillStyle = soon ? '#ffd24a' : '#ff8a4a'; ctx.fill(); }
+                }
+            }
+            // Odds as a stacked probability bar (common→rarest, width ∝ chance),
+            // colour-coded, with the % printed inside any segment wide/tall enough
+            // to hold it. Fills whatever space is left above the pity block.
+            const oddsRows = caseOddsRows(def.id);          // high→low
+            const asc = oddsRows.slice().reverse();          // low→high for the bar
+            const totalPct = asc.reduce((s, r) => s + r.pct, 0) || 1;
+            const obTop = mTop + 1, obBot = pityTop - 3;
+            if (obBot - obTop >= 6) {
+                const obH = Math.min(15, obBot - obTop), obY = obTop;
+                let segX = innerX;
+                ctx.textBaseline = 'middle';
+                for (let ri = 0; ri < asc.length; ri++) {
+                    const r = asc[ri];
+                    const segW = (r.pct / totalPct) * innerW;
+                    if (segW <= 0) continue;
+                    ctx.fillStyle = rarityColor(r.rarity);
+                    ctx.globalAlpha = 0.9;
+                    roundRectPath(ctx, segX + (ri ? 1 : 0), obY, Math.max(1, segW - (ri ? 1 : 0)), obH, 3);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    if (segW >= 34 && obH >= 12) {
+                        ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.font = `800 11px ${FONT}`;
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`${r.pct}%`, segX + segW / 2, obY + obH / 2 + 0.5);
+                    }
+                    segX += segW;
+                }
+                ctx.textBaseline = 'alphabetic';
             }
             // Always clickable: an unaffordable tap surfaces a "Not enough
             // coins" toast rather than silently doing nothing.
@@ -1325,37 +1366,49 @@ export class MenuRenderer {
 
     // ── CASE OPENING OVERLAY ─────────────────────────────────────────────
     _drawCaseOverlay(ctx, anim) {
-        ctx.fillStyle = 'rgba(0,0,0,0.78)';
-        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
-        const cx = INTERNAL_WIDTH / 2, cy = INTERNAL_HEIGHT / 2;
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
+        const cx = W / 2, cy = H / 2;
         const t = anim.age;
         const reveal = anim.reel ? (anim.spinTime ?? 2.6) : 0.85;
         const result = anim.result;
         const col = result && result.rarity ? rarityColor(result.rarity) : '#ffce54';
+        const tier = result && result.rarity && RARITIES[result.rarity] ? RARITIES[result.rarity].tier : 1;
+        const revealAge = Math.max(0, t - reveal);
+        // Overshoot ease (lands on 1 but drifts past first) — the near-miss.
+        const backOut = (x, s = 0.9) => 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(0, 0, W, H);
+
+        // High-tier reveals physically SHAKE the overlay (decays over ~0.4s).
+        let shx = 0, shy = 0;
+        if (t >= reveal && tier >= 3) {
+            const s = Math.max(0, 1 - revealAge / 0.4) * (tier - 2) * 6;
+            shx = (Math.random() * 2 - 1) * s; shy = (Math.random() * 2 - 1) * s;
+        }
+        ctx.save();
+        ctx.translate(shx, shy);
 
         if (t < reveal && anim.reel) {
-            // CS:GO-style spin reel: a horizontal strip scrolls + decelerates so
-            // the won item (at landingIndex) settles under the center marker.
-            const cellW = 168, cellH = 132, gap = 10;
-            const stride = cellW + gap;
-            const frac = easeOutCubic(clamp01(t / reveal));
-            const offset = frac * anim.landingIndex * stride;
-            ctx.save();
-            // Reel band background + clip.
+            // Spin reel: decelerates AND overshoots so the strip drifts past the
+            // winner and creeps back — the signature "almost got the next one".
+            const cellW = 168, cellH = 132, gap = 10, stride = cellW + gap;
+            const p = clamp01(t / reveal);
+            const offset = backOut(p) * anim.landingIndex * stride;
             const bandY = cy - cellH / 2;
-            roundRectPath(ctx, 0, bandY - 8, INTERNAL_WIDTH, cellH + 16, 0);
+            roundRectPath(ctx, 0, bandY - 8, W, cellH + 16, 0);
             ctx.fillStyle = 'rgba(8,10,16,0.92)'; ctx.fill();
             ctx.save();
-            ctx.beginPath(); ctx.rect(60, bandY - 8, INTERNAL_WIDTH - 120, cellH + 16); ctx.clip();
+            ctx.beginPath(); ctx.rect(60, bandY - 8, W - 120, cellH + 16); ctx.clip();
             for (let i = 0; i < anim.reel.length; i++) {
                 const cellX = cx - offset + i * stride - cellW / 2;
-                if (cellX > INTERNAL_WIDTH + cellW || cellX < -cellW) continue;
+                if (cellX > W + cellW || cellX < -cellW) continue;
                 const cell = anim.reel[i];
                 const cc = rarityColor(cell.rarity);
+                const near = 1 - Math.min(1, Math.abs(cellX + cellW / 2 - cx) / (stride * 0.6));
                 roundRectPath(ctx, cellX, bandY, cellW, cellH, 12);
-                ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
-                ctx.strokeStyle = cc; ctx.lineWidth = 3; ctx.stroke();
-                // Rarity badge + a kind LOGO (gear vs cosmetic vs coin) + name.
+                ctx.fillStyle = `rgba(255,255,255,${0.04 + near * 0.08})`; ctx.fill();
+                ctx.strokeStyle = cc; ctx.lineWidth = 3 + near * 3; ctx.stroke();
                 ctx.fillStyle = cc;
                 ctx.beginPath(); ctx.arc(cellX + cellW / 2, bandY + cellH * 0.36, 26, 0, Math.PI * 2); ctx.fill();
                 this._kindGlyph(ctx, cellX + cellW / 2, bandY + cellH * 0.36, 15, cell.kind);
@@ -1365,48 +1418,108 @@ export class MenuRenderer {
                 ctx.fillText(nm, cellX + cellW / 2, bandY + cellH * 0.78);
             }
             ctx.restore();
-            // Center marker.
-            ctx.strokeStyle = '#ffd86b'; ctx.lineWidth = 4;
+            // Center marker (brightens as it slows).
+            const mk = 0.6 + 0.4 * p;
+            ctx.strokeStyle = '#ffd86b'; ctx.globalAlpha = mk; ctx.lineWidth = 4;
             ctx.beginPath(); ctx.moveTo(cx, bandY - 14); ctx.lineTo(cx, bandY + cellH + 14); ctx.stroke();
             ctx.fillStyle = '#ffd86b';
-            ctx.beginPath();
-            ctx.moveTo(cx - 14, bandY - 14); ctx.lineTo(cx + 14, bandY - 14); ctx.lineTo(cx, bandY + 2); ctx.closePath(); ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(cx - 14, bandY + cellH + 14); ctx.lineTo(cx + 14, bandY + cellH + 14); ctx.lineTo(cx, bandY + cellH - 2); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(cx - 14, bandY - 14); ctx.lineTo(cx + 14, bandY - 14); ctx.lineTo(cx, bandY + 2); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(cx - 14, bandY + cellH + 14); ctx.lineTo(cx + 14, bandY + cellH + 14); ctx.lineTo(cx, bandY + cellH - 2); ctx.closePath(); ctx.fill();
+            ctx.globalAlpha = 1;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `800 30px ${FONT}`;
             ctx.fillText('OPENING…', cx, bandY - 48);
-            ctx.restore();
-        } else {
-            // Reveal card.
-            const k = easeOutCubic(clamp01((t - reveal) / 0.4));
-            const cardW = 460 * k, cardH = 260 * k;
-            const g = ctx.createRadialGradient(cx, cy, 30, cx, cy, 360);
+        } else if (result) {
+            // ── REVEAL: spectacle scaled by rarity tier ──
+            const k = easeOutCubic(clamp01(revealAge / 0.4));
+            // (1) Full-screen flash — brighter/whiter the rarer the pull.
+            const flash = Math.max(0, 1 - revealAge / (0.22 + tier * 0.06));
+            if (flash > 0) {
+                ctx.save(); ctx.globalAlpha = flash * (0.18 + tier * 0.1);
+                ctx.fillStyle = tier >= 4 ? '#ffffff' : col; ctx.fillRect(0, 0, W, H); ctx.restore();
+            }
+            // (2) Rotating light rays behind the card for epic+ pulls.
+            if (tier >= 4) {
+                ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.16 * k;
+                ctx.translate(cx, cy); ctx.rotate(revealAge * 0.5); ctx.fillStyle = col;
+                const rays = 12;
+                for (let i = 0; i < rays; i++) {
+                    ctx.rotate((Math.PI * 2) / rays);
+                    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(520, -26); ctx.lineTo(520, 26); ctx.closePath(); ctx.fill();
+                }
+                ctx.restore();
+            }
+            // (3) Radial glow bloom.
+            const g = ctx.createRadialGradient(cx, cy, 30, cx, cy, 380);
             g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.save(); ctx.globalAlpha = 0.55; ctx.globalCompositeOperation = 'lighter';
-            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 360, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+            ctx.save(); ctx.globalAlpha = 0.5; ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 380, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+            // (4) Expanding shock ring.
+            const ring = revealAge / 0.6;
+            if (ring < 1) {
+                ctx.save(); ctx.globalAlpha = (1 - ring) * 0.8; ctx.strokeStyle = col;
+                ctx.lineWidth = 2 + (1 - ring) * 7;
+                ctx.beginPath(); ctx.arc(cx, cy, 70 + ring * 460, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+            }
+            // (5) Spark burst — count + reach scale with tier.
+            const nSpark = 6 + tier * 6;
+            const sp = easeOutCubic(clamp01(revealAge / 0.7));
+            ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = col;
+            for (let i = 0; i < nSpark; i++) {
+                const a = (i / nSpark) * Math.PI * 2 + tier;
+                const dist = sp * (170 + tier * 45);
+                const sr = (1 - sp) * (5 + tier);
+                if (sr <= 0.5) continue;
+                const sxp = cx + Math.cos(a) * dist, syp = cy + Math.sin(a) * dist;
+                ctx.globalAlpha = (1 - sp) * 0.9;
+                ctx.beginPath();
+                ctx.moveTo(sxp, syp - sr); ctx.lineTo(sxp + sr * 0.4, syp); ctx.lineTo(sxp, syp + sr);
+                ctx.lineTo(sxp - sr * 0.4, syp); ctx.closePath(); ctx.fill();
+            }
+            ctx.restore();
+            // (6) The prize card — pops in with a bouncy overshoot.
+            const ks = backOut(clamp01(revealAge / 0.45), 1.4);
+            const cardW = 470 * ks, cardH = 268 * ks;
             roundRectPath(ctx, cx - cardW / 2, cy - cardH / 2, cardW, cardH, 18);
-            ctx.fillStyle = 'rgba(24,28,38,0.97)'; ctx.fill();
-            ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.stroke();
-            if (k > 0.7 && result) {
+            ctx.fillStyle = 'rgba(20,24,34,0.98)'; ctx.fill();
+            ctx.strokeStyle = col; ctx.lineWidth = 4 + tier; ctx.stroke();
+            if (k > 0.55) {
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                // Kind logo above the rarity label.
+                const isItem = result.kind === 'gear' || result.kind === 'cosmetic';
+                // Tags above the card: PITY guarantee, then NEW / DUPLICATE.
+                let topY = cy - cardH / 2 - 26;
+                if (result.pity) {
+                    ctx.fillStyle = '#ffd86b'; ctx.font = `800 22px ${FONT}`;
+                    ctx.fillText('✦ BAD-LUCK GUARANTEE ✦', cx, topY); topY -= 30;
+                }
+                // Kind logo.
                 ctx.fillStyle = col;
-                ctx.beginPath(); ctx.arc(cx, cy - 96, 24, 0, Math.PI * 2); ctx.fill();
-                this._kindGlyph(ctx, cx, cy - 96, 14, result.kind);
-                ctx.fillStyle = col; ctx.font = `700 30px ${FONT}`;
-                ctx.fillText(rarityName(result.rarity).toUpperCase(), cx, cy - 56);
+                ctx.beginPath(); ctx.arc(cx, cy - 92, 24, 0, Math.PI * 2); ctx.fill();
+                this._kindGlyph(ctx, cx, cy - 92, 14, result.kind);
+                ctx.fillStyle = col; ctx.font = `800 30px ${FONT}`;
+                ctx.fillText(rarityName(result.rarity).toUpperCase(), cx, cy - 52);
                 ctx.fillStyle = '#fff'; ctx.font = `800 40px ${FONT}`;
-                ctx.fillText(result.kind === 'duplicate' ? 'DUPLICATE' : (result.name || result.label), cx, cy);
-                ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = `600 24px ${FONT}`;
-                ctx.fillText(result.kind === 'duplicate' || result.kind === 'coins' || result.kind === 'bpxp'
-                    ? result.label : 'Unlocked!', cx, cy + 50);
-                ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 22px ${FONT}`;
-                ctx.fillText('Tap / Space to continue', cx, cy + cardH / 2 + 40);
+                ctx.fillText(result.kind === 'duplicate' ? result.name : (result.name || result.label), cx, cy + 2);
+                if (isItem) {
+                    ctx.fillStyle = '#5fe87a'; ctx.font = `800 24px ${FONT}`;
+                    ctx.fillText('★ NEW — UNLOCKED! ★', cx, cy + 48);
+                } else if (result.kind === 'duplicate') {
+                    ctx.fillStyle = '#ffd86b'; ctx.font = `700 24px ${FONT}`;
+                    ctx.fillText(`DUPLICATE → +${result.amount} ◎`, cx, cy + 48);
+                    if (result.dupeTotal) {
+                        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 16px ${FONT}`;
+                        ctx.fillText(`${result.dupeTotal} ◎ earned from duplicates`, cx, cy + 78);
+                    }
+                } else {
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `700 24px ${FONT}`;
+                    ctx.fillText(result.label, cx, cy + 48);
+                }
+                ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 20px ${FONT}`;
+                ctx.fillText('Tap / Space to continue', cx, cy + cardH / 2 + 38);
             }
         }
-        // Whole screen continues the overlay.
-        this._hot(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT, 'caseContinue', null);
+        ctx.restore();  // shake
+        this._hot(0, 0, W, H, 'caseContinue', null);
     }
 
     // A small white logo marking what KIND of loot a reel cell / reveal is:

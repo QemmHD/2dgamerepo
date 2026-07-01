@@ -46,6 +46,7 @@ function defaultData() {
             bestGauntletScore: 0,    // best endless score after 3rd-boss victory
             gauntletRuns: 0,         // endless continuations played
             hardWins: 0,             // 3rd-boss victories on Hard difficulty
+            dupeCoins: 0,            // lifetime coins refunded from case duplicates
         },
         settings: {
             screenShake: true,
@@ -78,6 +79,9 @@ function defaultData() {
         selectedCharacter: DEFAULT_CHARACTER,
         // Ember Forge pity counter (forges since the last Rare+).
         forge: { pity: 0 },
+        // Per-case bad-luck protection: opens since each case last paid Rare+.
+        // (caseId → count). Reaching the case's pity cap forces a Rare+.
+        casePity: {},
         // Gamble quota: plays used in the current rolling-hour window.
         gamble: { windowStart: 0, count: 0 },
         // Selected biome/map id (see content/maps.js); unlock-gated by bosses.
@@ -224,6 +228,13 @@ export class SaveSystem {
         const dfr = data.forge && typeof data.forge === 'object' ? data.forge : {};
         const forge = { pity: Number.isFinite(dfr.pity) && dfr.pity >= 0 ? Math.floor(dfr.pity) : 0 };
 
+        // Per-case pity map (caseId → non-negative int opens since last Rare+).
+        const dcp = data.casePity && typeof data.casePity === 'object' ? data.casePity : {};
+        const casePity = {};
+        for (const k of Object.keys(dcp)) {
+            if (typeof k === 'string' && k && Number.isFinite(dcp[k]) && dcp[k] >= 0) casePity[k] = Math.floor(dcp[k]);
+        }
+
         const dgam = data.gamble && typeof data.gamble === 'object' ? data.gamble : {};
         const gamble = {
             windowStart: Number.isFinite(dgam.windowStart) && dgam.windowStart >= 0 ? dgam.windowStart : 0,
@@ -266,7 +277,7 @@ export class SaveSystem {
             }
         }
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, gamble, selectedMap, difficulty, achievements, daily, pactMastery, version: 6 };
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, pactMastery, version: 6 };
     }
 
     save() {

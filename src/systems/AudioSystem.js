@@ -301,7 +301,7 @@ export class AudioSystem {
     chest()    { this._play('chest', 0.1, (t) => this._bell(t, 523)); }
     forge()    { this._play('forge', 0.06, (t) => { this._noise(t, 0.16, 0.12, 500, this.sfxBus, 1400); this._voice(220, t, 0.18, 0.12, { type: 'triangle', cutoff: 1400, detune: 9 }); }); }
     // Reel ratchet tick while a case spins (Game paces the cadence).
-    spinTick() { this._play('spinTick', 0.0, (t) => this._voice(430, t, 0.03, 0.05, { type: 'triangle', cutoff: 2600, attack: 0.001 })); }
+    spinTick(pitch = 1) { this._play('spinTick', 0.0, (t) => this._voice(430 * pitch, t, 0.03, 0.05, { type: 'triangle', cutoff: 2600, attack: 0.001 })); }
     // Reveal chime — its pitch + length + sparkle scale with the won RARITY, so
     // a legendary/mythic pull sounds clearly bigger than a common.
     reveal(rarity) {
