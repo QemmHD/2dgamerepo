@@ -32,7 +32,7 @@ import { getGearEmblem } from '../assets/GearEmblems.js';
 import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
-import { drawAuraFx, drawSetBonus } from '../assets/CosmeticFx.js';
+import { drawAuraFx, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
@@ -1104,6 +1104,9 @@ export class MenuRenderer {
         // Animated cosmetic aura (prestige VFX) — the live preview shows the
         // exact pulse/spin/flame/rainbow/starfield effect you earn.
         if (ap.auraColor) drawAuraFx(ctx, cx, cy, r * 1.32, ap.auraColor, ap.auraFx, t, 0.42);
+        // Rarity prestige FX in the customizer too — the preview IS the sales
+        // pitch: rarer pieces visibly glow/pulse/sparkle before you commit.
+        if (ap.fxTier >= 3) drawRarityFx(ctx, cx, cy, r * 1.26, ap.fxTier, ap.fxColor, t);
         if (ap.set) drawSetBonus(ctx, cx, cy, r * 1.3, ap.set.color, t);
         // Cloak: imported LPC cape for LPC heroes (drawn at the body box so it
         // aligns), procedural drape otherwise — matches the in-game player.

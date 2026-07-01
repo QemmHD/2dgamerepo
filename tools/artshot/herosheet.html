@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /><title>hero sheet</title>
+<style>html,body{margin:0;background:#000}#stage{position:fixed;inset:0}canvas{display:block}</style>
+</head>
+<body>
+<div id="stage"><canvas id="game"></canvas></div>
+<canvas id="sheet"></canvas>
+<script type="module">
+// Renders the hero in 4 facings × N sim-states into a contact sheet and PUTs
+// it back to serve.py. Optionally force-equips a cosmetic set via ?hat=..&cloak=..
+window.AudioContext = undefined; window.webkitAudioContext = undefined;
+
+import { Renderer } from '/src/systems/Renderer.js';
+import { Game } from '/src/core/Game.js';
+import { Input } from '/src/core/Input.js';
+import { KeyboardInput } from '/src/core/KeyboardInput.js';
+import { TouchJoystick } from '/src/core/TouchJoystick.js';
+import { prewarmSprites } from '/src/assets/ProceduralSprites.js';
+import { resolveAppearance } from '/src/content/cosmetics.js';
+
+const ERR = [];
+window.addEventListener('error', (e) => ERR.push(String(e.message || e.error || e)));
+const P = new URLSearchParams(location.search);
+const OUT = P.get('out') || 'hero_sheet.png';
+const CELL = 220;
+
+async function boot() {
+    const canvas = document.getElementById('game');
+    const renderer = new Renderer(canvas);
+    const input = new Input({ keyboard: new KeyboardInput(), touch: new TouchJoystick(renderer) });
+    let game;
+    const loop = { stop() {}, start() {}, fps: 60 };
+    prewarmSprites();
+    game = new Game({ renderer, input, loop });
+    game.showDebug = false;
+    game._startRun();
+    game.player.damageTakenMul = 0;
+    game.enemies.length = 0;                       // clean stage
+    // Optional forced cosmetics (?fur=..&cloak=..&hat=..&aura=..)
+    const eq = {};
+    for (const k of ['fur', 'cloak', 'hat', 'aura', 'trail']) if (P.get(k)) eq[k] = P.get(k);
+    if (Object.keys(eq).length) game.player.appearance = resolveAppearance(eq);
+
+    // settle a few frames
+    for (let i = 0; i < 30; i++) { game.update(1 / 60); if (game.upgradeChoices) game.selectUpgrade(0); }
+
+    const sheet = document.getElementById('sheet');
+    const COLS = ['down', 'left', 'up', 'right'];
+    const ROWS = ['idle', 'walk'];
+    sheet.width = CELL * COLS.length; sheet.height = CELL * ROWS.length;
+    const sctx = sheet.getContext('2d');
+    sctx.fillStyle = '#4a4c36'; sctx.fillRect(0, 0, sheet.width, sheet.height);
+
+    // Where the player lands on the game canvas: camera centers on the player →
+    // internal (960,540) → scale by renderer.scale.
+    const s = renderer.scale;
+    const px = 960 * s, py = 540 * s;
+    const crop = CELL;                    // device px box around the player
+
+    for (let r = 0; r < ROWS.length; r++) {
+        for (let c = 0; c < COLS.length; c++) {
+            const dirV = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] }[COLS[c]];
+            // WALK: give the player velocity so the walk anim + facing engage.
+            // IDLE: zero velocity, then force facing (update won't override when still).
+            if (ROWS[r] === 'walk') {
+                for (let i = 0; i < 14; i++) {
+                    game.player.vx = dirV[0] * 220; game.player.vy = dirV[1] * 220;
+                    game.player.x -= dirV[0] * 220 / 60;   // cancel drift: stay centered
+                    game.player.y -= dirV[1] * 220 / 60;
+                    game.update(1 / 60);
+                    if (game.upgradeChoices) game.selectUpgrade(0);
+                }
+            } else {
+                game.player.vx = 0; game.player.vy = 0;
+                game.update(1 / 60);
+                if (game.upgradeChoices) game.selectUpgrade(0);
+            }
+            game.player.facing = COLS[c];
+            game.player.facingX = COLS[c] === 'left' ? -1 : 1;
+            game.render();
+            sctx.drawImage(canvas, px - crop / 2, py - crop / 2, crop, crop, c * CELL, r * CELL, CELL, CELL);
+        }
+    }
+    sheet.toBlob((blob) => {
+        fetch('/__save/' + OUT, { method: 'PUT', body: blob })
+            .then(() => { document.title = 'DONE EXC:' + ERR.length; })
+            .catch((e) => { document.title = 'SAVEFAIL'; });
+    }, 'image/png');
+}
+boot().catch((e) => { ERR.push(String(e && e.stack || e)); document.title = 'BOOTFAIL:' + String(e).slice(0, 60); });
+</script>
+</body>
+</html>

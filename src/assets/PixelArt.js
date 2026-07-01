@@ -108,12 +108,30 @@ export function shade(hex, amt, toward) {
 const MONKEY_L = 48;
 const HEAD_Y = 16, BODY_Y = 30, CX = 24;
 
+// Per-pose baked body bob (logical px, negative = up), indexed by frame. The
+// player uses this to offset hats/cloaks so cosmetics RIDE the body instead of
+// floating at the un-bobbed anchor (the old "hat sinks onto the brow every
+// other step" bug). Kept in one exported table so art + consumers agree.
+export const HERO_BOB = {
+    idle: [0, 0],          // frame 1 = blink/tail-wag; no height change
+    walk: [0, -2, 0],      // bouncier hop than the old [0,-1,0] — reads goofy
+    cast: [0],
+    hurt: [0],
+};
+export const HERO_GRID = MONKEY_L;   // logical grid size (for px scaling)
+
 // Two small dark eyes facing the camera (down) with a white glint; `wince`
 // turns them into squinting slashes for the hurt pose.
-function heroEyes(p, ex, ey, wince) {
+function heroEyes(p, ex, ey, wince, blink) {
     if (wince) {
         p.rect(ex - 6, ey, 3, 1, '#1b1b1b'); p.rect(ex - 5, ey - 1, 1, 1, '#1b1b1b'); p.rect(ex - 3, ey - 1, 1, 1, '#1b1b1b');
         p.rect(ex + 3, ey, 3, 1, '#1b1b1b'); p.rect(ex + 3, ey - 1, 1, 1, '#1b1b1b'); p.rect(ex + 5, ey - 1, 1, 1, '#1b1b1b');
+        return;
+    }
+    if (blink) {
+        // Happy closed-arc eyes (∪ ∪) for the idle blink — goofy, content.
+        p.rect(ex - 5, ey + 1, 3, 1, '#1b1b1b'); p.dot(ex - 5, ey, '#1b1b1b'); p.dot(ex - 3, ey, '#1b1b1b');
+        p.rect(ex + 2, ey + 1, 3, 1, '#1b1b1b'); p.dot(ex + 2, ey, '#1b1b1b'); p.dot(ex + 4, ey, '#1b1b1b');
         return;
     }
     p.rect(ex - 5, ey, 3, 3, '#1b1b1b');
@@ -127,7 +145,12 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
     const fur = pal.fur || '#8b5a2b';
     const furD = pal.furDark || shade(fur, 0.4, 'dark');
     const furL = pal.furLight || shade(fur, 0.35, 'light');
-    const face = pal.face || '#f0d2a5';
+    let face = pal.face || '#f0d2a5';
+    // Contrast guard: light fur recolors (gilded/galaxy) wash out against the
+    // default cream face — when the tones converge, pull the face darker so the
+    // muzzle/eyes keep reading (the "gold monkey lost his face" bug).
+    const lumOf = (h) => { const n = parseInt(h.slice(1), 16); return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255); };
+    try { if (Math.abs(lumOf(fur) - lumOf(face)) < 46) face = shade(face, 0.32, 'dark'); } catch (e) { /* keep default */ }
     const faceD = shade(face, 0.25, 'dark');
     const accent = opts.accent || '#ffb24a';
     const feature = opts.feature || null;
@@ -136,8 +159,9 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
     const p = pixelCanvas(MONKEY_L);
     const cx = CX;
     const walk = pose === 'walk';
-    const swing = walk ? [-2, 0, 2][frame % 3] : 0;   // arm swing
-    const bob = walk ? [0, -1, 0][frame % 3] : 0;
+    const blink = pose === 'idle' && frame === 1;      // goofy idle: blink + wag
+    const swing = walk ? [-3, 0, 3][frame % 3] : 0;    // bigger arm swing
+    const bob = (HERO_BOB[pose] || [0])[frame % (HERO_BOB[pose] || [0]).length] || 0;
     const headY = HEAD_Y + bob;
     const bodyY = BODY_Y + bob;
     const facing = dir === 'side';                     // side faces +x (right)
@@ -148,16 +172,19 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
         else p.rect(ax, bodyY + 1 + dy, 4, 9, col);
     };
 
-    // ── TAIL (behind the body) ──
+    // ── TAIL (behind the body) ── On the idle blink frame the tail WAGS: the
+    // tip curls higher and the tuft lifts — a happy little metronome that keeps
+    // the hero alive while standing still.
+    const wag = blink ? 3 : 0;
     if (dir === 'down') {
-        p.line(31, bodyY + 8, 39, bodyY + 6, furD, 3); p.line(39, bodyY + 6, 40, bodyY - 1, furD, 3);
-        p.disc(40, bodyY - 2, 2, furL);                 // tuft
+        p.line(31, bodyY + 8, 39, bodyY + 6 - (wag >> 1), furD, 3); p.line(39, bodyY + 6 - (wag >> 1), 40 + (blink ? 1 : 0), bodyY - 1 - wag, furD, 3);
+        p.disc(40 + (blink ? 1 : 0), bodyY - 2 - wag, 2, furL);      // tuft
     } else if (dir === 'up') {
-        p.line(cx, bodyY + 9, cx + 7, bodyY + 11, backFur, 3); p.line(cx + 7, bodyY + 11, cx + 9, bodyY + 4, backFur, 3);
-        p.disc(cx + 9, bodyY + 3, 2, shade(fur, 0.05, 'light'));
+        p.line(cx, bodyY + 9, cx + 7, bodyY + 11, backFur, 3); p.line(cx + 7, bodyY + 11, cx + 9, bodyY + 4 - wag, backFur, 3);
+        p.disc(cx + 9, bodyY + 3 - wag, 2, shade(fur, 0.05, 'light'));
     } else { // side: tail trails behind (left)
-        p.line(16, bodyY + 7, 8, bodyY + 5, furD, 3); p.line(8, bodyY + 5, 7, bodyY - 2, furD, 3);
-        p.disc(7, bodyY - 3, 2, furL);                  // tuft
+        p.line(16, bodyY + 7, 8, bodyY + 5, furD, 3); p.line(8, bodyY + 5, 7, bodyY - 2 - wag, furD, 3);
+        p.disc(7, bodyY - 3 - wag, 2, furL);            // tuft
     }
 
     // ── BODY ──
@@ -172,11 +199,14 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
     // Player (it reaches from the shoulder to the aimed hand and jabs forward on
     // attack), so the body never "throws its hands up": the cast read comes from
     // that thrust + the open mouth + a body recoil, not an arms-up pose.
+    // On cast the OFF-hand flies up in a "ta-da" flourish (the weapon arm is
+    // articulated by the Player, so the flourish sells the cast without it).
+    const flourish = pose === 'cast' ? 6 : 0;
     if (dir === 'side') {
-        arm(cx - 9, -swing, 0, furD);
+        arm(cx - 9, -swing, flourish, furD);
         arm(cx + 6, swing, 0, fur);
     } else {
-        arm(cx - 11, swing, 0, dir === 'up' ? backFur : fur);
+        arm(cx - 11, swing, flourish, dir === 'up' ? backFur : fur);
         arm(cx + 7, -swing, 0, dir === 'up' ? backFur : fur);
     }
 
@@ -185,12 +215,14 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
         if (dir === 'side') { p.rect(cx - 9, headY - 9, 3, 10, fur); p.rect(cx - 8, headY - 7, 1, 6, face); }
         else { p.sym(7, headY - 8, 3, 10, fur); if (dir === 'down') p.sym(8, headY - 6, 1, 6, face); }
     } else if (dir === 'side') {
-        p.disc(cx - 7, headY - 1, 4, fur); p.disc(cx - 7, headY - 1, 2, dir === 'up' ? backFur : face);
+        p.disc(cx - 7, headY - 1 - (blink ? 1 : 0), 4, fur); p.disc(cx - 7, headY - 1 - (blink ? 1 : 0), 2, dir === 'up' ? backFur : face);
     } else {
         // Big rounded wick-keeper ears (match the original) with inner-ear.
-        p.disc(cx - 11, headY - 1, 5, fur); p.disc(cx + 11, headY - 1, 5, fur);
+        // On the blink frame one ear perks up a pixel — a goofy little twitch.
+        const twitch = blink ? 1 : 0;
+        p.disc(cx - 11, headY - 1 - twitch, 5, fur); p.disc(cx + 11, headY - 1, 5, fur);
         const inner = dir === 'up' ? backFur : face;
-        p.disc(cx - 11, headY - 1, 3, inner); p.disc(cx + 11, headY - 1, 3, inner);
+        p.disc(cx - 11, headY - 1 - twitch, 3, inner); p.disc(cx + 11, headY - 1, 3, inner);
     }
 
     // ── HEAD ──
@@ -207,7 +239,7 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
         p.ell(fx, headY + 5, 4, 3, faceD);
         p.rect(cx - 7, headY - 3, 14, 2, furD);    // brow ridge
         const ex = dir === 'side' ? cx + 1 : cx;
-        heroEyes(p, ex, headY - 1, pose === 'hurt');
+        heroEyes(p, ex, headY - 1, pose === 'hurt', blink);
         p.dot(fx - 1, headY + 4, faceD); p.dot(fx + 1, headY + 4, faceD);
         // open "shout" mouth on cast/hurt
         if (pose === 'cast' || pose === 'hurt') p.rect(fx - 1, headY + 6, 3, 2, '#3a1410');
@@ -285,28 +317,51 @@ function pixelCloak(dir, color) {
         }
         p.rect(5, 43, 7, 3, dark);                  // weighted hem
         p.rect(cx - 1, 22, 2, 4, light);            // lit clasp seam
-    } else {
-        const topY = dir === 'up' ? 20 : 24;
-        const hemY = dir === 'up' ? 46 : 45;
-        const topHalf = dir === 'up' ? 11 : 10;
-        const hemHalf = dir === 'up' ? 16 : 17;
+    } else if (dir === 'up') {
+        // Back view: a FITTED drape hanging from the shoulders — narrower than
+        // the body so ears/arms/head stay visible (the old full-width drape
+        // turned the hero into a featureless wall), with a collar band, a
+        // billow taper, fold shadows, and a wind-notched hem so it reads as
+        // hanging cloth rather than a slab.
+        const topY = 24, hemY = 44;
         for (let y = topY; y <= hemY; y++) {
             const t = (y - topY) / (hemY - topY);
-            const half = Math.round(topHalf + t * (hemHalf - topHalf));
+            // taper out to mid-billow then gently back in at the hem
+            const half = Math.round(8 + Math.sin(t * Math.PI) * 4 + t * 1.5);
             p.rect(cx - half, y, half * 2 + 1, 1, color);
             p.rect(cx - half, y, 1, 1, light);      // lit outer edges
             p.rect(cx + half, y, 1, 1, light);
         }
-        if (dir === 'up') {
-            // Full back: a lit centre seam + symmetric fold shadows.
-            for (let y = topY + 2; y <= hemY; y++) p.rect(cx, y, 1, 1, light);
-            for (let y = topY + 4; y <= hemY; y++) { p.rect(cx - 6, y, 1, 1, dark); p.rect(cx + 6, y, 1, 1, dark); }
-        } else {
-            // Behind the body: shade the hem so the peeking wings read as cloth.
-            p.rect(cx - hemHalf, hemY, hemHalf * 2 + 1, 1, dark);
-            p.rect(cx - hemHalf, hemY - 1, 3, 1, dark);
-            p.rect(cx + hemHalf - 2, hemY - 1, 3, 1, dark);
+        // collar band across the shoulders (sits under the scarf knot)
+        p.rect(cx - 9, topY - 2, 19, 2, dark);
+        p.rect(cx - 9, topY - 2, 19, 1, light);
+        // fold shadows — three hanging creases
+        for (let y = topY + 3; y <= hemY - 1; y++) {
+            p.rect(cx - 4, y, 1, 1, dark);
+            p.rect(cx + 4, y, 1, 1, dark);
+            if (y > topY + 8) p.rect(cx, y, 1, 1, dark);
         }
+        // wind-notched hem (zig-zag) + hem shadow
+        p.rect(cx - 10, hemY, 21, 1, dark);
+        p.rect(cx - 7, hemY + 1, 3, 1, color); p.rect(cx - 1, hemY + 1, 3, 1, color); p.rect(cx + 5, hemY + 1, 3, 1, color);
+        p.rect(cx - 7, hemY + 2, 3, 1, dark); p.rect(cx - 1, hemY + 2, 3, 1, dark); p.rect(cx + 5, hemY + 2, 3, 1, dark);
+    } else {
+        // Front ('down'): drawn BEHIND the body — only the shoulder line + hem
+        // wings peek out. Add clasp studs at the shoulders so it reads "worn".
+        const topY = 24, hemY = 45, topHalf = 10, hemHalf = 17;
+        for (let y = topY; y <= hemY; y++) {
+            const t = (y - topY) / (hemY - topY);
+            const half = Math.round(topHalf + t * (hemHalf - topHalf));
+            p.rect(cx - half, y, half * 2 + 1, 1, color);
+            p.rect(cx - half, y, 1, 1, light);
+            p.rect(cx + half, y, 1, 1, light);
+        }
+        // Behind the body: shade the hem so the peeking wings read as cloth.
+        p.rect(cx - hemHalf, hemY, hemHalf * 2 + 1, 1, dark);
+        p.rect(cx - hemHalf, hemY - 1, 3, 1, dark);
+        p.rect(cx + hemHalf - 2, hemY - 1, 3, 1, dark);
+        // shoulder clasps (peek just outside the body silhouette)
+        p.dot(cx - 10, topY, light); p.dot(cx + 10, topY, light);
     }
     outline(p, shade(color, 0.55, 'dark'));
     return p.finish();
@@ -315,11 +370,19 @@ function pixelCloak(dir, color) {
 // A head accessory sitting on the pixel head (centre cx, top ~y6). Shapes:
 // cap / candle / horns / crown / hood / tophat / flower / antlers / halo.
 // `dir` tweaks which face shows (no brim on the back view, etc.).
+// Tall hats author pixels above y=0 (tophat rim, party pom, halo top, antler
+// tips) which the 48-grid silently CLIPPED — they rendered flat-topped. All hat
+// art now draws translated down by HAT_DROP inside the canvas, and drawPixelHat
+// compensates by blitting that much higher, so the tops exist again while every
+// on-head anchor stays identical.
+const HAT_DROP = 5;
+
 function pixelHat(dir, shape, color) {
     const col = color || '#ffd35a';
     const dark = shade(col, 0.4, 'dark');
     const light = shade(col, 0.35, 'light');
     const p = pixelCanvas(MONKEY_L);
+    p.ctx.translate(0, HAT_DROP);
     const cx = CX;
     if (shape === 'cap') {
         p.ell(cx, 11, 9, 7, col);                   // crown dome
@@ -352,8 +415,12 @@ function pixelHat(dir, shape, color) {
         p.line(cx - 7, 9, cx - 7, 4, col, 2); p.dot(cx - 7, 3, light);
         p.line(cx, 9, cx, 2, col, 2); p.dot(cx, 1, light);
         p.line(cx + 7, 9, cx + 7, 4, col, 2); p.dot(cx + 7, 3, light);
-        p.dot(cx, 10, '#fff');                      // centre gem
-        p.dot(cx - 5, 10, dark); p.dot(cx + 5, 10, dark);
+        if (dir !== 'up') {                          // gem faces forward only
+            p.dot(cx, 10, '#fff');                   // centre gem
+            p.dot(cx - 5, 10, dark); p.dot(cx + 5, 10, dark);
+        } else {
+            p.rect(cx - 6, 10, 13, 1, dark);         // plain back band seam
+        }
     } else if (shape === 'hood') {
         // Cloth cowl: a drape over the crown + side panels framing the face
         // (the muzzle stays visible). Back view drapes full.
@@ -423,6 +490,9 @@ function pixelHat(dir, shape, color) {
         p.line(cx - 8, 5, cx - 3, 1, light, 1); p.line(cx + 4, 1, cx + 8, 5, light, 1);   // top highlight
         p.rect(cx - 10, 6, 2, 2, bd); p.rect(cx + 9, 6, 2, 2, bd);                          // stem + tip
     }
+    // outline() writes raster-space edge pixels through the ctx — reset the
+    // HAT_DROP translate first or the outline lands 5px below the art.
+    p.ctx.setTransform(1, 0, 0, 1, 0, 0);
     outline(p, shade(col, 0.6, 'dark'));
     return p.finish();
 }
@@ -454,6 +524,9 @@ export function drawPixelHat(ctx, ox, oy, s, dir, shape, color, flip = false) {
     if (!c) return;
     ctx.save();
     if (flip) { ctx.translate(ox, 0); ctx.scale(-1, 1); ctx.translate(-ox, 0); }
-    ctx.drawImage(c, ox - s, oy - s, s * 2, s * 2);
+    // Art is authored HAT_DROP logical px lower in-canvas (headroom for tall
+    // hats); blit that much higher so on-head anchors are unchanged.
+    const lift = (HAT_DROP / MONKEY_L) * s * 2;
+    ctx.drawImage(c, ox - s, oy - s - lift, s * 2, s * 2);
     ctx.restore();
 }

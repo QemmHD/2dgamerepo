@@ -14,9 +14,9 @@ import { Easing } from '../core/Easing.js';
 import {
     getHeroFrames, heroSetFrames, getGlowSprite, getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
-import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
+import { drawPixelCloak, drawPixelHat, shade, HERO_BOB, HERO_GRID } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
-import { drawAuraFx, drawTrailPoint, drawSetBonus } from '../assets/CosmeticFx.js';
+import { drawAuraFx, drawTrailPoint, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
 
 // Unit vector for each facing — used to seat the held weapon in the hand on the
 // "front" side of the body (rather than orbiting the centre).
@@ -333,6 +333,16 @@ export class Player {
         return map;
     }
 
+    // Cheap hex blend: base + (tint - base) * k. Mirrors _tintMap's 0.42-alpha
+    // source-atop fill so the articulated arm matches the tinted body frames.
+    _mixHex(base, tint, k) {
+        try {
+            const b = parseInt(base.slice(1), 16), t = parseInt(tint.slice(1), 16);
+            const ch = (sh) => Math.round(((b >> sh) & 255) + (((t >> sh) & 255) - ((b >> sh) & 255)) * k);
+            return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+        } catch (e) { return tint; }
+    }
+
     // Hold the cast (attack) pose briefly; called when the primary weapon fires.
     triggerCast() { this.castTimer = CAST_DUR; }
 
@@ -359,7 +369,10 @@ export class Player {
                 if (k <= 0) continue;
                 ctx.globalAlpha = k * (fx === 'hearts' ? 0.7 : 0.45);
                 const b = Math.round(5 + 12 * k);          // core block size
-                const px = Math.round(t.x), py = Math.round(t.y + bobY);
+                // Anchor at the DROPPED position (no bobY): applying the live
+                // bob phase to historical points made the whole wake oscillate
+                // in lockstep instead of staying planted where it fell.
+                const px = Math.round(t.x), py = Math.round(t.y);
                 drawTrailPoint(ctx, px, py, b, k, ap.trailColor, fx, this.auraPhase, i);
             }
             ctx.restore();
@@ -400,7 +413,13 @@ export class Player {
         if (ap.auraColor) {
             // Animated cosmetic aura (the prestige VFX layer). auraPhase advances
             // every frame so pulse/spin/flame/rainbow/starfield animate even idle.
-            drawAuraFx(ctx, this.x, cy, this.spriteHalf * 1.1, ap.auraColor, ap.auraFx, this.auraPhase, 0.3);
+            drawAuraFx(ctx, this.x, cy, this.spriteHalf * 1.1, ap.auraColor, ap.auraFx, this.auraPhase, 0.34);
+        }
+        // Rarity prestige VFX — from RARE up, the flashiest equipped cosmetic
+        // glows/pulses/sparkles in its own colour (rarer = flashier). Gated by
+        // the reduced-effects flag (skinOverlayEnabled mirrors !reducedEffects).
+        if (ap.fxTier >= 3 && this.skinOverlayEnabled !== false) {
+            drawRarityFx(ctx, this.x, cy, this.spriteHalf * 1.05, ap.fxTier, ap.fxColor, this.auraPhase);
         }
         // Set-bonus flourish — equipping a whole themed set lights up an extra
         // counter-rotating ring of motes in the set's colour (cosmetic only).
@@ -416,11 +435,32 @@ export class Player {
         if (this.hitFlashTimer > 0) state = 'hurt';
         else if (this.castTimer > 0) state = 'cast';
         else if (this.moving) { state = 'walk'; idx = Math.floor(this.bobTimer * 6) % 3; }
+        else {
+            // Goofy idle beat: a short blink + tail-wag + ear-twitch (~0.28s)
+            // inside a ~2.6s open-eyed hold. Timed off auraPhase (always ticks).
+            const ph = this.auraPhase % 2.6;
+            idx = ph > 2.32 ? 1 : 0;
+        }
         const dset = this.heroFrames.dirs[dir] || this.heroFrames.dirs.down;
         const poseArr = dset[state] || dset.idle;
         const orig = poseArr[idx % poseArr.length] || poseArr[0];
         const tintMap = ap.furColor ? this._tintMap(ap.furColor) : null;
         const sprite = (tintMap && tintMap.get(orig)) || orig;
+
+        // The frames BAKE a per-frame body bob (HERO_BOB, logical px) — the
+        // head/shoulders shift inside the canvas. Cosmetics are separate cached
+        // canvases, so they must ride that same offset or hats sink onto the
+        // brow every mid-walk step. World px per logical px = SIZE / GRID.
+        let bakedBob = 0;
+        if (!this.isLpcBody) {
+            const hb = HERO_BOB[state] || [0];
+            bakedBob = (hb[idx % hb.length] || 0) * (SPRITE_SIZE / HERO_GRID);
+        }
+        // Cloth lags the body: the cloak follows at half the bob and drags a
+        // step behind the run direction; the hat is pinned to the head (full bob).
+        const hatOy = bakedBob;
+        const cloakOy = Math.round(bakedBob * 0.5);
+        const cloakOx = this.moving ? -Math.sign(this.vx || 0) * 3 : 0;
 
         // Shadow Dash afterimage smear: fading ghost copies strung along the
         // blink path (origin → destination), drawn in world space behind the
@@ -479,7 +519,7 @@ export class Player {
         // cloak drapes OVER the body (drawn after the sprite, below) so we see the
         // full cape. LPC heroes use a single front-facing imported cape that has
         // no back variant, so it always draws behind the body (every direction).
-        if (ap.cloakColor && (this.isLpcBody || dir !== 'up')) this._drawCloak(ctx, ap.cloakColor, dir, flip);
+        if (ap.cloakColor && (this.isLpcBody || dir !== 'up')) this._drawCloak(ctx, ap.cloakColor, dir, flip, cloakOx, cloakOy);
 
         ctx.save();
         if (flip) ctx.scale(-1, 1);
@@ -502,13 +542,26 @@ export class Player {
 
         // Back-view pixel cloak drapes over the body (full cape facing away).
         // (LPC heroes already drew their cape behind the body above.)
-        if (ap.cloakColor && !this.isLpcBody && dir === 'up') this._drawCloak(ctx, ap.cloakColor, dir, flip);
+        if (ap.cloakColor && !this.isLpcBody && dir === 'up') this._drawCloak(ctx, ap.cloakColor, dir, flip, cloakOx, cloakOy);
 
         // (The old themed sash + chest gem overlay was removed — the held weapon
         // now carries the weapon identity, so the torso stays clean.)
 
-        // Accessory on the head (direction-aware pixel hat, on top).
-        if (ap.hatShape && ap.hatShape !== 'none') this._drawHat(ctx, ap.hatShape, ap.hatColor, dir, flip);
+        // Accessory on the head (direction-aware pixel hat, on top) — riding the
+        // baked head bob so it stays seated while walking.
+        if (ap.hatShape && ap.hatShape !== 'none') {
+            this._drawHat(ctx, ap.hatShape, ap.hatColor, dir, flip, hatOy);
+            // Hit flash: the body pops white via an additive redraw — do the
+            // same for the hat so it doesn't sit unlit on a flashing hero.
+            if (this.hitFlashTimer > 0) {
+                const tq = this.hitFlashTimer / PLAYER.hitFlashDuration;
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = alpha * Math.min(1, tq) * 0.8;
+                this._drawHat(ctx, ap.hatShape, ap.hatColor, dir, flip, hatOy);
+                ctx.restore();
+            }
+        }
         ctx.restore();
 
         // Held weapons OVER the body (front pass): the primary in its articulated
@@ -576,8 +629,11 @@ export class Player {
             const hxp = sxp + Math.cos(aim) * reach;
             const hyp = syp + Math.sin(aim) * reach;
             const ap = this.appearance || {};
-            const armCol = ap.furColor || this._baseFur;
-            const armDark = ap.furColor ? shade(ap.furColor, 0.42, 'dark') : this._baseFurDark;
+            // Match the BODY's fur tint: frames are tinted at 0.42 alpha over the
+            // base fur (_tintMap), so blend the cosmetic colour toward base at the
+            // same ratio — a raw bright hex made the arm hotter than the torso.
+            const armCol = ap.furColor ? this._mixHex(this._baseFur, ap.furColor, 0.42) : this._baseFur;
+            const armDark = ap.furColor ? shade(armCol, 0.42, 'dark') : this._baseFurDark;
             // Forearm: dark underlay (reads as an outline) + fur on top.
             ctx.lineCap = 'round';
             ctx.strokeStyle = armDark; ctx.lineWidth = 10 * H.scale;
@@ -654,7 +710,7 @@ export class Player {
     // Cloak + hat: direction-aware pixel cosmetics (drawPixelCloak/Hat, shared
     // with the menu preview so the two never diverge). `dir` is down/up/side and
     // `flip` mirrors the side view for left-facing.
-    _drawCloak(ctx, color, dir = 'down', flip = false) {
+    _drawCloak(ctx, color, dir = 'down', flip = false, ox = 0, oy = 0) {
         // LPC heroes keep the imported, recolored cape sprite (it aligns to the
         // LPC body); the single front-facing cape is reused for every direction.
         if (this.isLpcBody) {
@@ -667,10 +723,12 @@ export class Player {
                 return;
             }
         }
-        drawPixelCloak(ctx, 0, 0, this.spriteHalf, dir, color, flip);
+        // ox/oy: cloth lag — half the baked body bob + a step behind the run.
+        drawPixelCloak(ctx, ox, oy, this.spriteHalf, dir, color, flip);
     }
-    _drawHat(ctx, shape, color, dir = 'down', flip = false) {
-        drawPixelHat(ctx, 0, 0, this.spriteHalf, dir, shape, color, flip);
+    _drawHat(ctx, shape, color, dir = 'down', flip = false, oy = 0) {
+        // oy: the baked head bob, so the hat stays seated on the head.
+        drawPixelHat(ctx, 0, oy, this.spriteHalf, dir, shape, color, flip);
     }
 
     // Spawn a melee swing toward `angle` (world radians). Game calls this on a
