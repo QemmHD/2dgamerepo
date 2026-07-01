@@ -63,6 +63,57 @@ export function drawAuraFx(ctx, cx, cy, r, color, fx, t, intensity = 0.3) {
     ctx.restore();
 }
 
+// ── Rarity prestige layer ────────────────────────────────────────────────
+// The flashiest equipped cosmetic sets a tier (1..6); from RARE up the hero
+// carries visible prestige VFX in that piece's OWN colour — the "I earned
+// this" flex that makes higher tiers worth grinding for:
+//   3 rare       soft steady under-glow
+//   4 epic       breathing pulse
+//   5 legendary  pulse + rising ember-sparkles + star twinkles
+//   6 mythic     all of it, hue-cycling through the spectrum
+// Budget: ≤6 cached glow blits + ≤3 small paths, ONE hero only.
+
+// Quantized prism hues (12 steps) so getGlowSprite's per-colour cache stays
+// bounded — never key a glow by a continuous hsl string.
+export const PRISM_COLORS = Array.from({ length: 12 }, (_, i) => `hsl(${i * 30},92%,62%)`);
+
+export function drawRarityFx(ctx, cx, cy, r, tier, color, t) {
+    if (!tier || tier < 3 || !color) return;
+    const prism = tier >= 6;
+    const col = prism ? PRISM_COLORS[Math.floor(t * 1.5) % 12] : color;
+    const glow = getGlowSprite(col);
+    if (!glow) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const blit = (gx, gy, gr, a) => { ctx.globalAlpha = Math.max(0, Math.min(1, a)); ctx.drawImage(glow, gx - gr, gy - gr, gr * 2, gr * 2); };
+
+    // Base under-glow: steady at rare, breathing from epic up.
+    const pulse = tier >= 4 ? 0.5 + 0.5 * Math.sin(t * 2.6) : 0;
+    blit(cx, cy + r * 0.25, r * (0.72 + 0.10 * pulse), 0.10 + 0.05 * (tier - 3) + 0.06 * pulse);
+
+    if (tier >= 5) {
+        // Rising sparkles: 3 deterministic motes drifting up like slow embers
+        // (positions derived purely from t — no per-frame allocation/state).
+        for (let i = 0; i < 3; i++) {
+            const ph = ((t * 0.45 + i / 3) % 1 + 1) % 1;
+            const sx = cx + Math.sin(t * 1.7 + i * 2.7) * r * 0.55;
+            const sy = cy + r * 0.5 - ph * r * 1.5;
+            blit(sx, sy, r * 0.10 + r * 0.05 * Math.sin(ph * Math.PI), Math.sin(ph * Math.PI) * 0.5);
+        }
+        // Star twinkles: two brief white glints riding the sparkle rhythm.
+        ctx.fillStyle = '#fff';
+        for (let i = 0; i < 2; i++) {
+            const tw = Math.max(0, Math.sin(t * 3.1 + i * 2.4));
+            if (tw < 0.72) continue;                     // gated → mostly free
+            const a = t * 0.9 + i * Math.PI;
+            const px = cx + Math.cos(a) * r * 0.8, py = cy - r * 0.28 + Math.sin(a * 1.3) * r * 0.5;
+            ctx.globalAlpha = (tw - 0.72) * 2.6;
+            star(ctx, px, py, r * 0.10 + r * 0.05 * tw);
+        }
+    }
+    ctx.restore();
+}
+
 // Set-bonus flourish: a slow counter-rotating double ring of bright motes
 // around the hero, in the set's signature colour — the "you completed the whole
 // look" payoff. Drawn around the aura; cheap (a few cached glow blits).

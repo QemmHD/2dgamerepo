@@ -181,7 +181,9 @@ export function getMonkeySprite() {
 // transform lean/recoil), so the imported bodies stay feasible without new art.
 function buildPixelHeroSet(opts) {
     const mk = (dir) => ({
-        idle: [drawPixelHero(opts, dir, 'idle', 0)],
+        // idle frame 1 = the goofy blink/tail-wag/ear-twitch beat (the Player
+        // times it as a short blink inside a longer open-eyed hold).
+        idle: [0, 1].map((f) => drawPixelHero(opts, dir, 'idle', f)),
         walk: [0, 1, 2].map((f) => drawPixelHero(opts, dir, 'walk', f)),
         cast: [drawPixelHero(opts, dir, 'cast', 0)],
         hurt: [drawPixelHero(opts, dir, 'hurt', 0)],

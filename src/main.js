@@ -11,6 +11,8 @@ import { loadIconGlyphs } from './assets/CustomIcons.js';
 import { loadMonsterSprites } from './assets/MonsterSprites.js';
 import { loadEnemyAiSprites } from './assets/EnemySprites.js';
 import { WEAPON_AURA } from './content/weapons.js';
+import { COSMETICS } from './content/cosmetics.js';
+import { PRISM_COLORS } from './assets/CosmeticFx.js';
 
 async function boot() {
     const canvas = document.getElementById('game');
@@ -53,6 +55,10 @@ async function boot() {
     // Warm the weapon-aura glow colors too, so the first weapon pickup /
     // evolution / aura color-swap doesn't rasterize a 128px glow mid-frame.
     for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
+    // Warm every cosmetic colour (rarity prestige FX glows in the equipped
+    // piece's own colour) + the quantized prism hues (mythic hue-cycle).
+    for (const k in COSMETICS) { const c = COSMETICS[k].color; if (c) getGlowSprite(c); }
+    for (const c of PRISM_COLORS) getGlowSprite(c);
 
     // Load the imported assets (LPC enemy spritesheets + CC0 ground texture)
     // before the first frame. Both NEVER reject — a failed/missing file falls

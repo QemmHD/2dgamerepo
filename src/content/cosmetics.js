@@ -169,15 +169,29 @@ export function resolveAppearance(equipped) {
     const hat = COSMETICS[e.hat] ?? COSMETICS.hat_none;
     const aura = COSMETICS[e.aura] ?? COSMETICS.aura_ember;
     const trail = COSMETICS[e.trail] ?? COSMETICS.trail_none;
+    // Rarity drives the prestige VFX layer (see CosmeticFx.drawRarityFx):
+    // the flashiest equipped piece sets the tier, and its own color drives the
+    // effect so a legendary crown flashes GOLD, not a generic rarity hue.
+    const tiers = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5, mythic: 6 };
+    let fxTier = 0, fxColor = null;
+    for (const c of [fur, cloak, hat, aura, trail]) {
+        const t = tiers[c.rarity] || 1;
+        // 'none' placeholder slots never count toward prestige
+        if (!c.color && (c.shape === 'none' || c.id.endsWith('_none'))) continue;
+        if (t > fxTier) { fxTier = t; fxColor = c.color || '#ffd35a'; }
+    }
     return {
         furColor: fur.color,
         cloakColor: cloak.color,
         hatShape: hat.shape ?? 'none',
         hatColor: hat.color,
+        hatRarity: tiers[hat.rarity] || 1,
         auraColor: aura.color,
         auraFx: aura.fx ?? null,
         trailColor: trail.color,
         trailFx: trail.fx ?? null,
+        fxTier,                              // 1..6 — highest equipped rarity
+        fxColor,                             // that piece's own color
         set: activeCosmeticSet(equipped),   // { id, name, color } when a full set is on
     };
 }
