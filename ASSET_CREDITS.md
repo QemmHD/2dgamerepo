@@ -129,3 +129,22 @@ These load lazily via `src/assets/MenuImages.js`; every consumer in
 ember-forge gradient backdrop, gradient-text title, plain Battle Pass header,
 procedural corner ticks + flat button/tab fills) if an image is missing or still
 loading, so the menu renders correctly without them.
+
+### Gear-category emblems (Loadout / gear grid)
+
+| File | Source | Tool / Model | Notes |
+| --- | --- | --- | --- |
+| `src/assets/ui/gear/weapon.png` | Generated | higgsfield (Nano Banana 2) | Starting-weapon emblem — two crossed ember **wands**, matching the game's wand-based combat. Background keyed transparent + trimmed to 256px. |
+| `src/assets/ui/gear/armor.png` | Generated | higgsfield (Nano Banana 2) | Armor emblem — a lion-crest ember pauldron. Keyed transparent + trimmed. |
+| `src/assets/ui/gear/trinket.png` | Generated | higgsfield (Nano Banana 2) | Trinket emblem — an ember filigree medallion. Keyed transparent + trimmed. |
+| `src/assets/ui/gear/charm.png` | Generated | higgsfield (Nano Banana 2) | Charm emblem — a runed ember talisman. Keyed transparent + trimmed. |
+
+These load lazily via `src/assets/GearEmblems.js` and draw as the item icon per
+gear category in `MenuRenderer._drawItemGrid`; each falls back to the
+rarity-recolored `shield` glyph until its image loads (and in a non-DOM env), so
+rarity still reads via the card border + status colour.
+
+The main-menu **display font** (Cinzel, OFL 1.1) used for the wordmark / tab
+labels / button labels is registered in `src/assets/credits/assets.json` and
+loaded via `src/assets/MenuFont.js`; canvas headings fall back to the system sans
+until it loads.

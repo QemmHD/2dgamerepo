@@ -145,6 +145,19 @@
       "attributionRequired": false,
       "modified": false,
       "modifications": "Copied a curated subset of the pack's OGG one-shots unchanged; pitch-jittered + gain-trimmed at runtime. Files in this set: click_001.ogg, click_002.ogg, tick_001.ogg, tick_002.ogg, glass_001.ogg, glass_003.ogg, glass_005.ogg, scratch_001.ogg, scratch_003.ogg — same source/author/license."
+    },
+    {
+      "id": "cinzel_display_font",
+      "file": "src/assets/ui/fonts/cinzel.woff2",
+      "usedFor": "Main-menu display face — the EMBERWAKE wordmark, tab labels, and button labels (headings only; body text keeps the system stack)",
+      "type": "font",
+      "source": "Cinzel — Google Fonts",
+      "sourceUrl": "https://fonts.google.com/specimen/Cinzel",
+      "authors": ["Natanael Gama (NDISCOVER)"],
+      "license": "OFL-1.1",
+      "attributionRequired": true,
+      "modified": true,
+      "modifications": "Latin-subset variable woff2 (weight 500–800) self-hosted and loaded via FontFace in src/assets/MenuFont.js; canvas text falls back to the system sans until the face loads (and in a non-DOM env)."
     }
   ]
 }

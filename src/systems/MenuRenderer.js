@@ -28,6 +28,8 @@ import { ATTUNABLE, getRelic, attuneCost } from '../content/relics.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getHeroFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { getMenuImages } from '../assets/MenuImages.js';
+import { getGearEmblem } from '../assets/GearEmblems.js';
+import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus } from '../assets/CosmeticFx.js';
@@ -40,6 +42,11 @@ import { getRoad } from '../content/roads.js';
 import { PATRONS, PATRON_IDS } from '../content/patrons.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
+// Display face (Cinzel, self-hosted OFL) for the forged headings — the
+// wordmark, tab labels, and button labels — giving the menu a dark-fantasy
+// identity. Body text / numeric readouts stay on FONT for legibility. Falls
+// back to the system stack until the woff2 loads (and in a non-DOM env).
+const HEAD = DISPLAY_FONT;
 const TAU = Math.PI * 2;
 
 // Each tab carries an accent color so the menu reads as color-coded sections
@@ -139,6 +146,42 @@ export class MenuRenderer {
         const rr = r + Math.sin(t * 0.5) * (r * 0.04);
         ctx.globalAlpha = baseA + Math.sin(t * 0.5) * (baseA * 0.18);
         ctx.drawImage(getGlowSprite(color), cx - rr, cy - rr, rr * 2, rr * 2);
+    }
+
+    // Set ctx.font to `${weight} ${size}px ${family}` (default the Cinzel HEAD
+    // face), shrinking the size until `text` fits within maxW (down to a floor).
+    // Cinzel is wider than the system sans, so display labels auto-fit their
+    // control instead of overflowing. Returns the size actually used.
+    _fitFont(ctx, text, maxW, weight, size, family = HEAD, floor = 12) {
+        let s = size;
+        ctx.font = `${weight} ${s}px ${family}`;
+        while (s > floor && ctx.measureText(text).width > maxW) {
+            s -= 1;
+            ctx.font = `${weight} ${s}px ${family}`;
+        }
+        return s;
+    }
+
+    // Animated ember-flame rim licking up from the top edge of a control (the
+    // active tab / a primary button) — the mockup's standout accent. Additive
+    // and cheap (cached glow sprites), purely decorative. Flames stay fire-hued
+    // (orange base → pale tongue) regardless of the control's section colour, so
+    // they always read as fire. `seed` de-syncs the flicker between controls so
+    // they don't pulse in lockstep.
+    _emberRim(ctx, x, y, w, h, t, seed = 0) {
+        const n = Math.max(3, Math.round(w / 40));
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < n; i++) {
+            const fx = x + (i + 0.5) * (w / n);
+            const ph = t * 3.2 + i * 1.7 + seed;
+            const lick = 7 + Math.sin(ph) * 4 + Math.sin(ph * 2.3) * 2;
+            const a = 0.26 + Math.sin(ph * 1.3) * 0.12;
+            this._ember(ctx, fx, y - lick * 0.3, 11, '#ff8a3a', a);          // hot base
+            this._ember(ctx, fx, y - lick, 6, '#ffe6a0', Math.max(0, a * 0.7)); // pale tongue
+        }
+        ctx.restore();
+        ctx.globalAlpha = 1;
     }
 
     _drawShootingEmber(ctx, t) {
@@ -365,9 +408,13 @@ export class MenuRenderer {
         }
         ctx.strokeStyle = enabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)';
         ctx.lineWidth = 2; ctx.stroke();
+        // Primary (START-style) buttons get the flaming ember rim from the mockup.
+        if (primary && enabled) this._emberRim(ctx, r.x + 8, r.y, r.w - 16, r.h, this._t || 0, 3.1);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = enabled ? '#fff' : 'rgba(255,255,255,0.4)';
-        ctx.font = `700 ${fontSize}px ${FONT}`;
+        // Forged display face, auto-fit so long labels ("TAP AGAIN TO CONFIRM")
+        // never overflow the plate in the wider Cinzel glyphs.
+        this._fitFont(ctx, label, r.w - 24, 700, fontSize);
         ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + (sub ? -10 : 0));
         if (sub) {
             ctx.font = `600 18px ${FONT}`;
@@ -388,6 +435,9 @@ export class MenuRenderer {
 
     draw(ctx, state) {
         this.hotspots = [];
+        // Kick off the display-font load (idempotent, guarded); canvas text using
+        // HEAD picks up Cinzel once ready, staying on the system fallback until then.
+        ensureMenuFont();
         const sa = this._sa();
         const save = state.saveData;
         // Wall-clock seconds for menu animations (title shimmer, tab glow,
@@ -421,7 +471,7 @@ export class MenuRenderer {
             tg.addColorStop(off, '#fff1b8');
             tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
             ctx.fillStyle = tg;
-            ctx.font = `800 52px ${FONT}`;
+            ctx.font = `800 52px ${HEAD}`;
             ctx.fillText('EMBERWAKE', tx, sa.top + 70);
         }
         // Ember-rule under the title.
@@ -508,6 +558,8 @@ export class MenuRenderer {
                 ctx.globalAlpha = 0.24 + Math.sin(time * 4) * 0.10;
                 ctx.drawImage(getGlowSprite(accent), x - 10, y - 10, tabW + 20, h + 20);
                 ctx.restore(); ctx.globalAlpha = 1;
+                // Flaming ember rim licking up from the tab's top edge (mockup accent).
+                this._emberRim(ctx, x + 6, y, tabW - 12, h, time, i * 0.9);
             }
             roundRectPath(ctx, x, y, tabW, h, 12);
             ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.10)';
@@ -517,9 +569,11 @@ export class MenuRenderer {
                 ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
                 ctx.beginPath(); ctx.moveTo(x + 12, y + 2.5); ctx.lineTo(x + tabW - 12, y + 2.5); ctx.stroke();
             }
-            // Label: accent colour when active, muted otherwise.
+            // Label: forged display face (Cinzel), accent colour when active,
+            // muted otherwise. Auto-fit so the wider Cinzel glyphs never overflow
+            // a tab (e.g. "BATTLE PASS" / "CHARACTER" on a narrow 9-tab bar).
             ctx.fillStyle = active ? accent : 'rgba(235,240,248,0.85)';
-            ctx.font = `700 ${tabW < 230 ? 20 : 23}px ${FONT}`;
+            this._fitFont(ctx, t.label, tabW - 20, 700, tabW < 230 ? 20 : 23);
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(t.label, x + tabW / 2, y + h / 2 + 1);
             if (!active) {
@@ -1364,13 +1418,21 @@ export class MenuRenderer {
                 ctx.fillText(this._ellip(ctx, statusText, innerW - 30), x + 26, iy + statusY);
                 // Slot icon / swatch. Cosmetics show a representative preview of
                 // the actual item (pixel cloak/hat, fur tint disc, aura glow,
-                // trail puffs); gear shows a rarity-recolored shield glyph.
+                // trail puffs); gear shows its forged category emblem (weapon =
+                // crossed ember wands matching the game's wand combat, armor,
+                // trinket, charm), falling back to the rarity shield until the
+                // emblem art loads (or in a non-DOM env). Rarity still reads via
+                // the card border + status colour.
                 {
                     const ix = x + 12 + innerW - isz - 12, iyy = iy + (kind === 'gear' ? 12 : Math.round((ih - isz) / 2));
                     ctx.save();
                     ctx.globalAlpha = dim;
                     if (kind === 'cosmetic') this._cosmeticSwatch(ctx, cat, item, ix, iyy, isz);
-                    else ctx.drawImage(getRarityIcon('shield', item.rarity), ix, iyy, isz, isz);
+                    else {
+                        const emblem = getGearEmblem(cat);
+                        if (emblem) ctx.drawImage(emblem, ix, iyy, isz, isz);
+                        else ctx.drawImage(getRarityIcon('shield', item.rarity), ix, iyy, isz, isz);
+                    }
                     ctx.restore();
                 }
                 // Gear: short effect summary so the player knows what each item
