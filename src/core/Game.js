@@ -53,6 +53,7 @@ import { AudioSystem } from '../systems/AudioSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { rollAltarChoices } from '../systems/WickRoadsSystem.js';
+import { applyAttunements } from '../content/relics.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { evaluateAchievements } from '../content/achievements.js';
@@ -648,6 +649,10 @@ export class Game {
         applyCharacter(this.player, this.saveSystem.getSelectedCharacter());
         const coinsBefore = this.player.coins ?? 0;
         applyPermanentUpgrades(this.player, this.saveSystem.data);
+        // Relic Attunement (coin sink): fold in every saved attunement level ONCE,
+        // right after permanent upgrades — they're the same class of meta bonus
+        // (defensive/utility only, no raw weapon damage; see relics.js ATTUNABLE).
+        applyAttunements(this.player, this.saveSystem.getRelicAttunements());
         // Loadout gear buffs stack ON TOP of permanent upgrades (applied after
         // so multipliers compound). Cosmetics drive the player's appearance.
         applyLoadout(this.player, this.saveSystem.data);
@@ -1030,6 +1035,18 @@ export class Game {
         return true;
     }
 
+    // Buy the next Relic Attunement level (coin sink). SaveSystem.attuneRelic
+    // does the spend+apply atomically (spendCoins only deducts on success), so
+    // this just plays the right feedback. Returns whether a level was bought.
+    buyAttune(id) {
+        if (this.saveSystem.attuneRelic(id)) {
+            this.audio.purchase();
+            return true;
+        }
+        this.audio.deny();
+        return false;
+    }
+
     // Buy a coin-priced cosmetic, then equip it. Mirrors buyUpgrade's
     // spend→apply→refund-on-failure safety so coins are never taken without
     // the item actually unlocking. Already-owned items just equip (free).
@@ -1083,6 +1100,7 @@ export class Game {
                 this.selectedPatron = (this.selectedPatron === arg.id) ? null : arg.id;
                 break;
             case 'buyUpgrade': this._pressFeedback(`shop:${arg}`); this.buyUpgrade(arg); break;
+            case 'attuneRelic': this._pressFeedback(`attune:${arg}`); this.buyAttune(arg); break;
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
             case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); this.audio.equip(); break;
