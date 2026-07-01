@@ -25,6 +25,7 @@ import {
     ENEMY_SEPARATION,
     COMPOSURE,
     WICK_ROADS,
+    LIEUTENANT,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Easing } from './Easing.js';
@@ -54,6 +55,9 @@ import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
 import { rollAltarChoices, rollRoadChoices } from '../systems/WickRoadsSystem.js';
 import { applyAttunements } from '../content/relics.js';
+import { getRoad } from '../content/roads.js';
+import { getDailySetup } from '../content/dailyRoad.js';
+import { LieutenantDirector } from '../systems/LieutenantDirector.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { evaluateAchievements } from '../content/achievements.js';
@@ -151,6 +155,14 @@ export class Game {
         this.menuTab = 'play';
         // Transient pre-run "Trial" modifier selection (ids); never persisted.
         this.selectedModifiers = new Set();
+        // Daily Road: when a run is launched via the DAILY ROAD menu button, this
+        // is true and the run's map/Trials/starting-road are overridden by the
+        // day's curated setup (getDailySetup). Session-local; never persisted. The
+        // map override lives here so the accessor path (_effectiveMapId) can honor
+        // it BEFORE _initRunState reads the map, without touching the saved pick.
+        this.dailyMode = false;
+        this._dailyMapOverride = null;
+        this._dailySetup = null;
         // Pre-run Patron choice (id or null) — biases the level-up draft toward
         // that Patron's weapons/passives. Session-local (not persisted), chosen
         // on the Play tab; folded into committedPatrons at run start.
@@ -208,6 +220,7 @@ export class Game {
                 }
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault();
+                    this.dailyMode = false;   // keyboard start is always a NORMAL run
                     this._startRun();
                 }
                 return;
@@ -499,6 +512,15 @@ export class Game {
         });
     }
 
+    // The effective map id for THIS run: the Daily Road override (unlock-bypassed,
+    // so the day's map is force-allowed and truly the same for everyone) or, for a
+    // normal run, the saved pick. Read everywhere the launch path resolves the map
+    // so the override lands before _initRunState builds the BossDirector/tier.
+    _effectiveMapId() {
+        if (this.dailyMode && this._dailyMapOverride) return this._dailyMapOverride;
+        return this.saveSystem.getSelectedMap();
+    }
+
     _initRunState() {
         this.player = new Player(undefined, undefined, this.saveSystem.getSelectedCharacter());
         this.camera.follow(this.player);
@@ -522,6 +544,15 @@ export class Game {
         this.bossSummons = [];
         // Active "BOSS INCOMING" warning (the boss spawns when this expires).
         this.bossWarning = null;
+        // Lieutenant mini-boss (mid-segment): a lightweight scheduler that fires
+        // once per boss-to-boss stretch, a short telegraph, and a ref for its mini
+        // HP bar. NOT a boss (never sets e.boss) — see _spawnLieutenant.
+        this.lieutenantDirector = new LieutenantDirector();
+        this.lieutenantWarning = null;
+        this.activeLieutenantRef = null;
+        // Daily Road per-run bookkeeping (score banked once at game-over/victory).
+        this._dailyRoadRecorded = false;
+        this.dailyRoadBest = false;
         this.gems = [];
         this.damageNumbers = [];
 
@@ -540,10 +571,10 @@ export class Game {
         this.waveDirector = new WaveDirector();
         // Per-map boss trio: cycle THIS map's three bosses (all must fall to
         // clear the map). Later maps carry their own tougher rosters.
-        this.bossDirector = new BossDirector(getMapBosses(this.saveSystem.getSelectedMap()));
+        this.bossDirector = new BossDirector(getMapBosses(this._effectiveMapId()));
         // Difficulty rung of the selected map (1..4); folds into boss + enemy
         // scaling so each map plays a little harder than the last.
-        this.mapTier = getMapTier(this.saveSystem.getSelectedMap());
+        this.mapTier = getMapTier(this._effectiveMapId());
         // Cache the current wave state so render can read it without
         // re-computing during the same frame.
         this.waveState = this.waveDirector.getState(0);
@@ -655,6 +686,17 @@ export class Game {
     // the canonical "begin a fresh game" entry point. Used by the START RUN
     // shop button AND the RESTART game-over button.
     _startRun() {
+        // Daily Road: resolve the day's curated setup BEFORE _initRunState reads the
+        // map (BossDirector/tier). Overrides map + Trials locally; the forced road is
+        // applied at the end of _startRun. Never touches the persisted selections.
+        if (this.dailyMode) {
+            this._dailySetup = getDailySetup(currentDayNumber());
+            this._dailyMapOverride = this._dailySetup.mapId;
+            this.selectedModifiers = new Set(this._dailySetup.modifierIds);
+        } else {
+            this._dailySetup = null;
+            this._dailyMapOverride = null;
+        }
         this._initRunState();
         // Character base stats apply FIRST so permanent upgrades / gear /
         // passives / run upgrades all stack cleanly on top of the hero's
@@ -684,7 +726,9 @@ export class Game {
         // single wave-scale layer (applied to waveState each frame) + apply the
         // player-side mods now (after character/loadout so they compound). The
         // XP/coin bonus rewards the extra challenge and is capped.
-        this.difficulty = this.saveSystem.getDifficulty();
+        // Daily Road forces NORMAL for a fair shared board — LOCAL only, never
+        // persisted (do not call setDifficulty / write saveSystem.data.difficulty).
+        this.difficulty = this.dailyMode ? 'normal' : this.saveSystem.getDifficulty();
         const diff = DIFFICULTY[this.difficulty] || DIFFICULTY.normal;
         const mods = RUN_MODIFIERS.filter((m) => this.selectedModifiers.has(m.id));
         this.activeModifiers = mods;
@@ -707,7 +751,7 @@ export class Game {
         // Per-map difficulty rung: later maps' TRASH is a little tougher too, so
         // the whole map (not just its bosses) ramps. Kept MILD — the boss tier
         // (mapHpMul in _spawnBoss) is the dominant step. tier 1→4: hp +0/12/24/36%.
-        const _mt = getMapTier(this.saveSystem.getSelectedMap());
+        const _mt = getMapTier(this._effectiveMapId());
         if (_mt > 1) {
             this.runScale.hp *= 1 + (_mt - 1) * 0.12;
             this.runScale.damage *= 1 + (_mt - 1) * 0.08;
@@ -741,11 +785,20 @@ export class Game {
         // (mirrors the weaponAura gate). Read here so a mid-session toggle wins.
         this.player.skinOverlayEnabled = !this.reducedEffects;
         // Apply the selected biome's color grade + per-map darkness for this run.
-        const biome = getMap(this.saveSystem.getSelectedMap());
+        const biome = getMap(this._effectiveMapId());
         this.mapRenderer.theme = biome;
         // Remember the untinted biome so a Branching Roads re-tint can revert to it
         // at the next boss (roads spread onto a NEW theme object, never mutate this).
         this._baseBiomeTheme = biome;
+        // Daily Road: apply the day's FORCED starting road now — after the player is
+        // fully built (character/upgrades/loadout) and _baseBiomeTheme is set (for the
+        // re-tint). Identical to a crossroads pick (roadToChoice.apply): it seeds the
+        // opening segment bias, which _clearSegmentRoad clears at the first boss; the
+        // permanent boon persists. Post-boss the player gets normal crossroads picks.
+        if (this.dailyMode && this._dailySetup?.roadId) {
+            const r = getRoad(this._dailySetup.roadId);
+            if (r) { r.apply(this); this._segmentRoadId = this._dailySetup.roadId; }
+        }
         // Regenerate the world's obstacles/buildings themed to this biome (each
         // biome is a distinct, deterministic layout with its own prop set,
         // colour tint, and building styles). Cheap + seeded, so same biome →
@@ -778,6 +831,8 @@ export class Game {
         // Leaving a live (paused) run still banks what was earned, matching
         // the death path. No-op once already banked this run.
         this._bankRunCoins();
+        // A RESTART is a fresh NORMAL run — never silently re-launch a Daily.
+        this.dailyMode = false;
         this._startRun();
     }
 
@@ -788,6 +843,9 @@ export class Game {
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
         this.paused = false;
+        // Back at the menu, a Daily is over — clear the flag so the next launch
+        // (button OR keyboard) is a normal run unless DAILY ROAD is chosen again.
+        this.dailyMode = false;
         this._updateJoystickEnabled();
     }
 
@@ -902,6 +960,14 @@ export class Game {
                 finalWaveName: this.waveState?.name ?? '',
             };
             this.saveSystem.recordRun(this.runSummary);
+            // Daily Road: a WON daily banks its score too (same latch as game-over
+            // so leaving-on-victory then dying can't double-count).
+            if (this.dailyMode && !this._dailyRoadRecorded) {
+                const dscore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
+                this.dailyRoadBest = this.saveSystem.recordDailyRoadScore(currentDayNumber(), dscore);
+                this.runSummary.dailyRoadScore = dscore;
+                this._dailyRoadRecorded = true;
+            }
             this._checkAchievements();
             this._checkDailyChallenges();
             this._runRecorded = true;
@@ -1103,7 +1169,8 @@ export class Game {
         if (action !== 'resetSave' && action !== 'tab') this.resetConfirming = false;
         switch (action) {
             case 'tab': this.menuTab = arg; this.resetConfirming = false; break;
-            case 'startRun': this._pressFeedback('start'); this._startRun(); break;
+            case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this._startRun(); break;
+            case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this._startRun(); break;
             case 'setDifficulty': this.saveSystem.setDifficulty(arg); break;
             case 'toggleModifier':
                 if (this.selectedModifiers.has(arg)) this.selectedModifiers.delete(arg);
@@ -1729,6 +1796,44 @@ export class Game {
         this._shake(SCREEN_SHAKE.intensity * 0.4, 0.3);
     }
 
+    // ── Lieutenant mini-boss ──────────────────────────────────────────────
+    // A short "ELITE APPROACHES" telegraph, then a single scaled heavy-hitter
+    // spawns in the open (no arena, no swarm wipe). NOT a boss, NOT an elite.
+    _startLieutenantWarning() {
+        const pool = LIEUTENANT.types.filter((t) => ENEMY[t]);
+        const type = pool.length ? pool[Math.floor(Math.random() * pool.length)] : 'brute';
+        this.lieutenantWarning = { type, timer: LIEUTENANT.warningDuration, total: LIEUTENANT.warningDuration };
+        this.waveDirector.announce('⚔  ELITE APPROACHES  ⚔', LIEUTENANT.warningDuration, LIEUTENANT.color);
+        this._shake(SCREEN_SHAKE.intensity * 0.3, 0.25);
+    }
+
+    _spawnLieutenant(type) {
+        const def = ENEMY[type];
+        if (!def) return;
+        // Open-field spawn near the player — NO arena, NO enemy wipe, NO music
+        // switch (the swarm keeps coming). Plain enemy with explicit muls composed
+        // on the live wave scale; never elite (would double-scale + roll an affix).
+        const angle = Math.random() * TWO_PI;
+        const dist = 520;
+        const halfW = WORLD_WIDTH / 2 - 100, halfH = WORLD_HEIGHT / 2 - 100;
+        let x = clamp(this.player.x + Math.cos(angle) * dist, -halfW, halfW);
+        let y = clamp(this.player.y + Math.sin(angle) * dist, -halfH, halfH);
+        ({ x, y } = this._clearSpot(x, y, (def.radius ?? 30) * LIEUTENANT.radiusMul));
+        const lt = new Enemy(type, x, y, {
+            healthMul: (this.waveState?.healthMul ?? 1) * LIEUTENANT.hpMul,
+            speedMul: (this.waveState?.speedMul ?? 1) * LIEUTENANT.speedMul,
+            contactDamageMul: (this.waveState?.damageMul ?? 1) * LIEUTENANT.dmgMul,
+        });
+        // Marker + display only — NEVER e.boss (leave tier null; BOSS_TIERS is 1/2/3).
+        lt.lieutenant = true;
+        lt.name = 'LIEUTENANT';
+        lt.radius = (def.radius ?? 30) * LIEUTENANT.radiusMul;
+        lt.visualScale = (def.visualScale ?? 1) * LIEUTENANT.radiusMul;
+        this.enemies.push(lt);
+        this.audio.bossSpawn();   // a punchy cue, but no boss music switch
+        this._shake(SCREEN_SHAKE.intensity * 0.5, 0.3);
+    }
+
     // Spawn `count` themed support enemies on a ring around (x,y), respecting
     // the live alive cap so a boss wave pressures without flooding. `types` is
     // a weight map ({ bat: 3, crawler: 1 }); falls back to slimes.
@@ -2085,6 +2190,15 @@ export class Game {
                 .map((w) => WEAPONS[w.id].name),
         };
 
+        // Daily Road score — banked once per run (a daily can die at any point,
+        // so it's NOT gated on _gauntletActive). Reuses the gauntlet formula.
+        if (this.dailyMode && !this._dailyRoadRecorded) {
+            const dscore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
+            this.dailyRoadBest = this.saveSystem.recordDailyRoadScore(currentDayNumber(), dscore);
+            this.runSummary.dailyRoadScore = dscore;
+            this._dailyRoadRecorded = true;
+        }
+
         // Fold the run into lifetime/best records; capture which bests were
         // beaten so the game-over summary can flag them. Skip if a victory-leave
         // already recorded this run (so the 3 boss kills aren't counted twice).
@@ -2245,6 +2359,29 @@ export class Game {
                 const id = this.bossWarning.id;
                 this.bossWarning = null;
                 this._spawnBoss(id);
+            }
+        }
+        // Lieutenant: one mid-segment mini-boss per boss window. Gated on NO boss
+        // incoming/alive AND no live lieutenant so it never overlaps the boss
+        // setpiece; the swarm keeps running (unlike a boss). A short telegraph
+        // precedes the spawn. `bossAlive` is reused from the boss gate above.
+        const lieutenantAlive = this.enemies.some((e) => e.active && e.lieutenant);
+        if (!bossAlive && !this.bossWarning && !this.lieutenantWarning && !lieutenantAlive) {
+            if (this.lieutenantDirector.update(this.time)) this._startLieutenantWarning();
+        }
+        if (this.lieutenantWarning) {
+            // If a boss window opened during the telegraph (a late boss kill can
+            // push the next boss warning into it), cancel the Lieutenant so it
+            // never spawns into the boss setpiece — it re-arms next segment.
+            if (bossAlive || this.bossWarning) {
+                this.lieutenantWarning = null;
+            } else {
+                this.lieutenantWarning.timer -= dt;
+                if (this.lieutenantWarning.timer <= 0) {
+                    const t = this.lieutenantWarning.type;
+                    this.lieutenantWarning = null;
+                    this._spawnLieutenant(t);
+                }
             }
         }
         // Drain any queued boss summon requests into themed, capped spawns.
@@ -2586,6 +2723,9 @@ export class Game {
                     // Arm the post-death cooldown so the next boss doesn't
                     // chain in immediately after a late kill.
                     this.bossDirector.notifyBossDefeated(this.time);
+                    // Re-center the Lieutenant for the new segment (endless: keeps
+                    // firing one per boss-to-boss stretch).
+                    this.lieutenantDirector.reset(this.time);
                     // Branching Roads: on every boss EXCEPT the run-ending 3rd
                     // (which opens the victory overlay), QUEUE a CROSSROADS fork.
                     // The end-of-update presenter opens it once no other overlay is
@@ -2617,6 +2757,16 @@ export class Game {
                         this._victoryShown = true;
                         this._showVictory();
                     }
+                } else if (e.lieutenant) {
+                    // Lieutenant mini-boss down: a mid-tier reward beat — a ring, a
+                    // coin burst, a chance at a chest, and a callout. Touches NONE of
+                    // the boss state (bossesDefeated / crossroads / victory / arena).
+                    this._spawnRing(e.x, e.y, { maxR: 260, width: 10, life: 0.55, color: LIEUTENANT.color, ease: 'outCubic' });
+                    this._dropCoinBurst(e.x, e.y, LIEUTENANT.coinCount, LIEUTENANT.coinValue);
+                    if (Math.random() < LIEUTENANT.chestChance) this._dropChest(e.x, e.y);
+                    this.waveDirector.announce(`${e.name} SLAIN`, 2.5, LIEUTENANT.color);
+                    this.particles.deathBurst(e.x, e.y, LIEUTENANT.color);
+                    this._shake(SCREEN_SHAKE.intensity * 0.5, 0.25);
                 } else if (e.elite) {
                     // Elite kills pop a small shockwave ring tinted to the affix.
                     this._spawnRing(e.x, e.y, {
@@ -2755,6 +2905,15 @@ export class Game {
             if (!e.active || !e.boss) continue;
             if (!this.activeBossRef || e.maxHp > this.activeBossRef.maxHp) {
                 this.activeBossRef = e;
+            }
+        }
+        // Lieutenant mini-boss HP-bar ref (parallel to the boss ref; kept separate
+        // so it never feeds the arena safety-net below, which keys on activeBossRef).
+        this.activeLieutenantRef = null;
+        for (const e of this.enemies) {
+            if (!e.active || !e.lieutenant) continue;
+            if (!this.activeLieutenantRef || e.maxHp > this.activeLieutenantRef.maxHp) {
+                this.activeLieutenantRef = e;
             }
         }
         // Safety net: if a boss arena is up but no boss is alive (defeated by
@@ -3544,6 +3703,11 @@ export class Game {
             base.difficulty = this.saveSystem.getDifficulty();
             base.selectedModifiers = [...this.selectedModifiers];
             base.selectedPatron = this.selectedPatron;
+            // Daily Road: today's best (for the menu's "best today" readout). Gated
+            // on the record's day so a new UTC day shows 0 until a run is played
+            // (the record self-resets on the first daily of the new day).
+            const _dr = this.saveSystem.data.dailyRoad;
+            base.dailyRoadBest = (_dr && _dr.day === currentDayNumber()) ? (_dr.best ?? 0) : 0;
             return base;
         }
 
@@ -3616,6 +3780,15 @@ export class Game {
         base.bossWarning = this.bossWarning
             ? { name: this.bossWarning.name, epithet: this.bossWarning.epithet ?? null,
                 tier: this.bossWarning.tier ?? null, t: 1 - this.bossWarning.timer / this.bossWarning.total }
+            : null;
+        // Lieutenant mini-boss: a small HP bar + its own warning tell.
+        base.activeLieutenant = this.activeLieutenantRef ? {
+            name: this.activeLieutenantRef.name,
+            hp: this.activeLieutenantRef.hp,
+            maxHp: this.activeLieutenantRef.maxHp,
+        } : null;
+        base.lieutenantWarning = this.lieutenantWarning
+            ? { t: 1 - this.lieutenantWarning.timer / this.lieutenantWarning.total }
             : null;
         base.chestCount = this.chests.length;
         base.chestReward = this.chestReward;

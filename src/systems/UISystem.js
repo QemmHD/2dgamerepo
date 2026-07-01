@@ -300,6 +300,7 @@ export class UISystem {
         }
         this._drawWaveLabel(ctx, gameState);
         this._drawBossHpBar(ctx, gameState);
+        this._drawLieutenantBar(ctx, gameState);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
             this._drawBossArrow(ctx, gameState);
         }
@@ -554,6 +555,31 @@ export class UISystem {
             const theme = elementThemes[p.element] ?? passiveTheme;
             chip(p.name, lv, theme);
         }
+        ctx.restore();
+    }
+
+    // Compact HP bar for the Lieutenant mini-boss — narrower than the boss bar
+    // and tucked just below it, in the ember color, so it reads as "elite threat"
+    // without impersonating a boss. Also shows its brief warning fill.
+    _drawLieutenantBar(ctx, state) {
+        const lt = state.activeLieutenant;
+        if (!lt || !(lt.maxHp > 0)) return;
+        const sa = this.renderer.safeArea;
+        const barW = INTERNAL_WIDTH * 0.32;
+        const barH = 16;
+        const barX = (INTERNAL_WIDTH - barW) / 2;
+        const barY = sa.top + 210;   // below the boss-bar band
+        const pct = Math.max(0, Math.min(1, lt.hp / lt.maxHp));
+        ctx.save();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#ffc24a'; ctx.font = `700 15px ${FONT}`;
+        ctx.fillText('⚔ LIEUTENANT', INTERNAL_WIDTH / 2, barY - 4);
+        roundRectPath(ctx, barX, barY, barW, barH, 6);
+        ctx.fillStyle = 'rgba(10,8,10,0.78)'; ctx.fill();
+        roundRectPath(ctx, barX + 1.5, barY + 1.5, (barW - 3) * pct, barH - 3, 5);
+        ctx.fillStyle = '#ffb03a'; ctx.fill();
+        roundRectPath(ctx, barX, barY, barW, barH, 6);
+        ctx.strokeStyle = 'rgba(255,194,74,0.7)'; ctx.lineWidth = 2; ctx.stroke();
         ctx.restore();
     }
 

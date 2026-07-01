@@ -95,6 +95,9 @@ function defaultData() {
         // Daily challenges: which day the `completed` ids belong to (auto-reset
         // when the day rolls; see content/dailyChallenges + getDailyState).
         daily: { day: 0, completed: [] },
+        // Daily Road: the current day's best score for the curated daily run
+        // ({ day, best }; auto-resets when the day rolls — see recordDailyRoadScore).
+        dailyRoad: { day: 0, best: 0 },
         // Pact Mastery: highest Pact tier (active-Trial count, 0..N) a run has
         // CLEARED (3-boss victory) per character id — the "can't-farm" ladder.
         pactMastery: {},
@@ -274,6 +277,14 @@ export class SaveSystem {
                 : [],
         };
 
+        // Daily Road best-of-day: { day (int ≥ 0), best (int ≥ 0) }. Old saves
+        // lack the field → default { 0, 0 } (implicit migration, no version bump).
+        const drd = data.dailyRoad && typeof data.dailyRoad === 'object' ? data.dailyRoad : {};
+        const dailyRoad = {
+            day: Number.isInteger(drd.day) && drd.day > 0 ? drd.day : 0,
+            best: Number.isFinite(drd.best) && drd.best > 0 ? Math.floor(drd.best) : 0,
+        };
+
         // Pact Mastery: { [characterId]: highestClearedTier (non-negative int) }.
         // Sanitize every entry; drop anything non-numeric/negative.
         const pm = data.pactMastery && typeof data.pactMastery === 'object' ? data.pactMastery : {};
@@ -303,7 +314,7 @@ export class SaveSystem {
             }
         }
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, pactMastery, discoveredRelics, relicAttunement, version: 7 };
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, pactMastery, discoveredRelics, relicAttunement, version: 7 };
     }
 
     save() {
@@ -621,6 +632,20 @@ export class SaveSystem {
         s.gauntletRuns = (s.gauntletRuns ?? 0) + 1;
         let best = false;
         if (v > (s.bestGauntletScore ?? 0)) { s.bestGauntletScore = v; best = true; }
+        this.save();
+        return best;
+    }
+
+    // ── Daily Road best-of-day ───────────────────────────────────────────
+    // Bank a curated-daily-run score for `day`, auto-resetting the record when the
+    // day rolls (mirrors getDailyState). Returns true if it's a new best today.
+    recordDailyRoadScore(day, score) {
+        if (!this.data.dailyRoad || typeof this.data.dailyRoad !== 'object' || this.data.dailyRoad.day !== day) {
+            this.data.dailyRoad = { day, best: 0 };
+        }
+        const v = Math.max(0, Math.floor(score || 0));
+        let best = false;
+        if (v > this.data.dailyRoad.best) { this.data.dailyRoad.best = v; best = true; }
         this.save();
         return best;
     }
