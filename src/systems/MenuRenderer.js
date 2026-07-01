@@ -230,8 +230,8 @@ export class MenuRenderer {
     _forgeCorners(ctx, x, y, w, h) {
         const img = getMenuImages().corner;
         if (!img) return false;
-        const cs = Math.min(88, Math.max(44, Math.min(w, h) * 0.16));
-        const off = cs * 0.10;   // nudge the elbow just outside the panel corner
+        const cs = Math.min(80, Math.max(44, Math.min(w, h) * 0.15));
+        const off = 0;   // elbow exactly at the corner (no bleed above into the tab tray)
         ctx.save();
         ctx.globalAlpha = 0.92;
         const draw = (cx, cy, sx, sy) => {
@@ -276,11 +276,11 @@ export class MenuRenderer {
         ctx.strokeStyle = 'rgba(255,140,60,0.10)'; ctx.lineWidth = 1.5; ctx.stroke();
         // Outer stroke.
         if (stroke) { roundRectPath(ctx, x, y, w, h, r); ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
-        // Forged corner brackets: on panels that opt in, and automatically on
-        // large framing panels (small nested cards stay clean). Falls back to the
-        // procedural ember ticks if the bracket art hasn't loaded.
+        // Forged corner brackets on panels that OPT IN (opts.corners) only — kept
+        // explicit so themed/nested panels (e.g. the purple CHARACTER card, the
+        // gear-grid columns) don't get an ember frame they weren't designed for.
+        // Falls back to the procedural ember ticks if the bracket art hasn't loaded.
         if (opts.corners) { if (!this._forgeCorners(ctx, x, y, w, h)) this._cornerTicks(ctx, x, y, w, h); }
-        else if (w >= 460 && h >= 320) this._forgeCorners(ctx, x, y, w, h);
     }
 
     // Right-aligned smoked-glass coin pill with a soft glow behind the ◎.
@@ -919,7 +919,7 @@ export class MenuRenderer {
     // Lifetime stats showcase — surfaces what the save has always tracked.
     _drawStats(ctx, state) {
         const c = this._contentRect();
-        this._panel(ctx, c.x, c.y, c.w, c.h);
+        this._panel(ctx, c.x, c.y, c.w, c.h, null, undefined, { corners: true });
         const s = (state.saveData && state.saveData.stats) || {};
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
@@ -1780,7 +1780,7 @@ export class MenuRenderer {
     _drawSettings(ctx, state) {
         const c = this._contentRect();
         const save = state.saveData;
-        this._panel(ctx, c.x, c.y, c.w, c.h);
+        this._panel(ctx, c.x, c.y, c.w, c.h, null, undefined, { corners: true });
         const innerX = c.x + 40;
         const innerW = c.w - 80;
         let y = c.y + 40;
