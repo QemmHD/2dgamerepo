@@ -34,6 +34,9 @@ const MARGIN = parseInt(opt.margin ?? '10', 10);
 const ANCHOR = opt.anchor === 'center' ? 'center' : 'bottom';
 const WHITE = parseInt(opt.white ?? '215', 10);
 const DESPECK = parseFloat(opt.despeck ?? '0.03');
+// --dropshadow=1: clear dark disconnected components below the main body
+// (baked-in floor shadows under hovering creatures).
+const DROPSHADOW = opt.dropshadow === '1';
 const SMOKE_LUM = WHITE - 55, SMOKE_SAT = 30;
 
 const lum = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
@@ -121,25 +124,46 @@ function processPanel(img, px, py, pw, ph) {
         const amt = l >= WHITE ? 1 : l <= WHITE - 60 ? 0 : (l - (WHITE - 60)) / 60;
         if (amt > 0) alpha[q] = Math.round(alpha[q] * (1 - amt));
     }
+    // Optional drop-shadow removal (--dropshadow=1): generators sometimes bake a
+    // floor shadow under hovering creatures despite the no-shadow instruction.
+    // The shadow is a DISCONNECTED dark component sitting below the body, so:
+    // any non-largest component that is dark on average (lum < 70) and starts
+    // below the largest component's bottom edge gets cleared.
+    // (Runs inside the despeck labeling pass below.)
+
     // Despeck: components of kept pixels; keep >= DESPECK × largest.
-    if (DESPECK > 0) {
-        const label = new Int32Array(pw * ph).fill(-1); const areas = [];
+    if (DESPECK > 0 || DROPSHADOW) {
+        const label = new Int32Array(pw * ph).fill(-1); const comps = [];
         const q2 = new Int32Array(pw * ph);
         for (let s = 0; s < pw * ph; s++) {
             if (label[s] !== -1 || alpha[s] <= 8) continue;
-            const id = areas.length; let area = 0, qh = 0, qt = 0;
+            const id = comps.length; let area = 0, qh = 0, qt = 0;
+            let top = ph, bottom = 0, lumSum = 0;
             label[s] = id; q2[qt++] = s;
             while (qh < qt) {
                 const q = q2[qh++]; area++;
                 const x = q % pw, y = (q / pw) | 0;
+                if (y < top) top = y; if (y > bottom) bottom = y;
+                const i = idx(x, y) * 4;
+                lumSum += lum(data[i], data[i + 1], data[i + 2]);
                 for (const n of [x > 0 ? q - 1 : -1, x < pw - 1 ? q + 1 : -1, y > 0 ? q - pw : -1, y < ph - 1 ? q + pw : -1]) {
                     if (n >= 0 && label[n] === -1 && alpha[n] > 8) { label[n] = id; q2[qt++] = n; }
                 }
             }
-            areas.push(area);
+            comps.push({ area, top, bottom, meanLum: lumSum / area });
         }
-        const maxA = areas.reduce((m, a) => Math.max(m, a), 0);
-        for (let q = 0; q < pw * ph; q++) if (label[q] >= 0 && areas[label[q]] < maxA * DESPECK) alpha[q] = 0;
+        let main = 0;
+        comps.forEach((c, i) => { if (c.area > comps[main].area) main = i; });
+        const maxA = comps[main] ? comps[main].area : 0;
+        const drop = new Set();
+        comps.forEach((c, i) => {
+            if (i === main) return;
+            if (DESPECK > 0 && c.area < maxA * DESPECK) drop.add(i);
+            // Baked floor shadow: a dark disconnected blob starting below the
+            // main body's bottom edge (small overlap tolerance).
+            if (DROPSHADOW && c.meanLum < 70 && c.top >= comps[main].bottom - Math.round(ph * 0.03)) drop.add(i);
+        });
+        for (let q = 0; q < pw * ph; q++) if (label[q] >= 0 && drop.has(label[q])) alpha[q] = 0;
     }
     // Content bounds.
     let minX = pw, minY = ph, maxX = -1, maxY = -1;
