@@ -14,27 +14,28 @@
 
 import { SPRITE_SIZE } from '../config/GameConfig.js';
 
-const FILES = {
-    slime: 'ember_slime.png',     // molten ember slime  → basic swarm creature
-    bat: 'ember_bat.png',         // charred ember bat   → fast aerial minion
-    crawler: 'ember_serpent.png', // molten lava serpent → low crawler
-    spitter: 'ember_eye.png',     // floating ember eye  → ranged fire caster
-    mite: 'ember_mite.png',       // tiny ember mite     → fast swarmer
-};
+// Single-frame bespoke sprites (none currently — the base creatures use the
+// ANIM_SHEETS below, and their next fallback is the imported LPC art, which is
+// the same classic design). The mechanism stays for future one-off sprites.
+const FILES = {};
 
 // Frame-ANIMATED sheets for the (non-directional) creatures: a single
 // horizontal row of animation frames per creature, generated as a 2×2 Nano
 // Banana 2 grid (one generation → consistent style across frames) and packed by
 // tools/artshot/strip-frames.mjs with shared-scale alignment so squash/stretch
 // survives. Enemy.js cycles the frames at the type's hz — same path the LPC
-// monster frames use. When a sheet loads, it supersedes the single-frame image
-// (which stays as the next fallback layer).
+// monster frames use.
+//
+// These are HQ-pixel-art upgrades of the ORIGINAL creature designs (green gel
+// slime, cave bat, green snake, floating eyeball, bee — same identities and
+// palettes as the LPC sheets they fall back to), NOT re-themes: the classic
+// look, animated.
 const ANIM_SHEETS = {
-    slime:   { file: 'ember_slime_anim.png',   cols: 4 },
-    bat:     { file: 'ember_bat_anim.png',     cols: 4 },
-    crawler: { file: 'ember_serpent_anim.png', cols: 4 },
-    spitter: { file: 'ember_eye_anim.png',     cols: 4 },
-    mite:    { file: 'ember_mite_anim.png',    cols: 4 },
+    slime:   { file: 'slime_anim.png',   cols: 4 },
+    bat:     { file: 'bat_anim.png',     cols: 4 },
+    crawler: { file: 'snake_anim.png',   cols: 4 },
+    spitter: { file: 'eyeball_anim.png', cols: 4 },
+    mite:    { file: 'bee_anim.png',     cols: 4 },
 };
 
 // Directional ANIMATED sheets — pre-rendered from a rigged+animated 3D model of
