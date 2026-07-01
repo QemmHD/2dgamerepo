@@ -12,7 +12,7 @@ import {
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { Easing } from '../core/Easing.js';
 import {
-    getHeroFrames, heroSetFrames, getGlowSprite,
+    getHeroFrames, heroSetFrames, getGlowSprite, getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
@@ -365,6 +365,18 @@ export class Player {
             ctx.restore();
         }
 
+        // Grounding shadow under the player — anchored at this.y (NOT cy) so it
+        // stays planted on the floor while the body bobs. One cached soft-shadow
+        // blit (no per-frame gradient), drawn beneath the aura + sprite.
+        {
+            const r = this.spriteHalf;
+            const sw = r * 0.95 * 2, sh = sw * 0.30;
+            ctx.save();
+            ctx.globalAlpha = 0.34;
+            ctx.drawImage(getSoftShadowSprite(), this.x - sw / 2, this.y + r * 0.40 - sh / 2, sw, sh);
+            ctx.restore();
+        }
+
         // Aura glow (world space, behind sprite). Uses CACHED glow sprites
         // (getGlowSprite memoizes per color) instead of a per-frame radial
         // gradient — cheaper, mobile-friendly. The weapon aura is the main
@@ -479,6 +491,12 @@ export class Player {
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = alpha * Math.min(1, t);
             ctx.drawImage(sprite, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
+            // Brief white glow pop at the very start of the flash (t near 1) for
+            // a satisfying "took a hit" impact. Cached white glow, additive.
+            if (t > 0.6) {
+                ctx.globalAlpha = alpha * (t - 0.6) / 0.4 * 0.55;
+                ctx.drawImage(getGlowSprite('#ffffff'), -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
+            }
         }
         ctx.restore();
 
@@ -595,8 +613,21 @@ export class Player {
             const tx = (sprite.tipX - sprite.gripX) * scale;
             const ty = (sprite.tipY - sprite.gripY) * scale;
             const fr = (16 + 12 * flash) * scale;
-            const glow = getGlowSprite(v.glow);
             ctx.globalCompositeOperation = 'lighter';
+            // Muzzle spark: a bright forward streak + two diverging ticks along
+            // the weapon axis, snapping out as it fires. Procedural, gated on flash.
+            ctx.globalAlpha = flash;
+            ctx.strokeStyle = '#fff7e0';
+            ctx.lineWidth = Math.max(2, 3 * scale);
+            ctx.lineCap = 'round';
+            const sl = (10 + 14 * flash) * scale;
+            ctx.beginPath();
+            ctx.moveTo(tx, ty); ctx.lineTo(tx + sl, ty);
+            ctx.moveTo(tx, ty); ctx.lineTo(tx + sl * 0.7, ty - sl * 0.34);
+            ctx.moveTo(tx, ty); ctx.lineTo(tx + sl * 0.7, ty + sl * 0.34);
+            ctx.stroke();
+            // Muzzle glow burst at the tip.
+            const glow = getGlowSprite(v.glow);
             ctx.globalAlpha = flash;
             ctx.drawImage(glow, tx - fr, ty - fr, fr * 2, fr * 2);
         }

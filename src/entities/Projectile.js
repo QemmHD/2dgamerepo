@@ -1,6 +1,6 @@
 import { WEAPON, WORLD_WIDTH, WORLD_HEIGHT, SPRITE_SS } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
-import { getProjectileSprite } from '../assets/ProceduralSprites.js';
+import { getProjectileSprite, getGlowSprite } from '../assets/ProceduralSprites.js';
 
 const WORLD_MARGIN = 200;
 
@@ -90,6 +90,16 @@ export class Projectile {
                 ctx.arc(this.trailX[i], this.trailY[i], this.radius * (0.4 + 0.6 * f), 0, TWO_PI);
                 ctx.fill();
             }
+            ctx.restore();
+        }
+        // Element-tinted core glow behind the head (cached blit) so each bolt
+        // reads as hot energy in its element's colour, not a flat pip.
+        {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.5;
+            const gs = this.radius * 3.2;
+            ctx.drawImage(getGlowSprite(this.trailColor), this.x - gs / 2, this.y - gs / 2, gs, gs);
             ctx.restore();
         }
         ctx.save();

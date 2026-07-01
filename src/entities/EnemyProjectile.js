@@ -29,6 +29,12 @@ export class EnemyProjectile {
         this.turnRate = opts.turnRate ?? 0;     // radians/sec the heading can turn
         this.maxSpeed = opts.maxSpeed ?? 0;     // homing speed clamp
         this.sprite = getGlowSprite(opts.color ?? ENEMY_PROJECTILE.color);
+        // Fading motion trail (matches the player-bolt look) so hostile bolts
+        // read as fast-moving energy. Sampled sparsely + capped; additive.
+        this.trailColor = opts.color ?? ENEMY_PROJECTILE.color;
+        this.trailX = [];
+        this.trailY = [];
+        this._trailAccum = 0;
     }
 
     // Returns the damage dealt to the player this frame (0 if none), so the
@@ -51,6 +57,13 @@ export class EnemyProjectile {
             this.vx = Math.cos(cur) * speed;
             this.vy = Math.sin(cur) * speed;
             this.angle = cur;
+        }
+        // Sample the trail sparsely (every ~0.016s), capped at 6 points.
+        this._trailAccum += dt;
+        if (this._trailAccum >= 0.016) {
+            this._trailAccum = 0;
+            this.trailX.push(this.x); this.trailY.push(this.y);
+            if (this.trailX.length > 6) { this.trailX.shift(); this.trailY.shift(); }
         }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
@@ -75,6 +88,21 @@ export class EnemyProjectile {
     }
 
     draw(ctx) {
+        // Fading ghost trail behind the bolt — older samples fade + shrink.
+        const n = this.trailX.length;
+        if (n > 1) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = this.trailColor;
+            for (let i = 0; i < n; i++) {
+                const f = (i + 1) / n;
+                ctx.globalAlpha = 0.30 * f;
+                ctx.beginPath();
+                ctx.arc(this.trailX[i], this.trailY[i], this.radius * (0.4 + 0.6 * f), 0, TWO_PI);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
         const s = this.radius * 3.2;
         ctx.drawImage(this.sprite, this.x - s / 2, this.y - s / 2, s, s);
         // Bright core so it reads as a hostile bolt, not ambient glow.
