@@ -946,6 +946,16 @@ export const ENDLESS_SCALING = {
     twilightSpeedCap: 0.45,
     twilightDamagePerMin: 0.05,
     twilightDamageCap: 0.65,
+    // ── HYPERGROWTH: the endless "wall" (absolute run time, not beyond-last-wave).
+    // Past hyperStartMinutes, enemies gain hyperPerMinuteMul× BOTH health AND
+    // contact damage every further minute (smooth/compounding), applied ON TOP of
+    // and BYPASSING the normal health/damage ceilings. This is the deliberate soft
+    // time-limit: even a maxed build eventually can't keep up. Composure relief
+    // (skill) doesn't stop the wall — it just buys more time against it. The mul is
+    // clamped to hyperMulCap so the math can never overflow to Infinity/NaN.
+    hyperStartMinutes: 13,
+    hyperPerMinuteMul: 2.0,
+    hyperMulCap: 1e6,
 };
 
 export const WAVE_LIMITS = {
@@ -958,6 +968,29 @@ export const WAVE_LIMITS = {
     maxSpeedMultiplier: 2.3,
     maxHealthMultiplier: 7.0,
     maxEliteChance: 0.4,
+};
+
+// ── Composure: skill-adaptive damage scaling ─────────────────────────────
+// The endless game inflates enemy CONTACT damage purely by the clock
+// (ENDLESS_SCALING.damageMul, 1 → maxDamageMultiplier). That flat time-tax
+// punishes the player who survives longest — often the MOST skilled one — the
+// hardest, regardless of how cleanly they're actually playing. Composure fixes
+// that: a 0→1 "in the zone" meter that FILLS while you avoid hits and DROPS when
+// you get tagged. The fuller it is, the more of the endless damage SURCHARGE
+// (only the part above 1.0) is shrugged off — so a flawless dodger keeps late
+// enemies at a fair level while sloppy play eats the full time-tax.
+//   • Gated by the endless surcharge (0 until damageStart), so the entire normal
+//     campaign + the three story bosses are UNCHANGED — this only softens the
+//     deep-endless time inflation, exactly where skill should matter most.
+//   • Relief tops out at maxRelief of the surcharge, never the base hit, so
+//     enemies always deal their honest un-scaled damage no matter how composed.
+export const COMPOSURE = {
+    enabled: true,
+    start: 1.0,             // begin each run fully composed (fresh, unhit)
+    hitPenalty: 0.34,       // composure lost per hit taken (~3 clean hits empties it)
+    recoverPerSecond: 0.09, // regained per second while unhit (~11s from empty → full)
+    recoverDelay: 0.8,      // pause recovery this long after a hit (rewards true avoidance)
+    maxRelief: 0.5,         // at full composure, cancel up to 50% of the endless surcharge
 };
 
 // ── Difficulty tiers (pre-run pick) ──────────────────────────────────────

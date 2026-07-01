@@ -192,6 +192,28 @@ export class WaveDirector {
             damageMul * (1 + WAVE_PRESSURE.damageBonus * p)
         );
 
+        // HYPERGROWTH — the endless "wall". Past hyperStartMinutes of ABSOLUTE run
+        // time, enemies gain hyperPerMinuteMul× BOTH health and contact damage per
+        // further minute (smooth/compounding), applied ON TOP of and BYPASSING the
+        // WAVE_LIMITS ceilings — the deliberate soft time-limit that eventually ends
+        // any run. Clamped to hyperMulCap so health/damage math can never overflow.
+        const gameMinutes = gameTime / 60;
+        const hyperMinutes = Math.max(0, gameMinutes - ENDLESS_SCALING.hyperStartMinutes);
+        const hyperMul = hyperMinutes > 0
+            ? Math.min(ENDLESS_SCALING.hyperMulCap, Math.pow(ENDLESS_SCALING.hyperPerMinuteMul, hyperMinutes))
+            : 1;
+
+        // Skill-relief gate: how far the TIME-BASED damage ramp (pre-pressure,
+        // pre-difficulty `damageMul`, PLUS the hypergrowth wall) has climbed toward
+        // its ceiling, 0..1 — saturates to 1 once hypergrowth kicks in. Composure
+        // relief keys off THIS only, never off pressure or difficulty, so those
+        // axes keep their full weight and only the "you survived too long"
+        // surcharge (incl. the wall) is softened for clean play.
+        const surchargeSpan = ENDLESS_SCALING.maxDamageMultiplier - 1;
+        const endlessDamageSurcharge = surchargeSpan > 0
+            ? Math.max(0, Math.min(1, (damageMul * hyperMul - 1) / surchargeSpan))
+            : 0;
+
         return {
             index: wave.index,
             name: wave.name,
@@ -201,9 +223,13 @@ export class WaveDirector {
             baseMaxAlive: maxAlive,
             typeWeights: wave.typeWeights,
             eliteChance,
-            healthMul: pHealthMul,
+            // Hypergrowth multiplies BOTH final stats, bypassing the WAVE_LIMITS
+            // clamps applied above (that's the point — the wall outgrows the caps).
+            healthMul: pHealthMul * hyperMul,
             speedMul: pSpeedMul,
-            damageMul: pDamageMul,
+            damageMul: pDamageMul * hyperMul,
+            endlessDamageSurcharge,
+            hyperMul,
             packSize,
             pressure: p,
             twilight,
