@@ -82,6 +82,24 @@ export class WeaponSystem {
         return true;
     }
 
+    // Fuse two owned weapons into a new fusion weapon (Wick Shrine "fuse"). The
+    // first ingredient's slot becomes the fusion (keeping slot order stable); the
+    // second is removed. No-op unless BOTH ingredients are owned and the fusion
+    // def exists — so it can never drop the player to zero weapons.
+    fuseWeapons(idA, idB, fusedId) {
+        const idxA = this.owned.findIndex((o) => o.id === idA);
+        const idxB = this.owned.findIndex((o) => o.id === idB);
+        const def = WEAPONS[fusedId];
+        if (idxA < 0 || idxB < 0 || idxA === idxB || !def) return false;
+        const initial = def.initialState ? def.initialState() : {};
+        const keep = Math.min(idxA, idxB);
+        const drop = Math.max(idxA, idxB);
+        this.owned.splice(drop, 1);            // remove the second ingredient first
+        this.owned[keep] = { id: fusedId, level: 1, timer: 0, state: initial };
+        this.version++;
+        return true;
+    }
+
     isMaxLevel(id) {
         const w = this.owned.find((o) => o.id === id);
         if (!w) return false;
