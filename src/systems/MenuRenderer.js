@@ -25,7 +25,7 @@ import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battleP
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
-import { getHeroFrames } from '../assets/ProceduralSprites.js';
+import { getHeroFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus } from '../assets/CosmeticFx.js';
@@ -36,6 +36,7 @@ import { pickDailyChallenges, currentDayNumber } from '../content/dailyChallenge
 import { PATRONS, PATRON_IDS } from '../content/patrons.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
+const TAU = Math.PI * 2;
 
 // Each tab carries an accent color so the menu reads as color-coded sections
 // at a glance (the active tab tints to its own hue; inactive tabs show a thin
@@ -70,11 +71,222 @@ export class MenuRenderer {
     _sa() { return this.renderer.safeArea; }
     _hot(x, y, w, h, action, arg) { this.hotspots.push({ x, y, w, h, action, arg }); }
 
-    // Rounded filled (and optionally stroked) panel.
-    _panel(ctx, x, y, w, h, fill = 'rgba(18,22,30,0.82)', stroke = 'rgba(255,255,255,0.08)') {
-        roundRectPath(ctx, x, y, w, h, 16);
-        ctx.fillStyle = fill; ctx.fill();
-        if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+    // Clamped frame delta (seconds), used to damp the sliding tab indicator.
+    // Snaps (via _tabStale) when the menu was off-screen for a beat so the
+    // indicator doesn't fling across on the first frame back.
+    _dt() {
+        const t = this._t || 0;
+        const prev = this._tPrev == null ? t : this._tPrev;
+        let dt = t - prev;
+        this._tabStale = dt > 0.2 || dt < 0;
+        this._tPrev = t;
+        return Math.max(0, Math.min(0.05, dt));
+    }
+
+    // ── Atmospheric backdrop ("ember forge") ───────────────────────────────
+    // A dark→ember sky (cached), a low breathing hearth bloom, drifting embers,
+    // a rare shooting-ember, and a cached vignette. Everything static is
+    // rasterized once; motion is a handful of shared cached-glow blits in ONE
+    // additive pass — cheaper than the old per-frame title/tab/START shadowBlur.
+    _ensureBackdropCaches() {
+        if (this._skyCache) return;
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
+        const sky = document.createElement('canvas'); sky.width = W; sky.height = H;
+        const sc = sky.getContext('2d');
+        const g = sc.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, '#07090e'); g.addColorStop(0.42, '#0d0b12');
+        g.addColorStop(0.72, '#1a0f10'); g.addColorStop(0.90, '#3a1608');
+        g.addColorStop(1, '#0f0806');
+        sc.fillStyle = g; sc.fillRect(0, 0, W, H);
+        this._skyCache = sky;
+        const vig = document.createElement('canvas'); vig.width = W; vig.height = H;
+        const vc = vig.getContext('2d');
+        const rg = vc.createRadialGradient(W / 2, H / 2, 140, W / 2, H / 2, W * 0.62);
+        rg.addColorStop(0, 'rgba(0,0,0,0)'); rg.addColorStop(0.7, 'rgba(0,0,0,0)');
+        rg.addColorStop(1, 'rgba(4,2,1,0.62)');
+        vc.fillStyle = rg; vc.fillRect(0, 0, W, H);
+        this._vignetteCache = vig;
+    }
+
+    _seedEmbers(n) {
+        if (this._embers && this._embers.length === n) return;
+        const arr = [];
+        for (let i = 0; i < n; i++) arr.push({
+            x0: Math.random() * INTERNAL_WIDTH,
+            y0: Math.random() * (INTERNAL_HEIGHT + 120),
+            spd: 22 + Math.random() * 30,
+            drift: 0.3 + Math.random() * 0.8,
+            size: 2 + Math.random() * 3,
+            phase: Math.random() * TAU,
+        });
+        this._embers = arr;
+    }
+
+    // One additive cached-glow blit (caller owns the composite/globalAlpha reset).
+    _ember(ctx, x, y, r, color, alpha) {
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.drawImage(getGlowSprite(color), x - r, y - r, r * 2, r * 2);
+    }
+
+    // Breathing additive bloom (radius + alpha modulated on sin(t*0.5)); reused
+    // by the hearth bloom and the hero pedestal.
+    _forgeGlow(ctx, cx, cy, r, color, baseA, t) {
+        const rr = r + Math.sin(t * 0.5) * (r * 0.04);
+        ctx.globalAlpha = baseA + Math.sin(t * 0.5) * (baseA * 0.18);
+        ctx.drawImage(getGlowSprite(color), cx - rr, cy - rr, rr * 2, rr * 2);
+    }
+
+    _drawShootingEmber(ctx, t) {
+        const s = this._shooter;
+        if (!s || t < s.start || t - s.start > s.dur + s.gap) {
+            this._shooter = {
+                start: t, dur: 0.9, gap: 6 + Math.random() * 3,
+                x0: 120 + Math.random() * 320, y0: 80 + Math.random() * 170,
+                len: 380 + Math.random() * 220, ang: 0.5 + Math.random() * 0.3,
+            };
+            return;
+        }
+        const p = (t - s.start) / s.dur;
+        if (p > 1) return;                                   // dark during the gap
+        const e = easeOutCubic(clamp01(p));
+        const fade = 1 - p;
+        for (let i = 0; i < 5; i++) {
+            const tp = e - i * 0.035; if (tp < 0) break;
+            const tx = s.x0 + Math.cos(s.ang) * s.len * tp;
+            const ty = s.y0 + Math.sin(s.ang) * s.len * tp;
+            ctx.globalAlpha = fade * (0.5 - i * 0.08);
+            ctx.fillStyle = '#ffd06a'; ctx.fillRect(tx - 2, ty - 2, 4, 4);
+        }
+        this._ember(ctx, s.x0 + Math.cos(s.ang) * s.len * e, s.y0 + Math.sin(s.ang) * s.len * e, 16, '#ffd06a', fade * 0.8);
+    }
+
+    _drawBackdrop(ctx, settings) {
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT, t = this._t || 0;
+        this._ensureBackdropCaches();
+        ctx.drawImage(this._skyCache, 0, 0);
+        const reduced = settings && settings.reducedEffects;
+        const noParticles = settings && settings.particles === false;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        this._forgeGlow(ctx, W * 0.5, H * 1.02, 760, '#ff7a1e', 0.16, t);
+        this._forgeGlow(ctx, W * 0.5, H * 1.02, 340, '#ffd06a', 0.10, t);
+        if (!noParticles) {
+            this._seedEmbers(reduced ? 12 : 22);
+            for (const em of this._embers) {
+                const y = H + 60 - ((t * em.spd + em.y0) % (H + 120));
+                const x = em.x0 + Math.sin(t * 0.6 + em.phase) * 40 * em.drift;
+                const life = 1 - Math.abs((y / H) - 0.5) * 2;   // bright mid-screen, fades to edges
+                const a = Math.max(0, life) * (0.5 + 0.3 * Math.sin(t * 3 + em.phase));
+                if (a <= 0.02) continue;
+                const gr = em.size * 3 * (1.1 + 0.2 * Math.sin(t * 4 + em.phase));
+                this._ember(ctx, x, y, gr, '#ff8a3a', a * 0.5);
+            }
+            if (!reduced) this._drawShootingEmber(ctx, t);
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.restore();
+        ctx.drawImage(this._vignetteCache, 0, 0);
+    }
+
+    // Near-opaque smoked-glass fill (single source of the panel/pill glass look).
+    _smokedGlassFill(ctx, x, y, w, h, r = 16) {
+        const g = ctx.createLinearGradient(0, y, 0, y + h);
+        g.addColorStop(0, 'rgba(24,18,18,0.94)');
+        g.addColorStop(1, 'rgba(12,10,12,0.96)');
+        roundRectPath(ctx, x, y, w, h, r);
+        ctx.fillStyle = g; ctx.fill();
+    }
+
+    // Four L-shaped ember ticks framing a large panel (opts.corners only).
+    _cornerTicks(ctx, x, y, w, h) {
+        const s = 10, m = 9;
+        ctx.strokeStyle = 'rgba(255,140,60,0.35)'; ctx.lineWidth = 2;
+        const corners = [[x + m, y + m, 1, 1], [x + w - m, y + m, -1, 1], [x + m, y + h - m, 1, -1], [x + w - m, y + h - m, -1, -1]];
+        for (const [cx, cy, dx, dy] of corners) {
+            ctx.beginPath();
+            ctx.moveTo(cx + dx * s, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + dy * s);
+            ctx.stroke();
+        }
+    }
+
+    // Rounded panel — smoked glass with a warm inner rim + top gloss (default),
+    // or an explicit fill when one is passed (nested cards keep their own tint).
+    _panel(ctx, x, y, w, h, fill = null, stroke = 'rgba(255,180,120,0.10)', opts = {}) {
+        const r = 16;
+        if (fill) { roundRectPath(ctx, x, y, w, h, r); ctx.fillStyle = fill; ctx.fill(); }
+        else this._smokedGlassFill(ctx, x, y, w, h, r);
+        // Top gloss (clipped to the panel).
+        ctx.save();
+        roundRectPath(ctx, x, y, w, h, r); ctx.clip();
+        const gg = ctx.createLinearGradient(0, y, 0, y + h * 0.4);
+        gg.addColorStop(0, 'rgba(255,255,255,0.05)'); gg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gg; ctx.fillRect(x, y, w, h * 0.4);
+        ctx.restore();
+        // Inner rim-light.
+        roundRectPath(ctx, x + 1.5, y + 1.5, w - 3, h - 3, r - 1);
+        ctx.strokeStyle = 'rgba(255,140,60,0.10)'; ctx.lineWidth = 1.5; ctx.stroke();
+        // Outer stroke.
+        if (stroke) { roundRectPath(ctx, x, y, w, h, r); ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+        if (opts.corners) this._cornerTicks(ctx, x, y, w, h);
+    }
+
+    // Right-aligned smoked-glass coin pill with a soft glow behind the ◎.
+    _coinBank(ctx, rightX, cy, coins) {
+        const label = `◎ ${coins} coins`;
+        ctx.font = `700 32px ${FONT}`;
+        const tw = ctx.measureText(label).width;
+        const padX = 26, w = tw + padX * 2, h = 52, x = rightX - w, y = cy - h / 2;
+        this._smokedGlassFill(ctx, x, y, w, h, h / 2);
+        roundRectPath(ctx, x, y, w, h, h / 2);
+        ctx.strokeStyle = 'rgba(255,180,120,0.16)'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._ember(ctx, x + padX + 8, cy, 40, '#ffd86b', 0.12);
+        ctx.restore(); ctx.globalAlpha = 1;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd86b'; ctx.font = `700 32px ${FONT}`;
+        ctx.fillText(label, x + padX, cy + 1);
+    }
+
+    // Hero forge-pedestal (PLAY tab): grounding disc, a slowly-rotating rune
+    // ring, a breathing under-glow (tintable to the character accent), and a few
+    // rising motes. Sits BEHIND the avatar so the hero stands on it. `sc` scales
+    // the whole shrine down on short cards so its ring never bleeds into the
+    // CHARACTER label when a large vertical safe-area shrinks the panel.
+    _pedestal(ctx, cx, footY, t, accent = '#ff7a1e', sc = 1) {
+        const rOuterX = 130 * sc, rOuterY = 40 * sc, rInnerX = 104 * sc, rInnerY = 32 * sc;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        this._forgeGlow(ctx, cx, footY, 170 * sc, accent, 0.26, t);
+        // Rising forge motes.
+        for (let i = 0; i < 5; i++) {
+            const up = ((t * 30 + i * 34) % 150) * sc;
+            const mx = cx + Math.sin(t * 1.3 + i * 1.7) * 34 * sc;
+            const my = footY - up;
+            const a = Math.max(0, 1 - up / (150 * sc)) * 0.6;
+            const r = (5 + 3 * Math.sin(t * 3 + i)) * sc;
+            this._ember(ctx, mx, my, r, '#ffb257', a);
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        // Grounding disc.
+        ctx.beginPath(); ctx.ellipse(cx, footY, 120 * sc, 34 * sc, 0, 0, TAU);
+        ctx.fillStyle = 'rgba(10,6,6,0.55)'; ctx.fill();
+        // Double rune ring.
+        ctx.strokeStyle = 'rgba(255,150,70,0.5)'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.ellipse(cx, footY, rOuterX, rOuterY, 0, 0, TAU); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,210,130,0.35)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(cx, footY, rInnerX, rInnerY, 0, 0, TAU); ctx.stroke();
+        // 8 slowly-rotating rune ticks around the ring.
+        for (let i = 0; i < 8; i++) {
+            const a = i * (TAU / 8) + t * 0.25;
+            const tx = cx + Math.cos(a) * rOuterX, ty = footY + Math.sin(a) * rOuterY;
+            ctx.globalAlpha = 0.4 + 0.4 * Math.sin(t * 2 + i);
+            ctx.fillStyle = '#ffcf8a';
+            ctx.fillRect(tx - 2, ty - 2, 4, 4);
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
     }
 
     // A labelled button. Registers a hotspot when an action is supplied.
@@ -120,28 +332,31 @@ export class MenuRenderer {
         this._t = (now - this._t0) / 1000;
         const t = this._t;
 
-        // Backdrop.
-        ctx.fillStyle = '#0a0d12';
-        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        // Atmospheric "ember forge" backdrop (cached sky + bloom + embers +
+        // vignette) — replaces the old flat fill.
+        this._drawBackdrop(ctx, save.settings);
 
-        // Header: title (animated warm shimmer + glow) + coin bank.
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.save();
-        const tg = ctx.createLinearGradient(sa.left + 56, 0, sa.left + 56 + 420, 0);
+        // Header: title (animated warm shimmer + cached under-glow) + coin bank.
+        const tx = sa.left + 56;
         const off = Math.sin(t * 1.2) * 0.5 + 0.5;
+        // Cached-glow under-glow behind the wordmark (replaces per-frame shadowBlur).
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._ember(ctx, tx + 210, sa.top + 56, 150, '#ff7a1e', 0.22 + Math.sin(t * 1.2) * 0.05);
+        ctx.restore(); ctx.globalAlpha = 1;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        const tg = ctx.createLinearGradient(tx, 0, tx + 420, 0);
         tg.addColorStop(Math.max(0, off - 0.3), '#ffb43a');
         tg.addColorStop(off, '#fff1b8');
         tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
         ctx.fillStyle = tg;
-        ctx.shadowColor = 'rgba(255,180,60,0.45)';
-        ctx.shadowBlur = 18;
         ctx.font = `800 52px ${FONT}`;
-        ctx.fillText('EMBERWAKE', sa.left + 56, sa.top + 70);
-        ctx.restore();
-        ctx.textAlign = 'right';
-        ctx.fillStyle = '#ffd86b';
-        ctx.font = `700 34px ${FONT}`;
-        ctx.fillText(`◎ ${save.totalCoins} coins`, INTERNAL_WIDTH - sa.right - 56, sa.top + 66);
+        ctx.fillText('EMBERWAKE', tx, sa.top + 70);
+        // Ember-rule under the title.
+        const rule = ctx.createLinearGradient(tx, 0, tx + 420, 0);
+        rule.addColorStop(0, 'rgba(255,122,30,0.5)'); rule.addColorStop(1, 'rgba(255,122,30,0)');
+        ctx.fillStyle = rule; ctx.fillRect(tx, sa.top + 82, 420, 2);
+        // Coin bank pill (right-aligned).
+        this._coinBank(ctx, INTERNAL_WIDTH - sa.right - 56, sa.top + 54, save.totalCoins);
 
         this._drawTabBar(ctx, state.menuTab);
 
@@ -179,39 +394,69 @@ export class MenuRenderer {
         const tabW = (w - gap * (MENU_TABS.length - 1)) / MENU_TABS.length;
         const y = sa.top + 104;
         const h = 62;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const time = this._t || 0;
+        // Smoked-glass tray behind the tabs.
+        roundRectPath(ctx, x0 - 10, y - 8, w + 20, h + 16, 16);
+        ctx.fillStyle = 'rgba(14,10,9,0.55)'; ctx.fill();
+        roundRectPath(ctx, x0 - 10, y - 7, w + 20, h + 14, 15);
+        ctx.strokeStyle = 'rgba(255,150,70,0.10)'; ctx.lineWidth = 1; ctx.stroke();
+        // The inactive-tab fill is a constant vertical gradient (x-independent);
+        // build it once per layout and reuse for all tabs + across frames.
+        if (this._tabGradY !== y) {
+            const tgr = ctx.createLinearGradient(0, y, 0, y + h);
+            tgr.addColorStop(0, '#1c1614'); tgr.addColorStop(1, '#141010');
+            this._tabGrad = tgr; this._tabGradY = y;
+        }
+        let activeX = x0;
         for (let i = 0; i < MENU_TABS.length; i++) {
             const t = MENU_TABS[i];
             const x = x0 + i * (tabW + gap);
             const active = t.id === activeTab;
             const accent = t.accent || '#ffce54';
-            ctx.save();
-            if (active) { ctx.shadowColor = accent; ctx.shadowBlur = 14 + Math.sin(time * 4) * 6; }
+            if (active) activeX = x;
+            // Fill: dark glass for the active tab, warm-neutral gradient otherwise.
             roundRectPath(ctx, x, y, tabW, h, 12);
-            ctx.fillStyle = active ? accent : 'rgba(30,36,46,0.9)';
-            ctx.fill();
-            ctx.restore();
-            ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.1)';
-            ctx.lineWidth = 2; ctx.stroke();
-            ctx.fillStyle = active ? '#10141c' : 'rgba(235,240,248,0.85)';
+            ctx.fillStyle = active ? 'rgba(20,15,13,0.92)' : this._tabGrad; ctx.fill();
+            // Active tab: breathing cached-glow behind (replaces per-frame shadowBlur).
+            if (active) {
+                ctx.save(); ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.24 + Math.sin(time * 4) * 0.10;
+                ctx.drawImage(getGlowSprite(accent), x - 10, y - 10, tabW + 20, h + 20);
+                ctx.restore(); ctx.globalAlpha = 1;
+            }
+            roundRectPath(ctx, x, y, tabW, h, 12);
+            ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.10)';
+            ctx.lineWidth = active ? 2.5 : 2; ctx.stroke();
+            if (active) {
+                // Lit-metal top inner rim.
+                ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(x + 12, y + 2.5); ctx.lineTo(x + tabW - 12, y + 2.5); ctx.stroke();
+            }
+            // Label: accent colour when active, muted otherwise.
+            ctx.fillStyle = active ? accent : 'rgba(235,240,248,0.85)';
             ctx.font = `700 ${tabW < 230 ? 20 : 23}px ${FONT}`;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(t.label, x + tabW / 2, y + h / 2 + 1);
-            if (active) {
-                // Active tab gets a hue-cycling RGB underline that draws the eye.
-                const hue = (time * 90 + i * 40) % 360;
-                ctx.fillStyle = `hsl(${hue}, 95%, 62%)`;
-                ctx.fillRect(x + 12, y + h - 6, tabW - 24, 4);
-            } else {
+            if (!active) {
                 // Inactive tabs keep a thin static accent underline (section identity).
-                ctx.fillStyle = accent;
-                ctx.globalAlpha = 0.7;
-                ctx.fillRect(x + 14, y + h - 7, tabW - 28, 3);
-                ctx.globalAlpha = 1;
+                ctx.fillStyle = accent; ctx.globalAlpha = 0.6;
+                ctx.fillRect(x + 14, y + h - 7, tabW - 28, 3); ctx.globalAlpha = 1;
             }
             this._hot(x, y, tabW, h, 'tab', t.id);
         }
+        // Sliding accent indicator that eases toward the active tab on switch
+        // (replaces the old hue-cycling RGB underline; warm-biases the bar).
+        const dt = this._dt();
+        const targetX = activeX + tabW * 0.15, targetW = tabW * 0.7;
+        if (this._tabIndicX == null || this._tabStale) { this._tabIndicX = targetX; this._tabIndicW = targetW; }
+        else {
+            const k = 1 - Math.exp(-14 * dt);
+            this._tabIndicX += (targetX - this._tabIndicX) * k;
+            this._tabIndicW += (targetW - this._tabIndicW) * k;
+        }
+        const acc = (MENU_TABS.find((tt) => tt.id === activeTab) || {}).accent || '#ffce54';
+        ctx.fillStyle = acc;
+        ctx.fillRect(this._tabIndicX, y + h - 4, this._tabIndicW, 3);
     }
 
     // ── PLAY ───────────────────────────────────────────────────────────
@@ -221,7 +466,7 @@ export class MenuRenderer {
 
         // Left: character preview + selection card.
         const cardW = c.w * 0.42;
-        this._panel(ctx, c.x, c.y, cardW, c.h);
+        this._panel(ctx, c.x, c.y, cardW, c.h, null, undefined, { corners: true });
         const ccx = c.x + cardW / 2;
         const ch = getCharacter(save.selectedCharacter);
         const ap = resolveAppearance(save.cosmetics.equipped);
@@ -246,27 +491,43 @@ export class MenuRenderer {
         const heldProp = resolveWeaponProp(startWeaponId);
         // this._t (wall-clock seconds, frame-rate independent) is set in draw()
         // and drives the avatar's subtle idle motion.
+        // Forge pedestal (glowing rune shrine) staged BEHIND the hero, tinted to
+        // the character's accent so switching heroes recolours the shrine. Scaled
+        // down on short cards so its ring never bleeds into the CHARACTER label.
+        const pedSc = Math.max(0.55, Math.min(1, c.h / 640));
+        this._pedestal(ctx, ccx, c.y + c.h * 0.26 + 96 * pedSc, this._t, ch.accent || '#ff7a1e', pedSc);
         this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        // Themed-skin caption ABOVE the name (with real clearance so long names
+        // never collide with it), then the ellipsized name line.
+        const nameY = c.y + c.h * 0.46;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
-        ctx.fillText(`${ch.name} — ${ch.title}`, ccx, c.y + c.h * 0.46);
-        // Themed-skin caption (driven by the equipped starting weapon).
         if (skin) {
             ctx.fillStyle = skin.accent; ctx.font = `700 16px ${FONT}`;
-            ctx.fillText(`${skin.name} skin`, ccx, c.y + c.h * 0.435);
+            ctx.fillText(`${skin.name} skin`, ccx, nameY - 32);
         }
+        ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
+        ctx.fillText(this._ellip(ctx, `${ch.name} — ${ch.title}`, cardW - 44), ccx, nameY);
         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 18px ${FONT}`;
         this._wrapText(ctx, ch.description, ccx, c.y + c.h * 0.51, cardW - 60, 22, 2);
 
-        // Character picker: a 3-wide grid of selectable hero chips (fits the
-        // six heroes in two tidy rows).
+        // Character picker: a 3-wide grid of every selectable hero. Fit-driven —
+        // chipH fills the band between the CHARACTER label and the Battle Pass
+        // bar and is capped, never floored above what the band allows, so the
+        // grid ALWAYS sits above the Battle Pass label even when a large vertical
+        // safe-area shrinks the card (font/swatch scale down instead of the grid
+        // overflowing). The 14px floor is only a degenerate-panel sanity minimum.
+        const labelY = c.y + c.h * 0.58;
         ctx.font = `700 18px ${FONT}`;
         ctx.fillStyle = '#cdd6e2'; ctx.textAlign = 'left';
-        ctx.fillText('CHARACTER', c.x + 30, c.y + c.h * 0.58);
+        ctx.fillText('CHARACTER', c.x + 30, labelY);
         const cols = 3, gap = 10;
+        const cRows = Math.ceil(CHARACTER_IDS.length / cols);
         const chipW = (cardW - 60 - gap * (cols - 1)) / cols;
-        const chipH = 46;
-        const gridY = c.y + c.h * 0.6;
+        const gridY = labelY + 14;
+        const gridBottom = c.y + c.h * 0.86 - 34;   // clearance above the BP label
+        const chipH = Math.max(14, Math.min(46, (gridBottom - gridY - gap * (cRows - 1)) / cRows));
+        const chipFont = Math.round(Math.max(11, Math.min(17, chipH * 0.44)));
+        const swatchR = Math.min(10, chipH * 0.28);
         for (let i = 0; i < CHARACTER_IDS.length; i++) {
             const id = CHARACTER_IDS[i];
             const def = CHARACTERS[id];
@@ -280,10 +541,10 @@ export class MenuRenderer {
             ctx.strokeStyle = selected ? '#ffce54' : def.accent; ctx.lineWidth = selected ? 3 : 2; ctx.stroke();
             // Color swatch.
             ctx.fillStyle = def.palette.fur;
-            ctx.beginPath(); ctx.arc(x + 24, y + chipH / 2, 11, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = selected ? '#ffce54' : '#fff'; ctx.font = `700 18px ${FONT}`;
+            ctx.beginPath(); ctx.arc(x + 20, y + chipH / 2, swatchR, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = selected ? '#ffce54' : '#fff'; ctx.font = `700 ${chipFont}px ${FONT}`;
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.fillText(def.name, x + 42, y + chipH / 2);
+            ctx.fillText(this._ellip(ctx, def.name, chipW - 42), x + 36, y + chipH / 2);
             this._hot(x, y, chipW, chipH, 'selectCharacter', { id });
         }
 
@@ -308,7 +569,7 @@ export class MenuRenderer {
         const rx = c.x + cardW + 36;
         const rw = c.w - cardW - 36;
         const innerX = rx + 28, innerW = rw - 56;
-        this._panel(ctx, rx, c.y, rw, c.h);
+        this._panel(ctx, rx, c.y, rw, c.h, null, undefined, { corners: true });
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#cdd6e2'; ctx.font = `700 24px ${FONT}`;
         ctx.fillText('Equipped Loadout', innerX, c.y + 38);
@@ -496,12 +757,15 @@ export class MenuRenderer {
     }
 
     // The big call-to-action: a green button with a moving warm sheen, a
-    // hue-cycling RGB border, and a soft pulsing glow — hard to miss.
+    // breathing gold border, and a soft cached under-glow — hard to miss, and
+    // cheaper than the old per-frame hsl shadowBlur.
     _drawStartButton(ctx, r, t) {
         ctx.save();
-        const hue = (t * 70) % 360;
-        ctx.shadowColor = `hsl(${hue}, 90%, 58%)`;
-        ctx.shadowBlur = 22 + Math.sin(t * 3) * 8;
+        // Cached-glow beacon behind the button (breathing alpha).
+        ctx.globalCompositeOperation = 'lighter';
+        this._ember(ctx, r.x + r.w / 2, r.y + r.h / 2, r.w * 0.55, '#74e890', 0.18 + Math.sin(t * 3) * 0.06);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
         const sweep = Math.sin(t * 1.5) * 0.5 + 0.5;
         const g = ctx.createLinearGradient(r.x, r.y, r.x + r.w, r.y);
         g.addColorStop(Math.max(0, sweep - 0.28), '#33a356');
@@ -509,9 +773,10 @@ export class MenuRenderer {
         g.addColorStop(Math.min(1, sweep + 0.28), '#33a356');
         roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
         ctx.fillStyle = g; ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = `hsl(${hue}, 95%, 66%)`;
-        ctx.lineWidth = 3; ctx.stroke();
+        // Static warm-gold border whose alpha pulses (the fire beacon).
+        ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 1.6);
+        ctx.strokeStyle = '#ffce7a'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.globalAlpha = 1;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#ffffff';
         ctx.font = `800 ${Math.round(Math.min(34, r.h * 0.42))}px ${FONT}`;
