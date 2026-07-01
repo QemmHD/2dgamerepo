@@ -120,7 +120,12 @@ export function applyPermanentUpgrades(player, saveData) {
 // next purchase's base cost super-linearly, so going deep into an upgrade costs
 // progressively more (L0 ×1.0, L5 ×1.9, L10 ×2.8, L19 ×4.42). Keeps the first
 // few stacks affordable while making a maxed track a serious coin sink.
-const COST_DEPTH_STEEPEN = 0.18;
+const COST_DEPTH_STEEPEN = 0.22;
+
+// Global grind multiplier on every permanent-upgrade price — skills are a
+// long-haul coin sink, not a couple-runs purchase. Bump this to make the whole
+// skill track grindier without touching each upgrade's base curve.
+const COST_SCALE = 2.2;
 
 // Cost for the NEXT purchase given the player's current level. Returns
 // Infinity once the upgrade is at max level (so the shop UI can render
@@ -129,5 +134,5 @@ const COST_DEPTH_STEEPEN = 0.18;
 export function nextCost(upgrade, currentLevel) {
     if (currentLevel >= upgrade.maxLevel) return Infinity;
     const base = upgrade.costAt(currentLevel);
-    return Math.round(base * (1 + currentLevel * COST_DEPTH_STEEPEN));
+    return Math.round(base * (1 + currentLevel * COST_DEPTH_STEEPEN) * COST_SCALE);
 }

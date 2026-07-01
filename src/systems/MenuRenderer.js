@@ -17,7 +17,7 @@ import {
     GEAR, GEAR_CATEGORIES, GEAR_CATEGORY_LABELS, gearByCategory, buffSummary,
 } from '../content/gear.js';
 import {
-    COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement,
+    COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement, cosmeticCoinCost,
 } from '../content/cosmetics.js';
 import { CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining, CASE_PITY, WAGER_BETS } from './CaseSystem.js';
 import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
@@ -1332,8 +1332,9 @@ export class MenuRenderer {
                     statusText = rarityName(item.rarity); statusCol = col;
                     action = kind === 'gear' ? 'equipGear' : 'equipCosmetic';
                 } else if (kind === 'cosmetic' && item.coinCost) {
-                    const afford = save.totalCoins >= item.coinCost;
-                    statusText = `◎ ${item.coinCost}`;
+                    const price = cosmeticCoinCost(item);
+                    const afford = save.totalCoins >= price;
+                    statusText = `◎ ${price}`;
                     statusCol = afford ? '#ffd86b' : 'rgba(255,216,107,0.4)';
                     action = 'buyCosmetic';
                 } else if (kind === 'cosmetic' && item.achievement) {
@@ -1671,7 +1672,7 @@ export class MenuRenderer {
             ctx.fillText(this._ellip(ctx, item.name, tw), tx, bcy - 3);
             let pathTxt;
             if (save.cosmetics.unlocked.includes(item.id)) pathTxt = '✓ Owned';
-            else if (item.coinCost) pathTxt = `◎ ${item.coinCost}`;
+            else if (item.coinCost) pathTxt = `◎ ${cosmeticCoinCost(item)}`;
             else if (item.achievement) { const ach = ACHIEVEMENTS.find((a) => a.id === item.achievement); pathTxt = `🏆 ${ach ? ach.name : 'Achievement'}`; }
             else pathTxt = '🔒 Case drop';
             ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;

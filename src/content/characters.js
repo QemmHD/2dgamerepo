@@ -94,49 +94,6 @@ export const CHARACTERS = {
         feature: 'hood',
         unlocked: true,
     },
-
-    // ── Imported LPC-bodied heroes ──────────────────────────────────────
-    // Real Liberated Pixel Cup character bodies (CC-BY-SA 3.0 / GPL 3.0 — see
-    // ASSET_CREDITS.md), not the chibi wick-keeper silhouette. `lpc: true` +
-    // `lpcModel` route getCharacterFrames() to the imported sprite, and the
-    // recolorable LPC cloak cosmetic layers properly on these full-body frames.
-    // accent / palette.face still feed the HUD + menu chrome.
-    lpcKnight: {
-        id: 'lpcKnight',
-        name: 'Sir Aldric',
-        title: 'The Vanguard',
-        description: 'Imported LPC vanguard. Sturdy all-rounder: +15% HP. Cloaks fit him properly.',
-        stats: { hpMul: 1.15, speedMul: 1, damageMul: 1, cooldownMul: 1, pickupRangeMul: 1, xpMul: 1, aegis: true, regenBonus: 0.8 },
-        signature: { name: 'Bulwark', blurb: 'Unbreakable guard — far tougher once the fight turns grim.' },
-        palette: { fur: '#c9b48f', furDark: '#7a6b50', furLight: '#e6d6b2', face: '#f0d2a5' },
-        accent: '#ffd27a',
-        lpc: true, lpcModel: 'human',
-        unlocked: true,
-    },
-    lpcWarchief: {
-        id: 'lpcWarchief',
-        name: 'Brakka',
-        title: 'The Warchief',
-        description: 'Imported LPC orc warchief. +30% HP, +12% damage, −8% move speed.',
-        stats: { hpMul: 1.30, speedMul: 0.92, damageMul: 1.12, cooldownMul: 1, pickupRangeMul: 1, xpMul: 1, thornsBonus: 0.25, killHealBonus: 1.5 },
-        signature: { name: 'Bloodrage', blurb: 'Savage warchief — punishes attackers, feasts on the fallen.' },
-        palette: { fur: '#5fae54', furDark: '#356b30', furLight: '#82c873', face: '#cdd9a0' },
-        accent: '#9be36a',
-        lpc: true, lpcModel: 'orc',
-        unlocked: true,
-    },
-    lpcRevenant: {
-        id: 'lpcRevenant',
-        name: 'Morthys',
-        title: 'The Revenant',
-        description: 'Imported LPC revenant. Glass cannon: +15% damage and −10% cooldowns, −20% HP.',
-        stats: { hpMul: 0.80, speedMul: 1.05, damageMul: 1.15, cooldownMul: 0.90, pickupRangeMul: 1, xpMul: 1, killHealBonus: 2.5, burnDamageMul: 1.25 },
-        signature: { name: 'Soulflame', blurb: 'Undying flame — drains the slain and sears with fire.' },
-        palette: { fur: '#e8eef0', furDark: '#8a929a', furLight: '#ffffff', face: '#e8eef0' },
-        accent: '#cfe8ee',
-        lpc: true, lpcModel: 'skeleton',
-        unlocked: true,
-    },
 };
 
 export const CHARACTER_IDS = Object.keys(CHARACTERS);
@@ -169,12 +126,6 @@ const CHARACTER_HOLDS = {
     berserker:   { grip: 0.28, lift: 0.11, scale: 1.12, tilt: -0.06, haloR: 0.72, haloScale: 1.06 },
     // Vesper — keen duelist: weapon kept close & low, a tight quick rig.
     assassin:    { grip: 0.14, lift: 0.16, scale: 0.90, tilt: 0.18, haloR: 0.56, haloScale: 0.84 },
-    // Sir Aldric — sturdy vanguard: solid mid grip.
-    lpcKnight:   { grip: 0.20, lift: 0.14, scale: 1.06, tilt: 0.00, haloR: 0.66, haloScale: 1.00 },
-    // Brakka — orc warchief: same heavy low haul as Gruk.
-    lpcWarchief: { grip: 0.25, lift: 0.18, scale: 1.18, tilt: -0.10, haloR: 0.74, haloScale: 1.12 },
-    // Morthys — gaunt revenant: weapon held out high on a bony arm.
-    lpcRevenant: { grip: 0.24, lift: 0.00, scale: 1.00, tilt: 0.10, haloR: 0.64, haloScale: 0.94 },
 };
 
 // Resolve a character id to its weapon-hold style merged over the defaults
