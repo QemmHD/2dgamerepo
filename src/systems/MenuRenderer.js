@@ -27,6 +27,7 @@ import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { ATTUNABLE, getRelic, attuneCost } from '../content/relics.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getHeroFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
+import { getMenuImages } from '../assets/MenuImages.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus } from '../assets/CosmeticFx.js';
@@ -168,6 +169,24 @@ export class MenuRenderer {
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT, t = this._t || 0;
         this._ensureBackdropCaches();
         ctx.drawImage(this._skyCache, 0, 0);
+        // Painterly ember-forge backdrop (higgsfield / Nano Banana 2), cover-fit
+        // over the cached sky (which stays as the fallback if the art is still
+        // loading or missing). A vertical scrim keeps header/tab/content text
+        // readable; the animated embers + vignette below still ride on top so the
+        // menu stays alive rather than a static photo.
+        const ui = getMenuImages();
+        if (ui.bg) {
+            const iw = ui.bg.width, ih = ui.bg.height;
+            const s = Math.max(W / iw, H / ih);
+            const dw = iw * s, dh = ih * s;
+            ctx.drawImage(ui.bg, (W - dw) / 2, (H - dh) / 2, dw, dh);
+            const scr = ctx.createLinearGradient(0, 0, 0, H);
+            scr.addColorStop(0, 'rgba(8,6,10,0.58)');    // behind the header/title
+            scr.addColorStop(0.28, 'rgba(8,6,10,0.30)');
+            scr.addColorStop(0.62, 'rgba(8,6,10,0.30)');
+            scr.addColorStop(1, 'rgba(8,6,10,0.50)');     // behind the content panels
+            ctx.fillStyle = scr; ctx.fillRect(0, 0, W, H);
+        }
         const reduced = settings && settings.reducedEffects;
         const noParticles = settings && settings.particles === false;
         ctx.save();
@@ -196,8 +215,10 @@ export class MenuRenderer {
     // Near-opaque smoked-glass fill (single source of the panel/pill glass look).
     _smokedGlassFill(ctx, x, y, w, h, r = 16) {
         const g = ctx.createLinearGradient(0, y, 0, y + h);
-        g.addColorStop(0, 'rgba(24,18,18,0.94)');
-        g.addColorStop(1, 'rgba(12,10,12,0.96)');
+        // Slightly translucent so the ember-forge backdrop reads through the
+        // panel edges (glassy premium look) while staying opaque enough for text.
+        g.addColorStop(0, 'rgba(26,19,19,0.84)');
+        g.addColorStop(1, 'rgba(12,10,12,0.90)');
         roundRectPath(ctx, x, y, w, h, r);
         ctx.fillStyle = g; ctx.fill();
     }
@@ -340,25 +361,34 @@ export class MenuRenderer {
         // vignette) — replaces the old flat fill.
         this._drawBackdrop(ctx, save.settings);
 
-        // Header: title (animated warm shimmer + cached under-glow) + coin bank.
+        // Header: title (higgsfield ember wordmark, or animated gradient text as
+        // a fallback) + animated cached under-glow + coin bank.
+        const ui = getMenuImages();
         const tx = sa.left + 56;
         const off = Math.sin(t * 1.2) * 0.5 + 0.5;
+        const logoH = 62;
+        const logoW = ui.title ? ui.title.width * (logoH / ui.title.height) : 420;
         // Cached-glow under-glow behind the wordmark (replaces per-frame shadowBlur).
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        this._ember(ctx, tx + 210, sa.top + 56, 150, '#ff7a1e', 0.22 + Math.sin(t * 1.2) * 0.05);
+        this._ember(ctx, tx + logoW * 0.5, sa.top + 52, 160, '#ff7a1e', 0.22 + Math.sin(t * 1.2) * 0.05);
         ctx.restore(); ctx.globalAlpha = 1;
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        const tg = ctx.createLinearGradient(tx, 0, tx + 420, 0);
-        tg.addColorStop(Math.max(0, off - 0.3), '#ffb43a');
-        tg.addColorStop(off, '#fff1b8');
-        tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
-        ctx.fillStyle = tg;
-        ctx.font = `800 52px ${FONT}`;
-        ctx.fillText('EMBERWAKE', tx, sa.top + 70);
+        if (ui.title) {
+            ctx.drawImage(ui.title, tx, sa.top + 14, logoW, logoH);
+        } else {
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            const tg = ctx.createLinearGradient(tx, 0, tx + 420, 0);
+            tg.addColorStop(Math.max(0, off - 0.3), '#ffb43a');
+            tg.addColorStop(off, '#fff1b8');
+            tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
+            ctx.fillStyle = tg;
+            ctx.font = `800 52px ${FONT}`;
+            ctx.fillText('EMBERWAKE', tx, sa.top + 70);
+        }
         // Ember-rule under the title.
-        const rule = ctx.createLinearGradient(tx, 0, tx + 420, 0);
+        const ruleW = Math.min(logoW, 460);
+        const rule = ctx.createLinearGradient(tx, 0, tx + ruleW, 0);
         rule.addColorStop(0, 'rgba(255,122,30,0.5)'); rule.addColorStop(1, 'rgba(255,122,30,0)');
-        ctx.fillStyle = rule; ctx.fillRect(tx, sa.top + 82, 420, 2);
+        ctx.fillStyle = rule; ctx.fillRect(tx, sa.top + 84, ruleW, 2);
         // Coin bank pill (right-aligned).
         this._coinBank(ctx, INTERNAL_WIDTH - sa.right - 56, sa.top + 54, save.totalCoins);
 
@@ -1622,6 +1652,17 @@ export class MenuRenderer {
         const c = this._contentRect();
         const save = state.saveData;
         const prog = bpProgress(save.battlePass.xp);
+
+        // Ornate ember crest (higgsfield) crowning the pass, centered above the
+        // progress bar; the header labels sit at the far edges and the bar draws
+        // over its base, so it reads as a forged crown rising behind the track.
+        const ui = getMenuImages();
+        if (ui.crest) {
+            const chH = 66, chW = ui.crest.width * (chH / ui.crest.height);
+            ctx.save(); ctx.globalAlpha = 0.9;
+            ctx.drawImage(ui.crest, c.x + c.w / 2 - chW / 2, c.y - 14, chW, chH);
+            ctx.restore();
+        }
 
         // Progress header + bar.
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
