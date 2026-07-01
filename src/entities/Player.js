@@ -14,25 +14,39 @@ import { Easing } from '../core/Easing.js';
 import {
     getHeroFrames, heroSetFrames, getGlowSprite, getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
-import { drawPixelCloak, drawPixelHat, shade, HERO_BOB, HERO_GRID } from '../assets/PixelArt.js';
+import { drawPixelCloak, drawPixelHat, HERO_BOB, HERO_GRID } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawTrailPoint, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
 
-// Unit vector for each facing — used to seat the held weapon in the hand on the
-// "front" side of the body (rather than orbiting the centre).
-const FACING_VEC = { down: { x: 0, y: 1 }, up: { x: 0, y: -1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
-// Weapon-arm SHOULDER offset per facing (× spriteHalf from the body centre); the
-// forearm reaches from here toward the aim so the weapon hangs off the side of
-// the torso like a real hold instead of being pinned to the centre.
-const SHOULDER = {
-    down:  { x: 0.16, y: 0.02 },
-    up:    { x: 0.15, y: 0.00 },
-    left:  { x: -0.10, y: 0.00 },
-    right: { x: 0.10, y: 0.00 },
+// The held wand sits in the sprite's OWN paw: these are the wand-hand PAW
+// positions measured per direction / pose / frame from the hero sheets
+// (tools/artshot/pawprobe.html), in draw px relative to the sprite centre
+// (unflipped; 'side' faces right — the x mirrors for 'left'). The frames bake
+// the walk bob + arm swing, so riding these anchors makes the body's real arm
+// carry the weapon through every animation — no synthetic arm is drawn.
+const HAND = {
+    down: {
+        idle: [[34, 24], [34, 24]],
+        walk: [[70, 25], [47, 29], [72, 17]],
+        cast: [[49, -41]],
+        hurt: [[57, 8]],
+    },
+    side: {
+        idle: [[37, 36], [39, 37]],
+        walk: [[40, 33], [66, 27], [38, 26]],
+        cast: [[70, -35]],
+        hurt: [[42, -4]],
+    },
+    up: {
+        idle: [[35, 17], [35, 17]],
+        walk: [[35, 15], [35, 8], [35, 15]],
+        cast: [[46, -37]],
+        hurt: [[33, 17]],
+    },
 };
-const ARM_LEN = 0.34;     // arm reach toward the aim (× spriteHalf)
-const ARM_THRUST = 0.16;  // extra reach at full fire/cast — the jab
-const ARM_BEND = 0.09;    // elbow bow (× spriteHalf) — the two-segment bend
+// Resting carry angle per direction (radians; wand grip in the hanging paw,
+// tip up and slightly forward like a carried stick). Mirrored when flipped.
+const CARRY = { down: -1.25, side: -0.62, up: -1.35 };
 import { getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
@@ -96,10 +110,6 @@ export class Player {
         // Paw colour for the little hand drawn gripping the held weapon (matches
         // the hero's face/hand tone so the weapon reads as actually held).
         this._pawColor = (ch.palette && ch.palette.face) || '#f0d2a5';
-        // Base fur tones for the dynamic weapon-arm (so it matches the body); the
-        // equipped fur cosmetic, if any, overrides this at draw time.
-        this._baseFur = (ch.palette && ch.palette.fur) || '#8b5a2b';
-        this._baseFurDark = (ch.palette && ch.palette.furDark) || shade(this._baseFur, 0.42, 'dark');
 
         this.level = 1;
         this.xp = 0;
@@ -334,16 +344,6 @@ export class Player {
         return map;
     }
 
-    // Cheap hex blend: base + (tint - base) * k. Mirrors _tintMap's 0.42-alpha
-    // source-atop fill so the articulated arm matches the tinted body frames.
-    _mixHex(base, tint, k) {
-        try {
-            const b = parseInt(base.slice(1), 16), t = parseInt(tint.slice(1), 16);
-            const ch = (sh) => Math.round(((b >> sh) & 255) + (((t >> sh) & 255) - ((b >> sh) & 255)) * k);
-            return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
-        } catch (e) { return tint; }
-    }
-
     // Hold the cast (attack) pose briefly; called when the primary weapon fires.
     triggerCast() { this.castTimer = CAST_DUR; }
 
@@ -447,6 +447,10 @@ export class Player {
         const orig = poseArr[idx % poseArr.length] || poseArr[0];
         const tintMap = ap.furColor ? this._tintMap(ap.furColor) : null;
         const sprite = (tintMap && tintMap.get(orig)) || orig;
+        // Snapshot the resolved pose for the held-weapon passes (both the
+        // behind-body and over-body draws), so the wand rides the exact frame
+        // the body is showing this tick.
+        this._pose = { dir, state, idx, flip };
 
         // The frames BAKE a per-frame body bob (HERO_BOB, logical px) — the
         // head/shoulders shift inside the canvas. Cosmetics are separate cached
@@ -573,12 +577,15 @@ export class Player {
         if (this.swing) this._drawSwing(ctx);
     }
 
-    // Draw the SIGNATURE weapon on the body: the run's starting weapon (chosen
-    // in the menu loadout — owned[0], so an evolution/fusion of it keeps the
-    // slot) held in-hand and pointed at the aim target, with a forward thrust +
-    // tip muzzle flash while it's firing. The other owned weapons draw NOTHING
-    // here — their projectiles/rings ARE their visual — so the hero always
-    // wields exactly one wand: the one you picked.
+    // Draw the SIGNATURE weapon IN the sprite's own paw: the run's starting
+    // weapon (chosen in the menu loadout — owned[0], so an evolution/fusion of
+    // it keeps the slot). The grip anchor follows the body's REAL arm through
+    // every pose frame (the HAND table, measured from the sheets), so the
+    // baked animation does the acting: at rest the wand rides the hanging paw
+    // at a carry angle; on fire the cast pose raises the arm and the wand
+    // pivots in that fist to the aim with a thrust + tip muzzle flash. The
+    // other owned weapons draw NOTHING here — their projectiles/rings ARE
+    // their visual — so the hero always wields exactly one wand: yours.
     _drawHeldWeapons(ctx, bobY, alpha, layer = 'front') {
         // Orbit-kind primaries (e.g. the starter fused into Cinderhalo) are
         // held too — the hand keeps the run's chosen weapon even after fusion;
@@ -589,63 +596,37 @@ export class Player {
         // hold the first owned weapon that does, so the hand is never empty.
         if (!primary) { for (const v of this.loadout) { if (v && v.prop) { primary = v; break; } } }
         if (!primary) return;
+        const P = this._pose;
+        if (!P) return;
+        // Back view: the hero holds the wand in front of the body (away from
+        // the camera), so it draws in the behind pass and the torso occludes.
+        if (layer !== (this.facing === 'up' ? 'behind' : 'front')) return;
 
-        // Per-character hold style (grip/lift/scale/tilt) → distinct flavor.
-        const H = this.hold, sh = this.spriteHalf;
-        const cx = this.x, cy = this.y + bobY;
-        // The primary is drawn BEHIND the body on the back view (the hero holds
-        // it in front of them, away from the camera) and OVER the body otherwise.
-        const primaryBehind = this.facing === 'up';
+        // Paw anchor for the exact frame the body is showing (flip mirrors x).
+        const H = this.hold;                 // per-character scale/tilt flavor
+        const k = this.spriteHalf / 91;      // world px per authored anchor px
+        const hand = HAND[P.dir] || HAND.down;
+        const arr = hand[P.state] || hand.idle;
+        const a = arr[P.idx % arr.length] || arr[0];
+        const hx = this.x + (P.flip ? -a[0] : a[0]) * k;
+        const hy = this.y + bobY + a[1] * k;
 
+        const firing = P.state === 'cast';
+        const kick = Easing.outQuad(primary.fireFlash || 0);
+        let ang;
+        if (firing) {
+            // Wand pivots in the raised fist toward the aim; the muzzle kicks
+            // up ~7° on each shot and settles (recoil).
+            ang = this.aimAngle + H.tilt - 0.12 * kick;
+        } else {
+            // Carried at rest, riding the arm swing (mirror the tilt when
+            // flipped so the wand leans forward on both side facings).
+            const c = CARRY[P.dir] + H.tilt;
+            ang = P.flip ? Math.PI - c : c;
+        }
         ctx.save();
         ctx.globalAlpha = alpha;
-
-        // Primary held in an ARTICULATED ARM: a fur forearm reaches from the
-        // shoulder to the gripping hand and pivots to the aim, so the weapon is
-        // genuinely in-hand (not pinned to the body centre). On fire the whole
-        // hand + weapon JAB forward along the aim — that thrust is the attack.
-        if (primary && layer === (primaryBehind ? 'behind' : 'front')) {
-            const so = SHOULDER[this.facing] || SHOULDER.down;
-            const sxp = cx + so.x * sh;
-            const syp = cy + (so.y + 0.04) * sh;
-            const aim = this.aimAngle + H.tilt;
-            const flash = primary.fireFlash || 0;
-            const kick = Easing.outQuad(flash);
-            const reach = sh * (ARM_LEN * (H.scale || 1)) + kick * sh * ARM_THRUST;
-            const hxp = sxp + Math.cos(aim) * reach;
-            const hyp = syp + Math.sin(aim) * reach;
-            const ap = this.appearance || {};
-            // Match the BODY's fur tint: frames are tinted at 0.42 alpha over the
-            // base fur (_tintMap), so blend the cosmetic colour toward base at the
-            // same ratio — a raw bright hex made the arm hotter than the torso.
-            const armCol = ap.furColor ? this._mixHex(this._baseFur, ap.furColor, 0.42) : this._baseFur;
-            const armDark = ap.furColor ? shade(armCol, 0.42, 'dark') : this._baseFurDark;
-            // TWO-SEGMENT ARM (shoulder → elbow → hand): the elbow bows
-            // perpendicular to the aim (always toward the ground side, like a
-            // real bent arm) and STRAIGHTENS as the shot fires — the arm itself
-            // visibly extends into the jab instead of a stick sliding forward.
-            let px2 = Math.cos(aim + Math.PI / 2), py2 = Math.sin(aim + Math.PI / 2);
-            if (py2 < 0) { px2 = -px2; py2 = -py2; }              // bow downward
-            const bend = sh * ARM_BEND * (1 - kick * 0.8);        // straighten on fire
-            const exp = sxp + (hxp - sxp) * 0.45 + px2 * bend;
-            const eyp = syp + (hyp - syp) * 0.45 + py2 * bend;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            // dark underlay (reads as the pixel outline) + fur on top
-            ctx.strokeStyle = armDark; ctx.lineWidth = 11.5 * H.scale;
-            ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(exp, eyp); ctx.lineTo(hxp, hyp); ctx.stroke();
-            ctx.strokeStyle = armCol; ctx.lineWidth = 7.5 * H.scale;
-            ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(exp, eyp); ctx.lineTo(hxp, hyp); ctx.stroke();
-            // Shoulder socket: a fur disc plugging the arm into the torso so the
-            // limb visibly grows out of the body instead of touching its edge.
-            ctx.fillStyle = armCol;
-            ctx.strokeStyle = armDark; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(sxp, syp, 7 * H.scale, 0, TWO_PI); ctx.fill(); ctx.stroke();
-            // Weapon gripped at the hand, with a recoil TILT while firing (the
-            // muzzle kicks up ~7° and settles) + a paw over the handle.
-            this._drawProp(ctx, primary, hxp, hyp, aim - 0.12 * kick, H.scale, true, false);
-        }
-
+        this._drawProp(ctx, primary, hx, hy, ang, H.scale, true, firing);
         ctx.restore();
     }
 
@@ -655,8 +636,11 @@ export class Player {
     _drawProp(ctx, v, px, py, angle, scale, gripPaw = false, doThrust = true) {
         const sprite = getWeaponProp(v.prop, v.accent, v.glow);
         if (!sprite) return;
-        const flash = v.fireFlash || 0;
-        const thrust = doThrust ? Easing.outQuad(flash) * 12 * scale : 0;
+        // Flash + thrust only apply on the aimed (cast-pose) hold: if a hit
+        // interrupts the cast pose mid-flash (hurt wins the pose), the wand is
+        // back at the carry angle and a muzzle burst there would point nowhere.
+        const flash = doThrust ? (v.fireFlash || 0) : 0;
+        const thrust = Easing.outQuad(flash) * 12 * scale;
         ctx.save();
         ctx.translate(px, py);
         ctx.rotate(angle);

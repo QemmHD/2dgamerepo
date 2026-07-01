@@ -106,24 +106,22 @@ export function getCharacter(id) {
 // Per-character "weapon hold" style — PURELY VISUAL flavor for the in-hand
 // signature weapon (the run's menu-chosen starter, owned[0]), so the roster
 // reads distinct in combat rather than every hero gripping its wand
-// identically. Projectile aim/spawn is unaffected; this only tweaks the drawn
-// prop. Fields (all optional → HOLD_DEFAULTS, the neutral balanced grip):
-//   grip      hand distance from the body centre (× spriteHalf)
-//   lift      hand vertical offset (× spriteHalf; MORE = held lower)
+// identically. The wand sits in the sprite's own paw (Player's HAND anchors);
+// projectile aim/spawn is unaffected. Fields (all optional → HOLD_DEFAULTS):
 //   scale     primary prop size multiplier
 //   tilt      wrist-angle bias on the held prop, radians (cosmetic lean)
-export const HOLD_DEFAULTS = { grip: 0.18, lift: 0.12, scale: 1.0, tilt: 0 };
+export const HOLD_DEFAULTS = { scale: 1.0, tilt: 0 };
 const CHARACTER_HOLDS = {
-    // Sylphine — fleet & elegant: weapon held high & light.
-    elf:         { grip: 0.21, lift: 0.00, scale: 0.92, tilt: 0.14 },
-    // Gruk — a wall of muscle: big weapon hauled low.
-    orc:         { grip: 0.25, lift: 0.18, scale: 1.18, tilt: -0.10 },
-    // Orin — arcane savant: staff thrust forward.
-    wizard:      { grip: 0.27, lift: 0.05, scale: 1.12, tilt: 0.04 },
-    // Kael — emberfury: aggressive forward thrust.
-    berserker:   { grip: 0.28, lift: 0.11, scale: 1.12, tilt: -0.06 },
-    // Vesper — keen duelist: weapon kept close & low.
-    assassin:    { grip: 0.14, lift: 0.16, scale: 0.90, tilt: 0.18 },
+    // Sylphine — fleet & elegant: a light wand, upright.
+    elf:         { scale: 0.92, tilt: 0.14 },
+    // Gruk — a wall of muscle: a big weapon, slung heavy.
+    orc:         { scale: 1.18, tilt: -0.10 },
+    // Orin — arcane savant: a tall staff.
+    wizard:      { scale: 1.12, tilt: 0.04 },
+    // Kael — emberfury: broad and aggressive.
+    berserker:   { scale: 1.12, tilt: -0.06 },
+    // Vesper — keen duelist: compact and quick.
+    assassin:    { scale: 0.90, tilt: 0.18 },
 };
 
 // Resolve a character id to its weapon-hold style merged over the defaults
