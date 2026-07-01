@@ -9,8 +9,15 @@
 // header), so the menu renders identically if the art is missing or still loading.
 // No network/decoding on the hot path — images are decoded once by the browser.
 
-const FILES = { bg: 'menu_bg.jpg', title: 'title_emberwake.png', crest: 'bp_crest.png' };
-const _imgs = { bg: null, title: null, crest: null };
+const FILES = {
+    bg: 'menu_bg.jpg', title: 'title_emberwake.png', crest: 'bp_crest.png',
+    // Forged UI chrome (wired into the shared _panel / _button primitives so the
+    // whole menu is reskinned from one place): an ornate ember corner bracket
+    // framing large panels, and a neutral forged-metal button plate overlaid
+    // (additively) on button fills so each button's accent colour still reads.
+    corner: 'corner_bracket.png', btnPlate: 'btn_plate.png',
+};
+const _imgs = { bg: null, title: null, crest: null, corner: null, btnPlate: null };
 let _started = false;
 
 export function getMenuImages() {

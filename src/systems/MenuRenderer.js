@@ -223,6 +223,29 @@ export class MenuRenderer {
         ctx.fillStyle = g; ctx.fill();
     }
 
+    // Forged ember corner brackets (higgsfield) framing a panel — one ornate
+    // bracket per corner, flipped into place. Returns false if the art hasn't
+    // loaded so the caller can fall back to the procedural ticks. The bracket
+    // image is top-left-oriented; scale(±1,±1) mirrors it to each corner.
+    _forgeCorners(ctx, x, y, w, h) {
+        const img = getMenuImages().corner;
+        if (!img) return false;
+        const cs = Math.min(80, Math.max(44, Math.min(w, h) * 0.15));
+        const off = 0;   // elbow exactly at the corner (no bleed above into the tab tray)
+        ctx.save();
+        ctx.globalAlpha = 0.92;
+        const draw = (cx, cy, sx, sy) => {
+            ctx.save(); ctx.translate(cx, cy); ctx.scale(sx, sy);
+            ctx.drawImage(img, 0, 0, cs, cs); ctx.restore();
+        };
+        draw(x - off, y - off, 1, 1);              // top-left
+        draw(x + w + off, y - off, -1, 1);         // top-right
+        draw(x - off, y + h + off, 1, -1);         // bottom-left
+        draw(x + w + off, y + h + off, -1, -1);    // bottom-right
+        ctx.restore();
+        return true;
+    }
+
     // Four L-shaped ember ticks framing a large panel (opts.corners only).
     _cornerTicks(ctx, x, y, w, h) {
         const s = 10, m = 9;
@@ -253,7 +276,11 @@ export class MenuRenderer {
         ctx.strokeStyle = 'rgba(255,140,60,0.10)'; ctx.lineWidth = 1.5; ctx.stroke();
         // Outer stroke.
         if (stroke) { roundRectPath(ctx, x, y, w, h, r); ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
-        if (opts.corners) this._cornerTicks(ctx, x, y, w, h);
+        // Forged corner brackets on panels that OPT IN (opts.corners) only — kept
+        // explicit so themed/nested panels (e.g. the purple CHARACTER card, the
+        // gear-grid columns) don't get an ember frame they weren't designed for.
+        // Falls back to the procedural ember ticks if the bracket art hasn't loaded.
+        if (opts.corners) { if (!this._forgeCorners(ctx, x, y, w, h)) this._cornerTicks(ctx, x, y, w, h); }
     }
 
     // Right-aligned smoked-glass coin pill with a soft glow behind the ◎.
@@ -323,6 +350,19 @@ export class MenuRenderer {
         else if (accent) fill = accent;
         else if (!enabled) fill = 'rgba(30,34,42,0.7)';
         ctx.fillStyle = fill; ctx.fill();
+        // Forged-plate relief (higgsfield): the neutral metal plate overlaid
+        // ADDITIVELY and clipped to the button, so its bevel / rivets / copper rim
+        // glint over the accent fill while the button's colour (its meaning) still
+        // reads. No-op if the plate art hasn't loaded — the flat fill stands alone.
+        const plate = getMenuImages().btnPlate;
+        if (plate) {
+            ctx.save();
+            roundRectPath(ctx, r.x, r.y, r.w, r.h, 14); ctx.clip();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = enabled ? 0.30 : 0.14;
+            ctx.drawImage(plate, r.x, r.y, r.w, r.h);
+            ctx.restore();
+        }
         ctx.strokeStyle = enabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)';
         ctx.lineWidth = 2; ctx.stroke();
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -452,6 +492,16 @@ export class MenuRenderer {
             // Fill: dark glass for the active tab, warm-neutral gradient otherwise.
             roundRectPath(ctx, x, y, tabW, h, 12);
             ctx.fillStyle = active ? 'rgba(20,15,13,0.92)' : this._tabGrad; ctx.fill();
+            // Active tab: forged-plate relief (same higgsfield plate as the buttons)
+            // so the selected tab reads as a lit metal plate, not a flat fill.
+            if (active) {
+                const plate = getMenuImages().btnPlate;
+                if (plate) {
+                    ctx.save(); roundRectPath(ctx, x, y, tabW, h, 12); ctx.clip();
+                    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.22;
+                    ctx.drawImage(plate, x, y, tabW, h); ctx.restore();
+                }
+            }
             // Active tab: breathing cached-glow behind (replaces per-frame shadowBlur).
             if (active) {
                 ctx.save(); ctx.globalCompositeOperation = 'lighter';
@@ -869,7 +919,7 @@ export class MenuRenderer {
     // Lifetime stats showcase — surfaces what the save has always tracked.
     _drawStats(ctx, state) {
         const c = this._contentRect();
-        this._panel(ctx, c.x, c.y, c.w, c.h);
+        this._panel(ctx, c.x, c.y, c.w, c.h, null, undefined, { corners: true });
         const s = (state.saveData && state.saveData.stats) || {};
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
@@ -1730,7 +1780,7 @@ export class MenuRenderer {
     _drawSettings(ctx, state) {
         const c = this._contentRect();
         const save = state.saveData;
-        this._panel(ctx, c.x, c.y, c.w, c.h);
+        this._panel(ctx, c.x, c.y, c.w, c.h, null, undefined, { corners: true });
         const innerX = c.x + 40;
         const innerW = c.w - 80;
         let y = c.y + 40;
