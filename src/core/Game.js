@@ -703,6 +703,7 @@ export class Game {
         // Kick the driving gameplay theme (resume covers the keyboard-start path
         // where no menu tap fired yet).
         this.audio.resume();
+        this.audio.setBiome(biome.id);   // recolour the gameplay theme per biome
         this.audio.playMusic('gameplay');
         // Reset the UI's per-run animation state (bar display values, boss
         // bar slide, etc.) so nothing carries over from the previous run.
@@ -775,7 +776,10 @@ export class Game {
 
     _showVictory() {
         this.victory = { age: 0 };
-        this.audio.objective();
+        // Swell into the triumphant victory theme + a fanfare stinger.
+        this.audio.playMusic('victory');
+        this.audio.victoryFanfare();
+        this.audio.setIntensity(0.4);
         // A 3rd-boss clear on Nightmare is a bragging milestone.
         if (this.difficulty === 'hard') this.saveSystem.incrementStat('hardWins', 1);
         this._checkPactMastery();
@@ -805,6 +809,7 @@ export class Game {
         this.victory = null;
         this._gauntletActive = true;
         this.audio.click();
+        this.audio.playMusic('gameplay');   // back to the driving theme (biome latched)
         this._updateJoystickEnabled();
     }
 
@@ -931,6 +936,7 @@ export class Game {
     rerollChoices() {
         if (!this.upgradeChoices || this.rerolls <= 0) return;
         this.rerolls -= 1;
+        this.audio.reroll();
         const choices = this.upgradeSystem.rollChoices(this, 3);
         this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
     }
@@ -942,6 +948,7 @@ export class Game {
     alterChoices() {
         if (!this.upgradeChoices || this.alters <= 0) return;
         this.alters -= 1;
+        this.audio.reroll();
         const choices = this.upgradeSystem.rollChoices(this, 3, { alter: true });
         this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
     }
@@ -956,6 +963,7 @@ export class Game {
         // can't keep it from re-appearing — refuse so the charge isn't lost.
         if (card.kind === 'fallback') return;
         this.banishes -= 1;
+        this.audio.banish();
         this.upgradeSystem.banish(card.id);
         const choices = this.upgradeSystem.rollChoices(this, 3);
         this.setUpgradeChoices(choices.length > 0 ? choices : this.upgradeChoices);
@@ -969,13 +977,14 @@ export class Game {
         // Use nextCost (NOT costAt) so the deducted price matches what the shop
         // shows — both carry the deep-level steepening.
         const cost = nextCost(upgrade, cur);
-        if (!this.saveSystem.spendCoins(cost)) return false;
+        if (!this.saveSystem.spendCoins(cost)) { this.audio.deny(); return false; }
         // Refund if the persist step can't apply (e.g. an upgrade id missing
         // from the save schema) so coins are never taken without an upgrade.
         if (!this.saveSystem.incrementUpgrade(id)) {
             this.saveSystem.addCoins(cost);
             return false;
         }
+        this.audio.purchase();
         return true;
     }
 
@@ -989,7 +998,7 @@ export class Game {
             this.saveSystem.equipCosmetic(item.category, item.id); this.audio.equip(); return true;
         }
         if (!item.coinCost) return false;                         // not a coin item
-        if (!this.saveSystem.spendCoins(item.coinCost)) { this._setToast('Not enough coins'); return false; }
+        if (!this.saveSystem.spendCoins(item.coinCost)) { this.audio.deny(); this._setToast('Not enough coins'); return false; }
         if (!this.saveSystem.unlockCosmetic(item.id)) { this.saveSystem.addCoins(item.coinCost); return false; }
         this.saveSystem.equipCosmetic(item.category, item.id);
         this.audio.cosmeticReward();          // celebratory fanfare on a NEW unlock
@@ -2280,6 +2289,7 @@ export class Game {
             if (xp > 0) {
                 xpCollected += xp;
                 this.particles.pickupSparkle(g.x, g.y, gemLightColor(g.tier));
+                this.audio.gem();   // throttled → a vacuum coalesces into a sparkle run
             }
         }
         if (xpCollected > 0) {
@@ -2328,7 +2338,7 @@ export class Game {
                     this.damageNumbers.push(new DamageNumber(this.player.x, this.player.y - this.player.radius, gained, '#6bff8a'));
                 }
                 this.particles.pickupSparkle(h.x, h.y, '#6bff8a');
-                this.audio.coin();
+                this.audio.heal();
             }
         }
 
@@ -2464,6 +2474,7 @@ export class Game {
                 // reward overlay follows, but the world gets immediate feedback).
                 this.particles.pickupSparkle(c.x, c.y, '#ffd166');
                 this.particles.pickupSparkle(c.x, c.y - 8, '#ffe6b0');
+                this.audio.chest();
             }
         }
         if (this.pendingChests > 0 && !this.chestReward && !this.upgradeChoices) {

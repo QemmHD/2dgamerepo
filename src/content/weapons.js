@@ -1020,6 +1020,7 @@ function shadowDashUpdate(dt, owned, ctx) {
 
     p.speedBoostTimer = cfg.duration;
     p.speedBoostMul = cfg.speedMul;
+    if (ctx.audio) ctx.audio.dash();
 
     // A burst at the player's feet + dust kick to sell the surge taking off.
     ctx.effects.push({ kind: 'pulse', x: p.x, y: p.y, radius: 64, age: 0, lifetime: 0.3, active: true });
