@@ -555,6 +555,8 @@ export class Game {
         this._comboMilestoneIdx = 0;
         // Twilight (elite-army endgame) one-shot announce latch.
         this._twilightAnnounced = false;
+        // Hypergrowth ("the wall", 13-min doubling) one-shot announce latch.
+        this._hyperAnnounced = false;
         // Run objectives: ids completed this run + the list (for the game-over
         // summary). Repeatable each run.
         this._objDone = new Set();
@@ -2014,12 +2016,23 @@ export class Game {
 
         this.waveDirector.update(dt, this.time, this.enemies.length);
         this.waveState = this._applyRunScale(this.waveDirector.getState(this.time));
+        // Feed the composure gate: how far the time-based endless damage ramp has
+        // climbed (0 through the whole normal campaign). The player's takeDamage
+        // uses this to relieve the surcharge for clean play — see COMPOSURE.
+        if (this.player) this.player.endlessSurcharge = this.waveState.endlessDamageSurcharge ?? 0;
         // TWILIGHT onset — announce the elite-army climax once, with a cue.
         if (this.waveState.twilight && !this._twilightAnnounced) {
             this._twilightAnnounced = true;
             this.waveDirector.announce('✦ TWILIGHT — THE HORDE TURNS ✦', 3.6, '#c97bff');
             this.audio.bossSpawn();
             this._shake(SCREEN_SHAKE.intensity * 0.7, 0.5);
+        }
+        // HYPERGROWTH onset — the wall begins; enemies now double every minute.
+        if ((this.waveState.hyperMul ?? 1) > 1 && !this._hyperAnnounced) {
+            this._hyperAnnounced = true;
+            this.waveDirector.announce('☠ THE DARK DEVOURS — FLEE OR FALL ☠', 4.0, '#ff3326');
+            this.audio.bossSpawn();
+            this._shake(SCREEN_SHAKE.intensity * 0.9, 0.6);
         }
 
         // One boss at a time: gate the scheduler on a live "is any boss alive"
@@ -3388,6 +3401,14 @@ export class Game {
         base.enemyHpMul = this.waveState?.healthMul ?? 1;
         base.enemySpeedMul = this.waveState?.speedMul ?? 1;
         base.enemyDamageMul = this.waveState?.damageMul ?? 1;
+        // Composure (skill-adaptive relief): the meter, the endless surcharge it
+        // gates against, and the resulting incoming-damage cut currently in effect.
+        base.composure = this.player.composure ?? 1;
+        base.endlessSurcharge = this.player.endlessSurcharge ?? 0;
+        base.composureRelief = COMPOSURE.enabled
+            ? COMPOSURE.maxRelief * (this.player.composure ?? 1) * (this.player.endlessSurcharge ?? 0)
+            : 0;
+        base.hyperMul = this.waveState?.hyperMul ?? 1;
         base.bossHpMul = Math.min(1 + (this.time / 60) * BOSS.hpPerMinute, BOSS.maxHpMul);
         base.bossResist = Math.min((this.time / 60) * BOSS.resistPerMinute, BOSS.maxResist);
         base.ownedWeaponCount = this.weaponSystem.owned.length;

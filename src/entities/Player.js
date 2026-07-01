@@ -6,6 +6,7 @@ import {
     UI,
     CAPS,
     AURA,
+    COMPOSURE,
     xpRequired,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
@@ -168,6 +169,17 @@ export class Player {
         // speedBoostMul. Both reset on a fresh Player (restart).
         this.speedBoostTimer = 0;
         this.speedBoostMul = 1;
+
+        // Composure — skill-adaptive damage relief (see COMPOSURE in GameConfig).
+        // 0..1 meter that fills while you avoid hits and drops when tagged; the
+        // fuller it is, the more of the ENDLESS contact-damage surcharge is shrugged
+        // off. `endlessSurcharge` (0..1) is fed in by Game each frame from the live
+        // wave state — it gates relief to the deep-endless time inflation only, so
+        // this is fully inert (surcharge 0) through the normal campaign + bosses.
+        // Rebuilt with a fresh Player on restart, so it resets every run.
+        this.composure = COMPOSURE.start;
+        this._composureHitCd = 0;
+        this.endlessSurcharge = 0;
     }
 
     gainXP(amount) {
@@ -189,12 +201,24 @@ export class Player {
         // bolts, boss) since every source routes through here.
         // Aegis keystone: an extra cut below half HP (read here, the one sink).
         const aegis = (this.ks_aegis && this.maxHp > 0 && this.hp / this.maxHp <= 0.5) ? 0.65 : 1;
-        const incoming = amount * (this.damageTakenMul ?? 1) * aegis;
+        let incoming = amount * (this.damageTakenMul ?? 1) * aegis;
+        // Composure: skill-adaptive relief on the ENDLESS damage surcharge only.
+        // endlessSurcharge (0..1, fed by Game) gates this to the deep-endless time
+        // tax, so normal play + bosses are untouched; a composed (high-meter)
+        // player cancels up to maxRelief of that surcharge.
+        if (COMPOSURE.enabled && this.endlessSurcharge > 0) {
+            incoming *= 1 - COMPOSURE.maxRelief * this.composure * this.endlessSurcharge;
+        }
         const dealt = Math.min(incoming, this.hp);
         this.hp -= dealt;
         if (this.hp < 0) this.hp = 0;
         this.invincibleTimer = PLAYER.invincibilityDuration;
         this.hitFlashTimer = PLAYER.hitFlashDuration;
+        // Getting tagged breaks composure and pauses its recovery briefly.
+        if (dealt > 0 && COMPOSURE.enabled) {
+            this.composure = Math.max(0, this.composure - COMPOSURE.hitPenalty);
+            this._composureHitCd = COMPOSURE.recoverDelay;
+        }
         return dealt;
     }
 
@@ -210,6 +234,12 @@ export class Player {
         if (this.speedBoostTimer > 0) {
             this.speedBoostTimer = Math.max(0, this.speedBoostTimer - dt);
             if (this.speedBoostTimer === 0) this.speedBoostMul = 1;
+        }
+        // Composure recovers while unhit (after a short post-hit pause), so
+        // sustained clean play refills the skill-relief meter.
+        if (COMPOSURE.enabled) {
+            if (this._composureHitCd > 0) this._composureHitCd = Math.max(0, this._composureHitCd - dt);
+            else if (this.composure < 1) this.composure = Math.min(1, this.composure + COMPOSURE.recoverPerSecond * dt);
         }
         const spd = this.speed * (this.speedBoostTimer > 0 ? this.speedBoostMul : 1);
         this.vx = move.x * spd;
