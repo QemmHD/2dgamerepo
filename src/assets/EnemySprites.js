@@ -12,6 +12,8 @@
 // any sprite that failed to load or in a non-DOM env, so Enemy.js falls back to
 // the LPC → procedural art and the game always renders. No work on the hot path.
 
+import { SPRITE_SIZE } from '../config/GameConfig.js';
+
 const FILES = {
     slime: 'ember_slime.png',     // molten ember slime  → basic swarm creature
     bat: 'ember_bat.png',         // charred ember bat   → fast aerial minion
@@ -19,6 +21,18 @@ const FILES = {
     spitter: 'ember_eye.png',     // floating ember eye  → ranged fire caster
     mite: 'ember_mite.png',       // tiny ember mite     → fast swarmer
 };
+
+// Directional ANIMATED sheets — pre-rendered from a rigged+animated 3D model of
+// the creature (higgsfield image_to_3d + 3d_rigging, walked through the Meshy
+// animation library, rendered to a 4-row grid by tools/artshot/glbsheet.html).
+// Row order matches the LPC convention (up / left / down / right); `cols` frames
+// per row. `inset` scales the drawn body inside the SPRITE_SIZE cell so the
+// sprite's visual weight matches its collision radius (LPC bodies don't fill
+// their cells either).
+const DIR_SHEETS = {
+    emberskeleton: { file: 'ember_warden_sheet.png', cols: 8, inset: 0.86 },
+};
+const DIR_ORDER = ['up', 'left', 'down', 'right'];
 
 const _frames = {};    // type -> [Image] once loaded ; null on failure
 const _started = {};    // type -> Promise (idempotent load guard)
@@ -39,11 +53,70 @@ function loadOne(type) {
     return _started[type];
 }
 
+const _dirFrames = {};   // type -> {up:[canvas],left,down,right} once sliced; null on failure
+const _dirStarted = {};
+
+// Slice a 4-row directional sheet into per-direction SPRITE_SIZE frame arrays.
+// Smooth (not nearest) upscale — this is painterly 3D-rendered art, not pixel art.
+function sliceDirSheet(img, cols, inset) {
+    const cw = Math.floor(img.width / cols);
+    const ch = Math.floor(img.height / 4);
+    const out = {};
+    const draw = SPRITE_SIZE * inset;
+    const off = (SPRITE_SIZE - draw) / 2;
+    DIR_ORDER.forEach((dir, row) => {
+        const frames = [];
+        for (let c = 0; c < cols; c++) {
+            const cv = document.createElement('canvas');
+            cv.width = SPRITE_SIZE; cv.height = SPRITE_SIZE;
+            const cx = cv.getContext('2d');
+            cx.imageSmoothingEnabled = true;
+            cx.imageSmoothingQuality = 'high';
+            cx.drawImage(img, c * cw, row * ch, cw, ch, off, off, draw, draw);
+            frames.push(cv);
+        }
+        out[dir] = frames;
+    });
+    return out;
+}
+
+function loadDirOne(type) {
+    if (_dirStarted[type]) return _dirStarted[type];
+    _dirStarted[type] = new Promise((resolve) => {
+        const spec = DIR_SHEETS[type];
+        try {
+            const im = new Image();
+            im.onload = () => {
+                try { _dirFrames[type] = sliceDirSheet(im, spec.cols, spec.inset); resolve(true); }
+                catch (e) { _dirFrames[type] = null; resolve(false); }
+            };
+            im.onerror = () => { _dirFrames[type] = null; resolve(false); };
+            im.src = new URL(`./enemies/${spec.file}`, import.meta.url).href;
+        } catch (e) {
+            _dirFrames[type] = null;   // no Image/canvas (non-DOM env) → fallback
+            resolve(false);
+        }
+    });
+    return _dirStarted[type];
+}
+
 // Kick every bespoke enemy sprite; resolves (never rejects) once all settle.
 // Await at boot so even the first creature spawned shows the AI art. Returns true
 // if at least one sprite loaded.
 export function loadEnemyAiSprites() {
-    return Promise.all(Object.keys(FILES).map(loadOne)).then((r) => r.some(Boolean));
+    return Promise.all([
+        ...Object.keys(FILES).map(loadOne),
+        ...Object.keys(DIR_SHEETS).map(loadDirOne),
+    ]).then((r) => r.some(Boolean));
+}
+
+// Directional frame set ({up,left,down,right} arrays) for a bespoke animated
+// enemy, or null if not loaded (Enemy.js then uses the LPC → procedural
+// fallback). Same shape as getLpcFrames.
+export function getEnemyAiDirFrames(type) {
+    if (!(type in DIR_SHEETS)) return null;
+    if (!_dirStarted[type]) loadDirOne(type);
+    return _dirFrames[type] || null;
 }
 
 // Single-frame array for a bespoke enemy sprite, or null if it isn't loaded

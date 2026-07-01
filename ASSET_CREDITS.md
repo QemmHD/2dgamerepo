@@ -123,6 +123,7 @@ to a procedural heavy-hitter sprite if the images fail to load (see
 | `src/assets/enemies/ember_serpent.png` | Generated | higgsfield (Nano Banana 2) | Molten lava serpent — low crawler (updates the `crawler` enemy). Coiled obsidian scales with lava seams and a snarling ember maw. Keyed transparent + trimmed to 256px. |
 | `src/assets/enemies/ember_eye.png` | Generated | higgsfield (Nano Banana 2) | Floating ember eye — ranged fire caster (updates the `spitter` enemy). Burning molten iris ringed by charred rock plates and flame. Keyed transparent + trimmed to 256px. |
 | `src/assets/enemies/ember_mite.png` | Generated | higgsfield (Nano Banana 2) | Ember mite — tiny fast swarmer (updates the `mite` enemy). Charred beetle carapace over a glowing lava core. Keyed transparent + trimmed to 256px. |
+| `src/assets/enemies/ember_warden_sheet.png` | Generated | higgsfield (Nano Banana 2 + Meshy image_to_3d) | EMBER WARDEN — animated 4-direction sheet (updates the `emberskeleton` enemy). Pipeline: Nano Banana 2 character concept → Meshy image-to-3D (textured + auto-rigged + Meshy animation-library clip) → rendered to a 4-row × 8-frame grid by `tools/artshot/glbsheet.html` (three.js, headless Chromium, transparent alpha). Row order up/left/down/right matches the LPC convention. |
 
 These load via `src/assets/EnemySprites.js` (preloaded at boot alongside the LPC
 monster sheets) and slot into `Enemy.js`'s `FRAMES_BY_TYPE` as the preferred layer

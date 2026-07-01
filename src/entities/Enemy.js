@@ -45,7 +45,7 @@ import {
 } from '../assets/ProceduralSprites.js';
 import { getLpcFrames } from '../assets/LpcSprites.js';
 import { getMonsterFrames } from '../assets/MonsterSprites.js';
-import { getEnemyAiFrames } from '../assets/EnemySprites.js';
+import { getEnemyAiFrames, getEnemyAiDirFrames } from '../assets/EnemySprites.js';
 import { getPixelBossFrames } from '../assets/PixelBosses.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
@@ -82,7 +82,9 @@ const FRAMES_BY_TYPE = {
     // Imported LPC humanoid models — directional 8-frame walk cycles.
     skeleton:        { get: () => getLpcFrames('skeleton'),      hz: 9, directional: true },
     zombie:          { get: () => getLpcFrames('zombie'),        hz: 6, directional: true },
-    emberskeleton:   { get: () => getLpcFrames('emberskeleton'), hz: 10, directional: true },
+    // Ember Warden: an animated 4-direction sheet pre-rendered from a rigged 3D
+    // model (Monster_Walk cycle) — falls back to the recolored LPC skeleton.
+    emberskeleton:   { get: () => getEnemyAiDirFrames('emberskeleton') || getLpcFrames('emberskeleton'), hz: 10, directional: true },
     // Boss animation Hz roughly doubled so their bodies/wings/maws read as
     // alive and aggressive instead of a slow crawl (the % frames.length wrap
     // makes any Hz index-safe regardless of frame count).
