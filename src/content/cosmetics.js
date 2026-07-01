@@ -109,6 +109,16 @@ export function cosmeticById(id) {
     return COSMETICS[id] ?? null;
 }
 
+// Grind multiplier on the direct coin-buy price of a cosmetic. Cosmetics are a
+// long-haul coin sink; bump this to make buying them grindier without editing
+// every entry. The SINGLE source of truth for the buy price — the customizer
+// display AND the purchase deduction both call this, so they never drift.
+export const COSMETIC_COST_MULT = 2;
+export function cosmeticCoinCost(item) {
+    if (!item || !item.coinCost) return 0;
+    return Math.round(item.coinCost * COSMETIC_COST_MULT);
+}
+
 export function cosmeticsByCategory(category) {
     return COSMETIC_LIST.filter((c) => c.category === category);
 }

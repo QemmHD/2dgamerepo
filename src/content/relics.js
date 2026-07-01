@@ -170,10 +170,13 @@ export function getAttunable(id) {
     return ATTUNABLE_BY_ID[id] ?? null;
 }
 
-// Coin cost to buy the NEXT attunement level (escalates ~1.55×/level).
+// Coin cost to buy the NEXT attunement level (escalates ~1.55×/level). A global
+// grind multiplier keeps this permanent coin sink a long haul, consistent with
+// the raised skill/case/cosmetic economy.
+const ATTUNE_COST_MULT = 1.6;
 export function attuneCost(def, level) {
     if (!def) return Infinity;
-    return Math.round(def.costBase * Math.pow(1.55, level));
+    return Math.round(def.costBase * Math.pow(1.55, level) * ATTUNE_COST_MULT);
 }
 
 // Apply every saved attunement to the player once (run start). `levels` is the

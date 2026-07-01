@@ -14,29 +14,32 @@ import { RARITY_ORDER, rarityDust, rarityName } from '../content/rarities.js';
 // Each case now draws from a SINGLE pool kind ('gear' or 'cosmetic'), so the
 // loot you get is always the type the case is named for. Three tiers each.
 export const CASES = {
+    // Costs raised + odds pulled toward the low end so kitting out is a real
+    // grind, not a couple of runs. Rare+ is scarcer at every tier; the pity net
+    // (below) is lengthened to match so a dry streak still resolves fairly.
     basic: {
-        id: 'basic', name: 'Basic Case', cost: 60, poolKind: 'gear',
-        odds: { common: 0.65, uncommon: 0.25, rare: 0.09, epic: 0.01 },
+        id: 'basic', name: 'Basic Case', cost: 120, poolKind: 'gear',
+        odds: { common: 0.75, uncommon: 0.20, rare: 0.04, epic: 0.01 },
     },
     mystic: {
-        id: 'mystic', name: 'Mystic Case', cost: 180, poolKind: 'gear',
-        odds: { common: 0.35, uncommon: 0.35, rare: 0.20, epic: 0.08, legendary: 0.02 },
+        id: 'mystic', name: 'Mystic Case', cost: 360, poolKind: 'gear',
+        odds: { common: 0.45, uncommon: 0.33, rare: 0.15, epic: 0.06, legendary: 0.01 },
     },
     royal: {
-        id: 'royal', name: 'Royal Case', cost: 450, poolKind: 'gear',
-        odds: { uncommon: 0.30, rare: 0.35, epic: 0.23, legendary: 0.10, mythic: 0.02 },
+        id: 'royal', name: 'Royal Case', cost: 900, poolKind: 'gear',
+        odds: { uncommon: 0.40, rare: 0.33, epic: 0.185, legendary: 0.07, mythic: 0.015 },
     },
     basicCosmetic: {
-        id: 'basicCosmetic', name: 'Basic Cosmetic Case', cost: 60, poolKind: 'cosmetic',
-        odds: { common: 0.65, uncommon: 0.25, rare: 0.09, epic: 0.01 },
+        id: 'basicCosmetic', name: 'Basic Cosmetic Case', cost: 120, poolKind: 'cosmetic',
+        odds: { common: 0.75, uncommon: 0.20, rare: 0.04, epic: 0.01 },
     },
     mysticCosmetic: {
-        id: 'mysticCosmetic', name: 'Mystic Cosmetic Case', cost: 180, poolKind: 'cosmetic',
-        odds: { common: 0.35, uncommon: 0.35, rare: 0.20, epic: 0.08, legendary: 0.02 },
+        id: 'mysticCosmetic', name: 'Mystic Cosmetic Case', cost: 360, poolKind: 'cosmetic',
+        odds: { common: 0.45, uncommon: 0.33, rare: 0.15, epic: 0.06, legendary: 0.01 },
     },
     royalCosmetic: {
-        id: 'royalCosmetic', name: 'Royal Cosmetic Case', cost: 450, poolKind: 'cosmetic',
-        odds: { uncommon: 0.30, rare: 0.35, epic: 0.23, legendary: 0.10, mythic: 0.02 },
+        id: 'royalCosmetic', name: 'Royal Cosmetic Case', cost: 900, poolKind: 'cosmetic',
+        odds: { uncommon: 0.40, rare: 0.33, epic: 0.185, legendary: 0.07, mythic: 0.015 },
     },
 };
 
@@ -47,7 +50,7 @@ export const CASE_ORDER = ['basic', 'basicCosmetic', 'mystic', 'mysticCosmetic',
 // is GUARANTEED. Lower-tier cases (which rarely roll Rare+) get a longer rope;
 // royal cases hit Rare+ constantly so their cap almost never triggers. This is
 // transparent (shown on the shop card) so it reads as a fair safety net.
-export const CASE_PITY = { basic: 12, basicCosmetic: 12, mystic: 9, mysticCosmetic: 9, royal: 7, royalCosmetic: 7 };
+export const CASE_PITY = { basic: 16, basicCosmetic: 16, mystic: 12, mysticCosmetic: 12, royal: 10, royalCosmetic: 10 };
 
 // ── Ember Forge ─────────────────────────────────────────────────────────
 // A "doesn't feel like gambling" mode: spend grindable Cinders (coins) to
@@ -56,11 +59,11 @@ export const CASE_PITY = { basic: 12, basicCosmetic: 12, mystic: 9, mysticCosmet
 // crafting + a visible safety net, so it reads as earned progress while still
 // delivering the variable-reward dopamine. Not in CASE_ORDER (own panel).
 export const FORGE = {
-    id: 'forge', name: 'Ember Forge', cost: 120,
-    odds: { common: 0.40, uncommon: 0.32, rare: 0.18, epic: 0.08, legendary: 0.02 },
+    id: 'forge', name: 'Ember Forge', cost: 260,
+    odds: { common: 0.50, uncommon: 0.30, rare: 0.13, epic: 0.055, legendary: 0.015 },
 };
 CASES.forge = FORGE;       // so buildCaseReel/openCase resolve it by id
-export const FORGE_PITY = 8; // forges since the last Rare+ that force one
+export const FORGE_PITY = 11; // forges since the last Rare+ that force one
 
 // ── Mines (coin gambling mini-game) ─────────────────────────────────────
 // A Stake-style MINES gamble: stake coins on a 5×5 grid hiding a few mines.

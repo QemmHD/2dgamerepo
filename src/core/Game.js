@@ -68,7 +68,7 @@ import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
 import { openCase, buildCaseReel, MINES, MINES_HOUSE, rollMines, minesRawMultiplier } from '../systems/CaseSystem.js';
-import { resolveAppearance, cosmeticsForAchievement, COSMETICS } from '../content/cosmetics.js';
+import { resolveAppearance, cosmeticsForAchievement, COSMETICS, cosmeticCoinCost } from '../content/cosmetics.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
@@ -1138,9 +1138,10 @@ export class Game {
         if (this.saveSystem.isCosmeticUnlocked(item.id)) {
             this.saveSystem.equipCosmetic(item.category, item.id); this.audio.equip(); return true;
         }
-        if (!item.coinCost) return false;                         // not a coin item
-        if (!this.saveSystem.spendCoins(item.coinCost)) { this.audio.deny(); this._setToast('Not enough coins'); return false; }
-        if (!this.saveSystem.unlockCosmetic(item.id)) { this.saveSystem.addCoins(item.coinCost); return false; }
+        const price = cosmeticCoinCost(item);
+        if (!price) return false;                                 // not a coin item
+        if (!this.saveSystem.spendCoins(price)) { this.audio.deny(); this._setToast('Not enough coins'); return false; }
+        if (!this.saveSystem.unlockCosmetic(item.id)) { this.saveSystem.addCoins(price); return false; }
         this.saveSystem.equipCosmetic(item.category, item.id);
         this.audio.cosmeticReward();          // celebratory fanfare on a NEW unlock
         this._setToast(`Unlocked ${item.name}`);
