@@ -106,6 +106,45 @@
       "modifications": "Rasterized the SVGs to 128px white-on-transparent PNGs (background rect stripped); recolored by rarity at load. Other glyphs in this set: spark.png, fire.png, lightning.png, frost.png, skull.png, swords.png, staff.png — same source/author/license.",
       "frameWidth": 128,
       "frameHeight": 128
+    },
+    {
+      "id": "kenney_impact_sounds",
+      "file": "src/assets/audio/sfx/impactPunch_medium_000.ogg",
+      "usedFor": "Hybrid SFX one-shots (played over the procedural fallback): enemy-kill punch + player-hurt heavy punch",
+      "type": "audio",
+      "source": "Impact Sounds — Kenney.nl",
+      "sourceUrl": "https://kenney.nl/assets/impact-sounds",
+      "authors": ["Kenney Vleugels (Kenney.nl)"],
+      "license": "CC0-1.0",
+      "attributionRequired": false,
+      "modified": false,
+      "modifications": "Copied a curated subset of the pack's OGG one-shots unchanged; pitch-jittered + gain-trimmed at runtime. Files in this set: impactPunch_medium_000.ogg, impactPunch_medium_001.ogg, impactPunch_medium_003.ogg, impactPunch_heavy_000.ogg, impactPunch_heavy_002.ogg — same source/author/license."
+    },
+    {
+      "id": "kenney_rpg_audio",
+      "file": "src/assets/audio/sfx/handleCoins.ogg",
+      "usedFor": "Hybrid SFX one-shots: coin pickup, shop purchase (leather pouch), weapon equip (metal click), chest open (metal latch)",
+      "type": "audio",
+      "source": "RPG Audio — Kenney.nl",
+      "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+      "authors": ["Kenney Vleugels (Kenney.nl)"],
+      "license": "CC0-1.0",
+      "attributionRequired": false,
+      "modified": false,
+      "modifications": "Copied a curated subset of the pack's OGG one-shots unchanged; pitch-jittered + gain-trimmed at runtime. Files in this set: handleCoins.ogg, handleCoins2.ogg, handleSmallLeather.ogg, handleSmallLeather2.ogg, metalClick.ogg, metalLatch.ogg — same source/author/license."
+    },
+    {
+      "id": "kenney_interface_sounds",
+      "file": "src/assets/audio/sfx/click_001.ogg",
+      "usedFor": "Hybrid SFX one-shots: UI click, UI hover tick, XP-gem glass ping, level-up reroll scratch",
+      "type": "audio",
+      "source": "Interface Sounds — Kenney.nl",
+      "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+      "authors": ["Kenney Vleugels (Kenney.nl)"],
+      "license": "CC0-1.0",
+      "attributionRequired": false,
+      "modified": false,
+      "modifications": "Copied a curated subset of the pack's OGG one-shots unchanged; pitch-jittered + gain-trimmed at runtime. Files in this set: click_001.ogg, click_002.ogg, tick_001.ogg, tick_002.ogg, glass_001.ogg, glass_003.ogg, glass_005.ogg, scratch_001.ogg, scratch_003.ogg — same source/author/license."
     }
   ]
 }

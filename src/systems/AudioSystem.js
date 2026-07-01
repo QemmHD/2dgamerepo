@@ -1,17 +1,22 @@
-// AudioSystem — fully procedural Web Audio (no asset files, per the project's
-// no-external-assets rule). Synthesizes warm dark-fantasy "ember" music + SFX.
-// Feature-detected, so in headless / unsupported environments every method is a
-// silent no-op (nothing throws). Browsers block audio until a user gesture, so
-// the context is created lazily and `resume()` runs from a click/keydown.
+// AudioSystem — HYBRID Web Audio: warm dark-fantasy "ember" music + SFX that are
+// procedurally synthesized, with a thin layer of real CC0 (Kenney.nl) one-shot
+// samples over the most TACTILE cues (a punch, coins, a metal latch, UI clicks) —
+// things a real recorded transient nails better than a synth. Every sampled cue
+// falls back to its synth voice when the sample isn't loaded (headless render,
+// fetch failure, or a cue we keep procedural), so nothing ever goes silent, and
+// ALL music/fanfares stay 100% procedural. Feature-detected, so in headless /
+// unsupported environments every method is a silent no-op (nothing throws).
+// Browsers block audio until a user gesture, so the context is created lazily and
+// `resume()` runs from a click/keydown (which also kicks off sample loading).
 //
-// Signal chain (mobile-safe by construction): sfxBus (dry) + musicBus (→ reverb
-// tail) sum into master → master LOW-PASS (warmth) → a brick-wall LIMITER
-// (DynamicsCompressor) → destination, so no stack of layered hits can ever clip.
-// Music runs through a musicDuck gain so big moments pseudo-SIDECHAIN-duck the
-// bed (Web Audio has no external sidechain). Voices are detuned-oscillator pairs
-// through per-voice low-pass with soft ADSR; grit uses a cached tanh waveshaper;
-// impacts are filtered-noise / sub-sine / inharmonic-metal layers — warm, never
-// harsh static.
+// Signal chain (mobile-safe by construction): sfxBus (dry, samples + synth SFX) +
+// musicBus (→ reverb tail) sum into master → master LOW-PASS (warmth) → a
+// brick-wall LIMITER (DynamicsCompressor) → destination, so no stack of layered
+// hits — sampled or synth — can ever clip. Music runs through a musicDuck gain so
+// big moments pseudo-SIDECHAIN-duck the bed (Web Audio has no external sidechain).
+// Voices are detuned-oscillator pairs through per-voice low-pass with soft ADSR;
+// grit uses a cached tanh waveshaper; impacts are filtered-noise / sub-sine /
+// inharmonic-metal layers — warm, never harsh static.
 
 const A4 = 440;
 const hz = (midi) => A4 * Math.pow(2, (midi - 69) / 12);
@@ -86,6 +91,26 @@ const BIOME_TUNE = {
     dunes:       { root: 46, scale: PHRYG,  cutoff: 2600, energy: 1.02, wave: 'triangle', swing: 0.08, reverb: 0.16 },
 };
 
+// Hybrid one-shot layer — curated CC0 (Kenney.nl) samples for the most TACTILE
+// cues, one bank per cue (variants are picked at random + pitch-jittered so rapid
+// repeats never sound machine-gunned). Files live in src/assets/audio/sfx/ and are
+// fetched lazily on first user gesture; a cue with no loaded buffer transparently
+// falls back to its procedural voice. `gain` trims each bank to sit under the synth
+// mix; `jitter` is the ± playbackRate wobble. Everything NOT listed here (shots,
+// elemental procs, fanfares, and ALL music) is fully procedural.
+const SFX_SAMPLES = {
+    kill:     { files: ['impactPunch_medium_000.ogg', 'impactPunch_medium_001.ogg', 'impactPunch_medium_003.ogg'], gain: 0.4, jitter: 0.09 },
+    hurt:     { files: ['impactPunch_heavy_000.ogg', 'impactPunch_heavy_002.ogg'], gain: 0.55, jitter: 0.05 },
+    coin:     { files: ['handleCoins.ogg', 'handleCoins2.ogg'], gain: 0.4, jitter: 0.05 },
+    purchase: { files: ['handleSmallLeather.ogg', 'handleSmallLeather2.ogg'], gain: 0.45, jitter: 0.04 },
+    equip:    { files: ['metalClick.ogg'], gain: 0.42, jitter: 0.05 },
+    chest:    { files: ['metalLatch.ogg'], gain: 0.5, jitter: 0.03 },
+    click:    { files: ['click_001.ogg', 'click_002.ogg'], gain: 0.42, jitter: 0.04 },
+    hover:    { files: ['tick_001.ogg', 'tick_002.ogg'], gain: 0.28, jitter: 0.06 },
+    gem:      { files: ['glass_001.ogg', 'glass_003.ogg', 'glass_005.ogg'], gain: 0.32, jitter: 0.09 },
+    reroll:   { files: ['scratch_001.ogg', 'scratch_003.ogg'], gain: 0.4, jitter: 0.05 },
+};
+
 export class AudioSystem {
     constructor() {
         const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
@@ -110,6 +135,8 @@ export class AudioSystem {
         this._noiseBuf = null;
         this._intensity = 0;
         this._shapeCache = {};
+        this._samples = {};          // cue key → [decoded AudioBuffer, …]
+        this._samplesState = 'idle'; // idle → loading → ready | skip
         this._voicesThisStep = 0;
         this._biome = 'emberwood';
         // Mobile detection (fewer voices, mono oscillators) — guarded.
@@ -186,6 +213,70 @@ export class AudioSystem {
         if (!this.ctx) return;
         if (this.ctx.state === 'suspended') this.ctx.resume();
         if (this._schedId == null) this._startScheduler();
+        this._loadSamples();
+    }
+
+    // ── Hybrid sample loader ─────────────────────────────────────────────
+    // Fetch + decode the CC0 one-shots once, on the first user gesture. Per-file
+    // failures are swallowed (that cue just keeps its synth voice); no fetch (or a
+    // failed decode) leaves _samples empty so EVERY cue falls back gracefully.
+    _loadSamples() {
+        if (!this.ctx || this._samplesState !== 'idle') return;
+        if (typeof fetch !== 'function') { this._samplesState = 'skip'; return; }
+        this._samplesState = 'loading';
+        // decodeAudioData is promise-based in modern browsers, callback-based in old
+        // ones — support both so nothing hangs or throws.
+        const decode = (ab) => new Promise((res, rej) => {
+            let done = false;
+            const ok = (b) => { if (!done) { done = true; res(b); } };
+            const no = (e) => { if (!done) { done = true; rej(e); } };
+            try {
+                const p = this.ctx.decodeAudioData(ab, ok, no);
+                if (p && typeof p.then === 'function') p.then(ok, no);
+            } catch (e) { no(e); }
+        });
+        const jobs = [];
+        for (const key of Object.keys(SFX_SAMPLES)) {
+            this._samples[key] = [];
+            for (const file of SFX_SAMPLES[key].files) {
+                let url;
+                try { url = new URL(`../assets/audio/sfx/${file}`, import.meta.url).href; }
+                catch (e) { continue; }
+                jobs.push(
+                    fetch(url)
+                        .then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); return r.arrayBuffer(); })
+                        .then((ab) => decode(ab))
+                        .then((buf) => { if (buf) this._samples[key].push(buf); })
+                        .catch(() => { /* leave slot empty → synth fallback */ })
+                );
+            }
+        }
+        Promise.all(jobs).then(() => { this._samplesState = 'ready'; });
+    }
+
+    // Play one loaded variant of a cue's sample bank through sfxBus (so it still
+    // hits the master low-pass + limiter). Returns false if no sample is available
+    // yet, so the caller can fall through to its procedural voice.
+    _playSample(key) {
+        if (!this.ctx || !this.sfxBus) return false;
+        const bank = this._samples[key];
+        if (!bank || !bank.length) return false;
+        const cfg = SFX_SAMPLES[key] || {};
+        const buf = bank.length === 1 ? bank[0] : bank[(Math.random() * bank.length) | 0];
+        if (!buf) return false;
+        const t = this.ctx.currentTime;
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        if (cfg.jitter) src.playbackRate.value = 1 + (Math.random() * 2 - 1) * cfg.jitter;
+        const g = this.ctx.createGain();
+        g.gain.value = cfg.gain != null ? cfg.gain : 0.5;
+        src.connect(g); g.connect(this.sfxBus);
+        src.start(t);
+        // Stop past the real end (slower playbackRate stretches it) so a jittered
+        // one-shot is never clipped early; the source is non-looping regardless.
+        const rate = src.playbackRate.value || 1;
+        src.stop(t + buf.duration / rate + 0.1);
+        return true;
     }
 
     setVolumes(music, sfx) {
@@ -472,18 +563,18 @@ export class AudioSystem {
     }
 
     // ── UI ──
-    click()  { this._play('click', 0.02, (t) => { this._voice(600, t, 0.05, 0.11, { type: 'sine', slideTo: 840, cutoff: 3000, attack: 0.002 }); this._click(600, t, 0.04); }); }
-    hover()  { this._play('hover', 0.03, (t) => this._voice(1000, t, 0.035, 0.035, { type: 'sine', cutoff: 3600, detune: 4 })); }
-    equip()  { this._play('equip', 0.04, (t) => { this._voice(880, t, 0.07, 0.08, { type: 'sine', cutoff: 4200, detune: 5 }); this._voice(1320, t + 0.05, 0.12, 0.07, { type: 'triangle', cutoff: 4600, detune: 5 }); this._metal(1760, t + 0.05, { dur: 0.08, gain: 0.03, ratios: [1, 2.4], cutoff: 5000 }); }); }
+    click()  { this._play('click', 0.02, (t) => { if (this._playSample('click')) return; this._voice(600, t, 0.05, 0.11, { type: 'sine', slideTo: 840, cutoff: 3000, attack: 0.002 }); this._click(600, t, 0.04); }); }
+    hover()  { this._play('hover', 0.03, (t) => { if (this._playSample('hover')) return; this._voice(1000, t, 0.035, 0.035, { type: 'sine', cutoff: 3600, detune: 4 }); }); }
+    equip()  { this._play('equip', 0.04, (t) => { if (this._playSample('equip')) return; this._voice(880, t, 0.07, 0.08, { type: 'sine', cutoff: 4200, detune: 5 }); this._voice(1320, t + 0.05, 0.12, 0.07, { type: 'triangle', cutoff: 4600, detune: 5 }); this._metal(1760, t + 0.05, { dur: 0.08, gain: 0.03, ratios: [1, 2.4], cutoff: 5000 }); }); }
     upgrade(){ this._play('upgrade', 0.05, (t) => { this._voice(660, t, 0.1, 0.11, { type: 'triangle', slideTo: 990, cutoff: 3600, detune: 6 }); this._voice(990, t + 0.06, 0.2, 0.09, { type: 'triangle', cutoff: 4000, detune: 6 }); this._voice(1320, t + 0.06, 0.22, 0.04, { type: 'sine', cutoff: 4600 }); }); }
-    reroll() { this._play('reroll', 0.15, (t) => { this._noise(t, 0.18, 0.05, 2600, this.sfxBus, 900); this._voice(520, t, 0.1, 0.05, { type: 'triangle', slideTo: 680, cutoff: 3200 }); }); }
+    reroll() { this._play('reroll', 0.15, (t) => { if (this._playSample('reroll')) return; this._noise(t, 0.18, 0.05, 2600, this.sfxBus, 900); this._voice(520, t, 0.1, 0.05, { type: 'triangle', slideTo: 680, cutoff: 3200 }); }); }
     banish() { this._play('banish', 0.15, (t) => { this._voice(360, t, 0.16, 0.08, { type: 'triangle', slideTo: 180, cutoff: 2000, detune: 5, shape: 2 }); this._sub(70, t, { dur: 0.12, gain: 0.06 }); }); }
     deny()   { this._play('deny', 0.1, (t) => this._voice(160, t, 0.12, 0.08, { type: 'sawtooth', slideTo: 120, cutoff: 900, shape: 2.5 })); }
-    purchase(){ this._play('purchase', 0.08, (t) => { this._pluck(880, t, { dur: 0.12, gain: 0.08, cutoff: 4200, damp: 0.7 }); this._voice(1320, t + 0.05, 0.14, 0.06, { type: 'triangle', cutoff: 4400, detune: 5 }); }); }
+    purchase(){ this._play('purchase', 0.08, (t) => { if (this._playSample('purchase')) return; this._pluck(880, t, { dur: 0.12, gain: 0.08, cutoff: 4200, damp: 0.7 }); this._voice(1320, t + 0.05, 0.14, 0.06, { type: 'triangle', cutoff: 4400, detune: 5 }); }); }
 
     // ── Combat ──
-    hurt()   { this._play('hurt', 0.09, (t) => { const r = this._rand(-8, 8); this._sub(70, t, { dur: 0.18, gain: 0.16, slideTo: 44 }); this._voice(200 + r, t, 0.16, 0.13, { type: 'triangle', slideTo: 96, cutoff: 850, shape: 2 }); this._noise(t, 0.09, 0.05, 650, this.sfxBus, 300); }); }
-    kill()   { this._play('kill', 0.035, (t) => { this._click(400, t, 0.06); this._voice(340 * this._rand(0.94, 1.06), t, 0.09, 0.10, { type: 'triangle', slideTo: 150, cutoff: 2200, attack: 0.003 }); this._noise(t, 0.06, 0.045, 2400, this.sfxBus, 900); }); }
+    hurt()   { this._play('hurt', 0.09, (t) => { if (this._playSample('hurt')) return; const r = this._rand(-8, 8); this._sub(70, t, { dur: 0.18, gain: 0.16, slideTo: 44 }); this._voice(200 + r, t, 0.16, 0.13, { type: 'triangle', slideTo: 96, cutoff: 850, shape: 2 }); this._noise(t, 0.09, 0.05, 650, this.sfxBus, 300); }); }
+    kill()   { this._play('kill', 0.035, (t) => { if (this._playSample('kill')) return; this._click(400, t, 0.06); this._voice(340 * this._rand(0.94, 1.06), t, 0.09, 0.10, { type: 'triangle', slideTo: 150, cutoff: 2200, attack: 0.003 }); this._noise(t, 0.06, 0.045, 2400, this.sfxBus, 900); }); }
     crit()   { this._play('crit', 0.04, (t) => { const j = this._rand(0.95, 1.05); this._click(900 * j, t, 0.05); this._metal(900 * j, t, { dur: 0.09, gain: 0.06, ratios: [1, 2.7, 5.1], cutoff: 5200 }); this._voice(1400 * j, t, 0.06, 0.05, { type: 'triangle', slideTo: 2100, cutoff: 5000 }); }); }
     impact() { this._play('impact', 0.08, (t) => { this._voice(260, t, 0.05, 0.04, { type: 'triangle', slideTo: 170, cutoff: 1600 }); this._noise(t, 0.03, 0.02, 1800, this.sfxBus); }); }
     freeze() { this._play('freeze', 0.15, (t) => { this._pluck(1600, t, { dur: 0.25, gain: 0.06, cutoff: 5200, damp: 0.82 }); this._metal(2100, t + 0.02, { dur: 0.3, gain: 0.04, ratios: [1, 1.5, 2.2], cutoff: 5000 }); this._voice(900, t, 0.3, 0.04, { type: 'sine', slideTo: 600, cutoff: 4000 }); }); }
@@ -496,15 +587,15 @@ export class AudioSystem {
     waveStart()  { this._play('waveStart', 0.4, (t) => { this._voice(196, t, 0.5, 0.10, { type: 'sawtooth', slideTo: 294, cutoff: 1400, detune: 8, shape: 2 }); this._sub(65, t, { dur: 0.5, gain: 0.10, slideTo: 98 }); this._noise(t, 0.4, 0.05, 1200, this.sfxBus, 400); }); }
 
     // ── Pickups / weapons ──
-    coin()   { this._play('coin', 0.035, (t) => { const f = 1046 * this._rand(0.97, 1.04); this._pluck(f, t, { dur: 0.12, gain: 0.09, cutoff: 4200, damp: 0.7 }); this._voice(f * Math.pow(2, 7 / 12), t + 0.04, 0.1, 0.045, { type: 'sine', cutoff: 4600 }); }); }
-    gem()    { this._play('gem', 0.045, (t) => { this._pluck(1318, t, { dur: 0.16, gain: 0.09, cutoff: 5000, damp: 0.78 }); this._bell(t, 1318, 0.06); }); }
+    coin()   { this._play('coin', 0.035, (t) => { if (this._playSample('coin')) return; const f = 1046 * this._rand(0.97, 1.04); this._pluck(f, t, { dur: 0.12, gain: 0.09, cutoff: 4200, damp: 0.7 }); this._voice(f * Math.pow(2, 7 / 12), t + 0.04, 0.1, 0.045, { type: 'sine', cutoff: 4600 }); }); }
+    gem()    { this._play('gem', 0.045, (t) => { if (this._playSample('gem')) return; this._pluck(1318, t, { dur: 0.16, gain: 0.09, cutoff: 5000, damp: 0.78 }); this._bell(t, 1318, 0.06); }); }
     streak() { this._play('streak', 0.06, (t) => { this._voice(700 * this._rand(1, 1.03), t, 0.11, 0.11, { type: 'triangle', slideTo: 1400, cutoff: 3600, detune: 7 }); this._voice(1400, t + 0.03, 0.09, 0.05, { type: 'sine', cutoff: 4400 }); }); }
     shootBolt()  { this._play('shootBolt', 0.06, (t) => { this._voice(660 * this._rand(0.97, 1.03), t, 0.06, 0.055, { type: 'triangle', slideTo: 920, cutoff: 3200, attack: 0.002 }); this._click(660, t, 0.03); }); }
     shootFire()  { this._play('shootFire', 0.075, (t) => { this._voice(300, t, 0.12, 0.055, { type: 'sine', slideTo: 200, cutoff: 1500, shape: 2.5 }); this._noise(t, 0.11, 0.045, 1300 + this._rand(-150, 150), this.sfxBus, 480); this._sub(90, t, { dur: 0.09, gain: 0.05 }); }); }
     shootShock() { this._play('shootShock', 0.075, (t) => { this._voice(1250 * this._rand(0.95, 1.05), t, 0.055, 0.045, { type: 'sawtooth', slideTo: 700, cutoff: 4200, attack: 0.001, shape: 3 }); this._noise(t, 0.045, 0.04, 7000, this.sfxBus); this._metal(2600, t, { dur: 0.06, gain: 0.03, ratios: [1, 1.96], cutoff: 5600 }); }); }
 
     // ── Cases / rewards ──
-    chest()  { this._play('chest', 0.1, (t) => { this._noise(t, 0.14, 0.06, 600, this.sfxBus, 180); this._metal(180, t + 0.02, { dur: 0.18, gain: 0.05, ratios: [1, 1.9, 3.1], cutoff: 2800 }); this._bell(t + 0.06, 523); }); }
+    chest()  { this._play('chest', 0.1, (t) => { if (this._playSample('chest')) { this._bell(t + 0.06, 523); return; } this._noise(t, 0.14, 0.06, 600, this.sfxBus, 180); this._metal(180, t + 0.02, { dur: 0.18, gain: 0.05, ratios: [1, 1.9, 3.1], cutoff: 2800 }); this._bell(t + 0.06, 523); }); }
     forge()  { this._play('forge', 0.06, (t) => { this._metal(220, t, { dur: 0.22, gain: 0.11, ratios: [1, 2.76, 5.4, 8.9], cutoff: 3200 }); this._sub(60, t, { dur: 0.14, gain: 0.10 }); this._noise(t, 0.16, 0.10, 520, this.sfxBus, 1400); }); }
     spinTick(pitch = 1) { this._play('spinTick', 0.0, (t) => { this._voice(430 * pitch, t, 0.03, 0.05, { type: 'triangle', cutoff: 2600, attack: 0.001 }); this._click(430 * pitch, t, 0.02); }); }
     caseOpen() { this._play('caseOpen', 0.1, (t) => { this._noise(t, 0.34, 0.10, 300, this.sfxBus, 2600); this._voice(330, t, 0.2, 0.08, { type: 'sine', slideTo: 660, cutoff: 2400 }); this._sub(80, t, { dur: 0.3, gain: 0.07, slideTo: 130 }); }); }
