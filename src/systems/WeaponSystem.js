@@ -194,11 +194,13 @@ export class WeaponSystem {
         }
     }
 
-    // Held-weapon visuals for the player to draw the loadout in-hand / in a
-    // halo. The stable per-weapon descriptor (id/prop/accent/glow/kind/primary)
+    // Held-weapon visuals for the player: only the signature weapon (owned[0],
+    // the menu-chosen starter — isPrimary) is drawn in-hand; the rest of the
+    // loadout draws nothing here (their projectiles/rings ARE their visual).
+    // The stable per-weapon descriptor (id/prop/accent/glow/kind/primary)
     // is rebuilt only when the owned set changes (version bump); each frame we
     // just refresh the transient `fireFlash` (0..1) so there's no per-frame
-    // allocation. owned[0] is the equipped/primary weapon. Descriptors with no
+    // allocation. Descriptors with no
     // prop (e.g. Cinder Aura, Shadow Dash) are omitted — those read as aura.
     getOwnedVisuals() {
         if (this._visualsVersion !== this.version) {

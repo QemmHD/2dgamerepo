@@ -90,8 +90,8 @@ export class Player {
         // weapon at the nearest foe; null/empty loadout → nothing in-hand drawn.
         this.loadout = null;
         this.aimAngle = Math.PI / 2; // default: aim "down" (toward the camera)
-        // Per-character weapon-hold style (grip/lift/scale/tilt/halo) — purely
-        // visual flavor so each hero wields its loadout distinctly.
+        // Per-character weapon-hold style (grip/lift/scale/tilt) — purely
+        // visual flavor so each hero wields its signature weapon distinctly.
         this.hold = resolveCharacterHold(characterId);
         // Paw colour for the little hand drawn gripping the held weapon (matches
         // the hero's face/hand tone so the weapon reads as actually held).
@@ -565,60 +565,40 @@ export class Player {
         }
         ctx.restore();
 
-        // Held weapons OVER the body (front pass): the primary in its articulated
-        // arm (unless facing away — then it was drawn behind, above) + the rest
-        // of the owned loadout in a floating halo.
+        // Held weapon OVER the body (front pass): the signature weapon in its
+        // articulated arm (unless facing away — then it was drawn behind, above).
         if (this.loadout && this.loadout.length) this._drawHeldWeapons(ctx, bobY, alpha, 'front');
 
         // Melee swing arc (world-space, additive) on top of everything.
         if (this.swing) this._drawSwing(ctx);
     }
 
-    // Draw the owned loadout on the body: the primary weapon held in-hand and
-    // pointed at the aim target (with a forward thrust + tip muzzle flash while
-    // it's firing), and every other owned weapon floating in a tidy halo, each
-    // flicking outward when it fires. Orbit weapons are skipped here — their
-    // spinning blade ring (drawn by WeaponSystem) already IS their visual.
+    // Draw the SIGNATURE weapon on the body: the run's starting weapon (chosen
+    // in the menu loadout — owned[0], so an evolution/fusion of it keeps the
+    // slot) held in-hand and pointed at the aim target, with a forward thrust +
+    // tip muzzle flash while it's firing. The other owned weapons draw NOTHING
+    // here — their projectiles/rings ARE their visual — so the hero always
+    // wields exactly one wand: the one you picked.
     _drawHeldWeapons(ctx, bobY, alpha, layer = 'front') {
-        const cx = this.x, cy = this.y + bobY;
+        // Orbit-kind primaries (e.g. the starter fused into Cinderhalo) are
+        // held too — the hand keeps the run's chosen weapon even after fusion;
+        // the spinning ring around the body stays their gameplay visual.
         let primary = null;
-        const halo = [];
-        for (const v of this.loadout) {
-            if (!v || !v.prop || v.kind === 'orbit') continue;
-            if (v.isPrimary && !primary) primary = v;
-            else halo.push(v);
-        }
-        // If the equipped weapon is an orbit type (no in-hand prop), promote the
-        // first halo weapon to the hand so the hero still visibly wields one.
-        if (!primary && halo.length) primary = halo.shift();
-        if (!primary && !halo.length) return;
+        for (const v of this.loadout) { if (v && v.prop && v.isPrimary) { primary = v; break; } }
+        // Starting weapon carries no prop (a pure-aura/movement ability):
+        // hold the first owned weapon that does, so the hand is never empty.
+        if (!primary) { for (const v of this.loadout) { if (v && v.prop) { primary = v; break; } } }
+        if (!primary) return;
 
-        // Per-character hold style (grip/lift/scale/tilt/halo) → distinct flavor.
+        // Per-character hold style (grip/lift/scale/tilt) → distinct flavor.
         const H = this.hold, sh = this.spriteHalf;
+        const cx = this.x, cy = this.y + bobY;
         // The primary is drawn BEHIND the body on the back view (the hero holds
         // it in front of them, away from the camera) and OVER the body otherwise.
         const primaryBehind = this.facing === 'up';
 
         ctx.save();
         ctx.globalAlpha = alpha;
-
-        // Floating halo (the rest of the owned arsenal) — always on the front
-        // pass so the satellites read regardless of facing.
-        if (layer === 'front' && halo.length) {
-            const R = sh * H.haloR;
-            const arc = Math.PI * 1.5;            // 270° fan across the top
-            const start = -Math.PI / 2 - arc / 2; // centered on straight-up
-            const n = halo.length;
-            // De-emphasized: smaller + translucent so the satellites read as an
-            // arsenal indicator, never competing with the wand actually IN HAND.
-            ctx.globalAlpha = alpha * 0.55;
-            for (let i = 0; i < n; i++) {
-                const a = n === 1 ? -Math.PI / 2 : start + (i / (n - 1)) * arc;
-                const bob = Math.sin(this.aliveTimer * 2.2 + i * 1.3) * 1.5;
-                this._drawProp(ctx, halo[i], cx + Math.cos(a) * R, cy + Math.sin(a) * R + bob, a + H.tilt, 0.5 * H.haloScale);
-            }
-            ctx.globalAlpha = alpha;
-        }
 
         // Primary held in an ARTICULATED ARM: a fur forearm reaches from the
         // shoulder to the gripping hand and pivots to the aim, so the weapon is
@@ -671,7 +651,7 @@ export class Player {
 
     // Draw one held prop sprite: anchor its grip at (px,py), rotate to `angle`,
     // and — while it's firing (fireFlash 0..1) — thrust it forward along its
-    // own axis and burst a cached glow at the tip. `scale` shrinks halo props.
+    // own axis and burst a cached glow at the tip.
     _drawProp(ctx, v, px, py, angle, scale, gripPaw = false, doThrust = true) {
         const sprite = getWeaponProp(v.prop, v.accent, v.glow);
         if (!sprite) return;
