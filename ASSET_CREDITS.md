@@ -121,8 +121,11 @@ to a procedural heavy-hitter sprite if the images fail to load (see
 | `src/assets/ui/menu_bg.jpg` | Generated | higgsfield (Nano Banana 2) | Main-menu ember-forge backdrop — a ruined ashen citadel over molten lava with god-rays and drifting sparks. Cover-fit behind the whole menu; downscaled + JPEG-compressed. |
 | `src/assets/ui/title_emberwake.png` | Generated | higgsfield (Nano Banana 2) | EMBERWAKE title wordmark, molten ember lettering. Background keyed to transparent (edge flood-fill) + trimmed. |
 | `src/assets/ui/bp_crest.png` | Generated | higgsfield (Nano Banana 2) | Ornate ember-forged crest crowning the Battle Pass track. Background keyed to transparent + trimmed. |
+| `src/assets/ui/corner_bracket.png` | Generated | higgsfield (Nano Banana 2) | Ornate wrought-iron corner bracket with a glowing molten seam. Keyed transparent; drawn (mirrored) at the four corners of large panels via `_panel`/`_forgeCorners`. |
+| `src/assets/ui/btn_plate.png` | Generated | higgsfield (Nano Banana 2) | Neutral forged-metal button plate (bevel + rivets + copper rim). Keyed transparent; overlaid additively on button fills and the active tab so each element's accent colour still reads. |
 
 These load lazily via `src/assets/MenuImages.js`; every consumer in
 `MenuRenderer.js` falls back to the existing procedural drawing (cached
-ember-forge gradient backdrop, gradient-text title, plain Battle Pass header) if
-an image is missing or still loading, so the menu renders correctly without them.
+ember-forge gradient backdrop, gradient-text title, plain Battle Pass header,
+procedural corner ticks + flat button/tab fills) if an image is missing or still
+loading, so the menu renders correctly without them.
