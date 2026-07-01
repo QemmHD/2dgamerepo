@@ -113,3 +113,16 @@ The Lieutenant renders through the engine's normal enemy path (`Enemy.draw` pick
 the pose by live state, riding the procedural squash/breath/flash), and falls back
 to a procedural heavy-hitter sprite if the images fail to load (see
 `src/assets/LieutenantSprite.js`).
+
+## AI-generated UI art (main menu)
+
+| File | Source | Tool / Model | Notes |
+| --- | --- | --- | --- |
+| `src/assets/ui/menu_bg.jpg` | Generated | higgsfield (Nano Banana 2) | Main-menu ember-forge backdrop — a ruined ashen citadel over molten lava with god-rays and drifting sparks. Cover-fit behind the whole menu; downscaled + JPEG-compressed. |
+| `src/assets/ui/title_emberwake.png` | Generated | higgsfield (Nano Banana 2) | EMBERWAKE title wordmark, molten ember lettering. Background keyed to transparent (edge flood-fill) + trimmed. |
+| `src/assets/ui/bp_crest.png` | Generated | higgsfield (Nano Banana 2) | Ornate ember-forged crest crowning the Battle Pass track. Background keyed to transparent + trimmed. |
+
+These load lazily via `src/assets/MenuImages.js`; every consumer in
+`MenuRenderer.js` falls back to the existing procedural drawing (cached
+ember-forge gradient backdrop, gradient-text title, plain Battle Pass header) if
+an image is missing or still loading, so the menu renders correctly without them.
