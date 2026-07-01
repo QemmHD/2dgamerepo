@@ -103,29 +103,27 @@ export function getCharacter(id) {
     return CHARACTERS[id] || CHARACTERS[DEFAULT_CHARACTER];
 }
 
-// Per-character "weapon hold" style — PURELY VISUAL flavor for the held-weapon
-// loadout (the in-hand primary + floating halo from the player overhaul), so
-// the roster reads distinct in combat rather than every hero gripping its wand
+// Per-character "weapon hold" style — PURELY VISUAL flavor for the in-hand
+// signature weapon (the run's menu-chosen starter, owned[0]), so the roster
+// reads distinct in combat rather than every hero gripping its wand
 // identically. Projectile aim/spawn is unaffected; this only tweaks the drawn
-// props. Fields (all optional → HOLD_DEFAULTS, the neutral balanced grip):
+// prop. Fields (all optional → HOLD_DEFAULTS, the neutral balanced grip):
 //   grip      hand distance from the body centre (× spriteHalf)
 //   lift      hand vertical offset (× spriteHalf; MORE = held lower)
 //   scale     primary prop size multiplier
-//   tilt      wrist-angle bias on the held props, radians (cosmetic lean)
-//   haloR     radius of the floating secondary-weapon halo (× spriteHalf)
-//   haloScale size multiplier for the halo props
-export const HOLD_DEFAULTS = { grip: 0.18, lift: 0.12, scale: 1.0, tilt: 0, haloR: 0.66, haloScale: 1.0 };
+//   tilt      wrist-angle bias on the held prop, radians (cosmetic lean)
+export const HOLD_DEFAULTS = { grip: 0.18, lift: 0.12, scale: 1.0, tilt: 0 };
 const CHARACTER_HOLDS = {
-    // Sylphine — fleet & elegant: weapon held high & light, arsenal orbits tight.
-    elf:         { grip: 0.21, lift: 0.00, scale: 0.92, tilt: 0.14, haloR: 0.60, haloScale: 0.90 },
-    // Gruk — a wall of muscle: big weapon hauled low, arsenal swung wide.
-    orc:         { grip: 0.25, lift: 0.18, scale: 1.18, tilt: -0.10, haloR: 0.74, haloScale: 1.12 },
-    // Orin — arcane savant: staff thrust forward, motes orbit close + high.
-    wizard:      { grip: 0.27, lift: 0.05, scale: 1.12, tilt: 0.04, haloR: 0.60, haloScale: 0.92 },
-    // Kael — emberfury: aggressive forward thrust, weapons flung wide.
-    berserker:   { grip: 0.28, lift: 0.11, scale: 1.12, tilt: -0.06, haloR: 0.72, haloScale: 1.06 },
-    // Vesper — keen duelist: weapon kept close & low, a tight quick rig.
-    assassin:    { grip: 0.14, lift: 0.16, scale: 0.90, tilt: 0.18, haloR: 0.56, haloScale: 0.84 },
+    // Sylphine — fleet & elegant: weapon held high & light.
+    elf:         { grip: 0.21, lift: 0.00, scale: 0.92, tilt: 0.14 },
+    // Gruk — a wall of muscle: big weapon hauled low.
+    orc:         { grip: 0.25, lift: 0.18, scale: 1.18, tilt: -0.10 },
+    // Orin — arcane savant: staff thrust forward.
+    wizard:      { grip: 0.27, lift: 0.05, scale: 1.12, tilt: 0.04 },
+    // Kael — emberfury: aggressive forward thrust.
+    berserker:   { grip: 0.28, lift: 0.11, scale: 1.12, tilt: -0.06 },
+    // Vesper — keen duelist: weapon kept close & low.
+    assassin:    { grip: 0.14, lift: 0.16, scale: 0.90, tilt: 0.18 },
 };
 
 // Resolve a character id to its weapon-hold style merged over the defaults

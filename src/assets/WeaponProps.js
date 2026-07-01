@@ -1,6 +1,6 @@
 // Held weapon "props" — the small pixel wands / staves / glaives the hero
-// actually carries in-hand (and in a floating halo for the rest of the owned
-// loadout). Drawn in the same chunky pixel-art style as the heroes/bosses so
+// actually carries in-hand (the signature weapon: the run's menu-chosen
+// starter). Drawn in the same chunky pixel-art style as the heroes/bosses so
 // the held gear matches the body.
 //
 // Each prop is authored on a small LOGICAL grid pointing along +x (to the

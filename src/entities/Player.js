@@ -25,13 +25,14 @@ const FACING_VEC = { down: { x: 0, y: 1 }, up: { x: 0, y: -1 }, left: { x: -1, y
 // forearm reaches from here toward the aim so the weapon hangs off the side of
 // the torso like a real hold instead of being pinned to the centre.
 const SHOULDER = {
-    down:  { x: 0.13, y: 0.00 },
-    up:    { x: 0.13, y: -0.02 },
-    left:  { x: -0.07, y: -0.02 },
-    right: { x: 0.07, y: -0.02 },
+    down:  { x: 0.16, y: 0.02 },
+    up:    { x: 0.15, y: 0.00 },
+    left:  { x: -0.10, y: 0.00 },
+    right: { x: 0.10, y: 0.00 },
 };
-const ARM_LEN = 0.30;     // forearm reach toward the aim (× spriteHalf)
-const ARM_THRUST = 0.15;  // extra reach at full fire/cast — the jab
+const ARM_LEN = 0.34;     // arm reach toward the aim (× spriteHalf)
+const ARM_THRUST = 0.16;  // extra reach at full fire/cast — the jab
+const ARM_BEND = 0.09;    // elbow bow (× spriteHalf) — the two-segment bend
 import { getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
@@ -89,8 +90,8 @@ export class Player {
         // weapon at the nearest foe; null/empty loadout → nothing in-hand drawn.
         this.loadout = null;
         this.aimAngle = Math.PI / 2; // default: aim "down" (toward the camera)
-        // Per-character weapon-hold style (grip/lift/scale/tilt/halo) — purely
-        // visual flavor so each hero wields its loadout distinctly.
+        // Per-character weapon-hold style (grip/lift/scale/tilt) — purely
+        // visual flavor so each hero wields its signature weapon distinctly.
         this.hold = resolveCharacterHold(characterId);
         // Paw colour for the little hand drawn gripping the held weapon (matches
         // the hero's face/hand tone so the weapon reads as actually held).
@@ -564,56 +565,40 @@ export class Player {
         }
         ctx.restore();
 
-        // Held weapons OVER the body (front pass): the primary in its articulated
-        // arm (unless facing away — then it was drawn behind, above) + the rest
-        // of the owned loadout in a floating halo.
+        // Held weapon OVER the body (front pass): the signature weapon in its
+        // articulated arm (unless facing away — then it was drawn behind, above).
         if (this.loadout && this.loadout.length) this._drawHeldWeapons(ctx, bobY, alpha, 'front');
 
         // Melee swing arc (world-space, additive) on top of everything.
         if (this.swing) this._drawSwing(ctx);
     }
 
-    // Draw the owned loadout on the body: the primary weapon held in-hand and
-    // pointed at the aim target (with a forward thrust + tip muzzle flash while
-    // it's firing), and every other owned weapon floating in a tidy halo, each
-    // flicking outward when it fires. Orbit weapons are skipped here — their
-    // spinning blade ring (drawn by WeaponSystem) already IS their visual.
+    // Draw the SIGNATURE weapon on the body: the run's starting weapon (chosen
+    // in the menu loadout — owned[0], so an evolution/fusion of it keeps the
+    // slot) held in-hand and pointed at the aim target, with a forward thrust +
+    // tip muzzle flash while it's firing. The other owned weapons draw NOTHING
+    // here — their projectiles/rings ARE their visual — so the hero always
+    // wields exactly one wand: the one you picked.
     _drawHeldWeapons(ctx, bobY, alpha, layer = 'front') {
-        const cx = this.x, cy = this.y + bobY;
+        // Orbit-kind primaries (e.g. the starter fused into Cinderhalo) are
+        // held too — the hand keeps the run's chosen weapon even after fusion;
+        // the spinning ring around the body stays their gameplay visual.
         let primary = null;
-        const halo = [];
-        for (const v of this.loadout) {
-            if (!v || !v.prop || v.kind === 'orbit') continue;
-            if (v.isPrimary && !primary) primary = v;
-            else halo.push(v);
-        }
-        // If the equipped weapon is an orbit type (no in-hand prop), promote the
-        // first halo weapon to the hand so the hero still visibly wields one.
-        if (!primary && halo.length) primary = halo.shift();
-        if (!primary && !halo.length) return;
+        for (const v of this.loadout) { if (v && v.prop && v.isPrimary) { primary = v; break; } }
+        // Starting weapon carries no prop (a pure-aura/movement ability):
+        // hold the first owned weapon that does, so the hand is never empty.
+        if (!primary) { for (const v of this.loadout) { if (v && v.prop) { primary = v; break; } } }
+        if (!primary) return;
 
-        // Per-character hold style (grip/lift/scale/tilt/halo) → distinct flavor.
+        // Per-character hold style (grip/lift/scale/tilt) → distinct flavor.
         const H = this.hold, sh = this.spriteHalf;
+        const cx = this.x, cy = this.y + bobY;
         // The primary is drawn BEHIND the body on the back view (the hero holds
         // it in front of them, away from the camera) and OVER the body otherwise.
         const primaryBehind = this.facing === 'up';
 
         ctx.save();
         ctx.globalAlpha = alpha;
-
-        // Floating halo (the rest of the owned arsenal) — always on the front
-        // pass so the satellites read regardless of facing.
-        if (layer === 'front' && halo.length) {
-            const R = sh * H.haloR;
-            const arc = Math.PI * 1.5;            // 270° fan across the top
-            const start = -Math.PI / 2 - arc / 2; // centered on straight-up
-            const n = halo.length;
-            for (let i = 0; i < n; i++) {
-                const a = n === 1 ? -Math.PI / 2 : start + (i / (n - 1)) * arc;
-                const bob = Math.sin(this.aliveTimer * 2.2 + i * 1.3) * 2;
-                this._drawProp(ctx, halo[i], cx + Math.cos(a) * R, cy + Math.sin(a) * R + bob, a + H.tilt, 0.62 * H.haloScale);
-            }
-        }
 
         // Primary held in an ARTICULATED ARM: a fur forearm reaches from the
         // shoulder to the gripping hand and pivots to the aim, so the weapon is
@@ -625,7 +610,8 @@ export class Player {
             const syp = cy + (so.y + 0.04) * sh;
             const aim = this.aimAngle + H.tilt;
             const flash = primary.fireFlash || 0;
-            const reach = sh * (ARM_LEN * (H.scale || 1)) + Easing.outQuad(flash) * sh * ARM_THRUST;
+            const kick = Easing.outQuad(flash);
+            const reach = sh * (ARM_LEN * (H.scale || 1)) + kick * sh * ARM_THRUST;
             const hxp = sxp + Math.cos(aim) * reach;
             const hyp = syp + Math.sin(aim) * reach;
             const ap = this.appearance || {};
@@ -634,15 +620,30 @@ export class Player {
             // same ratio — a raw bright hex made the arm hotter than the torso.
             const armCol = ap.furColor ? this._mixHex(this._baseFur, ap.furColor, 0.42) : this._baseFur;
             const armDark = ap.furColor ? shade(armCol, 0.42, 'dark') : this._baseFurDark;
-            // Forearm: dark underlay (reads as an outline) + fur on top.
+            // TWO-SEGMENT ARM (shoulder → elbow → hand): the elbow bows
+            // perpendicular to the aim (always toward the ground side, like a
+            // real bent arm) and STRAIGHTENS as the shot fires — the arm itself
+            // visibly extends into the jab instead of a stick sliding forward.
+            let px2 = Math.cos(aim + Math.PI / 2), py2 = Math.sin(aim + Math.PI / 2);
+            if (py2 < 0) { px2 = -px2; py2 = -py2; }              // bow downward
+            const bend = sh * ARM_BEND * (1 - kick * 0.8);        // straighten on fire
+            const exp = sxp + (hxp - sxp) * 0.45 + px2 * bend;
+            const eyp = syp + (hyp - syp) * 0.45 + py2 * bend;
             ctx.lineCap = 'round';
-            ctx.strokeStyle = armDark; ctx.lineWidth = 10 * H.scale;
-            ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(hxp, hyp); ctx.stroke();
-            ctx.strokeStyle = armCol; ctx.lineWidth = 6.5 * H.scale;
-            ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(hxp, hyp); ctx.stroke();
-            // Weapon gripped at the hand (the arm reach already did the jab, so
-            // the prop itself doesn't double-thrust) + a paw over the handle.
-            this._drawProp(ctx, primary, hxp, hyp, aim, H.scale, true, false);
+            ctx.lineJoin = 'round';
+            // dark underlay (reads as the pixel outline) + fur on top
+            ctx.strokeStyle = armDark; ctx.lineWidth = 11.5 * H.scale;
+            ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(exp, eyp); ctx.lineTo(hxp, hyp); ctx.stroke();
+            ctx.strokeStyle = armCol; ctx.lineWidth = 7.5 * H.scale;
+            ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(exp, eyp); ctx.lineTo(hxp, hyp); ctx.stroke();
+            // Shoulder socket: a fur disc plugging the arm into the torso so the
+            // limb visibly grows out of the body instead of touching its edge.
+            ctx.fillStyle = armCol;
+            ctx.strokeStyle = armDark; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(sxp, syp, 7 * H.scale, 0, TWO_PI); ctx.fill(); ctx.stroke();
+            // Weapon gripped at the hand, with a recoil TILT while firing (the
+            // muzzle kicks up ~7° and settles) + a paw over the handle.
+            this._drawProp(ctx, primary, hxp, hyp, aim - 0.12 * kick, H.scale, true, false);
         }
 
         ctx.restore();
@@ -650,7 +651,7 @@ export class Player {
 
     // Draw one held prop sprite: anchor its grip at (px,py), rotate to `angle`,
     // and — while it's firing (fireFlash 0..1) — thrust it forward along its
-    // own axis and burst a cached glow at the tip. `scale` shrinks halo props.
+    // own axis and burst a cached glow at the tip.
     _drawProp(ctx, v, px, py, angle, scale, gripPaw = false, doThrust = true) {
         const sprite = getWeaponProp(v.prop, v.accent, v.glow);
         if (!sprite) return;
@@ -691,11 +692,14 @@ export class Player {
         // A paw wrapping the grip, drawn LAST so the hand visibly grips OVER the
         // handle (and stays at the hand while the weapon thrusts). Sells "held".
         if (gripPaw) {
-            const pr = 9 * scale;
+            const pr = 10.5 * scale;
             ctx.fillStyle = this._pawColor;
             ctx.strokeStyle = 'rgba(40,24,12,0.85)';
-            ctx.lineWidth = Math.max(1, 1.8 * scale);
+            ctx.lineWidth = Math.max(1, 2 * scale);
             ctx.beginPath(); ctx.arc(0, 0, pr, 0, TWO_PI); ctx.fill(); ctx.stroke();
+            // A thumb wrapping OVER the handle (a smaller disc riding the top
+            // edge) — the detail that makes it read as a grip, not a ball.
+            ctx.beginPath(); ctx.arc(pr * 0.35, -pr * 0.45, pr * 0.42, 0, TWO_PI); ctx.fill(); ctx.stroke();
             // Two faint knuckle lines so it reads as a gripping paw, not a dot.
             ctx.strokeStyle = 'rgba(40,24,12,0.5)';
             ctx.lineWidth = Math.max(1, scale);

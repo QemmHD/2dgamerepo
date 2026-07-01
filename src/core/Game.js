@@ -2429,9 +2429,9 @@ export class Game {
             dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio
         );
 
-        // Held weapons: aim the loadout at the nearest enemy (the primary wand
-        // points at what it shoots; the halo bobs around the body). With no
-        // target, weapons rest along the hero's facing so they never snap to a
+        // Held weapon: aim the signature wand (owned[0], the menu-chosen
+        // starter) at the nearest enemy — it points at what it shoots. With no
+        // target, it rests along the hero's facing so it never snaps to a
         // stale angle. Snapshot the owned visuals for Player.draw, and hold the
         // cast pose whenever the primary weapon fires this frame.
         this.player.loadout = this.weaponSystem.getOwnedVisuals();
