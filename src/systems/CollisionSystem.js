@@ -47,7 +47,7 @@ export class CollisionSystem {
                 if (!circleOverlap(p.x, p.y, p.radius, e.x, e.y, e.radius)) continue;
 
                 e.takeDamage(p.damage, kx, ky);
-                hits.push({ x: e.x, y: e.y - e.radius, amount: p.damage });
+                hits.push({ x: e.x, y: e.y - e.radius, amount: p.damage, element: p.element });
                 p.hitEnemies.add(e);
                 // FIRE payload: stamp a burn. Re-applies on every pierce pass
                 // and on each ricochet hop for free (same projectile object),

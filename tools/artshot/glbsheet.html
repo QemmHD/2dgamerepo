@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>GLB → directional sprite sheet</title>
+<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}</style>
+</head>
+<body>
+<canvas id="sheet"></canvas>
+<script type="importmap">
+{ "imports": { "three": "./three/three.module.js" } }
+</script>
+<script type="module">
+// Renders an animated GLB into a 4-direction × N-frame sprite sheet grid.
+// Rows (top→bottom): up(back), left, down(front), right — LPC row order.
+// Screenshot the page with --default-background-color=00000000 to keep alpha.
+document.title = 'MODULE-START';
+import * as THREE from './three/three.module.js';
+import { GLTFLoader } from './three/GLTFLoader.js';
+document.title = 'IMPORTS-OK';
+console.log('[glbsheet] imports ok');
+
+const params = new URLSearchParams(location.search);
+const GLB = params.get('glb') || 'warden.glb';
+const CELL = parseInt(params.get('cell') || '256', 10);
+const FRAMES = parseInt(params.get('frames') || '8', 10);
+const PITCH = parseFloat(params.get('pitch') || '12');   // camera pitch (deg) — slight top-down
+const SS = parseInt(params.get('ss') || '2', 10);        // supersample: render at CELL*SS, downscale
+const ERR = [];
+window.addEventListener('error', (e) => ERR.push(String(e.message || e.error || e)));
+
+const sheet = document.getElementById('sheet');
+sheet.width = CELL * FRAMES; sheet.height = CELL * 4;
+const sctx = sheet.getContext('2d');
+
+let renderer;
+try {
+    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(CELL * SS, CELL * SS);
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.title = 'RENDERER-OK';
+} catch (e) {
+    document.title = 'NO-WEBGL: ' + String(e).slice(0, 80);
+    throw e;
+}
+
+const scene = new THREE.Scene();
+// Neutral-warm studio lighting: strong ambient so the painterly texture reads,
+// warm key + cool rim like the 2D sprites' internal-lava glow.
+scene.add(new THREE.AmbientLight(0xffffff, 1.6));
+const key = new THREE.DirectionalLight(0xffe0c0, 1.6); key.position.set(1.5, 3, 2.5); scene.add(key);
+const rim = new THREE.DirectionalLight(0xff8040, 0.9); rim.position.set(-2, 1.2, -2); scene.add(rim);
+
+const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 100);
+
+new GLTFLoader().load(GLB, (gltf) => {
+    try {
+        const model = gltf.scene;
+        scene.add(model);
+
+        const mixer = new THREE.AnimationMixer(model);
+        const clip = gltf.animations && gltf.animations[0];
+        let duration = 1;
+        if (clip) { mixer.clipAction(clip).play(); duration = clip.duration; }
+        document.title = 'CLIPS:' + (gltf.animations ? gltf.animations.length : 0) + ' dur:' + duration.toFixed(2);
+
+        // Fit: SkinnedMesh bounds must come from the SKINNED vertices (r151+
+        // computeBoundingBox applies bone transforms); the raw geometry box is
+        // bind-pose local and framed us into the legs. Union the skinned boxes
+        // across every animation phase so ONE fixed camera frames all frames
+        // (no per-frame jitter in the sheet).
+        const box = new THREE.Box3();
+        const tmp = new THREE.Box3();
+        for (let f = 0; f < FRAMES; f++) {
+            mixer.setTime((f / FRAMES) * duration);
+            scene.updateMatrixWorld(true);
+            model.traverse((o) => {
+                if (o.isSkinnedMesh) {
+                    o.computeBoundingBox();
+                    tmp.copy(o.boundingBox).applyMatrix4(o.matrixWorld);
+                    box.union(tmp);
+                } else if (o.isMesh) {
+                    tmp.setFromObject(o);
+                    box.union(tmp);
+                }
+            });
+        }
+        const center = box.getCenter(new THREE.Vector3());
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        const dist = sphere.radius / Math.sin((camera.fov * Math.PI / 180) / 2) * 1.06;
+
+        // Directions: yaw of the CAMERA around the model. Model faces +Z (GLTF
+        // convention: front toward viewer at yaw 0 → that's our DOWN/front row).
+        const rows = [
+            { name: 'up',    yaw: Math.PI },        // behind the model
+            { name: 'left',  yaw: -Math.PI / 2 },   // model's left profile
+            { name: 'down',  yaw: 0 },              // facing camera
+            { name: 'right', yaw: Math.PI / 2 },
+        ];
+        const pitchRad = PITCH * Math.PI / 180;
+
+        for (let r = 0; r < rows.length; r++) {
+            for (let f = 0; f < FRAMES; f++) {
+                mixer.setTime((f / FRAMES) * duration);
+                const yaw = rows[r].yaw;
+                camera.position.set(
+                    center.x + Math.sin(yaw) * Math.cos(pitchRad) * dist,
+                    center.y + Math.sin(pitchRad) * dist,
+                    center.z + Math.cos(yaw) * Math.cos(pitchRad) * dist,
+                );
+                camera.lookAt(center);
+                renderer.render(scene, camera);
+                sctx.imageSmoothingEnabled = true;
+                sctx.imageSmoothingQuality = 'high';
+                sctx.drawImage(renderer.domElement, f * CELL, r * CELL, CELL, CELL);
+            }
+        }
+        // Push the finished sheet back to the server (real-time run; no
+        // --screenshot / virtual-time races). The bash driver polls for the file.
+        sheet.toBlob((blob) => {
+            fetch('/__save/' + (params.get('out') || 'sheet.png'), { method: 'PUT', body: blob })
+                .then(() => { document.title = 'DONE EXC:' + ERR.length; window.__done = true; })
+                .catch((e) => { document.title = 'SAVEFAIL:' + String(e).slice(0, 60); });
+        }, 'image/png');
+    } catch (e) { ERR.push(String(e && e.stack || e)); document.title = 'FAIL:' + String(e).slice(0, 60); }
+}, undefined, (e) => { ERR.push('load: ' + String(e)); document.title = 'LOADFAIL'; });
+</script>
+</body>
+</html>

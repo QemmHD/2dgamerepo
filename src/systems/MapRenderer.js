@@ -222,6 +222,33 @@ export class MapRenderer {
     // no per-frame state to advance and nothing to allocate in the loop.
     // Embers rise (warm, additive); snow falls (cool, source-over). Skipped
     // under reduced-effects / the low-quality governor.
+    // Build the cached god-ray canvas once: a few soft warm diagonal bands.
+    // Fixed 1920x1080 intrinsic size, blitted stretched to the screen (the
+    // bands are soft, so stretching is imperceptible). Returns null in a
+    // non-DOM env so drawWeather simply skips the overlay.
+    _buildRays() {
+        try {
+            const w = 1920, h = 1080;
+            const c = document.createElement('canvas'); c.width = w; c.height = h;
+            const x = c.getContext('2d');
+            x.translate(w * 0.5, 0);
+            x.rotate(0.34); // ~20deg tilt
+            for (let i = 0; i < 5; i++) {
+                const bx = -w * 0.7 + i * (w * 0.34);
+                const bw = 70 + (i % 3) * 45;
+                const g = x.createLinearGradient(bx, 0, bx + bw, 0);
+                g.addColorStop(0, 'rgba(255,190,120,0)');
+                g.addColorStop(0.5, 'rgba(255,190,120,0.5)');
+                g.addColorStop(1, 'rgba(255,190,120,0)');
+                x.fillStyle = g;
+                x.fillRect(bx, -h, bw, h * 3);
+            }
+            return c;
+        } catch (e) {
+            return null;
+        }
+    }
+
     drawWeather(ctx, screenW, screenH, time) {
         if (this.lowQuality || !this.theme) return;
         const kind = this.theme.weather;
@@ -230,6 +257,17 @@ export class MapRenderer {
         const span = screenH + 80;
         ctx.save();
         if (kind === 'embers') {
+            // God-ray / dust-shaft overlay: a few soft angled warm bands built
+            // once into a cached canvas, then blitted additively with a slow
+            // breathing alpha + gentle horizontal parallax. One blit/frame.
+            if (this._rays === undefined) this._rays = this._buildRays();
+            if (this._rays) {
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.06 + 0.04 * Math.sin(time * 0.25);
+                const par = ((time * 6) % 40) - 20;
+                ctx.drawImage(this._rays, par - 20, 0, screenW + 40, screenH);
+                ctx.globalAlpha = 1;
+            }
             ctx.globalCompositeOperation = 'lighter';
             ctx.fillStyle = '#ff9a48';
             for (let i = 0; i < N; i++) {
@@ -269,7 +307,11 @@ export class MapRenderer {
 
         const tint = VIGNETTE.color || '0, 0, 0';
         const grad = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
+        // Layered falloff: two intermediate stops turn the old hard ring into a
+        // filmic graded corner (the darkening eases in instead of snapping).
         grad.addColorStop(0, `rgba(${tint},0)`);
+        grad.addColorStop(0.55, `rgba(${tint},${VIGNETTE.strength * 0.12})`);
+        grad.addColorStop(0.82, `rgba(${tint},${VIGNETTE.strength * 0.5})`);
         grad.addColorStop(1, `rgba(${tint},${VIGNETTE.strength})`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, screenW, screenH);

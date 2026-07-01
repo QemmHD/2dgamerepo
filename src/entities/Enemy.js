@@ -45,6 +45,7 @@ import {
 } from '../assets/ProceduralSprites.js';
 import { getLpcFrames } from '../assets/LpcSprites.js';
 import { getMonsterFrames } from '../assets/MonsterSprites.js';
+import { getEnemyAiFrames, getEnemyAiDirFrames } from '../assets/EnemySprites.js';
 import { getPixelBossFrames } from '../assets/PixelBosses.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
@@ -53,6 +54,9 @@ import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 // animation speed (Hz) — bats flap quickly, brutes breathe slowly.
 // How long the spawn-in scale pop lasts (seconds). easeOutBack overshoot.
 const SPAWN_POP_DUR = 0.28;
+// Airborne creatures don't get a ground contact shadow (they'd read as
+// floating over their own shadow). Bosses draw their own presence shadow.
+const AIRBORNE_TYPES = new Set(['bat', 'mite']);
 
 // Plain chasers within this range of the player get the "smarter" chase
 // (intercept lead + weave + obstacle steering). Far-off trash keeps the cheap
@@ -62,13 +66,13 @@ const CHASER_BRAIN_RANGE = 1500;
 const FRAMES_BY_TYPE = {
     // Imported LPC monster sprites update the original creatures; each falls
     // back to its procedural drawer if the sheet didn't load.
-    slime:           { get: () => getMonsterFrames('slime')   || getSlimeFrames(),   hz: 7 },
-    bat:             { get: () => getMonsterFrames('bat')     || getBatFrames(),     hz: 10 },
+    slime:           { get: () => getEnemyAiFrames('slime') || getMonsterFrames('slime') || getSlimeFrames(), hz: 7 },
+    bat:             { get: () => getEnemyAiFrames('bat')     || getMonsterFrames('bat')     || getBatFrames(),     hz: 10 },
     brute:           { get: () => getLpcFrames('orc'), hz: 7, directional: true },
-    crawler:         { get: () => getMonsterFrames('crawler') || getCrawlerFrames(), hz: 9 },
-    spitter:         { get: () => getMonsterFrames('spitter') || getSpitterFrames(), hz: 6 },
+    crawler:         { get: () => getEnemyAiFrames('crawler') || getMonsterFrames('crawler') || getCrawlerFrames(), hz: 9 },
+    spitter:         { get: () => getEnemyAiFrames('spitter') || getMonsterFrames('spitter') || getSpitterFrames(), hz: 6 },
     charger:         { get: getChargerFrames,         hz: 3 },
-    mite:            { get: () => getMonsterFrames('mite')    || getMiteFrames(),    hz: 12 },
+    mite:            { get: () => getEnemyAiFrames('mite')    || getMonsterFrames('mite')    || getMiteFrames(),    hz: 12 },
     juggernaut:      { get: getJuggernautFrames,      hz: 1.2 },
     healer:          { get: getHealerFrames,          hz: 6 },
     shielder:        { get: getShielderFrames,        hz: 3 },
@@ -78,7 +82,9 @@ const FRAMES_BY_TYPE = {
     // Imported LPC humanoid models — directional 8-frame walk cycles.
     skeleton:        { get: () => getLpcFrames('skeleton'),      hz: 9, directional: true },
     zombie:          { get: () => getLpcFrames('zombie'),        hz: 6, directional: true },
-    emberskeleton:   { get: () => getLpcFrames('emberskeleton'), hz: 10, directional: true },
+    // Ember Warden: an animated 4-direction sheet pre-rendered from a rigged 3D
+    // model (Monster_Walk cycle) — falls back to the recolored LPC skeleton.
+    emberskeleton:   { get: () => getEnemyAiDirFrames('emberskeleton') || getLpcFrames('emberskeleton'), hz: 10, directional: true },
     // Boss animation Hz roughly doubled so their bodies/wings/maws read as
     // alive and aggressive instead of a slow crawl (the % frames.length wrap
     // makes any Hz index-safe regardless of frame count).
@@ -595,24 +601,32 @@ export class Enemy {
             ctx.globalAlpha = 1;
         }
 
+        // Grounding shadow under regular (non-boss) enemies so they read as
+        // standing on the floor rather than floating. One cached soft-shadow
+        // blit (no per-frame gradient); airborne types skip it; fades in with
+        // the spawn pop. Drawn pre-scale in world space, like the boss shadow.
+        if (!this.boss && !AIRBORNE_TYPES.has(this.type)) {
+            const r = this.spriteHalf * this.visualScale;
+            const sw = r * 1.05 * 2, sh = sw * 0.30;
+            const fade = clamp(this.spawnAge / SPAWN_POP_DUR, 0, 1);
+            ctx.globalAlpha = 0.32 * fade;
+            ctx.drawImage(getSoftShadowSprite(), -sw / 2, r * 0.52 - sh / 2, sw, sh);
+            ctx.globalAlpha = 1;
+        }
+
         // Elite glow halo sits behind the sprite at world scale (before the
         // visualScale transform) so it's a roomy ring, not a tight outline.
+        // Cached additive glow blit (affix-tinted) with a slow pulse — the same
+        // per-frame-gradient-free pattern the burn halo already uses.
         if (this.elite) {
-            const haloR = this.spriteHalf * this.visualScale * 0.75;
-            const grad = ctx.createRadialGradient(0, 0, haloR * 0.25, 0, 0, haloR);
-            // Affix tints the halo so the elite's flavor reads at a glance;
-            // plain elites keep the classic gold.
-            if (this.affixDef) {
-                grad.addColorStop(0, hexToHalo(this.affixDef.tint, 0.55));
-                grad.addColorStop(1, hexToHalo(this.affixDef.tint, 0));
-            } else {
-                grad.addColorStop(0, 'rgba(255, 215, 90, 0.5)');
-                grad.addColorStop(1, 'rgba(255, 200, 50, 0)');
-            }
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(0, 0, haloR, 0, TWO_PI);
-            ctx.fill();
+            const col = this.affixDef ? this.affixDef.tint : '#ffd166';
+            const haloR = this.spriteHalf * this.visualScale * 0.9;
+            const pulse = 0.85 + 0.15 * Math.sin(this.animTimer * 3 + this.animOffset);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.42 * pulse;
+            ctx.drawImage(getGlowSprite(col), -haloR, -haloR, haloR * 2, haloR * 2);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
         }
 
         // Slow tell: a thin cool-blue ring (drawn pre-scale in world space,
@@ -821,6 +835,12 @@ export class Enemy {
             ctx.globalAlpha = Math.min(1, 0.9 * t);
             ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
             ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
+            // Brief white glow pop at the very start of the flash (t near 1)
+            // for a satisfying "hit" impact. Cached white glow, additive.
+            if (t > 0.6) {
+                ctx.globalAlpha = (t - 0.6) / 0.4 * 0.55;
+                ctx.drawImage(getGlowSprite('#ffffff'), -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
+            }
         }
         ctx.restore();
     }

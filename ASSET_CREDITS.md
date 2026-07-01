@@ -114,6 +114,30 @@ the pose by live state, riding the procedural squash/breath/flash), and falls ba
 to a procedural heavy-hitter sprite if the images fail to load (see
 `src/assets/LieutenantSprite.js`).
 
+### Basic creatures — `src/assets/enemies/`
+
+| File | Source | Tool / Model | Notes |
+| --- | --- | --- | --- |
+| `src/assets/enemies/ember_slime.png` | Generated | higgsfield (Nano Banana 2) | Molten ember slime — the basic swarm creature (updates the `slime` enemy). Obsidian crust with glowing lava seams, on the EMBERWAKE forge theme. Background keyed to transparent (edge flood-fill + desmoke + despeck) and downscaled to a 256px game sprite. |
+| `src/assets/enemies/ember_bat.png` | Generated | higgsfield (Nano Banana 2) | Charred ember bat — fast aerial minion (updates the `bat` enemy). Blackened body, lava-veined wing membranes. Keyed transparent + trimmed to a 256px sprite. |
+| `src/assets/enemies/ember_serpent.png` | Generated | higgsfield (Nano Banana 2) | Molten lava serpent — low crawler (updates the `crawler` enemy). Coiled obsidian scales with lava seams and a snarling ember maw. Keyed transparent + trimmed to 256px. |
+| `src/assets/enemies/ember_eye.png` | Generated | higgsfield (Nano Banana 2) | Floating ember eye — ranged fire caster (updates the `spitter` enemy). Burning molten iris ringed by charred rock plates and flame. Keyed transparent + trimmed to 256px. |
+| `src/assets/enemies/ember_mite.png` | Generated | higgsfield (Nano Banana 2) | Ember mite — tiny fast swarmer (updates the `mite` enemy). Charred beetle carapace over a glowing lava core. Keyed transparent + trimmed to 256px. |
+| `src/assets/enemies/ember_warden_sheet.png` | Generated | higgsfield (Nano Banana 2 + Meshy image_to_3d) | EMBER WARDEN — animated 4-direction sheet (updates the `emberskeleton` enemy). Pipeline: Nano Banana 2 character concept → Meshy image-to-3D (textured + auto-rigged + Meshy animation-library clip) → rendered to a 4-row × 8-frame grid by `tools/artshot/glbsheet.html` (three.js, headless Chromium, transparent alpha). Row order up/left/down/right matches the LPC convention. |
+| `src/assets/enemies/ember_slime_anim.png` | Generated | higgsfield (Nano Banana 2) | Ember slime 4-frame squash-and-stretch bounce cycle. Generated as one 2×2 grid (single generation → consistent style across frames), sliced + shared-scale aligned by `tools/artshot/strip-frames.mjs` (bottom-anchored so the squash stays grounded). |
+| `src/assets/enemies/ember_bat_anim.png` | Generated | higgsfield (Nano Banana 2) | Ember bat 4-frame wing-flap cycle (wings raised → level → swept down → rising). 2×2 grid → strip-frames.mjs, center-anchored (flyer). |
+| `src/assets/enemies/ember_serpent_anim.png` | Generated | higgsfield (Nano Banana 2) | Lava serpent 4-frame slither/strike sway (coiled → rising → maw open → settling). 2×2 grid → strip-frames.mjs, bottom-anchored. |
+| `src/assets/enemies/ember_eye_anim.png` | Generated | higgsfield (Nano Banana 2) | Ember eye 4-frame flame-pulse cycle (dim → brightening → white-hot blaze → receding) — doubles as a "charging up" tell for the fire-spitter. 2×2 grid → strip-frames.mjs, center-anchored. |
+| `src/assets/enemies/ember_mite_anim.png` | Generated | higgsfield (Nano Banana 2) | Ember mite 4-frame leg-scuttle cycle with flickering shell flame. 2×2 grid → strip-frames.mjs, bottom-anchored. |
+
+These load via `src/assets/EnemySprites.js` (preloaded at boot alongside the LPC
+monster sheets) and slot into `Enemy.js`'s `FRAMES_BY_TYPE` as the preferred layer
+above the imported-LPC → procedural fallbacks. Each creature is a single keyed
+frame that rides the engine's own motion (idle breath, spawn-pop, hit squash,
+status flashes). If an image is missing or still loading, `getEnemyAiFrames()`
+returns null and the creature falls back to its imported-LPC sprite, then its
+procedural drawer — so the swarm always renders.
+
 ## AI-generated UI art (main menu)
 
 | File | Source | Tool / Model | Notes |

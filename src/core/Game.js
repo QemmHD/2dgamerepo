@@ -2803,7 +2803,14 @@ export class Game {
                 numberBudget--;
             }
             if (sparkBudget > 0) {
-                this.particles.hitSpark(hit.x, hit.y);
+                // Element-tinted impact: fire sparks warm, frost/freeze shatter
+                // into shards, shock crackles yellow, everything else the white
+                // default. Activates the frostShards/shockSparks emitters.
+                const el = hit.element;
+                if (el === 'fire') this.particles.hitSpark(hit.x, hit.y, '#ff7a33');
+                else if (el === 'frost' || el === 'freeze') this.particles.frostShards(hit.x, hit.y);
+                else if (el === 'shock') this.particles.shockSparks(hit.x, hit.y);
+                else this.particles.hitSpark(hit.x, hit.y);
                 sparkBudget--;
             }
         }

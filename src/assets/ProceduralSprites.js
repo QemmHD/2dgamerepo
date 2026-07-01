@@ -132,6 +132,9 @@ export const PARTICLE_GLOW_COLORS = [
     // moment never rasterizes a 128px gradient mid-frame.
     '#ff7a1e', '#ffd06a', '#ffb257', '#ff8a3a', '#74e890', '#b6ffcf',
     '#fff1c8', '#ff5a4a', '#ffd86b',
+    // Elite halo gold (the cached additive elite ring) so the first elite
+    // spawn never rasterizes its 128px glow mid-frame.
+    '#ffd166',
 ];
 
 // ── Ground tile ────────────────────────────────────────────────────────
@@ -718,6 +721,18 @@ function addRimLight(canvas) {
     ctx.globalAlpha = cfg.alpha ?? 0.12;
     const px = Math.max(1, Math.round((cfg.offsetLogical ?? 1.5) * SPRITE_SS));
     ctx.drawImage(sil, -px, -px);
+    ctx.restore();
+    // Baked ambient-occlusion shade OPPOSITE the rim: refill the silhouette dark
+    // (sctx is still in 'source-in', so this recolors the shape) and stamp it
+    // offset bottom-right, so every character reads as lit top-left / shaded
+    // bottom-right. Same one-time cache-fill pass — zero per-frame cost.
+    sctx.fillStyle = '#0c1018';
+    sctx.fillRect(0, 0, w, h);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.globalAlpha = 0.14;
+    ctx.drawImage(sil, px, px);
     ctx.restore();
     return canvas;
 }
