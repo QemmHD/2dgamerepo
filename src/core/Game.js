@@ -192,7 +192,7 @@ export class Game {
                     return;
                 }
                 if (this.caseAnim) {
-                    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this._dismissCase(); }
+                    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this._caseInput(); }
                     return;
                 }
                 if (e.code === 'Space' || e.code === 'Enter') {
@@ -386,8 +386,9 @@ export class Game {
                 }
                 return true; // consume taps while the board is up
             }
-            // The case-opening overlay owns input while it's up: any tap continues.
-            if (this.caseAnim) { this._dismissCase(); return true; }
+            // The case-opening overlay owns input: a tap FAST-FORWARDS to the
+            // reveal while spinning, or dismisses once the reward is shown.
+            if (this.caseAnim) { this._caseInput(); return true; }
             const pos = this.renderer.clientToInternal(clientX, clientY);
             // Dispatch against the menu's clickable regions (topmost wins).
             const hs = this.ui.menu.hotspots;
@@ -1083,10 +1084,29 @@ export class Game {
         // with a scrolling reel that decelerates onto the won item.
         this.audio.caseOpen();
         const { reel, landingIndex } = buildCaseReel(caseType, res);
-        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime: 2.6 };
+        // Anticipation: a better pull takes LONGER to settle (tenser slow-down),
+        // so the reveal feels earned. Tier drives spin time + the overlay's FX.
+        const tier = ({ common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, mythic: 5 })[res.rarity] ?? 0;
+        const spinTime = 2.4 + tier * 0.22;
+        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier };
     }
 
     _dismissCase() { this.caseAnim = null; }
+
+    // Case-overlay input: while the reel is still spinning, SNAP to the reveal
+    // (fast-forward) instead of cancelling — impatient players still see their
+    // prize. Once revealed, a tap closes the overlay.
+    _caseInput() {
+        const a = this.caseAnim;
+        if (!a) return;
+        const spinTime = a.spinTime ?? 2.6;
+        if (a.age < spinTime) {
+            a.age = spinTime;               // jump the reel to its landing
+            this.audio.reveal(a.result?.rarity);
+        } else {
+            this._dismissCase();
+        }
+    }
 
     // ── Mines (coin gambling mini-game) ──────────────────────────────────
     // Stake coins on a 5×5 grid hiding mines. Reveal safe tiles to ratchet the
@@ -1897,13 +1917,17 @@ export class Game {
                 const wasSpinning = this.caseAnim.age < spinTime;
                 this.caseAnim.age += dt;
                 if (wasSpinning) {
-                    // Ratchet tick that SLOWS as the reel decelerates (50ms → ~270ms).
+                    // Ratchet tick that SLOWS as the reel decelerates (50ms → ~290ms)
+                    // and RISES in pitch toward the landing — climbing higher when a
+                    // Rare+ is incoming, so your ears feel the pull coming.
                     const p = Math.min(1, this.caseAnim.age / spinTime);
-                    const interval = 0.05 + p * p * 0.22;
+                    const interval = 0.05 + p * p * 0.24;
                     this.caseAnim._tick = (this.caseAnim._tick ?? 0) + dt;
                     if (this.caseAnim.age < spinTime && this.caseAnim._tick >= interval) {
                         this.caseAnim._tick = 0;
-                        this.audio.spinTick();
+                        const tier = this.caseAnim.tier || 0;
+                        const pitch = 0.72 + p * p * 1.0 + (tier >= 2 ? p * p * 0.55 : 0);
+                        this.audio.spinTick(pitch);
                     }
                 }
                 // Fire the reveal chime the instant the reel settles — its pitch/

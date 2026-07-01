@@ -43,6 +43,12 @@ export const CASES = {
 // Shop layout: gear tier then its cosmetic twin, per tier.
 export const CASE_ORDER = ['basic', 'basicCosmetic', 'mystic', 'mysticCosmetic', 'royal', 'royalCosmetic'];
 
+// Bad-luck protection: opens of a case since its last Rare-or-better before one
+// is GUARANTEED. Lower-tier cases (which rarely roll Rare+) get a longer rope;
+// royal cases hit Rare+ constantly so their cap almost never triggers. This is
+// transparent (shown on the shop card) so it reads as a fair safety net.
+export const CASE_PITY = { basic: 12, basicCosmetic: 12, mystic: 9, mysticCosmetic: 9, royal: 7, royalCosmetic: 7 };
+
 // ── Ember Forge ─────────────────────────────────────────────────────────
 // A "doesn't feel like gambling" mode: spend grindable Cinders (coins) to
 // REFINE a reward, with a transparent PITY meter — every forge nudges you
@@ -160,7 +166,25 @@ export function openCase(save, caseType, opts = {}) {
     }
     save.incrementStat('casesOpened', 1);
 
-    return grantRarityReward(save, rollRarity(def.odds), def.poolKind ?? null);
+    // Per-case pity: track opens since this case last paid Rare+; once the cap
+    // is reached, FORCE a Rare+ (then reset). A natural Rare+ also resets it.
+    if (!save.data.casePity) save.data.casePity = {};
+    const cap = CASE_PITY[def.id] || 12;
+    const count = save.data.casePity[def.id] || 0;
+    const rareIdx = RARITY_ORDER.indexOf('rare');
+    let rarity, pity = false;
+    if (count + 1 >= cap) {
+        rarity = rarityAtLeast('rare', def.odds);
+        pity = true;
+        save.data.casePity[def.id] = 0;
+    } else {
+        rarity = rollRarity(def.odds);
+        save.data.casePity[def.id] = RARITY_ORDER.indexOf(rarity) >= rareIdx ? 0 : count + 1;
+    }
+    const res = grantRarityReward(save, rarity, def.poolKind ?? null);
+    if (res.ok) res.pity = pity;
+    save.save();     // persist the pity counter
+    return res;
 }
 
 // Resolve + apply the reward for a rolled rarity (shared by cases + the forge).
@@ -174,8 +198,10 @@ function grantRarityReward(save, rarity, kind = null) {
         if (owned) {
             const amount = rarityDust(rarity);
             save.addCoins(amount);
+            save.incrementStat('dupeCoins', amount);   // lifetime dupe-refund tally
             return { ok: true, kind: 'duplicate', rarity, id: pick.id, name: pick.name,
-                category: pick.category, amount, label: `Duplicate ${pick.name} → ${amount} coins` };
+                category: pick.category, amount, dupeTotal: save.data.stats.dupeCoins,
+                label: `Duplicate ${pick.name} → ${amount} coins` };
         }
         if (pick.kind === 'gear') save.unlockGear(pick.id);
         else save.unlockCosmetic(pick.id);
@@ -240,4 +266,21 @@ export function caseOddsRows(caseType) {
     return RARITY_ORDER.filter((r) => def.odds[r])
         .map((r) => ({ rarity: r, pct: Math.round(def.odds[r] * 100) }))
         .reverse();
+}
+
+// The best rarity a case can drop (for the "up to <rarity>" showcase).
+export function caseTopRarity(caseType) {
+    const def = CASES[caseType];
+    if (!def) return 'common';
+    const listed = RARITY_ORDER.filter((r) => def.odds[r]);
+    return listed[listed.length - 1] || 'common';
+}
+
+// Opens remaining until this case GUARANTEES a Rare+ (shop pity readout).
+// Accepts a SaveSystem instance or a raw save-data object (menu passes data).
+export function casePityRemaining(save, caseType) {
+    const data = (save && save.data) || save || {};
+    const cap = CASE_PITY[caseType] || 12;
+    const count = (data.casePity && data.casePity[caseType]) || 0;
+    return Math.max(1, cap - count);
 }
