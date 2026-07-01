@@ -30,7 +30,7 @@ import { getHeroFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { getMenuImages } from '../assets/MenuImages.js';
 import { getGearEmblem } from '../assets/GearEmblems.js';
 import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
-import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
+import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
@@ -616,7 +616,10 @@ export class MenuRenderer {
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let charSprite = null;
         // Front-facing idle, with a brief cast-pose flash every few seconds so
-        // the preview shows the new attack animation + matches in-game.
+        // the preview shows the new attack animation + matches in-game. The
+        // flag rides along to _drawAvatar so the held wand jumps to the raised
+        // cast fist with the body (LPC bodies alias cast to idle — no jump).
+        const castFlash = !ch.lpc && (this._t % 3.6) > 3.0;
         try {
             const d = getHeroFrames(ch.id, ch).dirs.down;
             charSprite = (this._t % 3.6) > 3.0 ? d.cast[0] : d.idle[0];
@@ -635,7 +638,7 @@ export class MenuRenderer {
         // down on short cards so its ring never bleeds into the CHARACTER label.
         const pedSc = Math.max(0.55, Math.min(1, c.h / 640));
         this._pedestal(ctx, ccx, c.y + c.h * 0.26 + 96 * pedSc, this._t, ch.accent || '#ff7a1e', pedSc);
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
         // Themed-skin caption ABOVE the name (with real clearance so long names
         // never collide with it), then the ellipsized name line.
         const nameY = c.y + c.h * 0.46;
@@ -1095,7 +1098,7 @@ export class MenuRenderer {
     // cached character frame) is supplied it's drawn as the body so the menu
     // model exactly matches the selected character; otherwise a procedural
     // blob is used as a fallback.
-    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null, hold = null, pawColor = '#f0d2a5') {
+    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null, hold = null, pawColor = '#f0d2a5', castPose = false) {
         // The avatar draws the body sprite at S=r*2.4, so the shared cosmetic +
         // weapon-skin helpers (authored in sprite-half units) take s = S/2.
         const S = r * 2.4;
@@ -1142,22 +1145,17 @@ export class MenuRenderer {
         if (heldProp) {
             const propSprite = getWeaponProp(heldProp.prop, heldProp.accent, heldProp.glow);
             if (propSprite) {
-                // Match the in-game articulated hold: a forearm reaches from the
-                // shoulder to the gripping hand (at a jaunty rest angle), with the
-                // weapon + paw at the hand — so the preview shows it actually held.
-                const H = hold || { grip: 0.18, lift: 0.12, scale: 1.0, tilt: 0 };
+                // Match the in-game hold: the wand rests in the body's OWN
+                // paw (the same measured anchors Player uses — no synthetic
+                // arm), with a little paw wrapped over the grip. During the
+                // periodic cast-pose flash the anchor jumps to the raised
+                // fist and the wand flicks up-out, mirroring the in-game cast.
+                const H = hold || { scale: 1.0, tilt: 0 };
                 const k = s / 91;
-                const pscale = k * 0.92 * H.scale;
-                const ang = 0.55 + H.tilt;
-                const sxp = cx + s * 0.13, syp = cy + s * 0.06;
-                const reach = s * 0.30 * H.scale;
-                const hxp = sxp + Math.cos(ang) * reach, hyp = syp + Math.sin(ang) * reach;
-                const armCol = ap.furColor || '#8b5a2b';
-                ctx.lineCap = 'round';
-                ctx.strokeStyle = shade(armCol, 0.42, 'dark'); ctx.lineWidth = 10 * k * H.scale;
-                ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(hxp, hyp); ctx.stroke();
-                ctx.strokeStyle = armCol; ctx.lineWidth = 6.5 * k * H.scale;
-                ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(hxp, hyp); ctx.stroke();
+                const pscale = k * 0.92 * (H.scale || 1);
+                const ang = (castPose ? -0.45 : -1.25) + (H.tilt || 0);
+                const hxp = cx + (castPose ? 49 : 34) * k;
+                const hyp = cy + (castPose ? -41 : 24) * k;
                 ctx.save();
                 ctx.translate(hxp, hyp);
                 ctx.rotate(ang);
@@ -1545,6 +1543,7 @@ export class MenuRenderer {
         const ap = resolveAppearance(save.cosmetics.equipped);
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let charSprite = null;
+        const castFlash = !ch.lpc && (this._t % 4.0) > 3.4;
         try {
             const d = getHeroFrames(ch.id, ch).dirs.down;
             charSprite = (this._t % 4.0) > 3.4 ? d.cast[0] : d.idle[0];
@@ -1560,7 +1559,7 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(192,139,255,0.12)';
         ctx.beginPath(); ctx.arc(0, 0, r * 0.92, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
-        this._drawAvatar(ctx, acx, acy, r, avatarAp, charSprite, null, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        this._drawAvatar(ctx, acx, acy, r, avatarAp, charSprite, null, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#fff'; ctx.font = `800 30px ${FONT}`;
         ctx.fillText(ch.name, acx, acy + r + 30);
