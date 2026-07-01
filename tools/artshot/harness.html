@@ -49,6 +49,7 @@ import { loadLpcSprites } from '../../src/assets/LpcSprites.js';
 import { loadWorldTextures } from '../../src/assets/WorldTextures.js';
 import { loadIconGlyphs } from '../../src/assets/CustomIcons.js';
 import { loadMonsterSprites } from '../../src/assets/MonsterSprites.js';
+import { loadEnemyAiSprites } from '../../src/assets/EnemySprites.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 
 const ERR = [];
@@ -76,7 +77,7 @@ async function boot() {
 
     prewarmSprites();
     for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
-    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites()]);
+    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites()]);
 
     game = new Game({ renderer, input, loop });
     game.showDebug = false;          // no debug grid/HUD in the art frame

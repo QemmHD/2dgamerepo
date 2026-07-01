@@ -45,6 +45,7 @@ import {
 } from '../assets/ProceduralSprites.js';
 import { getLpcFrames } from '../assets/LpcSprites.js';
 import { getMonsterFrames } from '../assets/MonsterSprites.js';
+import { getEnemyAiFrames } from '../assets/EnemySprites.js';
 import { getPixelBossFrames } from '../assets/PixelBosses.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
@@ -65,7 +66,7 @@ const CHASER_BRAIN_RANGE = 1500;
 const FRAMES_BY_TYPE = {
     // Imported LPC monster sprites update the original creatures; each falls
     // back to its procedural drawer if the sheet didn't load.
-    slime:           { get: () => getMonsterFrames('slime')   || getSlimeFrames(),   hz: 7 },
+    slime:           { get: () => getEnemyAiFrames('slime') || getMonsterFrames('slime') || getSlimeFrames(), hz: 7 },
     bat:             { get: () => getMonsterFrames('bat')     || getBatFrames(),     hz: 10 },
     brute:           { get: () => getLpcFrames('orc'), hz: 7, directional: true },
     crawler:         { get: () => getMonsterFrames('crawler') || getCrawlerFrames(), hz: 9 },

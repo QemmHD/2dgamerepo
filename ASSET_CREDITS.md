@@ -114,6 +114,20 @@ the pose by live state, riding the procedural squash/breath/flash), and falls ba
 to a procedural heavy-hitter sprite if the images fail to load (see
 `src/assets/LieutenantSprite.js`).
 
+### Basic creatures — `src/assets/enemies/`
+
+| File | Source | Tool / Model | Notes |
+| --- | --- | --- | --- |
+| `src/assets/enemies/ember_slime.png` | Generated | higgsfield (Nano Banana 2) | Molten ember slime — the basic swarm creature (updates the `slime` enemy). Obsidian crust with glowing lava seams, on the EMBERWAKE forge theme. Background keyed to transparent (edge flood-fill + desmoke + despeck) and downscaled to a 256px game sprite. |
+
+These load via `src/assets/EnemySprites.js` (preloaded at boot alongside the LPC
+monster sheets) and slot into `Enemy.js`'s `FRAMES_BY_TYPE` as the preferred layer
+above the imported-LPC → procedural fallbacks. Each creature is a single keyed
+frame that rides the engine's own motion (idle breath, spawn-pop, hit squash,
+status flashes). If an image is missing or still loading, `getEnemyAiFrames()`
+returns null and the creature falls back to its imported-LPC sprite, then its
+procedural drawer — so the swarm always renders.
+
 ## AI-generated UI art (main menu)
 
 | File | Source | Tool / Model | Notes |
