@@ -1406,7 +1406,15 @@ export class Game {
         if (!choice) return;
         choice.apply(this);
         this.audio.upgrade();
-        this.waveDirector.announce(`RELIC — ${choice.name.toUpperCase()}`, 2.4, '#ff9ecf');
+        // Record the claim in the lifetime codex; a first-ever discovery gets a
+        // brighter callout + a reward flash so unlocking new relics feels earned.
+        const firstTime = choice.relicId ? this.saveSystem.discoverRelic(choice.relicId) : false;
+        if (firstTime) {
+            this.waveDirector.announce(`✦ NEW RELIC — ${choice.name.toUpperCase()} ✦`, 3.0, '#ffd3ec');
+            this._pushFeedback('levelup', 0.4);
+        } else {
+            this.waveDirector.announce(`RELIC — ${choice.name.toUpperCase()}`, 2.4, '#ff9ecf');
+        }
         this.setAltar(null);
         // Drain any queued overlays so the player is never stranded mid-sequence
         // (altars first, then level-ups, then chests — the same discipline the

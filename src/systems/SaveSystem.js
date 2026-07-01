@@ -97,7 +97,10 @@ function defaultData() {
         // Pact Mastery: highest Pact tier (active-Trial count, 0..N) a run has
         // CLEARED (3-boss victory) per character id — the "can't-farm" ladder.
         pactMastery: {},
-        version: 6,
+        // Wick Roads: relic ids the player has EVER claimed (lifetime codex). Purely
+        // a discovery record — relic effects are run-scoped, never persisted.
+        discoveredRelics: [],
+        version: 7,
     };
 }
 
@@ -277,7 +280,11 @@ export class SaveSystem {
             }
         }
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, pactMastery, version: 6 };
+        // Wick Roads relic codex: a deduped list of known-string ids (mirrors the
+        // battlePass.claimed / achievements pattern). A v6 save has no field → [].
+        const discoveredRelics = validateIdList(data.discoveredRelics, []);
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, pactMastery, discoveredRelics, version: 7 };
     }
 
     save() {
@@ -301,6 +308,21 @@ export class SaveSystem {
         this.data.totalCoins -= Math.floor(amount);
         this.save();
         return true;
+    }
+
+    // Wick Roads relic codex. Record a claimed relic id; returns true only the
+    // FIRST time it's ever seen (so Game can fire a "new relic" discovery beat).
+    discoverRelic(id) {
+        if (typeof id !== 'string' || !id) return false;
+        if (!Array.isArray(this.data.discoveredRelics)) this.data.discoveredRelics = [];
+        if (this.data.discoveredRelics.includes(id)) return false;
+        this.data.discoveredRelics.push(id);
+        this.save();
+        return true;
+    }
+
+    getDiscoveredRelics() {
+        return Array.isArray(this.data.discoveredRelics) ? this.data.discoveredRelics : [];
     }
 
     getUpgradeLevel(id) {
