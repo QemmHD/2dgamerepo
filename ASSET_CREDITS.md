@@ -119,6 +119,10 @@ to a procedural heavy-hitter sprite if the images fail to load (see
 | File | Source | Tool / Model | Notes |
 | --- | --- | --- | --- |
 | `src/assets/enemies/ember_slime.png` | Generated | higgsfield (Nano Banana 2) | Molten ember slime — the basic swarm creature (updates the `slime` enemy). Obsidian crust with glowing lava seams, on the EMBERWAKE forge theme. Background keyed to transparent (edge flood-fill + desmoke + despeck) and downscaled to a 256px game sprite. |
+| `src/assets/enemies/ember_bat.png` | Generated | higgsfield (Nano Banana 2) | Charred ember bat — fast aerial minion (updates the `bat` enemy). Blackened body, lava-veined wing membranes. Keyed transparent + trimmed to a 256px sprite. |
+| `src/assets/enemies/ember_serpent.png` | Generated | higgsfield (Nano Banana 2) | Molten lava serpent — low crawler (updates the `crawler` enemy). Coiled obsidian scales with lava seams and a snarling ember maw. Keyed transparent + trimmed to 256px. |
+| `src/assets/enemies/ember_eye.png` | Generated | higgsfield (Nano Banana 2) | Floating ember eye — ranged fire caster (updates the `spitter` enemy). Burning molten iris ringed by charred rock plates and flame. Keyed transparent + trimmed to 256px. |
+| `src/assets/enemies/ember_mite.png` | Generated | higgsfield (Nano Banana 2) | Ember mite — tiny fast swarmer (updates the `mite` enemy). Charred beetle carapace over a glowing lava core. Keyed transparent + trimmed to 256px. |
 
 These load via `src/assets/EnemySprites.js` (preloaded at boot alongside the LPC
 monster sheets) and slot into `Enemy.js`'s `FRAMES_BY_TYPE` as the preferred layer

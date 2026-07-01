@@ -50,6 +50,7 @@ import { loadWorldTextures } from '../../src/assets/WorldTextures.js';
 import { loadIconGlyphs } from '../../src/assets/CustomIcons.js';
 import { loadMonsterSprites } from '../../src/assets/MonsterSprites.js';
 import { loadEnemyAiSprites } from '../../src/assets/EnemySprites.js';
+import { Enemy } from '../../src/entities/Enemy.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 
 const ERR = [];
@@ -62,6 +63,10 @@ const SECONDS = parseFloat(params.get('seconds') || '12');
 const BADGE = params.get('badge') === '1';
 const SCREEN = params.get('screen') || 'run';   // 'run' | 'menu'
 const TAB = params.get('tab') || 'play';
+// showcase="1" (all) or a csv of enemy types → spawn a ring of them around the
+// player and shoot after a short settle, so a verification frame shows the exact
+// sprites regardless of when they'd naturally spawn.
+const SHOWCASE = params.get('showcase');
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -92,12 +97,30 @@ async function boot() {
         game._startRun();                // default hero (monkey "Pyra"), default map
         game.player.damageTakenMul = 0;  // harness godmode: survive the swarm for the shot
 
+        // Showcase: spawn a ring of specific enemy types around the player and only
+        // settle briefly, so the frame shows those exact sprites (mid-run spawn
+        // timing/weapons would otherwise hide or kill them before the shot).
+        let frames = TOTAL_FRAMES;
+        if (SHOWCASE) {
+            const types = SHOWCASE === '1'
+                ? ['slime', 'bat', 'crawler', 'spitter', 'mite']
+                : SHOWCASE.split(',').map((s) => s.trim()).filter(Boolean);
+            const px = game.player.x, py = game.player.y, R = 300;
+            types.forEach((t, i) => {
+                const a = -Math.PI / 2 + i * (2 * Math.PI / types.length);
+                try { game.enemies.push(new Enemy(t, px + Math.cos(a) * R, py + Math.sin(a) * R)); }
+                catch (e) { ERR.push('spawn ' + t + ': ' + String(e && e.stack || e)); }
+            });
+            game.player.damageMul = 0;   // don't let auto-attacks kill the showcase ring
+            frames = 22;                 // ~0.37s: spawn-pop settles, ring stays put
+        }
+
         // Deterministic SYNCHRONOUS stepping: a virtual-time budget can cut off a
         // long rAF chain mid-run, so we step the sim in a tight loop instead (a
         // synchronous loop never yields, so the budget can't interrupt it). Paused
         // overlays (level-up / chest / shrine) are auto-dismissed so the sim keeps
         // advancing to a real swarm instead of freezing on the first level-up.
-        for (let i = 0; i < TOTAL_FRAMES; i++) {
+        for (let i = 0; i < frames; i++) {
             try {
                 game.update(DT);
                 if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);

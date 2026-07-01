@@ -13,7 +13,11 @@
 // the LPC → procedural art and the game always renders. No work on the hot path.
 
 const FILES = {
-    slime: 'ember_slime.png',   // molten ember slime → the basic swarm creature
+    slime: 'ember_slime.png',     // molten ember slime  → basic swarm creature
+    bat: 'ember_bat.png',         // charred ember bat   → fast aerial minion
+    crawler: 'ember_serpent.png', // molten lava serpent → low crawler
+    spitter: 'ember_eye.png',     // floating ember eye  → ranged fire caster
+    mite: 'ember_mite.png',       // tiny ember mite     → fast swarmer
 };
 
 const _frames = {};    // type -> [Image] once loaded ; null on failure

@@ -67,12 +67,12 @@ const FRAMES_BY_TYPE = {
     // Imported LPC monster sprites update the original creatures; each falls
     // back to its procedural drawer if the sheet didn't load.
     slime:           { get: () => getEnemyAiFrames('slime') || getMonsterFrames('slime') || getSlimeFrames(), hz: 7 },
-    bat:             { get: () => getMonsterFrames('bat')     || getBatFrames(),     hz: 10 },
+    bat:             { get: () => getEnemyAiFrames('bat')     || getMonsterFrames('bat')     || getBatFrames(),     hz: 10 },
     brute:           { get: () => getLpcFrames('orc'), hz: 7, directional: true },
-    crawler:         { get: () => getMonsterFrames('crawler') || getCrawlerFrames(), hz: 9 },
-    spitter:         { get: () => getMonsterFrames('spitter') || getSpitterFrames(), hz: 6 },
+    crawler:         { get: () => getEnemyAiFrames('crawler') || getMonsterFrames('crawler') || getCrawlerFrames(), hz: 9 },
+    spitter:         { get: () => getEnemyAiFrames('spitter') || getMonsterFrames('spitter') || getSpitterFrames(), hz: 6 },
     charger:         { get: getChargerFrames,         hz: 3 },
-    mite:            { get: () => getMonsterFrames('mite')    || getMiteFrames(),    hz: 12 },
+    mite:            { get: () => getEnemyAiFrames('mite')    || getMonsterFrames('mite')    || getMiteFrames(),    hz: 12 },
     juggernaut:      { get: getJuggernautFrames,      hz: 1.2 },
     healer:          { get: getHealerFrames,          hz: 6 },
     shielder:        { get: getShielderFrames,        hz: 3 },
