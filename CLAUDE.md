@@ -22,6 +22,33 @@ must reflect wands, never swords.
    `tools/artshot/harness.html` with `badge=1` must show `EXC: 0`, and
    `node tools/validate-assets.js` must exit 0.
 
+## ✅ CANONICAL ENEMY ART STYLE (user-approved "perfect" — do not drift)
+
+The five animated creature sheets shipped in PR #103 are THE style reference
+for all enemy/creature art:
+`src/assets/enemies/{slime,bat,snake,eyeball,bee}_anim.png`.
+
+- **Identities**: the game's ORIGINAL classic creature designs (green gel
+  slime, grey-brown cave bat, green snake, floating eyeball, yellow/black
+  bee) — never re-theme them to fire/ember. Fire styling belongs ONLY to the
+  world, menu, and the Ember Warden elite (`ember_warden_sheet.png`).
+- **Rendering**: high-quality hi-bit pixel art — fine pixels (~64–128px of
+  detail per creature), crisp single-pixel dark outlines, multi-tone shading
+  with selective dithering, hard edges, no anti-aliasing blur, no painterly
+  gradients.
+- **Recipe**: ONE Nano Banana 2 generation per creature as a 2×2 pose grid,
+  img2img with the creature's existing sprite as the reference media, palette
+  locked in the prompt ("keep exact palette, NO fire, NO lava, NO orange");
+  slice with `tools/artshot/strip-frames.mjs` (`--anchor=bottom` grounded /
+  `center` flyers; `--dropshadow=1` if a floor shadow gets baked in). Demand
+  crisp pixel wings/features "by ANGLE only, never motion blur".
+- **Approved grid job ids** (reusable as style references in `medias`):
+  slime `152db454-4466-433e-aed9-7ce6c9329dce`,
+  bat `72461f5b-a5c9-4d75-97bc-140b775787d4`,
+  snake `3d93cb57-ba3e-4a61-bdcd-dfd7b42b483e`,
+  eyeball `38673959-0f1e-48f9-9fc9-449c4953f249`,
+  bee `ac6a53ce-1d64-431a-abda-e2f078fac2c3`.
+
 ## Architecture pointers
 
 - Boot: `src/main.js` → `Game` (`src/core/Game.js`, ~4k lines). Screens:
