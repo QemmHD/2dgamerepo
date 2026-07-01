@@ -22,6 +22,21 @@ const FILES = {
     mite: 'ember_mite.png',       // tiny ember mite     → fast swarmer
 };
 
+// Frame-ANIMATED sheets for the (non-directional) creatures: a single
+// horizontal row of animation frames per creature, generated as a 2×2 Nano
+// Banana 2 grid (one generation → consistent style across frames) and packed by
+// tools/artshot/strip-frames.mjs with shared-scale alignment so squash/stretch
+// survives. Enemy.js cycles the frames at the type's hz — same path the LPC
+// monster frames use. When a sheet loads, it supersedes the single-frame image
+// (which stays as the next fallback layer).
+const ANIM_SHEETS = {
+    slime:   { file: 'ember_slime_anim.png',   cols: 4 },
+    bat:     { file: 'ember_bat_anim.png',     cols: 4 },
+    crawler: { file: 'ember_serpent_anim.png', cols: 4 },
+    spitter: { file: 'ember_eye_anim.png',     cols: 4 },
+    mite:    { file: 'ember_mite_anim.png',    cols: 4 },
+};
+
 // Directional ANIMATED sheets — pre-rendered from a rigged+animated 3D model of
 // the creature (higgsfield image_to_3d + 3d_rigging, walked through the Meshy
 // animation library, rendered to a 4-row grid by tools/artshot/glbsheet.html).
@@ -51,6 +66,46 @@ function loadOne(type) {
         }
     });
     return _started[type];
+}
+
+const _animFrames = {};  // type -> [canvas,...] once sliced; null on failure
+const _animStarted = {};
+
+// Slice a 1-row horizontal animation sheet into SPRITE_SIZE frame canvases.
+// Smooth upscale — painterly art, not pixel art.
+function sliceRowSheet(img, cols) {
+    const cw = Math.floor(img.width / cols);
+    const frames = [];
+    for (let c = 0; c < cols; c++) {
+        const cv = document.createElement('canvas');
+        cv.width = SPRITE_SIZE; cv.height = SPRITE_SIZE;
+        const cx = cv.getContext('2d');
+        cx.imageSmoothingEnabled = true;
+        cx.imageSmoothingQuality = 'high';
+        cx.drawImage(img, c * cw, 0, cw, img.height, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
+        frames.push(cv);
+    }
+    return frames;
+}
+
+function loadAnimOne(type) {
+    if (_animStarted[type]) return _animStarted[type];
+    _animStarted[type] = new Promise((resolve) => {
+        const spec = ANIM_SHEETS[type];
+        try {
+            const im = new Image();
+            im.onload = () => {
+                try { _animFrames[type] = sliceRowSheet(im, spec.cols); resolve(true); }
+                catch (e) { _animFrames[type] = null; resolve(false); }
+            };
+            im.onerror = () => { _animFrames[type] = null; resolve(false); };
+            im.src = new URL(`./enemies/${spec.file}`, import.meta.url).href;
+        } catch (e) {
+            _animFrames[type] = null;   // no Image/canvas (non-DOM env) → fallback
+            resolve(false);
+        }
+    });
+    return _animStarted[type];
 }
 
 const _dirFrames = {};   // type -> {up:[canvas],left,down,right} once sliced; null on failure
@@ -106,6 +161,7 @@ function loadDirOne(type) {
 export function loadEnemyAiSprites() {
     return Promise.all([
         ...Object.keys(FILES).map(loadOne),
+        ...Object.keys(ANIM_SHEETS).map(loadAnimOne),
         ...Object.keys(DIR_SHEETS).map(loadDirOne),
     ]).then((r) => r.some(Boolean));
 }
@@ -119,11 +175,15 @@ export function getEnemyAiDirFrames(type) {
     return _dirFrames[type] || null;
 }
 
-// Single-frame array for a bespoke enemy sprite, or null if it isn't loaded
-// (Enemy.js then uses the imported-LPC → procedural fallback). Kicks a lazy load
-// the first time it's asked for, so the sprite still resolves even if the boot
-// preload was skipped.
+// Frame array for a bespoke enemy sprite — the ANIMATED multi-frame sheet when
+// loaded, else the single keyed frame, else null (Enemy.js then uses the
+// imported-LPC → procedural fallback). Kicks lazy loads the first time it's
+// asked for, so the sprite still resolves even if the boot preload was skipped.
 export function getEnemyAiFrames(type) {
+    if (type in ANIM_SHEETS) {
+        if (!_animStarted[type]) loadAnimOne(type);
+        if (_animFrames[type]) return _animFrames[type];
+    }
     if (!(type in FILES)) return null;
     if (!_started[type]) loadOne(type);
     return _frames[type] || null;
