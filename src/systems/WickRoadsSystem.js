@@ -10,6 +10,7 @@
 import { RELICS, getRelic } from '../content/relics.js';
 import { FUSIONS, findEligibleFusions } from '../content/fusions.js';
 import { PACTS, getPact } from '../content/pacts.js';
+import { ROADS, getRoad } from '../content/roads.js';
 import { WEAPONS } from '../content/weapons.js';
 
 // Rarity draft weights (rarer = less likely to be offered).
@@ -77,6 +78,34 @@ function pactToChoice(pact) {
             game._runPacts.push(pact.id);
         },
     };
+}
+
+// Branching Roads — the post-boss CROSSROADS fork. A road is a pact-shaped card
+// whose apply(game) sets the disposable per-segment bias + a permanent boon (see
+// content/roads.js). All three roads are ALWAYS offered (a fixed fork, not a
+// weighted draw), so the choice is a clear risk/reward read every time.
+function roadToChoice(road) {
+    return {
+        id: `road:${road.id}`,
+        kind: 'road',
+        roadId: road.id,
+        rarity: road.rarity,
+        tintAccent: road.tintAccent,
+        cardLabel: 'ROAD',
+        cardLevelText: 'Branch',
+        name: road.name,
+        description: road.description,
+        apply(game) {
+            const r = getRoad(road.id);
+            if (!r) return;
+            r.apply(game);
+            game._segmentRoadId = road.id;
+        },
+    };
+}
+
+export function rollRoadChoices() {
+    return ROADS.map(roadToChoice);
 }
 
 // Weighted, distinct draw of up to `count` choices. At most ONE eligible fusion
