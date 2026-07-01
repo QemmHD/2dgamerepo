@@ -2,15 +2,16 @@
 // UpgradeSystem contract: rollAltarChoices(game, count) returns a pick-one list
 // of card-shaped choices the level-up overlay UI already knows how to draw
 // ({ id, kind, rarity, cardLabel, cardLevelText, name, description, apply(game) }).
-// For PR1 every choice is a RELIC; later phases add Pact / Fusion choices to the
-// same list. Relics already claimed this run are excluded so a shrine never
-// re-offers something you hold. Effects apply at pick time (see relics.js) — the
-// overlay is confirmation, not a commit step.
+// Choices are RELICS plus — when eligible — a WEAPON FUSION (fuse two owned base
+// weapons into one scalable fusion weapon). Relics already claimed this run and
+// fusions already forged are excluded, so a shrine never re-offers something you
+// hold. Effects apply at pick time; the overlay is confirmation, not a commit.
 
 import { RELICS, getRelic } from '../content/relics.js';
+import { FUSIONS, findEligibleFusions } from '../content/fusions.js';
+import { WEAPONS } from '../content/weapons.js';
 
-// Rarity draft weights (rarer = less likely to be offered). Shared shape with
-// the rest of the game's weighted draws.
+// Rarity draft weights (rarer = less likely to be offered).
 const RARITY_WEIGHT = {
     common: 100,
     uncommon: 55,
@@ -40,23 +41,57 @@ function relicToChoice(relic) {
     };
 }
 
-// Weighted, distinct draw of up to `count` relic choices, skipping any already
-// claimed this run. Falls back gracefully (fewer cards) if the pool runs dry.
+function fusionToChoice(f) {
+    const an = WEAPONS[f.a]?.name ?? f.a;
+    const bn = WEAPONS[f.b]?.name ?? f.b;
+    return {
+        id: `fuse:${f.fusedWeaponId}`,
+        kind: 'fusion',
+        rarity: 'epic',               // fusions read as a rare, exciting pull
+        cardLabel: 'FUSE',
+        cardLevelText: 'Weapon',
+        name: f.name,
+        description: `Fuse ${an} + ${bn} into ${f.name}.`,
+        apply(game) {
+            game.weaponSystem.fuseWeapons(f.a, f.b, f.fusedWeaponId);
+        },
+    };
+}
+
+// Weighted, distinct draw of up to `count` choices. A single eligible fusion (if
+// any) is offered — never more than one, and never forced — with the remaining
+// slots filled by weighted relics; if the relic pool is exhausted, extra fusions
+// backfill so the altar is never empty.
 export function rollAltarChoices(game, count = 3) {
     const owned = new Set(Array.isArray(game._runRelics) ? game._runRelics : []);
-    const pool = RELICS.filter((r) => !owned.has(r.id));
+    const relicPool = RELICS.filter((r) => !owned.has(r.id));
+    const fusionPool = findEligibleFusions(game).map(fusionToChoice);
     const chosen = [];
-    while (chosen.length < count && pool.length > 0) {
+
+    // Reserve at most ONE slot for a random eligible fusion.
+    if (fusionPool.length > 0) {
+        const i = (Math.random() * fusionPool.length) | 0;
+        chosen.push(fusionPool.splice(i, 1)[0]);
+    }
+
+    // Fill remaining slots with weighted, distinct relics.
+    while (chosen.length < count && relicPool.length > 0) {
         let total = 0;
-        for (const r of pool) total += RARITY_WEIGHT[r.rarity] ?? 20;
+        for (const r of relicPool) total += RARITY_WEIGHT[r.rarity] ?? 20;
         let roll = Math.random() * total;
         let idx = 0;
-        for (let i = 0; i < pool.length; i++) {
-            roll -= RARITY_WEIGHT[pool[i].rarity] ?? 20;
+        for (let i = 0; i < relicPool.length; i++) {
+            roll -= RARITY_WEIGHT[relicPool[i].rarity] ?? 20;
             if (roll <= 0) { idx = i; break; }
         }
-        chosen.push(relicToChoice(pool[idx]));
-        pool.splice(idx, 1);
+        chosen.push(relicToChoice(relicPool[idx]));
+        relicPool.splice(idx, 1);
     }
+
+    // Late-game backfill: if relics ran dry, offer any remaining eligible fusions.
+    while (chosen.length < count && fusionPool.length > 0) {
+        chosen.push(fusionPool.shift());
+    }
+
     return chosen;
 }

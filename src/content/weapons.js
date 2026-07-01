@@ -306,6 +306,119 @@ export const WEAPONS = {
         update: thunderCrownUpdate,
     },
 
+    // ── Fusion weapons (only reachable via a Wick Shrine "fuse") ──────────
+    // A fusion welds two OWNED base weapons into one new weapon that — unlike an
+    // evolution (maxLevel 1) — SCALES its own perLevel (maxLevel 5), so it keeps
+    // pace late. `fusion: true` keeps it out of the level-up new-weapon pool
+    // (WickRoadsSystem offers the fuse instead); it reuses an existing behavior
+    // so no new engine code is needed. Recipes live in content/fusions.js.
+    cinderlance: {
+        id: 'cinderlance', name: 'Cinderlance', description: 'Piercing bolts that leave a spreading blaze.',
+        kind: 'projectile', fusion: true, element: 'fire', maxLevel: 5,
+        perLevel: [
+            null,
+            { damage: 44, cooldown: 0.34, projectileSpeed: 1060, projectileRadius: 18, pierce: 2, burnDps: 24, burnDuration: 3.0 },
+            { damage: 52, cooldown: 0.31, projectileSpeed: 1100, projectileRadius: 18, pierce: 2, burnDps: 30, burnDuration: 3.0 },
+            { damage: 61, cooldown: 0.28, projectileSpeed: 1140, projectileRadius: 19, pierce: 3, burnDps: 36, burnDuration: 3.2 },
+            { damage: 72, cooldown: 0.26, projectileSpeed: 1180, projectileRadius: 19, pierce: 3, burnDps: 43, burnDuration: 3.2 },
+            { damage: 86, cooldown: 0.24, projectileSpeed: 1240, projectileRadius: 20, pierce: 4, burnDps: 52, burnDuration: 3.4 },
+        ],
+        update: emberWispUpdate,
+    },
+    stormlance: {
+        id: 'stormlance', name: 'Stormlance', description: 'Arcane bolts that arc shock through the crowd.',
+        kind: 'lightning', fusion: true, element: 'shock', maxLevel: 5,
+        perLevel: [
+            null,
+            { damage: 40, cooldown: 0.34, range: 460, chainCount: 3, chainChance: 0.95, chainRange: 260, chainDamage: 28, shockPerStack: 0.08, maxShockStacks: 5, shockDuration: 4.0 },
+            { damage: 47, cooldown: 0.31, range: 480, chainCount: 3, chainChance: 0.97, chainRange: 270, chainDamage: 33, shockPerStack: 0.09, maxShockStacks: 5, shockDuration: 4.0 },
+            { damage: 55, cooldown: 0.28, range: 500, chainCount: 4, chainChance: 1.0, chainRange: 280, chainDamage: 39, shockPerStack: 0.09, maxShockStacks: 6, shockDuration: 4.0 },
+            { damage: 65, cooldown: 0.26, range: 520, chainCount: 4, chainChance: 1.0, chainRange: 290, chainDamage: 46, shockPerStack: 0.10, maxShockStacks: 6, shockDuration: 4.0 },
+            { damage: 78, cooldown: 0.24, range: 540, chainCount: 5, chainChance: 1.0, chainRange: 300, chainDamage: 55, shockPerStack: 0.10, maxShockStacks: 6, shockDuration: 4.0 },
+        ],
+        update: voltWandUpdate,
+    },
+    emberstorm: {
+        id: 'emberstorm', name: 'Emberstorm', description: 'Storm-strikes that detonate the fires they find.',
+        kind: 'lightning', fusion: true, element: 'shock', maxLevel: 5,
+        perLevel: [
+            null,
+            { strikes: 4, damage: 40, cooldown: 1.5, range: 1250, shockPerStack: 0.09, maxShockStacks: 4, shockDuration: 4.0 },
+            { strikes: 4, damage: 48, cooldown: 1.4, range: 1280, shockPerStack: 0.09, maxShockStacks: 4, shockDuration: 4.0 },
+            { strikes: 5, damage: 56, cooldown: 1.3, range: 1300, shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0 },
+            { strikes: 6, damage: 66, cooldown: 1.2, range: 1320, shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0 },
+            { strikes: 7, damage: 78, cooldown: 1.1, range: 1360, shockPerStack: 0.11, maxShockStacks: 6, shockDuration: 4.0 },
+        ],
+        update: lightningMarkUpdate,
+    },
+    glacialbeacon: {
+        id: 'glacialbeacon', name: 'Glacial Beacon', description: 'A wide ring of glaives that deep-freeze all it sweeps.',
+        kind: 'orbit', fusion: true, element: 'frost', maxLevel: 5,
+        perLevel: [
+            null,
+            { bladeCount: 4, damage: 26, orbitSpeed: 4.0, orbitRadius: 150, bladeRadius: 34, hitCooldown: 0.30, slowMul: 0.58, slowDuration: 1.4, chillMul: 0.58, chillDuration: 1.4 },
+            { bladeCount: 5, damage: 30, orbitSpeed: 4.2, orbitRadius: 156, bladeRadius: 35, hitCooldown: 0.28, slowMul: 0.55, slowDuration: 1.4, chillMul: 0.55, chillDuration: 1.4 },
+            { bladeCount: 5, damage: 35, orbitSpeed: 4.4, orbitRadius: 162, bladeRadius: 36, hitCooldown: 0.27, slowMul: 0.52, slowDuration: 1.5, chillMul: 0.52, chillDuration: 1.5 },
+            { bladeCount: 6, damage: 41, orbitSpeed: 4.6, orbitRadius: 168, bladeRadius: 38, hitCooldown: 0.26, slowMul: 0.48, slowDuration: 1.5, chillMul: 0.48, chillDuration: 1.5 },
+            { bladeCount: 7, damage: 49, orbitSpeed: 4.8, orbitRadius: 176, bladeRadius: 40, hitCooldown: 0.24, slowMul: 0.44, slowDuration: 1.6, chillMul: 0.44, chillDuration: 1.6 },
+        ],
+        initialState() { return { baseAngle: 0, bladePositions: [] }; },
+        update: orbitingBladeUpdate,
+    },
+    judgmentpulse: {
+        id: 'judgmentpulse', name: 'Judgment Pulse', description: 'A vast pulse that flays armor from a held crowd.',
+        kind: 'pulse', fusion: true, maxLevel: 5,
+        perLevel: [
+            null,
+            { radius: 470, damage: 34, cooldown: 1.7, shredPerStack: 0.11, shredDuration: 4.0, maxShredStacks: 5 },
+            { radius: 500, damage: 40, cooldown: 1.6, shredPerStack: 0.11, shredDuration: 4.0, maxShredStacks: 5 },
+            { radius: 530, damage: 47, cooldown: 1.5, shredPerStack: 0.12, shredDuration: 4.0, maxShredStacks: 6 },
+            { radius: 560, damage: 55, cooldown: 1.4, shredPerStack: 0.12, shredDuration: 4.0, maxShredStacks: 6 },
+            { radius: 600, damage: 65, cooldown: 1.3, shredPerStack: 0.13, shredDuration: 4.0, maxShredStacks: 7 },
+        ],
+        update: holyPulseUpdate,
+    },
+    cinderhalo: {
+        id: 'cinderhalo', name: 'Cinderhalo', description: 'Bolt-forged glaives that carve a chilling orbit.',
+        kind: 'orbit', fusion: true, element: 'frost', maxLevel: 5,
+        perLevel: [
+            null,
+            { bladeCount: 3, damage: 30, orbitSpeed: 4.2, orbitRadius: 140, bladeRadius: 32, hitCooldown: 0.28, slowMul: 0.60, slowDuration: 1.3, chillMul: 0.60, chillDuration: 1.3 },
+            { bladeCount: 3, damage: 36, orbitSpeed: 4.4, orbitRadius: 146, bladeRadius: 34, hitCooldown: 0.27, slowMul: 0.57, slowDuration: 1.3, chillMul: 0.57, chillDuration: 1.3 },
+            { bladeCount: 4, damage: 42, orbitSpeed: 4.6, orbitRadius: 152, bladeRadius: 35, hitCooldown: 0.26, slowMul: 0.54, slowDuration: 1.4, chillMul: 0.54, chillDuration: 1.4 },
+            { bladeCount: 4, damage: 50, orbitSpeed: 4.8, orbitRadius: 158, bladeRadius: 37, hitCooldown: 0.25, slowMul: 0.50, slowDuration: 1.4, chillMul: 0.50, chillDuration: 1.4 },
+            { bladeCount: 5, damage: 60, orbitSpeed: 5.0, orbitRadius: 166, bladeRadius: 39, hitCooldown: 0.24, slowMul: 0.46, slowDuration: 1.5, chillMul: 0.46, chillDuration: 1.5 },
+        ],
+        initialState() { return { baseAngle: 0, bladePositions: [] }; },
+        update: orbitingBladeUpdate,
+    },
+    voltpyre: {
+        id: 'voltpyre', name: 'Voltpyre', description: 'Scorching bolts that sear a long, hot burn.',
+        kind: 'projectile', fusion: true, element: 'fire', maxLevel: 5,
+        perLevel: [
+            null,
+            { damage: 40, cooldown: 0.32, projectileSpeed: 980, projectileRadius: 17, pierce: 2, burnDps: 30, burnDuration: 3.4 },
+            { damage: 47, cooldown: 0.30, projectileSpeed: 1000, projectileRadius: 17, pierce: 2, burnDps: 37, burnDuration: 3.4 },
+            { damage: 55, cooldown: 0.28, projectileSpeed: 1030, projectileRadius: 18, pierce: 3, burnDps: 45, burnDuration: 3.6 },
+            { damage: 65, cooldown: 0.26, projectileSpeed: 1060, projectileRadius: 18, pierce: 3, burnDps: 54, burnDuration: 3.6 },
+            { damage: 78, cooldown: 0.24, projectileSpeed: 1100, projectileRadius: 19, pierce: 4, burnDps: 65, burnDuration: 3.8 },
+        ],
+        update: emberWispUpdate,
+    },
+    stormglaive: {
+        id: 'stormglaive', name: 'Stormglaive', description: 'Storm-branded strikes rain where the glaives sweep.',
+        kind: 'lightning', fusion: true, element: 'shock', maxLevel: 5,
+        perLevel: [
+            null,
+            { strikes: 3, damage: 44, cooldown: 1.4, range: 1200, shockPerStack: 0.09, maxShockStacks: 4, shockDuration: 4.0 },
+            { strikes: 4, damage: 50, cooldown: 1.3, range: 1220, shockPerStack: 0.09, maxShockStacks: 4, shockDuration: 4.0 },
+            { strikes: 4, damage: 58, cooldown: 1.2, range: 1250, shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0 },
+            { strikes: 5, damage: 68, cooldown: 1.1, range: 1280, shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0 },
+            { strikes: 6, damage: 80, cooldown: 1.0, range: 1320, shockPerStack: 0.11, maxShockStacks: 6, shockDuration: 4.0 },
+        ],
+        update: lightningMarkUpdate,
+    },
+
     // ── Abilities ───────────────────────────────────────────────────────
     // Data-driven, movement-only. They appear in the level-up pool like any
     // other weapon. None require manual aiming.

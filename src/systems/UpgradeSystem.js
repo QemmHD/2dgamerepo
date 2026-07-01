@@ -214,11 +214,12 @@ export class UpgradeSystem {
                 pool.push(weaponUpgradeChoice(w));
             }
         }
-        // Per-unowned-weapon unlock entries. Evolved weapons are reached
-        // only via chest evolution, never offered as a level-up choice.
+        // Per-unowned-weapon unlock entries. Evolved weapons are reached only
+        // via chest evolution, and FUSION weapons only via a Wick Shrine fuse —
+        // neither is ever offered as a level-up choice.
         for (const id of WEAPON_IDS) {
             if (ownedWeaponIds.has(id)) continue;
-            if (WEAPONS[id].evolved) continue;
+            if (WEAPONS[id].evolved || WEAPONS[id].fusion) continue;
             pool.push(newWeaponChoice(id));
         }
 

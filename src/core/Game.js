@@ -1406,14 +1406,21 @@ export class Game {
         if (!choice) return;
         choice.apply(this);
         this.audio.upgrade();
-        // Record the claim in the lifetime codex; a first-ever discovery gets a
-        // brighter callout + a reward flash so unlocking new relics feels earned.
-        const firstTime = choice.relicId ? this.saveSystem.discoverRelic(choice.relicId) : false;
-        if (firstTime) {
-            this.waveDirector.announce(`✦ NEW RELIC — ${choice.name.toUpperCase()} ✦`, 3.0, '#ffd3ec');
+        if (choice.kind === 'fusion') {
+            // Fusing is a run-defining moment — announce it like an evolution.
+            this.waveDirector.announce(`⚔ FUSED — ${choice.name.toUpperCase()} ⚔`, 3.0, '#ffd3ec');
             this._pushFeedback('levelup', 0.4);
+            this.particles.levelUpBurst(this.player.x, this.player.y);
         } else {
-            this.waveDirector.announce(`RELIC — ${choice.name.toUpperCase()}`, 2.4, '#ff9ecf');
+            // Relic: record the claim in the lifetime codex; a first-ever discovery
+            // gets a brighter callout + a reward flash so it feels earned.
+            const firstTime = choice.relicId ? this.saveSystem.discoverRelic(choice.relicId) : false;
+            if (firstTime) {
+                this.waveDirector.announce(`✦ NEW RELIC — ${choice.name.toUpperCase()} ✦`, 3.0, '#ffd3ec');
+                this._pushFeedback('levelup', 0.4);
+            } else {
+                this.waveDirector.announce(`RELIC — ${choice.name.toUpperCase()}`, 2.4, '#ff9ecf');
+            }
         }
         this.setAltar(null);
         // Drain any queued overlays so the player is never stranded mid-sequence
