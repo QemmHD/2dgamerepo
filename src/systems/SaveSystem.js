@@ -9,6 +9,7 @@ import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR, GEAR_LIST } from '../cont
 import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST } from '../content/cosmetics.js';
 import { CHARACTER_IDS, DEFAULT_CHARACTER } from '../content/characters.js';
 import { MAPS, DEFAULT_MAP, isMapUnlocked } from '../content/maps.js';
+import { getAttunable, attuneCost } from '../content/relics.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 
@@ -100,6 +101,10 @@ function defaultData() {
         // Wick Roads: relic ids the player has EVER claimed (lifetime codex). Purely
         // a discovery record — relic effects are run-scoped, never persisted.
         discoveredRelics: [],
+        // Relic Attunement: the coin-fed infinite sink. { [relicId]: level } — a
+        // permanent, always-on bonus applied ONCE at run start (see relics.js
+        // ATTUNABLE / applyAttunements). Only DEFENSIVE/UTILITY relics are attunable.
+        relicAttunement: {},
         version: 7,
     };
 }
@@ -284,7 +289,21 @@ export class SaveSystem {
         // battlePass.claimed / achievements pattern). A v6 save has no field → [].
         const discoveredRelics = validateIdList(data.discoveredRelics, []);
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, pactMastery, discoveredRelics, version: 7 };
+        // Relic Attunement map: { [relicId]: level }. Keep only KNOWN attunable ids
+        // with a positive integer level, clamped to that relic's max. Anything else
+        // (unknown id, non-numeric, ≤0, over-cap) is dropped/clamped — a corrupt or
+        // tampered save can never grant an out-of-bounds attunement.
+        const dra = data.relicAttunement && typeof data.relicAttunement === 'object' ? data.relicAttunement : {};
+        const relicAttunement = {};
+        for (const k of Object.keys(dra)) {
+            const def = getAttunable(k);
+            const v = dra[k];
+            if (def && Number.isFinite(v) && v > 0) {
+                relicAttunement[k] = Math.min(def.max, Math.floor(v));
+            }
+        }
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, pactMastery, discoveredRelics, relicAttunement, version: 7 };
     }
 
     save() {
@@ -323,6 +342,35 @@ export class SaveSystem {
 
     getDiscoveredRelics() {
         return Array.isArray(this.data.discoveredRelics) ? this.data.discoveredRelics : [];
+    }
+
+    // ── Relic Attunement (coin sink) ─────────────────────────────────────
+    // Live attunement map { [relicId]: level }. Always an object.
+    getRelicAttunements() {
+        if (!this.data.relicAttunement || typeof this.data.relicAttunement !== 'object') {
+            this.data.relicAttunement = {};
+        }
+        return this.data.relicAttunement;
+    }
+
+    getRelicAttunement(id) {
+        return this.getRelicAttunements()[id] ?? 0;
+    }
+
+    // Buy the NEXT attunement level for a relic, spending coins. Returns true only
+    // if the purchase succeeded (known attunable id, below its max, coins on hand).
+    // Cost + cap live in relics.js so save + shop agree.
+    attuneRelic(id) {
+        const def = getAttunable(id);
+        if (!def) return false;
+        const levels = this.getRelicAttunements();
+        const cur = levels[id] ?? 0;
+        if (cur >= def.max) return false;
+        const cost = attuneCost(def, cur);
+        if (!this.spendCoins(cost)) return false;   // spendCoins saves on success
+        levels[id] = cur + 1;
+        this.save();
+        return true;
     }
 
     getUpgradeLevel(id) {

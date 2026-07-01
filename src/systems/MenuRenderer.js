@@ -24,6 +24,7 @@ import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
+import { ATTUNABLE, getRelic, attuneCost } from '../content/relics.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getHeroFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
@@ -45,6 +46,7 @@ const TAU = Math.PI * 2;
 export const MENU_TABS = [
     { id: 'play', label: 'PLAY', accent: '#5fd36a' },
     { id: 'skills', label: 'SKILLS', accent: '#7fd0ff' },
+    { id: 'attune', label: 'ATTUNE', accent: '#ff9ecf' },
     { id: 'loadout', label: 'LOADOUT', accent: '#ffce54' },
     { id: 'character', label: 'CHARACTER', accent: '#c08bff' },
     { id: 'shop', label: 'SHOP', accent: '#ff9a4a' },
@@ -363,6 +365,7 @@ export class MenuRenderer {
         const tab = state.menuTab || 'play';
         if (tab === 'play') this._drawPlay(ctx, state);
         else if (tab === 'skills') this._drawSkills(ctx, state);
+        else if (tab === 'attune') this._drawAttune(ctx, state);
         else if (tab === 'loadout') this._drawLoadout(ctx, state);
         else if (tab === 'character') this._drawCharacter(ctx, state);
         else if (tab === 'shop') this._drawShop(ctx, state);
@@ -1067,6 +1070,80 @@ export class MenuRenderer {
         const rr = { x: c.x + c.w / 2 - 170, y: c.y + c.h - 60, w: 340, h: 52 };
         this._button(ctx, rr, state.resetConfirming ? 'TAP AGAIN TO CONFIRM' : 'RESET SAVE',
             { accent: state.resetConfirming ? '#7a2230' : 'rgba(80,30,38,0.8)', action: 'resetSave', fontSize: 22 });
+    }
+
+    // ── ATTUNE — Relic Attunement (the coin-fed infinite sink) ────────────
+    // A defensive/utility subset of relics can be permanently attuned with coins.
+    // Mirrors _drawSkills' coin-buy card, but reads levels from save.relicAttunement
+    // and prices via attuneCost(def, level). Deliberately no raw-damage attunements
+    // (see relics.js ATTUNABLE) so a coin hoard can't out-scale the hypergrowth wall.
+    _drawAttune(ctx, state) {
+        const c = this._contentRect();
+        const save = state.saveData;
+        const levels = (save.relicAttunement && typeof save.relicAttunement === 'object') ? save.relicAttunement : {};
+        const discovered = Array.isArray(save.discoveredRelics) ? save.discoveredRelics : [];
+        ctx.textBaseline = 'alphabetic';
+
+        // Intro line — what this panel does (permanent, applied at run start).
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(255,158,207,0.92)'; ctx.font = `700 21px ${FONT}`;
+        ctx.fillText('RELIC ATTUNEMENT', c.x, c.y + 4);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 17px ${FONT}`;
+        ctx.fillText('Spend coins for permanent, always-on relic bonuses — applied at the start of every run.', c.x, c.y + 28);
+
+        const gridTop = c.y + 52;
+        const cols = 2, gap = 24;
+        const cardW = (c.w - gap) / cols;
+        const cardH = 96;
+        const rowGap = 16;
+        for (let i = 0; i < ATTUNABLE.length; i++) {
+            const def = ATTUNABLE[i];
+            const relic = getRelic(def.id);
+            const col = i % cols, row = Math.floor(i / cols);
+            const x = c.x + col * (cardW + gap);
+            const y = gridTop + row * (cardH + rowGap);
+            const level = levels[def.id] ?? 0;
+            const maxed = level >= def.max;
+            const cost = attuneCost(def, level);
+            const afford = !maxed && save.totalCoins >= cost;
+            const rc = relic ? rarityColor(relic.rarity) : '#ff9ecf';
+            // Color-coded state (matches SKILLS): green = maxed, gold = affordable,
+            // dim = can't afford. Left accent bar uses the relic's rarity color.
+            const stateCol = maxed ? '#5fd36a' : afford ? '#ffce54' : 'rgba(255,255,255,0.12)';
+            roundRectPath(ctx, x, y, cardW, cardH, 12);
+            ctx.fillStyle = afford ? 'rgba(46,40,18,0.92)' : maxed ? 'rgba(20,34,24,0.92)' : 'rgba(22,27,36,0.9)';
+            ctx.fill();
+            ctx.strokeStyle = stateCol;
+            ctx.lineWidth = afford || maxed ? 2.5 : 2; ctx.stroke();
+            ctx.fillStyle = rc;
+            ctx.fillRect(x + 4, y + 12, 5, cardH - 24);
+            ctx.textAlign = 'left';
+            const nm = relic ? relic.name : def.id;
+            ctx.fillStyle = rc; ctx.font = `700 25px ${FONT}`;
+            ctx.fillText(nm, x + 22, y + 34);
+            const nameW = ctx.measureText(nm).width;   // measure at the title font
+            // "Discovered" tick — flavor tie-in to the Wick Roads codex (not a gate).
+            if (discovered.includes(def.id)) {
+                ctx.fillStyle = 'rgba(127,208,255,0.85)'; ctx.font = `700 15px ${FONT}`;
+                ctx.fillText('✦ found', x + 22 + nameW + 14, y + 32);
+            }
+            ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.font = `500 19px ${FONT}`;
+            ctx.fillText(def.blurb, x + 22, y + 58);
+            // Segmented level progress bar (filled = owned levels).
+            const segGap = 4, segY = y + 74, segH = 8;
+            const segW = (210 - segGap * (def.max - 1)) / def.max;
+            for (let s = 0; s < def.max; s++) {
+                ctx.fillStyle = s < level ? stateCol : 'rgba(255,255,255,0.12)';
+                ctx.fillRect(x + 22 + s * (segW + segGap), segY, Math.max(2, segW), segH);
+            }
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 15px ${FONT}`;
+            ctx.fillText(`Lv ${level}/${def.max}`, x + 22, y + 90);
+            // Buy button on the right.
+            const bw = 150, bh = 56;
+            const br = { x: x + cardW - bw - 16, y: y + (cardH - bh) / 2, w: bw, h: bh };
+            this._button(ctx, br, maxed ? 'MAX' : `◎ ${cost}`,
+                { enabled: afford, accent: afford ? '#2e6b3f' : null, action: maxed ? null : 'attuneRelic', arg: def.id });
+        }
     }
 
     // ── LOADOUT / CHARACTER shared grid ──────────────────────────────────

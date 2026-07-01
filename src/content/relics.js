@@ -145,3 +145,43 @@ const RELIC_BY_ID = Object.fromEntries(RELICS.map((r) => [r.id, r]));
 export function getRelic(id) {
     return RELIC_BY_ID[id] ?? null;
 }
+
+// ── Relic Attunement — the coin-fed infinite sink ────────────────────────
+// A DEFENSIVE/UTILITY subset of relics can be permanently "attuned" with coins:
+// each attunement level grants a small, always-on bonus applied ONCE at run start
+// (like a permanent upgrade — zero per-frame cost). Deliberately no raw
+// weapon-damage attunements, so a maxed-out coin hoard can't power-creep past the
+// hypergrowth wall — it just makes you a bit sturdier / richer / faster to gear.
+// Each `per(player)` is one level's worth; Game applies it `level` times at start.
+export const ATTUNABLE = [
+    { id: 'emberheart',     max: 10, costBase: 200, blurb: '+6 Max HP / level',        per(p) { p.maxHp += 6; p.hp += 6; } },
+    { id: 'warding-cinder', max: 8,  costBase: 320, blurb: '-2% damage taken / level',  per(p) { p.damageTakenMul = (p.damageTakenMul ?? 1) * 0.98; } },
+    { id: 'stoneskin',      max: 8,  costBase: 280, blurb: '-1.5% damage taken / level', per(p) { p.damageTakenMul = (p.damageTakenMul ?? 1) * 0.985; } },
+    { id: 'swiftsole',      max: 8,  costBase: 220, blurb: '+1.5% move speed / level',   per(p) { p.speed *= 1.015; } },
+    { id: 'hearthblood',    max: 8,  costBase: 240, blurb: '+0.4 HP/sec regen / level',  per(p) { p.regenPerSecond = (p.regenPerSecond ?? 0) + 0.4; } },
+    { id: 'farsight',       max: 6,  costBase: 160, blurb: '+6% pickup range / level',   per(p) { p.pickupRange *= 1.06; } },
+    { id: 'scholars-wick',  max: 8,  costBase: 200, blurb: '+3% XP gain / level',        per(p) { p.xpMultiplier *= 1.03; } },
+    { id: 'coinlust',       max: 8,  costBase: 180, blurb: '+5% coins / level',          per(p) { p.coinMul *= 1.05; } },
+];
+
+const ATTUNABLE_BY_ID = Object.fromEntries(ATTUNABLE.map((a) => [a.id, a]));
+
+export function getAttunable(id) {
+    return ATTUNABLE_BY_ID[id] ?? null;
+}
+
+// Coin cost to buy the NEXT attunement level (escalates ~1.55×/level).
+export function attuneCost(def, level) {
+    if (!def) return Infinity;
+    return Math.round(def.costBase * Math.pow(1.55, level));
+}
+
+// Apply every saved attunement to the player once (run start). `levels` is the
+// save map { relicId: level }. Silently skips unknown ids / non-positive levels.
+export function applyAttunements(player, levels) {
+    if (!player || !levels) return;
+    for (const def of ATTUNABLE) {
+        const lv = levels[def.id] | 0;
+        for (let i = 0; i < lv && i < def.max; i++) def.per(player);
+    }
+}
