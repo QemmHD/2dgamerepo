@@ -34,6 +34,8 @@ import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
 import { pickDailyChallenges, currentDayNumber } from '../content/dailyChallenges.js';
+import { getDailySetup } from '../content/dailyRoad.js';
+import { getRoad } from '../content/roads.js';
 import { PATRONS, PATRON_IDS } from '../content/patrons.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
@@ -745,8 +747,39 @@ export class MenuRenderer {
         }
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-        // START RUN — animated (RGB hue-cycle border + warm sheen sweep + glow).
-        this._drawStartButton(ctx, { x: innerX, y: startY, w: innerW, h: startH }, t);
+        // START RUN (left) + DAILY ROAD (right) share the CTA row. START stays the
+        // big animated call-to-action; DAILY launches the day's curated fixed run.
+        const dGap = 12;
+        const dailyW = Math.min(240, innerW * 0.34);
+        const startW = innerW - dailyW - dGap;
+        this._drawStartButton(ctx, { x: innerX, y: startY, w: startW, h: startH }, t);
+        this._drawDailyButton(ctx, { x: innerX + startW + dGap, y: startY, w: dailyW, h: startH }, state, t);
+    }
+
+    // DAILY ROAD launch button — a distinct pink/gold CTA showing the day's fixed
+    // setup (biome + forced road) and today's best score. Same-for-everyone each
+    // UTC day; forces Normal difficulty. Dispatches the 'startDaily' action.
+    _drawDailyButton(ctx, r, state, t) {
+        const setup = getDailySetup(currentDayNumber());
+        const mapName = (MAPS[setup.mapId]?.name) || setup.mapId;
+        const roadName = (getRoad(setup.roadId)?.name) || setup.roadId;
+        const best = state.dailyRoadBest ?? 0;
+        const glow = 0.5 + Math.sin(t * 3) * 0.25;
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
+        ctx.fillStyle = 'rgba(60,26,44,0.95)'; ctx.fill();
+        ctx.save();
+        ctx.globalAlpha = glow;
+        ctx.strokeStyle = '#ff9ecf'; ctx.lineWidth = 2.5;
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14); ctx.stroke();
+        ctx.restore();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd3ec'; ctx.font = `800 22px ${FONT}`;
+        ctx.fillText('DAILY ROAD', r.x + r.w / 2, r.y + r.h / 2 - 16);
+        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
+        ctx.fillText(`${mapName} · ${roadName}`, r.x + r.w / 2, r.y + r.h / 2 + 6);
+        ctx.fillStyle = 'rgba(255,206,84,0.9)'; ctx.font = `700 13px ${FONT}`;
+        ctx.fillText(best > 0 ? `Best today: ${best}` : 'No run yet today', r.x + r.w / 2, r.y + r.h / 2 + 24);
+        this._hot(r.x, r.y, r.w, r.h, 'startDaily', null);
     }
 
     // Pulsing accent glow behind a SELECTED chip (biome / difficulty / trial).

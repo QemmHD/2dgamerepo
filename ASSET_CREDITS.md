@@ -100,3 +100,16 @@ External and procedural assets flow through a shared customization system:
 
 Procedural fallback is always kept: if an imported asset fails to load, the
 game falls back to its code-drawn sprite.
+
+## AI-generated sprites
+
+| File | Source | Tool / Model | Notes |
+| --- | --- | --- | --- |
+| `src/assets/enemies/lieutenant.png` | Generated | higgsfield (Nano Banana) | LIEUTENANT mini-boss — idle pose. Background keyed to transparent; downscaled to a game sprite. |
+| `src/assets/enemies/lieutenant_attack.png` | Generated | higgsfield (Nano Banana) | LIEUTENANT — attack pose (axe raised), generated on-model from the idle reference. |
+| `src/assets/enemies/lieutenant_hurt.png` | Generated | higgsfield (Nano Banana) | LIEUTENANT — hurt/recoil pose, generated on-model from the idle reference. |
+
+The Lieutenant renders through the engine's normal enemy path (`Enemy.draw` picks
+the pose by live state, riding the procedural squash/breath/flash), and falls back
+to a procedural heavy-hitter sprite if the images fail to load (see
+`src/assets/LieutenantSprite.js`).

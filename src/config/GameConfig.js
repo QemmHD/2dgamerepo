@@ -722,6 +722,25 @@ export const ELITE = {
     xpMul: 5,
 };
 
+// LIEUTENANT — a mid-segment mini-boss (tougher than an elite, weaker than a
+// boss) that appears once partway through each boss-to-boss stretch, with a
+// short telegraph and a coin/chest reward. It is NOT a boss (never sets e.boss)
+// and NOT an elite (spawned with explicit muls, no affix) — see Game._spawnLieutenant.
+export const LIEUTENANT = {
+    hpMul: 10,             // between elite (4×) and a scaled boss
+    dmgMul: 1.4,
+    speedMul: 1.0,
+    radiusMul: 1.5,        // reads as elite-plus, still smaller than a boss
+    fireFraction: 0.5,     // fires ~50% into each boss segment
+    warningDuration: 2.0,
+    coinCount: 5,
+    coinValue: 2,
+    chestChance: 0.35,
+    // Curated heavy-hitter pool (all exist in ENEMY); filtered to those present.
+    types: ['brute', 'juggernaut', 'dreadhulk'],
+    color: '#ffc24a',
+};
+
 // Rolled affixes layered onto an elite for visible variety + a death/while-
 // alive twist. Each elite picks one at random. Colors tint the elite glow.
 export const ELITE_AFFIXES = ['swift', 'volatile', 'splitting', 'reflective', 'regenerating', 'frenzied'];

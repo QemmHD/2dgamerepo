@@ -13,6 +13,7 @@ import {
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { Easing } from '../core/Easing.js';
+import { getLieutenantSprites } from '../assets/LieutenantSprite.js';
 import {
     getSlimeFrames,
     getBatFrames,
@@ -763,8 +764,24 @@ export class Enemy {
             }
             frames = this.dirFrames[this._facing] || this.frames;
         }
-        const idx = Math.floor(this.animTimer * this.frameHz) % frames.length;
-        const frame = frames[idx];
+        // Lieutenant mini-boss: a bespoke 3-pose keyed sprite set (idle/attack/hurt)
+        // stands in for the procedural frame and rides ALL the animation + flash
+        // re-draws below. Pose by live state — hurt on hit-flash, attack on wind-up
+        // or a periodic heft, idle otherwise — each falling back to idle, then to
+        // the procedural heavy-hitter frame until the images load (or if they fail).
+        let frame;
+        if (this.lieutenant) {
+            const set = getLieutenantSprites();
+            if (set && set.idle) {
+                if (this.hitFlashTimer > 0 && set.hurt) frame = set.hurt;
+                else if (set.attack && ((this.windupTimer > 0 && this.def.windup > 0) || Math.sin(this.animTimer * 1.6 + this.animOffset) > 0.6)) frame = set.attack;
+                else frame = set.idle;
+            }
+        }
+        if (!frame) {
+            const idx = Math.floor(this.animTimer * this.frameHz) % frames.length;
+            frame = frames[idx];
+        }
         ctx.drawImage(frame, -this.spriteHalf, -this.spriteHalf, SPRITE_SIZE, SPRITE_SIZE);
 
         // Elite shimmer + hit flash use additive 'lighter' re-draws of the
