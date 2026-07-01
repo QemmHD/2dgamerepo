@@ -282,6 +282,40 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
     return p.finish();
 }
 
+// Feature-only overlay for the AI hero body: the per-hero identity accents
+// (elf ears / tusks / horns / hood / hat) drawn standalone on the 48-grid at
+// the shared head anchor, so HeroAiSprites can composite them over the shared
+// HQ body. `bob` matches the frame's HERO_BOB entry so features ride the head.
+// The ember brow mark is NOT drawn here — the AI base bakes it. Returns null
+// for feature-less heroes (the plain monkey).
+export function drawHeroFeatureOverlay(opts = {}, dir = 'down', bob = 0) {
+    const feature = opts.feature || null;
+    if (!feature) return null;
+    if (feature === 'tusks' && dir === 'up') return null;   // invisible from behind
+    const pal = opts.palette || {};
+    const fur = pal.fur || '#8b5a2b';
+    const furD = pal.furDark || shade(fur, 0.4, 'dark');
+    const face = pal.face || '#f0d2a5';
+    const accent = opts.accent || '#ffb24a';
+    const p = pixelCanvas(MONKEY_L);
+    const cx = CX;
+    const headY = HEAD_Y + bob;
+    if (feature === 'ears') { // elf — tall pointed ears rising past the round ones
+        if (dir === 'side') { p.rect(cx - 9, headY - 9, 3, 10, fur); p.rect(cx - 8, headY - 7, 1, 6, face); }
+        else { p.sym(7, headY - 8, 3, 10, fur); if (dir === 'down') p.sym(8, headY - 6, 1, 6, face); }
+    } else if (feature === 'tusks' && dir !== 'up') {
+        p.rect(cx - 6, headY + 6, 2, 3, '#f3ead2'); p.rect(cx + 4, headY + 6, 2, 3, '#f3ead2');
+    } else if (feature === 'horns') {
+        p.line(cx - 7, headY - 8, cx - 10, headY - 12, accent, 2); p.line(cx + 7, headY - 8, cx + 10, headY - 12, accent, 2);
+    } else if (feature === 'hood') {
+        p.rect(cx - 11, headY - 9, 22, 6, furD); p.ell(cx, headY - 6, 11, 5, furD);
+    } else if (feature === 'hat') {
+        p.rect(cx - 9, headY - 10, 18, 3, accent); p.ell(cx, headY - 12, 7, 4, accent);
+    }
+    outline(p, shade(fur, 0.62, 'dark'));
+    return p.finish();
+}
+
 // Back-compat: the original 4-frame monkey (frame 0 = idle, 1..3 = walk),
 // front-facing. Consumers that still want a flat array use getCharacterFrames.
 export function drawPixelMonkey(frame = 0, opts = {}) {
