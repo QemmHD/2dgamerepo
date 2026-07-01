@@ -52,7 +52,7 @@ import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { AudioSystem } from '../systems/AudioSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { rollChestReward } from '../systems/ChestRewards.js';
-import { rollAltarChoices } from '../systems/WickRoadsSystem.js';
+import { rollAltarChoices, rollRoadChoices } from '../systems/WickRoadsSystem.js';
 import { applyAttunements } from '../content/relics.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
@@ -563,6 +563,19 @@ export class Game {
         this.pendingAltars = 0;
         this._runRelics = [];
         this._runPacts = [];
+        // Branching Roads: the post-boss CROSSROADS (a fork reusing the altar
+        // overlay) sets a DISPOSABLE per-segment bias — enemy-mix (segmentWeights)
+        // + difficulty multipliers (segmentScale) folded into waveState each frame
+        // by _applyRunScale, then cleared at the next boss (_clearSegmentRoad).
+        // Run-only, never persisted. The boon a road grants at pick time is a modest
+        // permanent player nudge — damage/speed ride the _applyPlayerCaps ceilings;
+        // coins/regen are economy-only and naturally modest (never a power runaway).
+        this.segmentScale = { hp: 1, speed: 1, damage: 1, elite: 1, cap: 1, interval: 1 };
+        this.segmentWeights = null;
+        this._segmentRoadId = null;
+        // A boss kill flags this; the end-of-update presenter opens the CROSSROADS
+        // once no other overlay is up, so a same-frame level-up never stacks with it.
+        this.pendingCrossroads = false;
         // Weapon-aura cache (recomputed only when weaponSystem.version changes).
         this._auraVersion = -1;
         this._auraSnapshot = null;
@@ -730,6 +743,9 @@ export class Game {
         // Apply the selected biome's color grade + per-map darkness for this run.
         const biome = getMap(this.saveSystem.getSelectedMap());
         this.mapRenderer.theme = biome;
+        // Remember the untinted biome so a Branching Roads re-tint can revert to it
+        // at the next boss (roads spread onto a NEW theme object, never mutate this).
+        this._baseBiomeTheme = biome;
         // Regenerate the world's obstacles/buildings themed to this biome (each
         // biome is a distinct, deterministic layout with its own prop set,
         // colour tint, and building styles). Cheap + seeded, so same biome →
@@ -1435,6 +1451,12 @@ export class Game {
             this.waveDirector.announce(`☠ PACT SWORN — ${choice.name.toUpperCase()} ☠`, 3.0, '#c97bff');
             this._pushFeedback('levelup', 0.4);
             this._shake(SCREEN_SHAKE.intensity * 0.5, 0.35);
+        } else if (choice.kind === 'road') {
+            // Branching Roads: the fork biases the segment ahead (apply() already
+            // set segmentScale/segmentWeights + the re-tint + the boon). Announce it
+            // in the road's own accent so the choice reads.
+            this.waveDirector.announce(`⟡ ${choice.name.toUpperCase()} ⟡`, 2.6, choice.tintAccent || '#ffb060');
+            this._pushFeedback('levelup', 0.3);
         } else {
             // Relic: record the claim in the lifetime codex; a first-ever discovery
             // gets a brighter callout + a reward flash so it feels earned.
@@ -1453,6 +1475,29 @@ export class Game {
         if (this.pendingAltars > 0) this._presentAltar();
         else if (this.pendingLevelUps > 0) this._presentLevelUp();
         else if (this.pendingChests > 0) this._presentChest();
+    }
+
+    // ── Branching Roads (post-boss CROSSROADS fork) ───────────────────────
+    // Opens the pick-one road choice by REUSING the altar overlay (tagged
+    // kind:'crossroads'): it inherits every altar freeze/input guard for free, so
+    // there is no new stranded-player surface. Selection routes through selectAltar,
+    // whose 'road' branch announces it; each road's apply(game) set the segment bias.
+    _presentCrossroads() {
+        const choices = rollRoadChoices();
+        if (!choices || !choices.length) return;
+        this.altar = { choices, age: 0, kind: 'crossroads' };
+        this._updateJoystickEnabled();
+    }
+
+    // End the current road's segment bias: reset the disposable multiplier/mix
+    // layers to neutral and restore the base biome tint. Called when the NEXT boss
+    // spawns, so a road shapes exactly the stretch between two bosses. The road's
+    // permanent boon (applied to the player at pick time) is NOT undone here.
+    _clearSegmentRoad() {
+        this.segmentScale = { hp: 1, speed: 1, damage: 1, elite: 1, cap: 1, interval: 1 };
+        this.segmentWeights = null;
+        this._segmentRoadId = null;
+        if (this._baseBiomeTheme && this.mapRenderer) this.mapRenderer.theme = this._baseBiomeTheme;
     }
 
     // Nudge a desired spawn point to the nearest spot not inside an obstacle.
@@ -1537,14 +1582,23 @@ export class Game {
     _applyRunScale(ws) {
         const r = this.runScale;
         if (!r || !ws) return ws;
-        ws.healthMul = (ws.healthMul ?? 1) * r.hp;
-        ws.speedMul = (ws.speedMul ?? 1) * r.speed;
-        ws.damageMul = (ws.damageMul ?? 1) * r.damage;
-        ws.eliteChance = Math.min(0.85, (ws.eliteChance ?? 0) * r.elite);
+        // Branching Roads: the current road's DISPOSABLE per-segment multipliers
+        // (default all-1) compose on top of the run scale. getState() hands back a
+        // fresh literal each frame, so clearing segmentScale to 1s at the next boss
+        // reverts the bias next frame with zero undo bookkeeping.
+        const s = this.segmentScale;
+        ws.healthMul = (ws.healthMul ?? 1) * r.hp * (s?.hp ?? 1);
+        ws.speedMul = (ws.speedMul ?? 1) * r.speed * (s?.speed ?? 1);
+        ws.damageMul = (ws.damageMul ?? 1) * r.damage * (s?.damage ?? 1);
+        ws.eliteChance = Math.min(0.85, (ws.eliteChance ?? 0) * r.elite * (s?.elite ?? 1));
         // Hard ceiling so the Swarm trial (+difficulty) can't push the alive
         // count past a perf-safe max on mobile (base cap is 180).
-        ws.maxAlive = Math.min(220, Math.round((ws.maxAlive ?? 0) * r.cap));
-        ws.spawnIntervalMul = (ws.spawnIntervalMul ?? 1) * r.interval;
+        ws.maxAlive = Math.min(220, Math.round((ws.maxAlive ?? 0) * r.cap * (s?.cap ?? 1)));
+        ws.spawnIntervalMul = (ws.spawnIntervalMul ?? 1) * r.interval * (s?.interval ?? 1);
+        // Enemy-MIX bias: merge the road's spawn weights onto a NEW typeWeights
+        // object (getState returns a reference to the WAVES config table — never
+        // mutate it in place). Null → the wave's native mix is untouched.
+        if (this.segmentWeights) ws.typeWeights = { ...ws.typeWeights, ...this.segmentWeights };
         return ws;
     }
 
@@ -1589,6 +1643,9 @@ export class Game {
     _spawnBoss(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
+        // Branching Roads: a new boss ends the prior segment's road bias (mix +
+        // difficulty multipliers + re-tint revert). The road's permanent boon stays.
+        this._clearSegmentRoad();
         // Boss arena reset: clear lingering trash so the fight is about the
         // boss + its own themed adds (which spawn near it below), not leftover
         // swarm. Cleared enemies are banished (no gems), and a puff sells it.
@@ -1991,6 +2048,7 @@ export class Game {
         this.pendingChests = 0;
         this.altar = null;
         this.pendingAltars = 0;
+        this.pendingCrossroads = false;
 
         // Bank run coins to total — exactly once (the helper is guarded by
         // bankedThisRun, which also covers abandoning via the pause overlay).
@@ -2528,6 +2586,15 @@ export class Game {
                     // Arm the post-death cooldown so the next boss doesn't
                     // chain in immediately after a late kill.
                     this.bossDirector.notifyBossDefeated(this.time);
+                    // Branching Roads: on every boss EXCEPT the run-ending 3rd
+                    // (which opens the victory overlay), QUEUE a CROSSROADS fork.
+                    // The end-of-update presenter opens it once no other overlay is
+                    // up — deferring (not force-setting this.altar) so a same-frame
+                    // level-up can't stack a hidden overlay under the fork's cards.
+                    // In endless/gauntlet (_victoryShown latched), isFinalBoss is
+                    // false forever after, so forks reappear after every boss.
+                    const isFinalBoss = (this.bossesDefeated >= 3 && !this._victoryShown);
+                    if (!isFinalBoss) this.pendingCrossroads = true;
                     this._dropBossReward(e.x, e.y);
                     this._dropCoinBurst(e.x, e.y, COIN.bossCoinCount, COIN.bossCoinValue);
                     // Setpiece payoff: a banner, a heavy layered burst, and a
@@ -2546,7 +2613,7 @@ export class Game {
                     this.arena = null;
                     // Clearing the 3rd boss is a milestone: open the victory
                     // overlay (continue / new biome / main menu) once per run.
-                    if (this.bossesDefeated >= 3 && !this._victoryShown) {
+                    if (isFinalBoss) {
                         this._victoryShown = true;
                         this._showVictory();
                     }
@@ -2644,8 +2711,14 @@ export class Game {
             }
         }
         // Present whichever reward overlay is queued — only one is ever open at a
-        // time (mutually exclusive with chest/level-up).
-        if (this.pendingChests > 0 && !this.chestReward && !this.upgradeChoices && !this.altar) {
+        // time (mutually exclusive with chest/level-up). The Branching Roads
+        // CROSSROADS takes priority (the boss beat comes first, before its own
+        // chest/shrine reward), and only opens once every other overlay is clear
+        // so it can never stack on a same-frame level-up.
+        if (this.pendingCrossroads && !this.chestReward && !this.upgradeChoices && !this.altar && !this.victory) {
+            this.pendingCrossroads = false;
+            this._presentCrossroads();
+        } else if (this.pendingChests > 0 && !this.chestReward && !this.upgradeChoices && !this.altar) {
             this._presentChest();
         } else if (this.pendingAltars > 0 && !this.chestReward && !this.upgradeChoices && !this.altar) {
             this._presentAltar();

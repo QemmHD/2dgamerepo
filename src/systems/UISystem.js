@@ -1497,6 +1497,9 @@ export class UISystem {
         if (!altar || !altar.choices) return;
         const choices = altar.choices;
         const age = altar.age ?? 1;
+        // Branching Roads reuses this overlay tagged kind:'crossroads' — same
+        // card layout + freeze, different heading/copy/tint so the fork reads.
+        const isRoads = altar.kind === 'crossroads';
 
         ctx.save();
         const bg = easeOutQuad(clamp01(age / 0.18));
@@ -1510,14 +1513,17 @@ export class UISystem {
         ctx.translate(INTERNAL_WIDTH / 2, 210);
         ctx.scale(titleScale, titleScale);
         ctx.font = `bold 96px ${FONT}`;
-        ctx.fillStyle = '#ff9ecf';
-        ctx.fillText('WICK SHRINE', 0, 0);
+        ctx.fillStyle = isRoads ? '#ffc061' : '#ff9ecf';
+        ctx.fillText(isRoads ? 'CROSSROADS' : 'WICK SHRINE', 0, 0);
         ctx.restore();
 
         ctx.globalAlpha = bg;
         ctx.font = `34px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.78)';
-        ctx.fillText('Claim a relic — it lasts the whole run', INTERNAL_WIDTH / 2, 290);
+        ctx.fillText(
+            isRoads ? 'Choose your road — it shapes the stretch ahead' : 'Claim a relic — it lasts the whole run',
+            INTERNAL_WIDTH / 2, 290
+        );
         ctx.globalAlpha = 1;
 
         const rects = this.getLevelUpCardRects(choices.length);
@@ -1546,7 +1552,7 @@ export class UISystem {
         ctx.fillStyle = 'rgba(255,255,255,0.65)';
         ctx.font = `24px ${FONT}`;
         ctx.fillText(
-            'Tap a relic  •  1 / 2 / 3',
+            isRoads ? 'Tap a road  •  1 / 2 / 3' : 'Tap a relic  •  1 / 2 / 3',
             INTERNAL_WIDTH / 2,
             INTERNAL_HEIGHT - 56 - this.renderer.safeArea.bottom
         );
