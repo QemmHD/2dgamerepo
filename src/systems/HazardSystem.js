@@ -8,9 +8,18 @@
 // Draw order is preserved exactly: drawGround paints the ground decals
 // (telegraphs, delayed zones, lingering pools) below entities; drawAbove
 // paints the bright shockwave rings + laser beams above entities.
+//
+// P1.2 "Living Biomes" adds the per-map SIGNATURE GROUND HAZARDS here too:
+// updateBiome is the spawner (a small cadence scheduler whose state lives on
+// game.biomeHazard, keeping this class stateless), and the patches ride the
+// same game.hazards pool — simmed in update(), drawn in drawGround(). All
+// four kinds are fully procedural (flat fills/strokes + a bright rim so
+// they read on the dark ground; no gradients, no AI-art dependency), every
+// patch blooms in over a `warn` telegraph before it does anything, and the
+// spawn ring guarantees one never opens underfoot.
 
-import { TWO_PI } from '../core/MathUtils.js';
-import { BOSS_ATTACK, GFX, LIGHT_COLORS } from '../config/GameConfig.js';
+import { TWO_PI, clamp } from '../core/MathUtils.js';
+import { BIOME_HAZARD, BOSS_ATTACK, GFX, LIGHT_COLORS, WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 
 // Mirrors Game's CULL_MARGIN (half the largest sprite + headroom + shake).
@@ -24,10 +33,52 @@ export class HazardSystem {
     // consistent within the frame. A shockwave damages the player once,
     // when its expanding band first crosses them (i-frames handle the rest).
     update(dt, game) {
+        // Biome-terrain player modifiers are RE-STAMPED from scratch each
+        // frame (patches below re-assert them), so stepping off a patch
+        // reverses everything instantly with zero undo bookkeeping.
+        const pl = game.player;
+        pl.terrainSlowMul = 1;
+        pl.iceSlipT = 0;
+        game._gloomIn = false;
         for (const hz of game.hazards) {
             if (!hz.active) continue;
             hz.age += dt;
+            // ── P1.2 biome patches: one shared branch for all four kinds.
+            // Telegraph first (no effect during warn), then stamp terrain
+            // effects / tick damage only while the player's CENTER is inside
+            // (slightly forgiving — fair for a floor hazard).
+            if (hz.biome) {
+                if (hz.age >= hz.lifetime) { hz.active = false; continue; }
+                if (hz.age < hz.warn) continue;
+                const dx = pl.x - hz.x, dy = pl.y - hz.y;
+                if (dx * dx + dy * dy > hz.r * hz.r) continue;
+                if (hz.slowMul < 1) pl.terrainSlowMul = Math.min(pl.terrainSlowMul, hz.slowMul); // brambles/quicksand wade
+                if (hz.kind === 'iceSlick') pl.iceSlipT = 1;
+                if (hz.kind === 'gloom') game._gloomIn = true;
+                if (hz.tickDamage > 0) {
+                    // Same 0.4s tick idiom as the boss 'lingering' pools
+                    // (i-frame gated by takeDamage; hurt audio rides the
+                    // central HP-drop watcher in Game).
+                    hz.tickTimer -= dt;
+                    if (hz.tickTimer <= 0) {
+                        hz.tickTimer = 0.4;
+                        const dealt = pl.takeDamage(hz.tickDamage);
+                        if (dealt > 0) {
+                            game._playerHurtShake(dealt);
+                            game.damageNumbers.push(new DamageNumber(
+                                pl.x, pl.y - pl.radius, dealt, hz.rim));
+                        }
+                    }
+                }
+                continue;
+            }
             if (hz.kind === 'bossTelegraph') {
+                // A freeze proc pauses the owner's windup (Enemy.update gates
+                // the whole behavior branch), so pause the ring with it —
+                // otherwise the telegraph expires mid-freeze and the thawed
+                // shockwave commits with no warning left on the ground. Only
+                // lieutenants set an owner (bosses are freeze-exempt).
+                if (hz.owner && hz.owner.active && hz.owner.freezeTimer > 0) hz.age -= dt;
                 hz.r = hz.rMax * Math.min(1, hz.age / hz.lifetime);
                 if (hz.age >= hz.lifetime) hz.active = false;
                 continue;
@@ -126,6 +177,60 @@ export class HazardSystem {
             }
             if (hz.r >= hz.rMax) hz.active = false;
         }
+        // Crypts gloom pressure (P1.2): ease the player-light squeeze toward
+        // in/out of a pool so the veil closes in smoothly, never snaps. The
+        // render pass reads game.gloomT to shrink the player light's radius.
+        const gTarget = game._gloomIn ? 1 : 0;
+        game.gloomT = (game.gloomT ?? 0) + (gTarget - (game.gloomT ?? 0)) * Math.min(1, dt * 3);
+    }
+
+    // ── P1.2 biome hazard spawner ──────────────────────────────────────────
+    // Cadence scheduler for the current map's signature patches. All state
+    // lives on game.biomeHazard ({ kind, timer }, armed by _initRunState from
+    // the map def) so this class stays stateless. Patches spawn on a ring
+    // ahead of the player's heading — they pressure the path you're TAKING —
+    // but never underfoot (spawnMin), never inside cover, capped at
+    // maxActive, and held entirely during boss setpieces (arenas are
+    // authored by the boss's own kit).
+    updateBiome(dt, game) {
+        const bh = game.biomeHazard;
+        if (!bh) return;
+        if (game.arena || game.bossWarning) return;
+        bh.timer -= dt;
+        if (bh.timer > 0) return;
+        const B = BIOME_HAZARD;
+        bh.timer = B.interval * (1 - B.intervalJitter + Math.random() * 2 * B.intervalJitter);
+        const cfg = B[bh.kind];
+        if (!cfg) return;
+        let live = 0;
+        for (const hz of game.hazards) if (hz.active && hz.biome) live++;
+        const count = Math.min(B.maxActive - live, Math.random() < 0.45 ? 2 : 1);
+        const pl = game.player;
+        const moving = pl.vx || pl.vy;
+        const heading = moving ? Math.atan2(pl.vy, pl.vx) : Math.random() * TWO_PI;
+        const halfW = WORLD_WIDTH / 2 - 160, halfH = WORLD_HEIGHT / 2 - 160;
+        for (let i = 0; i < count; i++) {
+            // Bias ahead of the heading (±~75°) at a ring that can't land on
+            // the player. A blocked spot is skipped, not retried — the
+            // cadence refills soon enough that fairness beats persistence.
+            const a = heading + (Math.random() - 0.5) * 2.6;
+            const d = B.spawnMin + Math.random() * (B.spawnMax - B.spawnMin);
+            const x = clamp(pl.x + Math.cos(a) * d, -halfW, halfW);
+            const y = clamp(pl.y + Math.sin(a) * d, -halfH, halfH);
+            // The border clamp can drag a ring spot back over an edge-hugging
+            // player (center closer than the patch radius) — re-check the
+            // spawnMin promise after clamping and skip, same as a blocked spot.
+            const pdx = x - pl.x, pdy = y - pl.y;
+            if (pdx * pdx + pdy * pdy < B.spawnMin * B.spawnMin) continue;
+            if (game.obstacleSystem.isBlocked(x, y, cfg.r * 0.7)) continue;
+            game.hazards.push({
+                kind: bh.kind, biome: true, x, y, r: cfg.r,
+                warn: cfg.warn, age: 0, lifetime: cfg.warn + cfg.duration,
+                tickTimer: 0, tickDamage: cfg.tickDamage ?? 0,
+                slowMul: cfg.slowMul ?? 1, color: cfg.color, rim: cfg.rim,
+                seed: Math.random() * TWO_PI, active: true,
+            });
+        }
     }
 
     // Ground decals — drawn below entities so the boss paints over them.
@@ -222,6 +327,82 @@ export class HazardSystem {
             }
             ctx.restore();
             if (L && hz.age >= hz.warn) L.addLight(hz.x, hz.y, hz.r + 40, hz.color || LIGHT_COLORS.fire, 0.7, 2);
+        }
+
+        // ── P1.2 biome signature patches — procedural ground decals. ──────
+        // Shared telegraph language: every patch BLOOMS open across its warn
+        // (radius + alpha ramp), damaging kinds wear the boss warning color
+        // on their rim until they go live, then switch to their own bright
+        // rim so danger vs. terrain reads at a glance on the dark ground.
+        // All flat fills/strokes off hz fields — no gradients, no allocation.
+        for (const hz of game.hazards) {
+            if (!hz.active || !hz.biome) continue;
+            if (!game._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
+            const warm = Math.min(1, hz.age / hz.warn);
+            const live = hz.age >= hz.warn;
+            // Fade out across the final second so patches never pop off.
+            const fade = Math.min(1, hz.lifetime - hz.age);
+            const r = hz.r * (0.55 + 0.45 * warm);
+            ctx.save();
+            ctx.translate(hz.x, hz.y);
+            // Body fill + rim (shared), then the kind's identity marks.
+            ctx.globalAlpha = (hz.kind === 'gloom' ? 0.30 + 0.25 * warm
+                : hz.kind === 'iceSlick' ? 0.10 + 0.10 * warm
+                : 0.16 + 0.14 * warm) * fade;
+            ctx.fillStyle = hz.color;
+            ctx.beginPath(); ctx.arc(0, 0, r, 0, TWO_PI); ctx.fill();
+            const danger = hz.tickDamage > 0 && !live;
+            ctx.globalAlpha = (0.35 + 0.35 * warm) * fade;
+            ctx.strokeStyle = danger ? BOSS_ATTACK.telegraphColor : hz.rim;
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(0, 0, r, 0, TWO_PI); ctx.stroke();
+            if (hz.kind === 'brambles') {
+                // Thorn chevrons scattered on a seeded ring — reads as briar.
+                ctx.globalAlpha = (0.4 + 0.4 * warm) * fade;
+                ctx.strokeStyle = hz.rim;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let k = 0; k < 7; k++) {
+                    const a = hz.seed + (k / 7) * TWO_PI;
+                    const tr = r * (0.28 + 0.4 * (((k * 5) % 7) / 7));
+                    const tx = Math.cos(a) * tr, ty = Math.sin(a) * tr;
+                    ctx.moveTo(tx - 7, ty + 6); ctx.lineTo(tx, ty - 8); ctx.lineTo(tx + 7, ty + 6);
+                }
+                ctx.stroke();
+            } else if (hz.kind === 'iceSlick') {
+                // Two off-center sheen arcs — reads as polished ice.
+                ctx.globalAlpha = 0.55 * fade;
+                ctx.strokeStyle = hz.rim;
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(0, 0, r * 0.58, hz.seed, hz.seed + 1.1); ctx.stroke();
+                ctx.beginPath(); ctx.arc(0, 0, r * 0.32, hz.seed + 2.4, hz.seed + 3.3); ctx.stroke();
+            } else if (hz.kind === 'gloom') {
+                // A denser core + two slow-orbiting motes — living darkness.
+                ctx.globalAlpha = 0.35 * fade;
+                ctx.beginPath(); ctx.arc(0, 0, r * 0.55, 0, TWO_PI); ctx.fill();
+                if (live) {
+                    ctx.globalAlpha = 0.6 * fade;
+                    ctx.fillStyle = hz.rim;
+                    const oa = hz.seed + hz.age * 0.9;
+                    ctx.beginPath(); ctx.arc(Math.cos(oa) * r * 0.7, Math.sin(oa) * r * 0.7, 4, 0, TWO_PI); ctx.fill();
+                    ctx.beginPath(); ctx.arc(Math.cos(oa + Math.PI) * r * 0.5, Math.sin(oa + Math.PI) * r * 0.5, 3, 0, TWO_PI); ctx.fill();
+                }
+            } else if (hz.kind === 'quicksand') {
+                // Slowly turning inward spiral arcs + a sink point.
+                const rot = hz.seed + hz.age * 0.7;
+                ctx.globalAlpha = 0.5 * fade;
+                ctx.strokeStyle = 'rgba(40, 28, 10, 0.8)';
+                ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(0, 0, r * 0.72, rot, rot + 2.2); ctx.stroke();
+                ctx.beginPath(); ctx.arc(0, 0, r * 0.46, -rot * 1.3, -rot * 1.3 + 2.4); ctx.stroke();
+                ctx.beginPath(); ctx.arc(0, 0, r * 0.22, rot * 1.7, rot * 1.7 + 2.6); ctx.stroke();
+                ctx.fillStyle = 'rgba(40, 28, 10, 0.8)';
+                ctx.beginPath(); ctx.arc(0, 0, 7, 0, TWO_PI); ctx.fill();
+            }
+            ctx.restore();
+            // A soft rim-tinted light so live patches read against the veil
+            // (gloom stays dark — its identity IS the missing light).
+            if (L && live && hz.kind !== 'gloom') L.addLight(hz.x, hz.y, hz.r + 30, hz.rim, 0.3, 2);
         }
     }
 

@@ -10,6 +10,16 @@
 //                big DAY↔NIGHT lever (day ≈ 0.5 = bright, night = 1.0 = darkest).
 //   weather      'embers' (warm rising motes) | 'snow' (pale falling flecks).
 // `unlockBosses` gates a biome behind lifetime boss kills.
+//
+// P1.2 "Living Biomes" — two more per-map levers, both data-only here:
+//   enemyMix     enemy-id → MULTIPLIER on the wave's native typeWeights
+//                (folded in by Game._applyRunScale, the same layer the
+//                Branching Roads segmentWeights ride). Multipliers only
+//                skew what the current wave already offers, so Vigil-1
+//                slime purity and the creature-unlock cadence survive —
+//                each map just leans its mix a distinct way.
+//   hazard       id of the map's signature ground hazard (BIOME_HAZARD in
+//                GameConfig.js), spawned by HazardSystem.updateBiome.
 
 export const MAPS = {
     emberwood: {
@@ -27,6 +37,10 @@ export const MAPS = {
         weather: 'embers',      // warm drifting pollen/embers
         tier: 1,                // difficulty rung (1 = easiest); folds into boss + enemy scaling
         bosses: ['stormwingAlpha', 'vinebackGoliath', 'gloomMaw'],
+        // Verdant swarm: gels, snakes, and bees teem in the glade; splitters
+        // are its signature trick.
+        enemyMix: { slime: 1.35, crawler: 1.3, mite: 1.25, splitter: 1.4, brute: 1.15 },
+        hazard: 'brambles',     // thorn patches — tick damage + a snag-slow
     },
     hollowreach: {
         id: 'hollowreach',
@@ -43,6 +57,10 @@ export const MAPS = {
         weather: 'snow',        // falling flecks
         tier: 2,
         bosses: ['hoarfang', 'rimewarden', 'aurorath'],
+        // Frozen waste: hardy shelled heavies + wings that don't mind the
+        // cold; blink-bats thrive, soft gels and bees thin out.
+        enemyMix: { bat: 1.35, spitter: 1.3, shielder: 1.6, juggernaut: 1.4, zombie: 1.4, teleporter: 1.35, slime: 0.6, mite: 0.7 },
+        hazard: 'iceSlick',     // slippery sheets — steering skids, no damage
     },
     crypts: {
         id: 'crypts',
@@ -59,6 +77,10 @@ export const MAPS = {
         weather: 'snow',        // pale motes read as drifting crypt-dust
         tier: 3,
         bosses: ['mourndrift', 'ossuar', 'nihagault'],
+        // Sunless night: bats + watching eyeballs + the risen dead; the
+        // summoners' calls echo loudest here. Surface life thins hard.
+        enemyMix: { bat: 1.6, spitter: 1.6, skeleton: 1.5, zombie: 1.5, summoner: 1.6, teleporter: 1.4, slime: 0.45, crawler: 0.7 },
+        hazard: 'gloom',        // creeping dark — squeezes the player's light
     },
     dunes: {
         id: 'dunes',
@@ -75,6 +97,10 @@ export const MAPS = {
         weather: 'embers',      // shimmering heat / blown sand motes
         tier: 4,
         bosses: ['cindermaw', 'dunescourge', 'solnakh'],
+        // Scorched expanse: snakes + burst predators rule the sand; bombers
+        // dive out of the heat haze. Wet/cold creatures wither.
+        enemyMix: { crawler: 1.7, charger: 1.6, speedDemon: 1.4, emberskeleton: 1.5, bomber: 1.5, brawler: 1.25, bat: 0.6, zombie: 0.6 },
+        hazard: 'quicksand',    // dragging sand — a heavy wade-slow
     },
 };
 
