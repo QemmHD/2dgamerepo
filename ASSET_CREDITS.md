@@ -168,3 +168,44 @@ The main-menu **display font** (Cinzel, OFL 1.1) used for the wordmark / tab
 labels / button labels is registered in `src/assets/credits/assets.json` and
 loaded via `src/assets/MenuFont.js`; canvas headings fall back to the system sans
 until it loads.
+
+### World overhaul — ground tile, buildings, obstacles & decor props
+
+| File | Source | Tool / Model | Notes |
+| --- | --- | --- | --- |
+| `src/assets/textures/ground_emberwood.png` | Generated | higgsfield (Nano Banana 2) | Seamless hi-bit pixel forest-floor tile (moss/earth/ember specks), seam-blended via `tools/artshot/seamfix.html`, 512px. Primary ground; falls back to the CC0 photo tile, then procedural. |
+| `src/assets/obstacles/tree.png` | Generated | higgsfield (Nano Banana 2) | Gnarled ember-leaf tree, keyed + fitted to the archetype box (gridcut). Procedural fallback in `Obstacle.js`. |
+| `src/assets/obstacles/broken_tower.png` | Generated | higgsfield (Nano Banana 2) | Crumbling watchtower with ember-lit window. |
+| `src/assets/obstacles/statue.png` | Generated | higgsfield (Nano Banana 2) | Weathered monkey-sage statue holding a wand. |
+| `src/assets/obstacles/pillar.png` | Generated | higgsfield (Nano Banana 2) | Broken fluted stone pillar. |
+| `src/assets/obstacles/well.png` | Generated | higgsfield (Nano Banana 2) | Stone well with crossbeam, bucket + ember lantern. |
+| `src/assets/obstacles/ruined_wall.png` | Generated | higgsfield (Nano Banana 2) | Ruined wall fragment with glowing rune. |
+| `src/assets/obstacles/barricade.png` | Generated | higgsfield (Nano Banana 2) | Wooden spike barricade. |
+| `src/assets/obstacles/fence.png` | Generated | higgsfield (Nano Banana 2) | Rustic wooden fence segment. |
+| `src/assets/obstacles/crate.png` | Generated | higgsfield (Nano Banana 2) | Iron-braced supply crate with rope coil. |
+| `src/assets/obstacles/barrel.png` | Generated | higgsfield (Nano Banana 2) | Iron-hooped barrel with ember rune brand. |
+| `src/assets/obstacles/stone_block.png` | Generated | higgsfield (Nano Banana 2) | Mossy stone boulder block. |
+| `src/assets/obstacles/grave_marker.png` | Generated | higgsfield (Nano Banana 2) | Weathered grave marker with mushrooms. |
+| `src/assets/obstacles/cactus.png` | Generated | higgsfield (Nano Banana 2) | Two-armed desert cactus (dunes biome). |
+| `src/assets/obstacles/wall_cabin.png` | Generated | higgsfield (Nano Banana 2) | Seamless timber-log wall texture (cabin), used as a repeating pattern on building wall segments. |
+| `src/assets/obstacles/wall_ruin.png` | Generated | higgsfield (Nano Banana 2) | Seamless cracked-stone wall texture (ruin). |
+| `src/assets/obstacles/wall_keep.png` | Generated | higgsfield (Nano Banana 2) | Seamless ashlar-brick wall texture (keep). |
+| `src/assets/obstacles/wall_adobe.png` | Generated | higgsfield (Nano Banana 2) | Seamless adobe-clay wall texture. |
+| `src/assets/obstacles/floor_cabin.png` | Generated | higgsfield (Nano Banana 2) | Cabin interior floor decal (planks, rug, hearth). |
+| `src/assets/obstacles/floor_ruin.png` | Generated | higgsfield (Nano Banana 2) | Ruin interior floor decal (cracked tiles, moss). |
+| `src/assets/obstacles/floor_keep.png` | Generated | higgsfield (Nano Banana 2) | Keep interior floor decal (flagstone, carpet, brazier). |
+| `src/assets/obstacles/floor_adobe.png` | Generated | higgsfield (Nano Banana 2) | Adobe interior floor decal (terracotta, mat, pots). |
+| `src/assets/decor/rock.png` | Generated | higgsfield (Nano Banana 2) | Tiny scatter prop, baked at the procedural authoring size ×2 (`DecorSprites.js`). Procedural fallback kept. |
+| `src/assets/decor/mushroom.png` | Generated | higgsfield (Nano Banana 2) | Red-capped mushroom scatter prop. |
+| `src/assets/decor/skull.png` | Generated | higgsfield (Nano Banana 2) | Horned skull scatter prop. |
+| `src/assets/decor/grass.png` | Generated | higgsfield (Nano Banana 2) | Flat dry-grass tuft scatter prop. |
+| `src/assets/decor/candle.png` | Generated | higgsfield (Nano Banana 2) | Lit candle scatter prop (flame in the top band for the light anchor). |
+| `src/assets/decor/ruin.png` | Generated | higgsfield (Nano Banana 2) | Broken stone posts scatter prop. |
+| `src/assets/decor/branch.png` | Generated | higgsfield (Nano Banana 2) | Fallen twig scatter prop (flat). |
+| `src/assets/decor/cracked_stone.png` | Generated | higgsfield (Nano Banana 2) | Flat cracked slab scatter prop. |
+| `src/assets/decor/bones.png` | Generated | higgsfield (Nano Banana 2) | Bone scatter prop (flat). |
+| `src/assets/obstacles/border_palisade.png` | Generated | higgsfield (Nano Banana 2) | World-border stockade strip (horizontally seam-blended via `tools/artshot/borderprep.html`); drawn as a palisade ring just outside the playable rect by `Game._drawWorldBounds`, replacing the dashed boundary line. Dashed rect remains the fallback. |
+
+All world sprites load via never-rejecting loaders (`ObstacleSprites.js`,
+`DecorSprites.js`, `WorldTextures.js`); every consumer keeps its procedural
+drawing as the fallback, so a missing file can never break the game.

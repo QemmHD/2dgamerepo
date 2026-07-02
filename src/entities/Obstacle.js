@@ -10,6 +10,7 @@
 // keeps the art data-driven via the archetype palette.
 
 import { footprintDepth } from '../content/mapObjects.js';
+import { getObstacleSprite, getWallPattern, getFloorDecal } from '../assets/ObstacleSprites.js';
 
 export class Obstacle {
     constructor(def, x, y) {
@@ -54,6 +55,17 @@ export class Obstacle {
         ctx.beginPath();
         ctx.ellipse(0, 0, w * 0.42, Math.max(8, w * 0.13), 0, 0, Math.PI * 2);
         ctx.fill();
+
+        // AI sprite (hi-bit pixel art, biome-tinted), when one loaded for this
+        // archetype: blit it into the exact box the procedural art fills —
+        // bottom anchored at the footprint — so sorting/occlusion/collision
+        // stay untouched. The procedural switch below is the fallback.
+        const spr = getObstacleSprite(this.type, this.tint);
+        if (spr) {
+            ctx.drawImage(spr, -w * 0.5, -h, w, h);
+            ctx.restore();
+            return;
+        }
 
         switch (this.type) {
             case 'ruinedWall':   this._drawWall(ctx, w, h, palette); break;
@@ -323,6 +335,12 @@ export class Obstacle {
     // doorway gap) form a building the player walks in and out of.
     _drawBuildingWall(ctx, w, h, p) {
         const hw = w * 0.5;
+        // AI wall texture for this building style (cabin timber / ruin stone /
+        // keep brick / adobe clay), used as a repeating pattern so it skins
+        // wall segments of ANY size. Falls back to the flat palette fill.
+        // The pattern anchors at the segment's local origin — walls are
+        // separate rects so per-segment anchoring is invisible in play.
+        const pat = getWallPattern(this.def.styleType, ctx);
         // VERTICAL side wall (collision is tall + thin): the baseline-up slab
         // below is for wide horizontal (front/back) walls and would render a
         // tall side wall as a short stub. Instead draw a full-height centered
@@ -331,39 +349,67 @@ export class Obstacle {
         const col = this.def.col;
         if (col && col.hh > col.hw * 1.6) {
             const sw = col.hw * 2, sh = col.hh * 2;
-            ctx.fillStyle = p.base;
+            ctx.fillStyle = pat || p.base;
             ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
-            // Lit top edge (a thin coping running down the strip's outer side).
-            ctx.fillStyle = p.top;
-            ctx.fillRect(-sw / 2, -sh / 2, Math.max(4, sw * 0.30), sh);
-            // Mortar courses across the strip.
-            ctx.strokeStyle = p.edge; ctx.lineWidth = 2;
-            for (let yy = -sh / 2 + 16; yy < sh / 2 - 2; yy += 22) {
-                ctx.beginPath(); ctx.moveTo(-sw / 2, yy); ctx.lineTo(sw / 2, yy); ctx.stroke();
+            if (pat) {
+                // Biome tint wash over the (untinted) texture, so the body
+                // matches the tinted coping/edges + tinted prop sprites.
+                if (this.tint && this.tint.amt > 0.01) {
+                    ctx.save();
+                    ctx.globalAlpha = this.tint.amt;
+                    ctx.fillStyle = this.tint.color;
+                    ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+                    ctx.restore();
+                }
+                // Shade the strip so a side wall reads dimmer than the lit
+                // front face (the texture itself is authored front-lit).
+                ctx.fillStyle = 'rgba(10,8,14,0.30)';
+                ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+            } else {
+                // Lit top edge (a thin coping down the strip's outer side).
+                ctx.fillStyle = p.top;
+                ctx.fillRect(-sw / 2, -sh / 2, Math.max(4, sw * 0.30), sh);
+                // Mortar courses across the strip.
+                ctx.strokeStyle = p.edge; ctx.lineWidth = 2;
+                for (let yy = -sh / 2 + 16; yy < sh / 2 - 2; yy += 22) {
+                    ctx.beginPath(); ctx.moveTo(-sw / 2, yy); ctx.lineTo(sw / 2, yy); ctx.stroke();
+                }
             }
+            ctx.strokeStyle = p.edge;
             ctx.lineWidth = 3; ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
             return;
         }
         // Body.
-        ctx.fillStyle = p.base;
+        ctx.fillStyle = pat || p.base;
         ctx.fillRect(-hw, -h, w, h);
+        // Biome tint wash over the untinted texture (matches coping/props).
+        if (pat && this.tint && this.tint.amt > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = this.tint.amt;
+            ctx.fillStyle = this.tint.color;
+            ctx.fillRect(-hw, -h, w, h);
+            ctx.restore();
+        }
         // Lit top face (coping) — gives the wall thickness.
         ctx.fillStyle = p.top;
         ctx.beginPath();
         ctx.moveTo(-hw, -h); ctx.lineTo(-hw + 10, -h - 14);
         ctx.lineTo(hw + 10, -h - 14); ctx.lineTo(hw, -h); ctx.closePath(); ctx.fill();
         ctx.fillRect(-hw, -h, w, Math.max(6, h * 0.07));
-        // Mortar courses (horizontal) — skip if the segment is very short.
-        ctx.strokeStyle = p.edge; ctx.lineWidth = 2;
-        for (let yy = -h * 0.78; yy < -2; yy += h * 0.2) {
-            ctx.beginPath(); ctx.moveTo(-hw, yy); ctx.lineTo(hw, yy); ctx.stroke();
-        }
-        // A couple of vertical joints for wider segments.
-        if (w > 120) {
-            for (let xx = -hw + w / 3; xx < hw; xx += w / 3) {
-                ctx.beginPath(); ctx.moveTo(xx, -h * 0.9); ctx.lineTo(xx, 0); ctx.stroke();
+        if (!pat) {
+            // Mortar courses (horizontal) — the texture brings its own.
+            ctx.strokeStyle = p.edge; ctx.lineWidth = 2;
+            for (let yy = -h * 0.78; yy < -2; yy += h * 0.2) {
+                ctx.beginPath(); ctx.moveTo(-hw, yy); ctx.lineTo(hw, yy); ctx.stroke();
+            }
+            // A couple of vertical joints for wider segments.
+            if (w > 120) {
+                for (let xx = -hw + w / 3; xx < hw; xx += w / 3) {
+                    ctx.beginPath(); ctx.moveTo(xx, -h * 0.9); ctx.lineTo(xx, 0); ctx.stroke();
+                }
             }
         }
+        ctx.strokeStyle = p.edge;
         ctx.lineWidth = 3; ctx.strokeRect(-hw, -h, w, h);
     }
 
@@ -372,6 +418,21 @@ export class Obstacle {
     // lived-in. Drawn centered (origin = interior center); never collides.
     _drawBuildingFloor(ctx, w, h, p) {
         const hw = w / 2, hh = h / 2;
+        // AI interior decal for this building style (plank+rug+hearth etc.),
+        // scaled to the interior; procedural floor below is the fallback.
+        const decal = getFloorDecal(this.def.styleType);
+        if (decal) {
+            ctx.drawImage(decal, -hw, -hh, w, h);
+            // Biome tint wash so the interior matches the tinted walls/props.
+            if (this.tint && this.tint.amt > 0.01) {
+                ctx.save();
+                ctx.globalAlpha = this.tint.amt;
+                ctx.fillStyle = this.tint.color;
+                ctx.fillRect(-hw, -hh, w, h);
+                ctx.restore();
+            }
+            return;
+        }
         // Plank floor (slightly inset so the walls frame it).
         ctx.fillStyle = '#5a4632';
         ctx.fillRect(-hw + 6, -hh + 6, w - 12, h - 12);

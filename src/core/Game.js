@@ -66,6 +66,7 @@ import { keystoneBreadcrumbs } from '../content/keystones.js';
 import { DIFFICULTY, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS } from '../config/GameConfig.js';
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
+import { getBorderStrip, getBorderPattern } from '../assets/ObstacleSprites.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
 import { openCase, buildCaseReel, MINES, MINES_HOUSE, rollMines, minesRawMultiplier } from '../systems/CaseSystem.js';
 import { resolveAppearance, cosmeticsForAchievement, COSMETICS, cosmeticCoinCost } from '../content/cosmetics.js';
@@ -3901,6 +3902,35 @@ export class Game {
     _drawWorldBounds(ctx, debug) {
         const hw = WORLD_WIDTH / 2;
         const hh = WORLD_HEIGHT / 2;
+        // Palisade ring: a stockade wall strip drawn just OUTSIDE the playable
+        // rect on all four sides, so the world edge reads as a real barrier
+        // (the position clamp remains the actual wall) without eating any play
+        // space. Horizontal strips run along top/bottom; the same strip is
+        // rotated 90° for the sides. Corners overlap harmlessly.
+        const strip = getBorderStrip();
+        if (strip && !debug) {
+            const pat = getBorderPattern(ctx);
+            if (pat) {
+                const S = strip.height;
+                const spanW = WORLD_WIDTH + S * 2, spanH = WORLD_HEIGHT + S * 2;
+                ctx.save();
+                ctx.fillStyle = pat;
+                // Top edge — wall stands ON the north boundary, rising outward.
+                ctx.save(); ctx.translate(-hw - S, -hh - S);
+                ctx.fillRect(0, 0, spanW, S); ctx.restore();
+                // Bottom edge — fully outside, pointed tops toward the field.
+                ctx.save(); ctx.translate(-hw - S, hh);
+                ctx.fillRect(0, 0, spanW, S); ctx.restore();
+                // Right edge (rotated 90° cw: tips point outward/east).
+                ctx.save(); ctx.translate(hw + S, -hh - S); ctx.rotate(Math.PI / 2);
+                ctx.fillRect(0, 0, spanH, S); ctx.restore();
+                // Left edge (rotated 90° ccw: tips point outward/west).
+                ctx.save(); ctx.translate(-hw - S, hh + S); ctx.rotate(-Math.PI / 2);
+                ctx.fillRect(0, 0, spanH, S); ctx.restore();
+                ctx.restore();
+                return;
+            }
+        }
         ctx.save();
         ctx.strokeStyle = WORLD_BOUNDS_COLOR;
         if (debug) {

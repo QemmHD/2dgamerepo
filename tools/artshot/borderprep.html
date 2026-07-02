@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>borderprep</title>
+<style>body{margin:0;background:#111;color:#9f9;font:13px monospace}</style></head><body>
+<pre id="log"></pre>
+<script type="module">
+// borderprep — turn a keyed palisade-strip PNG into the world-border asset:
+// alpha-trim, scale to a target height, then blend the strip's own wrapped
+// copy into the left/right bands so it tiles horizontally without a seam.
+// PUTs the strip plus a 3x-repeated preview.
+// Query: img=<path> height=<world px, default 120> margin=<blend px, 24>
+//        out=<name, default border_palisade>
+//        ymax=<source px> ignore pixels below this row (crops a baked ground
+//              band the keyer couldn't remove)
+const q = new URLSearchParams(location.search);
+const log = (m) => document.getElementById('log').textContent += m + '\n';
+const HGT = parseInt(q.get('height') || '120', 10);
+const M = parseInt(q.get('margin') || '24', 10);
+const OUT = q.get('out') || 'border_palisade';
+const YMAX = parseInt(q.get('ymax') || '0', 10);
+const img = new Image();
+img.onload = async () => {
+  // Alpha bbox.
+  const c0 = document.createElement('canvas');
+  c0.width = img.width; c0.height = img.height;
+  const x0c = c0.getContext('2d', { willReadFrequently: true });
+  x0c.drawImage(img, 0, 0);
+  const d = x0c.getImageData(0, 0, c0.width, c0.height).data;
+  let x0 = c0.width, y0 = c0.height, x1 = -1, y1 = -1;
+  const yEnd = YMAX > 0 ? Math.min(YMAX, c0.height) : c0.height;
+  for (let y = 0; y < yEnd; y++) for (let x = 0; x < c0.width; x++) {
+    if (d[(y * c0.width + x) * 4 + 3] > 24) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) { log('EMPTY'); document.title = 'FAIL'; return; }
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  const W = Math.round(bw * HGT / bh);
+  const strip = document.createElement('canvas');
+  strip.width = W; strip.height = HGT;
+  const sx = strip.getContext('2d');
+  sx.imageSmoothingEnabled = true; sx.imageSmoothingQuality = 'high';
+  sx.drawImage(c0, x0, y0, bw, bh, 0, 0, W, HGT);
+  // Horizontal wrap blend: overlay the half-offset copy in the edge bands.
+  const off = document.createElement('canvas');
+  off.width = W; off.height = HGT;
+  const ox = off.getContext('2d');
+  ox.drawImage(strip, -W / 2, 0);
+  ox.drawImage(strip, W / 2, 0);
+  const mask = document.createElement('canvas');
+  mask.width = W; mask.height = HGT;
+  const mx = mask.getContext('2d');
+  mx.globalCompositeOperation = 'lighter';
+  for (const [gx0, gx1] of [[0, M], [W, W - M]]) {
+    const g = mx.createLinearGradient(gx0, 0, gx1, 0);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    mx.fillStyle = g;
+    mx.fillRect(0, 0, W, HGT);
+  }
+  ox.globalCompositeOperation = 'destination-in';
+  ox.drawImage(mask, 0, 0);
+  sx.drawImage(off, 0, 0);
+  // Preview: 3 repeats on a dark ground swatch.
+  const prev = document.createElement('canvas');
+  prev.width = W * 3; prev.height = HGT + 40;
+  const px = prev.getContext('2d');
+  px.fillStyle = '#3b3f2c'; px.fillRect(0, 0, prev.width, prev.height);
+  for (let i = 0; i < 3; i++) px.drawImage(strip, i * W, 20);
+  for (const [cv, name] of [[strip, OUT + '.png'], [prev, OUT + '_preview.png']]) {
+    const blob = await new Promise((r) => cv.toBlob(r));
+    await fetch('/__save/' + name, { method: 'PUT', body: blob });
+    log('OK ' + name + ' ' + cv.width + 'x' + cv.height);
+  }
+  document.title = 'DONE';
+};
+img.onerror = () => { log('LOAD FAIL'); document.title = 'FAIL'; };
+img.src = '/' + q.get('img');
+</script></body></html>

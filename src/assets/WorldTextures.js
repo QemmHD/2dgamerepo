@@ -12,6 +12,9 @@
 // game always has a floor.
 
 const TEXTURES = {
+    // AI hi-bit pixel ground tile (higgsfield / Nano Banana 2) — the primary
+    // floor. The CC0 photographic tile stays as the first fallback rung.
+    ground_emberwood: { file: 'ground_emberwood.png' },
     ground_forest: { file: 'ground_forest.png' },
 };
 
@@ -58,7 +61,8 @@ export async function loadWorldTextures() {
 }
 
 // The seamless ground tile canvas, or null if it failed to load (caller falls
-// back to the procedural tile).
+// back to the procedural tile). Prefers the AI pixel tile; the CC0 photo tile
+// is the middle fallback rung so the floor survives a missing file.
 export function getGroundTexture() {
-    return cache.get('ground_forest') ?? null;
+    return cache.get('ground_emberwood') ?? cache.get('ground_forest') ?? null;
 }

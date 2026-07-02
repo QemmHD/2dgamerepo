@@ -11,7 +11,9 @@ import { loadIconGlyphs } from './assets/CustomIcons.js';
 import { loadMonsterSprites } from './assets/MonsterSprites.js';
 import { loadEnemyAiSprites } from './assets/EnemySprites.js';
 import { loadHeroAiSprites } from './assets/HeroAiSprites.js';
-import { clearHeroFrameCache } from './assets/ProceduralSprites.js';
+import { clearHeroFrameCache, clearDecorationCache } from './assets/ProceduralSprites.js';
+import { loadObstacleSprites } from './assets/ObstacleSprites.js';
+import { loadDecorSprites } from './assets/DecorSprites.js';
 import { WEAPON_AURA } from './content/weapons.js';
 import { COSMETICS } from './content/cosmetics.js';
 import { PRISM_COLORS } from './assets/CosmeticFx.js';
@@ -68,7 +70,11 @@ async function boot() {
     await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites(),
         // HQ AI hero body: after it loads, drop any hero frame sets the prewarm
         // cached so the next build uses the AI base (procedural stays fallback).
-        loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); })]);
+        loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); }),
+        // World art: AI obstacle/building sprites + tiny decor props (prewarm
+        // cached the procedural decor first — drop those on success).
+        loadObstacleSprites(),
+        loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); })]);
 
     game = new Game({ renderer, input, loop });
     loop.start();

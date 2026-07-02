@@ -121,6 +121,9 @@ export class ObstacleSystem {
                 const def = this._pickType(rng);
                 const ob = new Obstacle(def, x, y);
                 ob.palette = this._tintByType[def.type] || def.palette;
+                // Raw biome tint rides along for the AI-sprite path (sprites
+                // bake their own colours; the tint is applied as a wash).
+                ob.tint = tint;
 
                 // Don't let footprints overlap (keeps walkable gaps open).
                 if (this._tooClose(ob)) continue;
@@ -170,12 +173,12 @@ export class ObstacleSystem {
             const doorSide = Math.abs(x) > Math.abs(y)
                 ? (x > 0 ? 'left' : 'right')
                 : (y > 0 ? 'top' : 'bottom');
-            this._addBuilding(style, x, y, doorSide, tintPalette(style.palette, tint));
+            this._addBuilding(style, x, y, doorSide, tintPalette(style.palette, tint), tint);
             placed++;
         }
     }
 
-    _addBuilding(style, cx, cy, doorSide, palette) {
+    _addBuilding(style, cx, cy, doorSide, palette, tint = null) {
         const iHW = style.interiorW / 2, iHH = style.interiorH / 2;
         const T = style.wall, H = style.wallH, half = T / 2;
         const spanHW = iHW + T;       // horizontal walls cover the corners
@@ -186,10 +189,13 @@ export class ObstacleSystem {
             const def = {
                 type: 'buildingWall', shape: 'rect',
                 col: { hw, hh }, size: { w: hw * 2, h: H },
-                blocksLOS: true, palette,
+                blocksLOS: true, palette, styleType: style.type,
             };
             const ob = new Obstacle(def, x, y);
             ob.palette = palette;
+            // Raw biome tint for the wall-texture wash (the pattern PNGs are
+            // untinted; the tinted palette only covers coping/edges).
+            ob.tint = tint;
             this.obstacles.push(ob);
         };
         // Horizontal walls (top = back, bottom = front), each spanning full width.
@@ -221,10 +227,11 @@ export class ObstacleSystem {
         const floor = {
             type: 'buildingFloor', shape: 'rect', decorative: true,
             col: { hw: iHW, hh: iHH }, size: { w: iHW * 2, h: iHH * 2 },
-            blocksLOS: false, palette,
+            blocksLOS: false, palette, styleType: style.type,
         };
         const fob = new Obstacle(floor, cx, cy);
         fob.palette = palette;
+        fob.tint = tint;
         fob.baseY = cy - iHH;   // sort behind the player/walls (floor layer)
         this.obstacles.push(fob);
     }

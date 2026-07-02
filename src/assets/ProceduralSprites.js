@@ -19,6 +19,7 @@ import { TWO_PI } from '../core/MathUtils.js';
 import { getLpcFrames, isLpcLoaded } from './LpcSprites.js';
 import { drawPixelMonkey, drawPixelHero } from './PixelArt.js';
 import { getAiHeroFrames } from './HeroAiSprites.js';
+import { getDecorSprite } from './DecorSprites.js';
 
 const cache = new Map();
 
@@ -150,9 +151,18 @@ export function getGroundTileSprite() {
 export function getDecorationSprite(type) {
     const key = `dec:${type}`;
     if (cache.has(key)) return cache.get(key);
-    const sprite = drawDecoration(type);
+    // AI decor art first (baked at the exact logical×SPRITE_SS size, so the
+    // footprint/shadow/light math is unchanged); procedural is the fallback.
+    const sprite = getDecorSprite(type) || drawDecoration(type);
     cache.set(key, sprite);
     return sprite;
+}
+
+// Drop cached decoration sprites so the next getDecorationSprite rebuilds them
+// — called after the AI decor PNGs finish loading (boot prewarm caches the
+// procedural versions first).
+export function clearDecorationCache() {
+    for (const k of [...cache.keys()]) if (k.startsWith('dec:')) cache.delete(k);
 }
 
 // ── Player / monkey ───────────────────────────────────────────────────
