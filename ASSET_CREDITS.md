@@ -101,6 +101,13 @@ External and procedural assets flow through a shared customization system:
 Procedural fallback is always kept: if an imported asset fails to load, the
 game falls back to its code-drawn sprite.
 
+- **PNG size diet** — `node tools/compress-assets.mjs` (pngquant PNG-8
+  quantization with an 85 quality floor + lossless optipng, smaller-only)
+  runs over `src/assets/**/*.png` before shipping new art (~7.8 MB → ~3.1 MB
+  across the set). Quantization is lossy in principle, so any batch touching
+  the canonical enemy sheets must be visually diffed with the artshot
+  harness (`showcase=1`) before merge; pre-diet originals live in git history.
+
 ## AI-generated sprites
 
 | File | Source | Tool / Model | Notes |

@@ -1347,6 +1347,33 @@ export class UISystem {
     _drawControlHint(ctx, state) {
         if (state.upgradeChoices || state.gameOver || state.chestReward || state.paused) return;
         const sa = this.renderer.safeArea;
+        // First-run onboarding pill takes this slot while active — a bigger,
+        // pulsing contextual teach moment (move → auto-attack → shards) fed by
+        // Game._tickOnboarding. It REPLACES the old permanent teach line.
+        if (state.onboardingHint) {
+            const t = performanceNowSafe() * 0.001;
+            // Sits clear ABOVE the HP/XP bars (which own the bottom ~90px).
+            const y = INTERNAL_HEIGHT - 160 - sa.bottom;
+            ctx.save();
+            ctx.font = `bold 26px ${FONT}`;
+            const tw = ctx.measureText(state.onboardingHint).width;
+            const pw = tw + 56, ph = 52;
+            roundRectPath(ctx, INTERNAL_WIDTH / 2 - pw / 2, y - ph / 2, pw, ph, ph / 2);
+            ctx.fillStyle = 'rgba(10,8,14,0.78)'; ctx.fill();
+            ctx.globalAlpha = 0.6 + 0.35 * Math.sin(t * 4);
+            ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2.5; ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffe9b0';
+            ctx.fillText(state.onboardingHint, INTERNAL_WIDTH / 2, y + 1);
+            ctx.restore();
+            return;
+        }
+        // The old always-on teach line now retires after a few runs — veterans
+        // know how to move; new players get the onboarding pills above instead.
+        const runs = state.saveData?.stats?.runs ?? 0;
+        if (runs >= 3) return;
         ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
@@ -1456,6 +1483,14 @@ export class UISystem {
         const sub = `Choose an upgrade  •  LV ${state.player.level}`
             + (state.pendingLevelUps > 0 ? `  (${state.pendingLevelUps + 1} pending)` : '');
         ctx.fillText(sub, INTERNAL_WIDTH / 2, 290);
+        // First-run onboarding: one warm reassurance line on the very first
+        // level-up so a new player commits instead of freezing at the choice.
+        if (state.onboardingLevelUp) {
+            ctx.fillStyle = '#ffd166';
+            ctx.font = `bold 27px ${FONT}`;
+            ctx.fillText('Your first pick! Every card makes you stronger — there are no wrong choices.',
+                INTERNAL_WIDTH / 2, 334);
+        }
         ctx.globalAlpha = 1;
 
         const rects = this.getLevelUpCardRects(choices.length);
@@ -1816,8 +1851,18 @@ export class UISystem {
                 color: '#ff5a8a',
             });
         }
+        // Daily Road payout — the curated daily always pays score-band coins,
+        // plus the first-clear-of-day free case (label carried on the summary).
+        if (summary.dailyRoadScore != null) {
+            let txt = `◆ DAILY ROAD ${summary.dailyRoadScore} — +${summary.dailyRoadCoins ?? 0} coins`;
+            if (summary.dailyRoadCase) txt += `  ·  case: ${summary.dailyRoadCase}`;
+            rewardLines.push({ text: txt + ' ◆', color: '#ff9ecf' });
+        }
         if (Array.isArray(summary.dailies) && summary.dailies.length)
             rewardLines.push({ text: `✦ DAILY TRIAL — ${summary.dailies.join('  ·  ')} ✦`, color: '#5fe87a' });
+        // Day streak — celebratory only, shown once it's actually a streak.
+        if ((summary.streak ?? 0) >= 2)
+            rewardLines.push({ text: `🔥 ${summary.streak}-DAY VIGIL STREAK 🔥`, color: '#ff9a4a' });
         if (Array.isArray(summary.achievements) && summary.achievements.length)
             rewardLines.push({ text: `★ ACHIEVEMENT — ${summary.achievements.join('  ·  ')} ★`, color: '#ffce54' });
         if (Array.isArray(summary.cosmeticUnlocks) && summary.cosmeticUnlocks.length)

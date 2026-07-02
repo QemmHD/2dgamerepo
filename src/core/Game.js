@@ -27,6 +27,7 @@ import {
     COMPOSURE,
     WICK_ROADS,
     LIEUTENANT,
+    SKIP_ONBOARDING,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Easing } from './Easing.js';
@@ -525,6 +526,15 @@ export class Game {
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) autoPause();
         });
+
+        // ── First-run onboarding: a brand-new save (zero recorded runs) skips
+        // the tabbed menu entirely and drops straight into a guided first run —
+        // _startRun arms the contextual hint sequence (see _tickOnboarding).
+        // The menu waits until the first death, when its tabs unlock staged
+        // (MenuRenderer). ?skipOnboarding=1 keeps harness/CI shots on the menu.
+        if (!SKIP_ONBOARDING && (this.saveSystem.data.stats?.runs ?? 0) === 0) {
+            this._startRun();
+        }
     }
 
     // The effective map id for THIS run: the Daily Road override (unlock-bypassed,
@@ -834,6 +844,14 @@ export class Game {
             this.lighting.setQuality({ strength: GFX.darkness.strength * this.mapDarkness });
         }
         this._lastHp = this.player.hp;
+        // First-run onboarding (armed for EVERY run until the first one is
+        // recorded, so a mid-first-run restart re-teaches cleanly): a small
+        // non-blocking hint sequence — move → auto-attack → shards → first
+        // level-up pick — ticked by _tickOnboarding, drawn as a HUD pill by
+        // UISystem. Never a modal wall; gameplay is untouched.
+        this.onboarding = (!SKIP_ONBOARDING && (this.saveSystem.data.stats?.runs ?? 0) === 0)
+            ? { step: 0, timer: 0, moved: 0, armed: true }
+            : null;
         this.screen = 'gameplay';
         // Kick the driving gameplay theme (resume covers the keyboard-start path
         // where no menu tap fired yet).
@@ -866,6 +884,55 @@ export class Game {
         // (button OR keyboard) is a normal run unless DAILY ROAD is chosen again.
         this.dailyMode = false;
         this._updateJoystickEnabled();
+    }
+
+    // ── First-run onboarding (guided first run) ──────────────────────────
+    // Gentle in-run teach moments for a brand-new save: each step advances on
+    // its trigger, with a timeout so the sequence can never wedge (a player
+    // who ignores a hint still moves on). Step 3 (the level-up pick) is drawn
+    // inside the level-up overlay itself and completes in selectUpgrade.
+    _tickOnboarding(dt) {
+        const ob = this.onboarding;
+        if (!ob || this.gameOver) return;
+        ob.timer += dt;
+        switch (ob.step) {
+            case 0: {  // teach movement — advance once they've actually walked a bit
+                const dx = this.player.x - (ob.px ?? this.player.x);
+                const dy = this.player.y - (ob.py ?? this.player.y);
+                ob.px = this.player.x; ob.py = this.player.y;
+                ob.moved += Math.hypot(dx, dy);
+                if (ob.moved > 140 || ob.timer > 10) this._advanceOnboarding();
+                break;
+            }
+            case 1:    // the wand auto-fires — a beat to watch it happen
+                if (ob.timer > 5) this._advanceOnboarding();
+                break;
+            case 2:    // XP shards — wait for one to exist so the hint points at something
+                if (!ob.seenGem && this.gems.length > 0) { ob.seenGem = true; ob.timer = 0; }
+                if ((ob.seenGem && ob.timer > 6) || this.player.level > 1 || ob.timer > 20) {
+                    this._advanceOnboarding();
+                }
+                break;
+            default: break;  // step 3 waits on the first level-up pick
+        }
+    }
+
+    _advanceOnboarding() {
+        if (!this.onboarding) return;
+        this.onboarding.step += 1;
+        this.onboarding.timer = 0;
+    }
+
+    // The active gameplay hint pill text (null when nothing should show).
+    _onboardingHintText() {
+        const ob = this.onboarding;
+        if (!ob || this.gameOver) return null;
+        switch (ob.step) {
+            case 0: return 'Move — WASD / arrows, or drag the left half';
+            case 1: return 'Your wand fires on its own — focus on dodging';
+            case 2: return ob.seenGem ? 'Grab the glowing shards — they fuel your next level' : null;
+            default: return null;  // step 3 renders inside the level-up overlay
+        }
     }
 
     // ── 3rd-boss victory overlay ─────────────────────────────────────────
@@ -982,14 +1049,12 @@ export class Game {
                 finalWaveName: this.waveState?.name ?? '',
             };
             this.saveSystem.recordRun(this.runSummary);
-            // Daily Road: a WON daily banks its score too (same latch as game-over
-            // so leaving-on-victory then dying can't double-count).
-            if (this.dailyMode && !this._dailyRoadRecorded) {
-                const dscore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
-                this.dailyRoadBest = this.saveSystem.recordDailyRoadScore(currentDayNumber(), dscore);
-                this.runSummary.dailyRoadScore = dscore;
-                this._dailyRoadRecorded = true;
-            }
+            // Day streak: a finished run marks today played (idempotent within
+            // a day) — surfaced on the PLAY tab and the game-over summary.
+            this.runSummary.streak = this.saveSystem.recordDayStreak(currentDayNumber());
+            // Daily Road: a WON daily banks its score + payout too (same latch
+            // as game-over so leaving-on-victory then dying can't double-count).
+            this._bankDailyRoad();
             this._checkAchievements();
             this._checkDailyChallenges();
             this._runRecorded = true;
@@ -1026,6 +1091,36 @@ export class Game {
         if (earned > 0) this.saveSystem.addCoins(earned);
         this.bankedThisRun = true;
         return earned;
+    }
+
+    // Bank the Daily Road result, exactly once per run (shared by game-over
+    // and victory-leave, latched by _dailyRoadRecorded). Beyond the best-of-day
+    // record, the daily PAYS: score-band coins every run, plus a free Ember
+    // case on the FIRST daily of the day — so the curated run is a reward
+    // loop, not just a scoreboard. Everything lands on runSummary so the
+    // game-over screen can celebrate it.
+    _bankDailyRoad() {
+        if (!this.dailyMode || this._dailyRoadRecorded) return;
+        const dscore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
+        const rec = this.saveSystem.recordDailyRoadScore(currentDayNumber(), dscore);
+        this.dailyRoadBest = rec.best;
+        // Score-band coins (generous floor so even a short daily pays a little;
+        // capped well under a good normal run so it never replaces real play).
+        const coins = dscore >= 3000 ? 140 : dscore >= 1500 ? 90 : dscore >= 500 ? 50 : 20;
+        this.saveSystem.addCoins(coins);
+        // First daily of the UTC day: one free Ember (basic) case — the reward
+        // is applied to the save immediately; the label rides the summary.
+        let caseLabel = null;
+        if (rec.firstToday) {
+            const r = openCase(this.saveSystem, 'basic', { free: true });
+            if (r.ok) caseLabel = r.label;
+        }
+        if (this.runSummary) {
+            this.runSummary.dailyRoadScore = dscore;
+            this.runSummary.dailyRoadCoins = coins;
+            this.runSummary.dailyRoadCase = caseLabel;
+        }
+        this._dailyRoadRecorded = true;
     }
 
     // Pause is only meaningful during live gameplay (overlays already
@@ -1200,7 +1295,9 @@ export class Game {
         this.audio.click();
         if (action !== 'resetSave' && action !== 'tab') this.resetConfirming = false;
         switch (action) {
-            case 'tab': this.menuTab = arg; this.resetConfirming = false; break;
+            // Opening a tab acknowledges its one-time "NEW" badge (staged
+            // unlock — see MenuRenderer tabUnlocked + SaveSystem.markTabSeen).
+            case 'tab': this.menuTab = arg; this.saveSystem.markTabSeen(arg); this.resetConfirming = false; break;
             case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this._startRun(); break;
             case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this._startRun(); break;
             case 'setDifficulty': this.saveSystem.setDifficulty(arg); break;
@@ -1479,6 +1576,8 @@ export class Game {
         if (!this.upgradeChoices) return;
         const upgrade = this.upgradeChoices[idx];
         if (!upgrade) return;
+        // First level-up pick made — the onboarding sequence is complete.
+        if (this.onboarding && this.onboarding.step >= 3) this.onboarding = null;
         this.upgradeSystem.apply(upgrade, this);
         this.audio.upgrade();
         this.setUpgradeChoices(null);
@@ -1966,16 +2065,25 @@ export class Game {
         for (const e of enemies) if (e.active) active++;
         if (active < cfg.minCountToRun) return;
 
+        // GC-clean spatial hash: numeric cell keys (gx*65536+gy is collision-
+        // free — the bounded world spans far fewer than ±32768 cells) and
+        // buckets that persist across frames. Only the buckets filled LAST
+        // frame are reset (tracked in _sepUsed), so at steady state the pass
+        // allocates nothing — the old string keys + fresh arrays were a big
+        // slice of the per-frame churn at the 180-enemy cap.
         const cell = cfg.cellSize;
         const grid = this._sepGrid || (this._sepGrid = new Map());
-        grid.clear();
+        const used = this._sepUsed || (this._sepUsed = []);
+        for (let i = 0; i < used.length; i++) used[i].length = 0;
+        used.length = 0;
         for (const e of enemies) {
             if (!e.active) continue;
             e._pushX = 0;
             e._pushY = 0;
-            const key = Math.floor(e.x / cell) + ',' + Math.floor(e.y / cell);
+            const key = Math.floor(e.x / cell) * 65536 + Math.floor(e.y / cell);
             let b = grid.get(key);
             if (!b) { b = []; grid.set(key, b); }
+            if (b.length === 0) used.push(b);
             b.push(e);
         }
 
@@ -1986,7 +2094,7 @@ export class Game {
             const gy = Math.floor(e.y / cell);
             for (let oy = -1; oy <= 1; oy++) {
                 for (let ox = -1; ox <= 1; ox++) {
-                    const b = grid.get((gx + ox) + ',' + (gy + oy));
+                    const b = grid.get((gx + ox) * 65536 + (gy + oy));
                     if (!b) continue;
                     for (const o of b) {
                         if (o === e) continue;
@@ -2248,20 +2356,17 @@ export class Game {
                 .map((w) => WEAPONS[w.id].name),
         };
 
-        // Daily Road score — banked once per run (a daily can die at any point,
-        // so it's NOT gated on _gauntletActive). Reuses the gauntlet formula.
-        if (this.dailyMode && !this._dailyRoadRecorded) {
-            const dscore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
-            this.dailyRoadBest = this.saveSystem.recordDailyRoadScore(currentDayNumber(), dscore);
-            this.runSummary.dailyRoadScore = dscore;
-            this._dailyRoadRecorded = true;
-        }
+        // Daily Road score + payout — banked once per run (a daily can die at
+        // any point, so it's NOT gated on _gauntletActive).
+        this._bankDailyRoad();
 
         // Fold the run into lifetime/best records; capture which bests were
         // beaten so the game-over summary can flag them. Skip if a victory-leave
         // already recorded this run (so the 3 boss kills aren't counted twice).
         this.newBest = this._runRecorded ? null : this.saveSystem.recordRun(this.runSummary);
         this._runRecorded = true;
+        // Day streak (idempotent within a day): today now counts as played.
+        this.runSummary.streak = this.saveSystem.recordDayStreak(currentDayNumber());
         // Award battle-pass (vigil) XP from the run and surface the gain on the
         // game-over screen.
         // Newly-earned lifetime achievements (claim + grant coins; surfaced on
@@ -2458,6 +2563,10 @@ export class Game {
         this._updateBossThresholds();
 
         this.player.update(dt, this.input);
+        // First-run onboarding hints advance off live play (movement, gems,
+        // level) — ticked right after the player moves so step 0's distance
+        // accumulator sees this frame's step.
+        if (this.onboarding) this._tickOnboarding(dt);
         // Late-game flattening: clamp the global stacking stats every frame
         // (before weapons read them). Hard caps are idempotent on these
         // monotonic-growth fields; weapon per-level stats are unaffected.
@@ -2547,18 +2656,8 @@ export class Game {
         // is merged into allKilled below.
         const statusResult = this._tickStatuses(dt);
         this._tickSupportEnemies(dt);
-
-        // Phase-2 enrage: a boss that just crossed its HP threshold announces
-        // + shakes exactly once (latched by enrageShouted). The phase flip
-        // itself happens inside the boss AI; this only fires the one-shot FX.
-        for (const e of this.enemies) {
-            if (e.active && e.boss && e.phase2Entered && !e.enrageShouted) {
-                e.enrageShouted = true;
-                this.waveDirector.announce('ENRAGED!', 1.2);
-                this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
-                this._spawnRing(e.x, e.y, { maxR: 300, width: 12, life: 0.5, color: '#ff3b4e', ease: 'outCubic' });
-            }
-        }
+        // (Phase-2 boss enrage one-shots moved into the consolidated enemy
+        // scan below — one pass instead of five over the full array.)
 
         for (const p of this.projectiles) {
             if (!p.active) continue;
@@ -2956,6 +3055,42 @@ export class Game {
             this._presentAltar();
         }
 
+        // ── ONE consolidated enemy scan ──────────────────────────────────
+        // Replaces five separate full-array passes (melee-nearest, boss ref,
+        // lieutenant ref, boss-enrage one-shot, Second-Wind proximity) that
+        // each walked this.enemies every frame at the 180-enemy cap. Runs
+        // after kills/pickups are processed so no ref can point at a corpse.
+        // Boss ref picks by max HP so a fresh stronger boss takes the HP bar
+        // over from an older weaker one; the lieutenant ref stays separate so
+        // it never feeds the arena safety-net (which keys on activeBossRef).
+        let nearestEnemy = null, nearestD2 = Infinity;
+        this.activeBossRef = null;
+        this.activeLieutenantRef = null;
+        for (const e of this.enemies) {
+            if (!e.active) continue;
+            const dx = e.x - this.player.x, dy = e.y - this.player.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < nearestD2) { nearestD2 = d2; nearestEnemy = e; }
+            if (e.boss) {
+                if (!this.activeBossRef || e.maxHp > this.activeBossRef.maxHp) {
+                    this.activeBossRef = e;
+                }
+                // Phase-2 enrage: a boss that crossed its HP threshold announces
+                // + shakes exactly once (latched by enrageShouted). The phase
+                // flip happens inside the boss AI; this only fires the one-shot FX.
+                if (e.phase2Entered && !e.enrageShouted) {
+                    e.enrageShouted = true;
+                    this.waveDirector.announce('ENRAGED!', 1.2);
+                    this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
+                    this._spawnRing(e.x, e.y, { maxR: 300, width: 12, life: 0.5, color: '#ff3b4e', ease: 'outCubic' });
+                }
+            } else if (e.lieutenant) {
+                if (!this.activeLieutenantRef || e.maxHp > this.activeLieutenantRef.maxHp) {
+                    this.activeLieutenantRef = e;
+                }
+            }
+        }
+
         // Melee swing animation: when the chosen starting weapon is a
         // melee/blade family, the hero rhythmically slashes toward the nearest
         // enemy in reach. Purely cosmetic (no damage) — the auto-attack weapons
@@ -2963,39 +3098,12 @@ export class Game {
         if (this.playerSwingMelee) {
             this._swingCd -= dt;
             if (this._swingCd <= 0) {
-                let best = null, bd = 270 * 270;
-                for (const e of this.enemies) {
-                    if (!e.active) continue;
-                    const dx = e.x - this.player.x, dy = e.y - this.player.y;
-                    const d2 = dx * dx + dy * dy;
-                    if (d2 < bd) { bd = d2; best = e; }
-                }
-                if (best) {
-                    this.player.triggerSwing(Math.atan2(best.y - this.player.y, best.x - this.player.x));
+                if (nearestEnemy && nearestD2 < 270 * 270) {
+                    this.player.triggerSwing(Math.atan2(nearestEnemy.y - this.player.y, nearestEnemy.x - this.player.x));
                     this._swingCd = 0.34;
                 } else {
                     this._swingCd = 0.15; // nothing in reach — re-check soon
                 }
-            }
-        }
-
-        // Cache the strongest active boss for the UI HP bar. Picking by
-        // max HP means a fresh stronger boss takes the bar over from an
-        // older weaker one if they're alive at the same time.
-        this.activeBossRef = null;
-        for (const e of this.enemies) {
-            if (!e.active || !e.boss) continue;
-            if (!this.activeBossRef || e.maxHp > this.activeBossRef.maxHp) {
-                this.activeBossRef = e;
-            }
-        }
-        // Lieutenant mini-boss HP-bar ref (parallel to the boss ref; kept separate
-        // so it never feeds the arena safety-net below, which keys on activeBossRef).
-        this.activeLieutenantRef = null;
-        for (const e of this.enemies) {
-            if (!e.active || !e.lieutenant) continue;
-            if (!this.activeLieutenantRef || e.maxHp > this.activeLieutenantRef.maxHp) {
-                this.activeLieutenantRef = e;
             }
         }
         // Safety net: if a boss arena is up but no boss is alive (defeated by
@@ -3057,14 +3165,10 @@ export class Game {
         // radius. Applied after the heal-flash check so the tiny per-frame
         // tick doesn't spam the green flash.
         if (this.player.regenPerSecond > 0 && this.player.hp < this.player.maxHp) {
+            // Nearest-enemy distance comes from the consolidated scan above
+            // (Infinity when the field is empty — trivially safe).
             const sr2 = SECOND_WIND_RADIUS * SECOND_WIND_RADIUS;
-            let safe = true;
-            for (const e of this.enemies) {
-                if (!e.active) continue;
-                const ex = e.x - this.player.x;
-                const ey = e.y - this.player.y;
-                if (ex * ex + ey * ey < sr2) { safe = false; break; }
-            }
+            const safe = nearestD2 >= sr2;
             if (safe) {
                 // Regen is capped by CAPS.regenPerSecond and shares the global
                 // sustained-heal budget (CAPS.healPerSecond) with Divine Nova.
@@ -3806,7 +3910,17 @@ export class Game {
             // on the record's day so a new UTC day shows 0 until a run is played
             // (the record self-resets on the first daily of the new day).
             const _dr = this.saveSystem.data.dailyRoad;
-            base.dailyRoadBest = (_dr && _dr.day === currentDayNumber()) ? (_dr.best ?? 0) : 0;
+            const _today = currentDayNumber();
+            base.dailyRoadBest = (_dr && _dr.day === _today) ? (_dr.best ?? 0) : 0;
+            // Yesterday's best: either stashed at today's day-roll (prevBest) or,
+            // if no daily has run yet today, a record dated exactly yesterday.
+            base.dailyRoadPrevBest = _dr
+                ? (_dr.day === _today ? (_dr.prevBest ?? 0) : (_dr.day === _today - 1 ? (_dr.best ?? 0) : 0))
+                : 0;
+            // Day streak for the PLAY tab — alive if the last played day is
+            // today or yesterday (a yesterday-streak still extends by playing).
+            const _st = this.saveSystem.data.streak;
+            base.dayStreak = (_st && (_st.day === _today || _st.day === _today - 1)) ? (_st.count ?? 0) : 0;
             return base;
         }
 
@@ -3947,6 +4061,10 @@ export class Game {
             base.keystoneHints = keystoneBreadcrumbs(this, (id) => (counts[`keystone:${id}`] ?? 0) >= 1, 2);
         }
         base.levelUpAge = this.levelUpAge;
+        // First-run onboarding: the active gameplay hint pill (null when done/
+        // veteran) + the extra reassurance line on the first level-up overlay.
+        base.onboardingHint = this._onboardingHintText();
+        base.onboardingLevelUp = !!(this.onboarding && this.onboarding.step >= 3 && this.upgradeChoices);
         base.gameOver = this.gameOver;
         base.gameOverAge = this.gameOverAge;
         base.bossesDefeated = this.bossesDefeated;

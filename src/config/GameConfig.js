@@ -1335,3 +1335,8 @@ export const DEBUG_DEFAULT_ON = true;
 // ?dev=1 (e.g. the artshot harness or a local test URL). Guarded for non-DOM
 // environments (tools import config under node).
 export const DEV_MODE = typeof location !== 'undefined' && /[?&]dev=1(?:&|$)/.test(location.search);
+
+// First-run onboarding opt-out (?skipOnboarding=1): keeps harness/CI
+// screenshots deterministic — a fresh headless profile has runs === 0, which
+// would otherwise arm the guided-first-run hint sequence (see Game.js).
+export const SKIP_ONBOARDING = typeof location !== 'undefined' && /[?&]skipOnboarding=1(?:&|$)/.test(location.search);
