@@ -25,6 +25,7 @@ import {
     ENEMY_SEPARATION,
     WICK_ROADS,
     LIEUTENANT,
+    BIOME_HAZARD,
     SKIP_ONBOARDING,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
@@ -95,6 +96,11 @@ const DEATH_COLORS = {
     bat: '#b48cff',
     crawler: '#9a7cff',
     brute: '#d8a060',
+    // P1.3 behavior types burst in their tell color.
+    splitter: '#b48cff',
+    bomber: '#ffd166',
+    summoner: '#c97bff',
+    teleporter: '#7fe0ff',
 };
 function deathColor(e) {
     if (e.boss) return '#ffd27a';
@@ -552,6 +558,11 @@ export class Game {
         // Damaging area hazards (boss shockwaves) + their telegraph decals.
         // Game-owned pool; cleared here so a restart never inherits one.
         this.hazards = [];
+        // ELITE bombers that self-detonated this frame — merged into the kill
+        // pipeline by _resolveCombat so a dodged elite still pays its rolled
+        // loot (affix death, chest/coin roll, gem, kill credit). A plain
+        // bomber's self-boom stays deliberately reward-free.
+        this._selfDetonated = [];
         // Expanding shockwave ring VFX (pure cosmetic; pooled). Spawned on
         // kills, boss deaths, and level-ups; updated + drawn in the world layer.
         this.rings = [];
@@ -839,6 +850,17 @@ export class Game {
         if (this.lighting && this.lighting.setQuality) {
             this.lighting.setQuality({ strength: GFX.darkness.strength * this.mapDarkness });
         }
+        // P1.2 "Living Biomes": this map's persistent enemy-mix skew (weight
+        // MULTIPLIERS folded into waveState by _applyRunScale; results cached
+        // per wave index since both tables are static for the run) + its
+        // signature ground hazard, spawned on a cadence by
+        // HazardSystem.updateBiome into the shared hazard pool.
+        this._mapMix = biome.enemyMix ?? null;
+        this._mapMixCache = {};
+        this.biomeHazard = biome.hazard ? { kind: biome.hazard, timer: BIOME_HAZARD.firstDelay } : null;
+        // Crypts gloom pools: 0..1 player-light squeeze, eased by HazardSystem
+        // each frame and read by the render pass's player light.
+        this.gloomT = 0;
         this._lastHp = this.player.hp;
         // First-run onboarding (armed for EVERY run until the first one is
         // recorded, so a mid-first-run restart re-teaches cleanly): a small
@@ -1702,9 +1724,28 @@ export class Game {
         // count past a perf-safe max on mobile (base cap is 180).
         ws.maxAlive = Math.min(220, Math.round((ws.maxAlive ?? 0) * r.cap * (s?.cap ?? 1)));
         ws.spawnIntervalMul = (ws.spawnIntervalMul ?? 1) * r.interval * (s?.interval ?? 1);
+        // P1.2 biome mix: MULTIPLY this map's skew into the wave's native
+        // table first. Multipliers only shift what the wave already offers
+        // (never add types), so Vigil-1 purity and the creature-unlock
+        // cadence survive — the map just leans the mix its own way. Both
+        // tables are static per run, so the merged result is cached per wave
+        // index and the steady-state frame allocates nothing.
+        if (this._mapMix) {
+            let tw = this._mapMixCache[ws.index];
+            if (!tw) {
+                tw = { ...ws.typeWeights };
+                for (const id in tw) {
+                    const m = this._mapMix[id];
+                    if (m) tw[id] *= m;
+                }
+                this._mapMixCache[ws.index] = tw;
+            }
+            ws.typeWeights = tw;
+        }
         // Enemy-MIX bias: merge the road's spawn weights onto a NEW typeWeights
         // object (getState returns a reference to the WAVES config table — never
         // mutate it in place). Null → the wave's native mix is untouched.
+        // Layered AFTER the biome mix so a road's segment bias wins outright.
         if (this.segmentWeights) ws.typeWeights = { ...ws.typeWeights, ...this.segmentWeights };
         return ws;
     }
@@ -1882,6 +1923,24 @@ export class Game {
         lt.name = 'LIEUTENANT';
         lt.radius = (def.radius ?? 30) * LIEUTENANT.radiusMul;
         lt.visualScale = (def.visualScale ?? 1) * LIEUTENANT.radiusMul;
+        // P1.3 — arm the borrowed boss vocabulary (1-2 mild attacks per type,
+        // LIEUTENANT.attacks). runLieutenantAI (Enemy.js) drives timers →
+        // windup (gold charge-arc tell) → commitBossAttack, so telegraphs +
+        // hazards flow through the exact boss pipeline. First cooldowns are
+        // part-elapsed so the opening special lands early but never instantly.
+        lt.behavior = 'lieutenant';
+        lt.ltAttacks = LIEUTENANT.attacks?.[type] ?? null;
+        lt.ltTimers = {};
+        if (lt.ltAttacks) {
+            for (const a of lt.ltAttacks) lt.ltTimers[a.id] = a.cooldown * (0.35 + Math.random() * 0.4);
+        }
+        lt._ltActive = null;
+        lt._ltWindupDur = 0;
+        lt._bossOut = {
+            enemyProjectiles: this.enemyProjectiles,
+            hazards: this.hazards,
+            summons: this.bossSummons,
+        };
         this.enemies.push(lt);
         this.audio.bossSpawn();   // a punchy cue, but no boss music switch
         this._shake(SCREEN_SHAKE.intensity * 0.5, 0.3);
@@ -2030,6 +2089,11 @@ export class Game {
             let px = e._pushX;
             let py = e._pushY;
             if (px === 0 && py === 0) continue;
+            // A planted lieutenant/bomber ignores separation through its
+            // windup for the same reason Enemy.update drops its knockback:
+            // the commit lands at the enemy's live spot, so a swarm shove
+            // would drift the blast off the telegraph it already painted.
+            if ((e.lieutenant || e.behavior === 'bomber') && e.windupTimer > 0) continue;
             if (e.boss) { px *= cfg.bossPushResist; py *= cfg.bossPushResist; }
             const m = Math.hypot(px, py);
             if (m > cfg.maxPush) { const s = cfg.maxPush / m; px *= s; py *= s; }
@@ -2193,7 +2257,14 @@ export class Game {
         } else if (e.affix === 'splitting') {
             const count = def.spawnCount ?? 2;
             const type = def.spawnType ?? 'crawler';
+            // Alive-cap gated per child (same as _splitOnDeath below): a
+            // twilight AoE wipe can pop many splitting affixes in one frame,
+            // and an on-death spawn must not burst past maxAlive.
+            const cap = this.waveState?.maxAlive ?? 120;
+            let live = 0;
+            for (const o of this.enemies) if (o.active) live++;
             for (let i = 0; i < count; i++) {
+                if (live >= cap) break;
                 const a = (i / count) * TWO_PI + Math.random() * 0.5;
                 const ox = e.x + Math.cos(a) * 40;
                 const oy = e.y + Math.sin(a) * 40;
@@ -2201,7 +2272,33 @@ export class Game {
                     healthMul: this.waveState.healthMul,
                     speedMul: this.waveState.speedMul,
                 }));
+                live++;
             }
+        }
+    }
+
+    // P1.3 splitter (def.splitInto) on-death burst: children spawn WEAKENED
+    // (hpFrac of the live wave scale) as plain types — never elite, never a
+    // splitter — so a split can't recurse or double-dip the reward path
+    // (children pay their own small XP when the player actually kills them).
+    _splitOnDeath(e) {
+        const s = e.def.splitInto;
+        const count = s.count ?? 2;
+        // Alive-cap gated like every other mid-fight spawn path (summoner
+        // calls, boss support, pack spawns): re-check before EACH child so an
+        // AoE wipe of a splitter clump can't burst past maxAlive.
+        const cap = this.waveState?.maxAlive ?? 120;
+        let live = 0;
+        for (const o of this.enemies) if (o.active) live++;
+        for (let i = 0; i < count; i++) {
+            if (live >= cap) break;
+            const a = (i / count) * TWO_PI + Math.random() * 0.6;
+            this.enemies.push(new Enemy(s.type ?? 'slime', e.x + Math.cos(a) * 46, e.y + Math.sin(a) * 46, {
+                healthMul: this.waveState.healthMul * (s.hpFrac ?? 0.5),
+                speedMul: this.waveState.speedMul,
+                contactDamageMul: this.waveState.damageMul ?? 1,
+            }));
+            live++;
         }
     }
 
@@ -2358,6 +2455,9 @@ export class Game {
         // Boss area hazards (shockwaves, delayed zones, beams, lingering
         // pools) — simmed by the HazardSystem. Runs BEFORE the Second Wind
         // regen check so HP/i-frames stay consistent within the frame.
+        // updateBiome first spawns this map's signature ground patches
+        // (P1.2) into the same pool, so a fresh patch telegraphs this frame.
+        this.hazardSystem.updateBiome(dt, this);
         this.hazardSystem.update(dt, this);
         this._updatePickups(dt);
         this._resolveCombat(dt, weaponResult, statusResult);
@@ -2544,13 +2644,64 @@ export class Game {
     _updateEnemies(dt) {
         for (const e of this.enemies) {
             if (!e.active) continue;
-            // Charger brace/dash cues ride the windup timer transitions (the
-            // windup IS the dodge warning) — on-screen chargers only.
-            const wasWinding = e.type === 'charger' && e.windupTimer > 0;
+            // Windup-timer TRANSITIONS drive every behavior's commit + cues
+            // (the windup IS the dodge warning): charger brace/dash, and the
+            // P1.3 bomber plant/boom, summoner call, teleporter blink, and
+            // lieutenant specials all ride the same before/after check.
+            const wasWinding = e.windupTimer > 0;
             e.update(dt, this.player, this.enemyProjectiles, this.obstacleSystem);
             if (e.type === 'charger' && this._inView(e.x, e.y, 0)) {
                 if (!wasWinding && e.windupTimer > 0) this.audio.chargerWindup();
                 else if (wasWinding && e.windupTimer <= 0) this.audio.chargerDash();
+            } else if (e.behavior === 'bomber') {
+                if (!wasWinding && e.windupTimer > 0) {
+                    // Bomber planted: paint the blast circle as a delayedZone
+                    // (the hazard pool owns the detonation damage + flash, so
+                    // the dodge behaves exactly like a telegraphed boss zone —
+                    // LOS-checked, i-frame gated). Fires even if the bee dies
+                    // mid-windup: the warning that was painted stays honest.
+                    this.hazards.push({
+                        kind: 'delayedZone', x: e.x, y: e.y, r: e.def.blastRadius,
+                        damage: e.blastDamage, age: 0, lifetime: e.def.windup,
+                        hitPlayer: false, detonateAge: 0, active: true,
+                    });
+                    if (this._inView(e.x, e.y, 0)) this.audio.chargerWindup();
+                } else if (wasWinding && e.windupTimer <= 0 && e.active) {
+                    // Commit: the bee dies in its own blast. A PLAIN bomber is
+                    // deliberately NOT routed through the kill/reward path — a
+                    // self-detonation pays no XP/kill for standing clear. An
+                    // ELITE bomber still owes its rolled loot (affix death,
+                    // chest/coin roll, gem, kill credit), so it detonates INTO
+                    // the normal pipeline via _selfDetonated instead of
+                    // leaking the rewards its elite roll promised.
+                    e.active = false;
+                    if (e.elite) this._selfDetonated.push(e);
+                    else this.particles.deathBurst(e.x, e.y, '#ff9a4a');
+                    if (this._inView(e.x, e.y, 120)) this.audio.volatileBoom();
+                }
+            } else if (e.behavior === 'summoner') {
+                if (!wasWinding && e.windupTimer > 0) {
+                    if (this._inView(e.x, e.y, 0)) this.audio.chargerWindup();
+                } else if (wasWinding && e.windupTimer <= 0) {
+                    // Call fulfilled through _spawnBossSupport — the SAME
+                    // alive-cap gate boss summons use, so summon pressure can
+                    // never blow past the wave cap / maxEnemyCap.
+                    this._spawnBossSupport(e.x, e.y, e.def.summonCount ?? 3, e.def.summonTypes);
+                    if (this._inView(e.x, e.y, 0)) this.audio.healerPulse();
+                }
+            } else if (e.behavior === 'teleporter') {
+                if (wasWinding && e.windupTimer <= 0) {
+                    // Blink committed (the enemy moved itself): sparkle both
+                    // ends so the vanish/arrive reads even at screen edge.
+                    this.particles.pickupSparkle(e._blinkFromX, e._blinkFromY, '#7fe0ff');
+                    this.particles.pickupSparkle(e.x, e.y, '#7fe0ff');
+                    if (this._inView(e.x, e.y, 0)) this.audio.dash();
+                }
+            } else if (e.lieutenant) {
+                // Lieutenant specials: windup/commit cues (the gold charge arc
+                // + any ground telegraph are painted by Enemy/commitBossAttack).
+                if (!wasWinding && e.windupTimer > 0) { if (this._inView(e.x, e.y, 0)) this.audio.chargerWindup(); }
+                else if (wasWinding && e.windupTimer <= 0) { if (this._inView(e.x, e.y, 0)) this.audio.bossAttack(); }
             }
             // Enemies (including elites + bosses) can't walk through walls.
             // Resolving after their move keeps them chasing while sliding along
@@ -2684,12 +2835,14 @@ export class Game {
         );
 
         // Merge weapon-system hits/kills (orbit blades, pulse, lightning),
-        // projectile-collision results, and burn-DoT kills so gem drops, kill
-        // count, affix deaths, and damage numbers all flow through the same
-        // downstream path. (Burn damage numbers are already pushed, tinted,
-        // inside _tickStatuses — so only its killed list is merged here.)
+        // projectile-collision results, burn-DoT kills, and elite bomber
+        // self-detonations so gem drops, kill count, affix deaths, and damage
+        // numbers all flow through the same downstream path. (Burn damage
+        // numbers are already pushed, tinted, inside _tickStatuses — so only
+        // its killed list is merged here.)
         const allKilled = collisionResult.killed
-            .concat(weaponResult.killed, statusResult.killed);
+            .concat(weaponResult.killed, statusResult.killed, this._selfDetonated);
+        this._selfDetonated.length = 0;
         const allHits = collisionResult.hits.concat(weaponResult.hits);
 
         if (allKilled.length > 0) {
@@ -2702,6 +2855,10 @@ export class Game {
             for (const e of allKilled) {
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
                 if (e.affix) this._applyAffixDeath(e);
+                // P1.3 splitter: bursts into live slimelets (def-driven,
+                // unlike the rolled elite 'splitting' AFFIX — both can fire
+                // on an elite splitter, which is the fun kind of chaos).
+                if (e.def.splitInto) this._splitOnDeath(e);
                 this._dropGem(e.x, e.y);
                 // Rare health orb (skipped at full HP so it's never wasted).
                 if (this.player.hp < this.player.maxHp && Math.random() < HEALTH_DROP.chance) {
@@ -3123,7 +3280,11 @@ export class Game {
             const aura = this._auraSnapshot;
             const lightColor = aura ? aura.color : LIGHT_COLORS.player;
             const lightInten = Lc.playerIntensity + (aura ? Math.min(AURA.lightIntensityBonus, aura.intensity * 0.4) : 0);
-            L.addLight(this.player.x, this.player.y, Lc.playerRadius, lightColor, lightInten, 0);
+            // Crypts gloom pools (P1.2) SQUEEZE the hero's light — gloomT
+            // (0..1, eased by HazardSystem) scales the radius down by up to
+            // lightCut, so standing in living darkness visibly costs vision.
+            const gloomK = 1 - (BIOME_HAZARD.gloom.lightCut ?? 0.5) * (this.gloomT ?? 0);
+            L.addLight(this.player.x, this.player.y, Lc.playerRadius * gloomK, lightColor, lightInten, 0);
         }
 
         for (const g of this.gems) {

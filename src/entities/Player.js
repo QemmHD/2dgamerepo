@@ -180,6 +180,13 @@ export class Player {
         // speedBoostMul. Both reset on a fresh Player (restart).
         this.speedBoostTimer = 0;
         this.speedBoostMul = 1;
+        // P1.2 biome-terrain movement modifiers — RE-STAMPED from scratch
+        // every frame by HazardSystem.update (so they reverse the instant the
+        // hero steps off a patch, with zero undo bookkeeping):
+        //   terrainSlowMul  ×speed while wading brambles/quicksand (1 = free)
+        //   iceSlipT        > 0 while on an ice slick → steering skids
+        this.terrainSlowMul = 1;
+        this.iceSlipT = 0;
 
         // Composure — skill-adaptive damage relief (see COMPOSURE in GameConfig).
         // 0..1 meter that fills while you avoid hits and drops when tagged; the
@@ -252,9 +259,21 @@ export class Player {
             if (this._composureHitCd > 0) this._composureHitCd = Math.max(0, this._composureHitCd - dt);
             else if (this.composure < 1) this.composure = Math.min(1, this.composure + COMPOSURE.recoverPerSecond * dt);
         }
-        const spd = this.speed * (this.speedBoostTimer > 0 ? this.speedBoostMul : 1);
-        this.vx = move.x * spd;
-        this.vy = move.y * spd;
+        // Biome terrain (P1.2) folds in the same transient way as the dash
+        // surge: never mutates base speed, reverses the moment the stamp stops.
+        const spd = this.speed * (this.speedBoostTimer > 0 ? this.speedBoostMul : 1) * this.terrainSlowMul;
+        if (this.iceSlipT > 0) {
+            // Ice slick: heading changes only BLEND in, so the hero skids —
+            // momentum carries across the patch and steering goes mushy.
+            // Exponential blend = frame-rate independent; off-ice control is
+            // exactly the old direct set (zero behavior change at iceSlipT 0).
+            const k = 1 - Math.exp(-dt * 3.0);
+            this.vx += (move.x * spd - this.vx) * k;
+            this.vy += (move.y * spd - this.vy) * k;
+        } else {
+            this.vx = move.x * spd;
+            this.vy = move.y * spd;
+        }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
 
