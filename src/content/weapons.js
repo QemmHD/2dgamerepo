@@ -200,6 +200,120 @@ export const WEAPONS = {
         update: voltWandUpdate,
     },
 
+    // ── The Armory pt. 1 (v1.3): four NEW behavior kinds ──────────────────
+    // Each introduces a genuinely new feel (return-arc, channel, zone-trap,
+    // movement-trail) rather than another projectile variant. All are wands /
+    // wand-flung cinders — never blades. DPS parity notes per weapon follow
+    // the family math ("Cinderbolt is the damage baseline": L1 ≈33 → L8 ≈200
+    // single-target DPS); kinds that cover area trade single-target for reach.
+
+    ashfang: {
+        id: 'ashfang',
+        name: 'Ashfang',
+        description: 'A wand-flung cinder fang that arcs through the horde and RETURNS.',
+        kind: 'boomerang',
+        evolvesTo: 'twinfangCyclone',
+        element: 'fire',
+        // Parity: each husk is hit once per pass per CAST (fangs from one
+        // cast share hit sets — see ashfangUpdate), so vs a single target
+        // every cast is exactly 2×damage per cooldown no matter how the
+        // fangs overlap (bosses span both arcs) — L1 2×19/1.15 ≈ 33 DPS,
+        // L8 2×52/0.72 ≈ 144 focused — under the Cinderbolt's 200, paid
+        // back by carving the whole out-and-back corridor.
+        perLevel: [
+            null,
+            { damage: 19, cooldown: 1.15, range: 380, discSpeed: 780, discRadius: 26, count: 1 },
+            { damage: 22, cooldown: 1.10, range: 395, discSpeed: 800, discRadius: 26, count: 1 },
+            { damage: 26, cooldown: 1.05, range: 410, discSpeed: 820, discRadius: 27, count: 1 },
+            { damage: 30, cooldown: 1.00, range: 425, discSpeed: 840, discRadius: 27, count: 1 },
+            { damage: 35, cooldown: 0.92, range: 440, discSpeed: 870, discRadius: 28, count: 2 },
+            { damage: 40, cooldown: 0.86, range: 455, discSpeed: 900, discRadius: 28, count: 2 },
+            { damage: 46, cooldown: 0.79, range: 470, discSpeed: 940, discRadius: 29, count: 2 },
+            { damage: 52, cooldown: 0.72, range: 490, discSpeed: 980, discRadius: 30, count: 2 },
+        ],
+        initialState() { return { discs: [] }; },
+        update: ashfangUpdate,
+    },
+
+    kindleRay: {
+        id: 'kindleRay',
+        name: 'Kindle Ray',
+        description: 'CHANNEL an unbroken wand ray that sears everything along its line.',
+        kind: 'beam',
+        evolvesTo: 'dawnfireRay',
+        // Parity: 100% uptime and line coverage, so the tick DPS sits UNDER
+        // the Cinderbolt curve — L1 5/0.15 ≈ 33, L8 14/0.075 ≈ 187 — with the
+        // trade that the ray only reaches `range` and needs line of sight.
+        // `damage` here is PER TICK (tickInterval), not per shot.
+        perLevel: [
+            null,
+            { damage: 5,  tickInterval: 0.150, range: 460, width: 26 },
+            { damage: 6,  tickInterval: 0.145, range: 470, width: 26 },
+            { damage: 7,  tickInterval: 0.140, range: 480, width: 27 },
+            { damage: 8,  tickInterval: 0.130, range: 495, width: 27 },
+            { damage: 9,  tickInterval: 0.120, range: 510, width: 28 },
+            { damage: 11, tickInterval: 0.105, range: 525, width: 29 },
+            { damage: 12, tickInterval: 0.090, range: 540, width: 30 },
+            { damage: 14, tickInterval: 0.075, range: 560, width: 32 },
+        ],
+        initialState() { return { on: false, tx: 0, ty: 0, phase: 0 }; },
+        update: kindleRayUpdate,
+    },
+
+    emberMine: {
+        id: 'emberMine',
+        name: 'Cindermine',
+        description: 'Lay smouldering ember mines that ERUPT when husks tread close.',
+        kind: 'mine',
+        evolvesTo: 'ashquake',
+        element: 'fire',
+        // Parity: burst AoE paid for by the trigger wait — L1 42/1.7 ≈ 25 DPS
+        // focused, L8 126/0.95 ≈ 133 + blast coverage + burn, under the
+        // Cinderbolt 200 because every blast hits the whole pack that tripped
+        // it. Mines persist until tripped (maxMines caps the field); a mine
+        // stranded off-screen is reclaimed (see MINE_RECLAIM_DIST_SQ).
+        perLevel: [
+            null,
+            { damage: 42,  cooldown: 1.70, maxMines: 3, triggerRadius: 90,  blastRadius: 150, armTime: 0.5, burnDps: 8,  burnDuration: 2.5 },
+            { damage: 50,  cooldown: 1.60, maxMines: 3, triggerRadius: 95,  blastRadius: 158, armTime: 0.5, burnDps: 10, burnDuration: 2.5 },
+            { damage: 58,  cooldown: 1.50, maxMines: 4, triggerRadius: 95,  blastRadius: 165, armTime: 0.5, burnDps: 12, burnDuration: 2.5 },
+            { damage: 68,  cooldown: 1.35, maxMines: 4, triggerRadius: 100, blastRadius: 175, armTime: 0.5, burnDps: 13, burnDuration: 2.8 },
+            { damage: 79,  cooldown: 1.25, maxMines: 5, triggerRadius: 100, blastRadius: 185, armTime: 0.45, burnDps: 15, burnDuration: 2.8 },
+            { damage: 92,  cooldown: 1.15, maxMines: 5, triggerRadius: 105, blastRadius: 192, armTime: 0.45, burnDps: 17, burnDuration: 3.0 },
+            { damage: 108, cooldown: 1.05, maxMines: 6, triggerRadius: 108, blastRadius: 200, armTime: 0.4, burnDps: 18, burnDuration: 3.0 },
+            { damage: 126, cooldown: 0.95, maxMines: 6, triggerRadius: 110, blastRadius: 210, armTime: 0.4, burnDps: 20, burnDuration: 3.0 },
+        ],
+        initialState() { return { mines: [] }; },
+        update: emberMineUpdate,
+    },
+
+    wakefire: {
+        id: 'wakefire',
+        name: 'Wakefire',
+        description: 'Your steps leave a WAKE of clinging ground-fire behind you.',
+        kind: 'trail',
+        evolvesTo: 'wildfireWake',
+        element: 'fire',
+        // Parity: zero-aim area denial — a husk chasing through the wake eats
+        // damage/tickInterval (L1 6/0.40 = 15, L8 20/0.22 ≈ 90 DPS), well
+        // under the Cinderbolt because the ENTIRE chase pack walks the same
+        // line. Only movement feeds it: standing still stops the wake.
+        // `damage` is PER TICK to each husk standing in any patch.
+        perLevel: [
+            null,
+            { damage: 6,  tickInterval: 0.40, patchRadius: 64, patchLife: 2.2, spacing: 95, maxPatches: 14 },
+            { damage: 7,  tickInterval: 0.38, patchRadius: 68, patchLife: 2.4, spacing: 95, maxPatches: 16 },
+            { damage: 8,  tickInterval: 0.36, patchRadius: 72, patchLife: 2.6, spacing: 90, maxPatches: 18 },
+            { damage: 10, tickInterval: 0.33, patchRadius: 76, patchLife: 2.8, spacing: 90, maxPatches: 20 },
+            { damage: 12, tickInterval: 0.30, patchRadius: 80, patchLife: 3.0, spacing: 85, maxPatches: 22 },
+            { damage: 14, tickInterval: 0.28, patchRadius: 85, patchLife: 3.2, spacing: 85, maxPatches: 24 },
+            { damage: 17, tickInterval: 0.25, patchRadius: 90, patchLife: 3.4, spacing: 80, maxPatches: 26 },
+            { damage: 20, tickInterval: 0.22, patchRadius: 95, patchLife: 3.6, spacing: 80, maxPatches: 28 },
+        ],
+        initialState() { return { patches: [], lastX: 0, lastY: 0 }; },
+        update: wakefireUpdate,
+    },
+
     // ─── Evolved weapons (only reachable via treasure chest) ─────────
     arcaneStorm: {
         id: 'arcaneStorm',
@@ -312,6 +426,140 @@ export const WEAPONS = {
             },
         ],
         update: thunderCrownUpdate,
+    },
+
+    // ── Armory pt. 1 evolutions ───────────────────────────────────────────
+    // Evolutions for the four new kinds, plus the two the roster was MISSING
+    // (Stormwand and Frostmote finally evolve). Same payoff discipline as the
+    // originals: each clearly beats its maxed base without deleting bosses.
+    twinfangCyclone: {
+        id: 'twinfangCyclone',
+        name: 'Twinfang Cyclone',
+        description: 'Three returning cinder fangs carve the horde without pause.',
+        kind: 'boomerang',
+        evolved: true,
+        element: 'fire',
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                // Evolution payoff: maxed Ashfang is ≈144 focused (2×52
+                // @0.72s, shared cast hit sets). 2×62/0.55 ≈ 225 focused plus
+                // a third fang's corridor coverage clearly wins while the
+                // return-arc identity stays intact.
+                damage: 62, cooldown: 0.55, range: 540, discSpeed: 1050,
+                discRadius: 34, count: 3,
+            },
+        ],
+        initialState() { return { discs: [] }; },
+        update: ashfangUpdate,
+    },
+    dawnfireRay: {
+        id: 'dawnfireRay',
+        name: 'Dawnfire Ray',
+        description: 'The channeled ray widens into dawnfire that sets its line ablaze.',
+        kind: 'beam',
+        evolved: true,
+        element: 'fire',
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                // Evolution payoff: maxed Kindle Ray ticks 14 @0.075 (~187/s).
+                // 20 @0.07 (~285/s) + a burn stamp per tick + a wider, longer
+                // ray is a real upgrade for a weapon whose whole job is uptime.
+                damage: 20, tickInterval: 0.07, range: 640, width: 44,
+                burnDps: 16, burnDuration: 2.0,
+            },
+        ],
+        initialState() { return { on: false, tx: 0, ty: 0, phase: 0 }; },
+        update: kindleRayUpdate,
+    },
+    ashquake: {
+        id: 'ashquake',
+        name: 'Ashquake',
+        description: 'A field of buried cinders that erupts in vast, searing blasts.',
+        kind: 'mine',
+        evolved: true,
+        element: 'fire',
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                // Evolution payoff: maxed Cindermine is 126 dmg / 210 blast /
+                // 6 mines. Bigger field, near-double blasts, a far hotter burn
+                // — the minefield becomes the arena's floor plan.
+                damage: 170, cooldown: 0.80, maxMines: 8, triggerRadius: 130,
+                blastRadius: 260, armTime: 0.35, burnDps: 34, burnDuration: 3.5,
+            },
+        ],
+        initialState() { return { mines: [] }; },
+        update: emberMineUpdate,
+    },
+    wildfireWake: {
+        id: 'wildfireWake',
+        name: 'Wildfire Wake',
+        description: 'The wake becomes wildfire — broad, long-burning, and contagious.',
+        kind: 'trail',
+        evolved: true,
+        element: 'fire',
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                // Evolution payoff: maxed Wakefire ticks 20 @0.22 in 95px
+                // patches. Hotter/faster ticks in far bigger, longer-lived
+                // patches PLUS a burn stamp (feeding the burn-spread engine).
+                damage: 30, tickInterval: 0.18, patchRadius: 125, patchLife: 4.2,
+                spacing: 70, maxPatches: 34, burnDps: 18, burnDuration: 2.5,
+            },
+        ],
+        initialState() { return { patches: [], lastX: 0, lastY: 0 }; },
+        update: wakefireUpdate,
+    },
+    stormsurge: {
+        id: 'stormsurge',
+        name: 'Stormsurge',
+        description: 'Twin surge-zaps with chains that never miss their arc.',
+        kind: 'lightning',
+        evolved: true,
+        element: 'shock',
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                // Evolution payoff (the Stormwand FINALLY evolves): maxed
+                // Stormwand zaps 56 @0.28 + 3 guaranteed 34-dmg hops. TWO
+                // primary zaps per cast (zaps: 2), deeper guaranteed chains and
+                // heavier hops clearly beat it without Thunder Crown's reach.
+                damage: 60, cooldown: 0.24, range: 560, zaps: 2,
+                chainCount: 4, chainChance: 1.0, chainRange: 300, chainDamage: 40,
+                shockPerStack: 0.10, maxShockStacks: 6, shockDuration: 4.0,
+            },
+        ],
+        update: voltWandUpdate,
+    },
+    winterveil: {
+        id: 'winterveil',
+        name: 'Winterveil',
+        description: 'A veil of deep frost that chills, wounds — and freezes solid.',
+        kind: 'special',
+        ability: true,
+        evolved: true,
+        element: 'frost',
+        maxLevel: 1,
+        perLevel: [
+            null,
+            {
+                // Evolution payoff (Frostmote FINALLY evolves): maxed Frostmote
+                // is 16 dmg / 310 radius / 0.60 chill. A wider, harder veil with
+                // a hard-freeze proc (bosses stay freeze-exempt via applyFreeze)
+                // turns the utility ability into real crowd control.
+                cooldown: 1.1, radius: 380, damage: 26, slowMul: 0.50,
+                slowDuration: 2.8, motes: 14, freezeChance: 0.12, freezeDuration: 0.5,
+            },
+        ],
+        update: frostmoteUpdate,
     },
 
     // ── Fusion weapons (only reachable via a Wick Shrine "fuse") ──────────
@@ -427,6 +675,105 @@ export const WEAPONS = {
         update: lightningMarkUpdate,
     },
 
+    // ── Fusion fills (v1.3): the 7 pairs the table was missing ────────────
+    // With these, ALL 15 pairs of the six original base weapons have a
+    // recipe (see fusions.js). Same discipline as the first eight: reuse an
+    // existing behavior (two get the new optional burn/shock stamps in
+    // orbitingBladeUpdate / holyPulseUpdate), L1 ≈ mid-base power, maxLevel 5.
+    dawnlance: {
+        id: 'dawnlance', name: 'Dawnlance', description: 'Radiant bolts that leap from kill to kill.',
+        kind: 'projectile', fusion: true, maxLevel: 5,
+        perLevel: [
+            null,
+            { damage: 42, cooldown: 0.33, projectileSpeed: 1120, projectileRadius: 18, pierce: 2, ricochet: 2, ricochetRange: 400 },
+            { damage: 49, cooldown: 0.31, projectileSpeed: 1160, projectileRadius: 18, pierce: 2, ricochet: 2, ricochetRange: 410 },
+            { damage: 58, cooldown: 0.29, projectileSpeed: 1200, projectileRadius: 19, pierce: 3, ricochet: 3, ricochetRange: 420 },
+            { damage: 68, cooldown: 0.27, projectileSpeed: 1240, projectileRadius: 19, pierce: 3, ricochet: 3, ricochetRange: 430 },
+            { damage: 81, cooldown: 0.25, projectileSpeed: 1300, projectileRadius: 20, pierce: 4, ricochet: 4, ricochetRange: 440 },
+        ],
+        update: arcaneBoltUpdate,
+    },
+    boltbrand: {
+        id: 'boltbrand', name: 'Boltbrand', description: 'Arcane storm-brands that hunt the toughest husks.',
+        kind: 'lightning', fusion: true, element: 'shock', maxLevel: 5,
+        perLevel: [
+            null,
+            { strikes: 3, damage: 44, cooldown: 1.45, range: 1250, shockPerStack: 0.09, maxShockStacks: 4, shockDuration: 4.0 },
+            { strikes: 4, damage: 51, cooldown: 1.35, range: 1270, shockPerStack: 0.09, maxShockStacks: 4, shockDuration: 4.0 },
+            { strikes: 4, damage: 60, cooldown: 1.25, range: 1290, shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0 },
+            { strikes: 5, damage: 70, cooldown: 1.15, range: 1310, shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0 },
+            { strikes: 6, damage: 82, cooldown: 1.05, range: 1340, shockPerStack: 0.11, maxShockStacks: 6, shockDuration: 4.0 },
+        ],
+        update: lightningMarkUpdate,
+    },
+    pyrewheel: {
+        id: 'pyrewheel', name: 'Pyrewheel', description: 'A blazing orbit that sets every husk it grazes alight.',
+        kind: 'orbit', fusion: true, element: 'fire', maxLevel: 5,
+        perLevel: [
+            null,
+            { bladeCount: 3, damage: 28, orbitSpeed: 4.2, orbitRadius: 142, bladeRadius: 32, hitCooldown: 0.30, burnDps: 18, burnDuration: 2.5 },
+            { bladeCount: 4, damage: 33, orbitSpeed: 4.4, orbitRadius: 148, bladeRadius: 33, hitCooldown: 0.29, burnDps: 22, burnDuration: 2.5 },
+            { bladeCount: 4, damage: 39, orbitSpeed: 4.6, orbitRadius: 154, bladeRadius: 35, hitCooldown: 0.28, burnDps: 27, burnDuration: 2.8 },
+            { bladeCount: 5, damage: 46, orbitSpeed: 4.8, orbitRadius: 160, bladeRadius: 36, hitCooldown: 0.26, burnDps: 33, burnDuration: 2.8 },
+            { bladeCount: 6, damage: 55, orbitSpeed: 5.0, orbitRadius: 168, bladeRadius: 38, hitCooldown: 0.25, burnDps: 40, burnDuration: 3.0 },
+        ],
+        initialState() { return { baseAngle: 0, bladePositions: [] }; },
+        update: orbitingBladeUpdate,
+    },
+    coilhalo: {
+        id: 'coilhalo', name: 'Coil Halo', description: 'A charged orbit that stamps SHOCK on all it sweeps.',
+        kind: 'orbit', fusion: true, element: 'shock', maxLevel: 5,
+        perLevel: [
+            null,
+            { bladeCount: 3, damage: 30, orbitSpeed: 4.4, orbitRadius: 138, bladeRadius: 31, hitCooldown: 0.28, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
+            { bladeCount: 4, damage: 35, orbitSpeed: 4.6, orbitRadius: 144, bladeRadius: 32, hitCooldown: 0.27, shockPerStack: 0.08, maxShockStacks: 4, shockDuration: 4.0 },
+            { bladeCount: 4, damage: 41, orbitSpeed: 4.8, orbitRadius: 150, bladeRadius: 34, hitCooldown: 0.26, shockPerStack: 0.09, maxShockStacks: 5, shockDuration: 4.0 },
+            { bladeCount: 5, damage: 48, orbitSpeed: 5.0, orbitRadius: 156, bladeRadius: 35, hitCooldown: 0.25, shockPerStack: 0.09, maxShockStacks: 5, shockDuration: 4.0 },
+            { bladeCount: 6, damage: 58, orbitSpeed: 5.2, orbitRadius: 164, bladeRadius: 37, hitCooldown: 0.24, shockPerStack: 0.10, maxShockStacks: 6, shockDuration: 4.0 },
+        ],
+        initialState() { return { baseAngle: 0, bladePositions: [] }; },
+        update: orbitingBladeUpdate,
+    },
+    pyrebeacon: {
+        id: 'pyrebeacon', name: 'Pyre Beacon', description: 'A scouring pulse that leaves the whole crowd burning.',
+        kind: 'pulse', fusion: true, element: 'fire', maxLevel: 5,
+        perLevel: [
+            null,
+            { radius: 440, damage: 30, cooldown: 1.8, burnDps: 20, burnDuration: 2.5, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 4 },
+            { radius: 470, damage: 35, cooldown: 1.7, burnDps: 25, burnDuration: 2.5, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 4 },
+            { radius: 500, damage: 41, cooldown: 1.6, burnDps: 30, burnDuration: 2.8, shredPerStack: 0.11, shredDuration: 4.0, maxShredStacks: 5 },
+            { radius: 530, damage: 49, cooldown: 1.5, burnDps: 36, burnDuration: 2.8, shredPerStack: 0.11, shredDuration: 4.0, maxShredStacks: 5 },
+            { radius: 560, damage: 58, cooldown: 1.4, burnDps: 44, burnDuration: 3.0, shredPerStack: 0.12, shredDuration: 4.0, maxShredStacks: 6 },
+        ],
+        update: holyPulseUpdate,
+    },
+    stormbeacon: {
+        id: 'stormbeacon', name: 'Storm Beacon', description: 'A crackling pulse that primes the crowd with SHOCK.',
+        kind: 'pulse', fusion: true, element: 'shock', maxLevel: 5,
+        perLevel: [
+            null,
+            { radius: 450, damage: 32, cooldown: 1.7, shockPerStack: 0.09, maxShockStacks: 4, shockDuration: 4.0, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 4 },
+            { radius: 480, damage: 37, cooldown: 1.6, shockPerStack: 0.09, maxShockStacks: 4, shockDuration: 4.0, shredPerStack: 0.10, shredDuration: 4.0, maxShredStacks: 4 },
+            { radius: 510, damage: 44, cooldown: 1.5, shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0, shredPerStack: 0.11, shredDuration: 4.0, maxShredStacks: 5 },
+            { radius: 540, damage: 52, cooldown: 1.4, shockPerStack: 0.10, maxShockStacks: 5, shockDuration: 4.0, shredPerStack: 0.11, shredDuration: 4.0, maxShredStacks: 5 },
+            { radius: 575, damage: 62, cooldown: 1.3, shockPerStack: 0.11, maxShockStacks: 6, shockDuration: 4.0, shredPerStack: 0.12, shredDuration: 4.0, maxShredStacks: 6 },
+        ],
+        update: holyPulseUpdate,
+    },
+    tempestcoil: {
+        id: 'tempestcoil', name: 'Tempest Coil', description: 'One zap, endless arcs — the whole pack shares the coil.',
+        kind: 'lightning', fusion: true, element: 'shock', maxLevel: 5,
+        perLevel: [
+            null,
+            { damage: 42, cooldown: 0.32, range: 480, chainCount: 4, chainChance: 1.0, chainRange: 280, chainDamage: 30, shockPerStack: 0.09, maxShockStacks: 5, shockDuration: 4.0 },
+            { damage: 49, cooldown: 0.30, range: 500, chainCount: 4, chainChance: 1.0, chainRange: 290, chainDamage: 35, shockPerStack: 0.09, maxShockStacks: 5, shockDuration: 4.0 },
+            { damage: 58, cooldown: 0.28, range: 520, chainCount: 5, chainChance: 1.0, chainRange: 300, chainDamage: 41, shockPerStack: 0.10, maxShockStacks: 6, shockDuration: 4.0 },
+            { damage: 68, cooldown: 0.26, range: 540, chainCount: 5, chainChance: 1.0, chainRange: 310, chainDamage: 48, shockPerStack: 0.10, maxShockStacks: 6, shockDuration: 4.0 },
+            { damage: 80, cooldown: 0.24, range: 560, chainCount: 6, chainChance: 1.0, chainRange: 320, chainDamage: 58, shockPerStack: 0.11, maxShockStacks: 7, shockDuration: 4.0 },
+        ],
+        update: voltWandUpdate,
+    },
+
     // ── Abilities ───────────────────────────────────────────────────────
     // Data-driven, movement-only. They appear in the level-up pool like any
     // other weapon. None require manual aiming.
@@ -525,6 +872,25 @@ export const WEAPON_AURA = {
     cinderAura:      { color: '#ff7a33', pulse: false },
     hearthTotem:     { color: '#ffce6a', pulse: false },
     frostmote:       { color: '#8fd6ff', pulse: true  }, // pale blue frost
+    // Armory pt. 1 — new kinds + their evolutions.
+    ashfang:         { color: '#ff9a4a', pulse: false }, // returning cinder fang
+    twinfangCyclone: { color: '#ff7a2a', pulse: true  },
+    kindleRay:       { color: '#ffd98a', pulse: false }, // channeled wand ray
+    dawnfireRay:     { color: '#ffe9b0', pulse: true  },
+    emberMine:       { color: '#ff6a3c', pulse: false }, // buried embers
+    ashquake:        { color: '#ff5a2a', pulse: true  },
+    wakefire:        { color: '#ff8a3c', pulse: false }, // ground-fire wake
+    wildfireWake:    { color: '#ff6a2a', pulse: true  },
+    stormsurge:      { color: '#8fd8ff', pulse: true  }, // evolved Stormwand
+    winterveil:      { color: '#bfeaff', pulse: true  }, // evolved Frostmote
+    // Fusion fills.
+    dawnlance:       { color: '#ffe9a8', pulse: false },
+    boltbrand:       { color: '#9a8cff', pulse: true  },
+    pyrewheel:       { color: '#ff9a5c', pulse: false },
+    coilhalo:        { color: '#9fd8ff', pulse: true  },
+    pyrebeacon:      { color: '#ffb060', pulse: false },
+    stormbeacon:     { color: '#aee2ff', pulse: true  },
+    tempestcoil:     { color: '#7fd0ff', pulse: true  },
 };
 
 // Compute the player's current aura from their owned weapons. The dominant
@@ -643,6 +1009,12 @@ function orbitingBladeUpdate(dt, owned, ctx) {
             if (freezeChance > 0 && Math.random() < freezeChance) {
                 e.applyFreeze(cfg.freezeDuration ?? 0.5);
             }
+            // Optional elemental stamps for the FUSION variants (fields absent
+            // on the base/evolved defs, so their behavior is untouched):
+            // Pyrewheel sets the standard burn, Coil Halo builds SHOCK stacks
+            // (read at hit time by shock weapons — same channel as Stormbrand).
+            if (cfg.burnDps) e.applyBurn(cfg.burnDps * (ctx.player.fireRoundScale ?? 1), cfg.burnDuration ?? 2.0);
+            if (cfg.shockPerStack && cfg.maxShockStacks) e.applyShock(cfg.maxShockStacks, cfg.shockDuration ?? 4.0);
             break;
         }
     }
@@ -680,6 +1052,11 @@ function holyPulseUpdate(dt, owned, ctx) {
         ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
         if (!e.active) ctx.killed.push(e);
         if (cfg.maxShredStacks) e.applyShred(cfg.maxShredStacks, cfg.shredDuration);
+        // Optional elemental stamps for the FUSION variants (fields absent on
+        // the base def, so Beacon Pulse itself is untouched): Pyre Beacon sets
+        // the standard burn, Storm Beacon builds SHOCK stacks for shock hits.
+        if (cfg.burnDps) e.applyBurn(cfg.burnDps * (ctx.player.fireRoundScale ?? 1), cfg.burnDuration ?? 2.0);
+        if (cfg.shockPerStack && cfg.maxShockStacks) e.applyShock(cfg.maxShockStacks, cfg.shockDuration ?? 4.0);
     }
 
     ctx.effects.push({
@@ -1077,51 +1454,65 @@ function thunderCrownUpdate(dt, owned, ctx) {
 // Cinderbolt base damage, then the bolt arcs to nearby foes (each chain hop
 // deals chainDamage + a SHOCK stack). Reuses shockStrike (so burn-detonate +
 // shock-amp synergies work) and the lightning visual. A zap SFX per cast.
+// `cfg.zaps` (default 1 — the base wand is unchanged) fires that many PRIMARY
+// zaps per cast at distinct nearest targets: the Stormsurge evolution's hook.
 function voltWandUpdate(dt, owned, ctx) {
     const cfg = WEAPONS[owned.id].perLevel[owned.level];
     owned.timer -= dt;
     if (owned.timer > 0) return;
-
-    // Tighter targeting than the other wands: only zap a husk within the
-    // wand's own (short) range AND on-screen, so it doesn't reach across the
-    // arena.
-    const rSq = (cfg.range ?? 420) * (cfg.range ?? 420);
-    const inRange = (x, y) => {
-        const dx = x - ctx.player.x, dy = y - ctx.player.y;
-        return dx * dx + dy * dy <= rSq && (!ctx.inView || ctx.inView(x, y));
-    };
-    const target = nearestEnemy(ctx.player, ctx.enemies, inRange);
-    if (!target) {
-        if (owned.timer < 0) owned.timer = 0;
-        return;
-    }
 
     const dmgMul = (ctx.player.damageMul ?? 1) * powerRoll(ctx.player);
     const cdMul = ctx.player.cooldownMul ?? 1;
     const damage = cfg.damage * dmgMul;
     const chainDamage = (cfg.chainDamage ?? cfg.damage) * dmgMul;
     const struck = new Set();
+    // Tighter targeting than the other wands: only zap a husk within the
+    // wand's own (short) range AND on-screen, so it doesn't reach across the
+    // arena.
+    const rSq = (cfg.range ?? 420) * (cfg.range ?? 420);
 
-    shockStrike(target, damage, cfg, ctx);
-    struck.add(target);
-    ctx.effects.push({ kind: 'lightning', x: target.x, y: target.y, age: 0, lifetime: 0.22, active: true });
-
-    // Arc to nearby unstruck foes.
-    let src = target;
-    for (let j = 0; j < (cfg.chainCount ?? 0); j++) {
-        if (Math.random() >= (cfg.chainChance ?? 1)) break;
-        const crSq = (cfg.chainRange ?? 0) * (cfg.chainRange ?? 0);
-        let nearest = null, nd = crSq;
+    let fired = false;
+    const zaps = cfg.zaps ?? 1;
+    for (let z = 0; z < zaps; z++) {
+        // Nearest in-range, on-screen husk not already struck this cast.
+        let target = null, bestSq = Infinity;
         for (const e of ctx.enemies) {
             if (!e.active || struck.has(e)) continue;
-            const dsq = distanceSq(src.x, src.y, e.x, e.y);
-            if (dsq < nd) { nearest = e; nd = dsq; }
+            const dx = e.x - ctx.player.x, dy = e.y - ctx.player.y;
+            const dsq = dx * dx + dy * dy;
+            if (dsq > rSq || dsq >= bestSq) continue;
+            if (ctx.inView && !ctx.inView(e.x, e.y)) continue;
+            target = e; bestSq = dsq;
         }
-        if (!nearest) break;
-        shockStrike(nearest, chainDamage, cfg, ctx);
-        struck.add(nearest);
-        ctx.effects.push({ kind: 'lightning', x: nearest.x, y: nearest.y, age: 0, lifetime: 0.2, active: true, chain: true });
-        src = nearest;
+        if (!target) break;
+        fired = true;
+
+        shockStrike(target, damage, cfg, ctx);
+        struck.add(target);
+        ctx.effects.push({ kind: 'lightning', x: target.x, y: target.y, age: 0, lifetime: 0.22, active: true });
+
+        // Arc to nearby unstruck foes.
+        let src = target;
+        for (let j = 0; j < (cfg.chainCount ?? 0); j++) {
+            if (Math.random() >= (cfg.chainChance ?? 1)) break;
+            const crSq = (cfg.chainRange ?? 0) * (cfg.chainRange ?? 0);
+            let nearest = null, nd = crSq;
+            for (const e of ctx.enemies) {
+                if (!e.active || struck.has(e)) continue;
+                const dsq = distanceSq(src.x, src.y, e.x, e.y);
+                if (dsq < nd) { nearest = e; nd = dsq; }
+            }
+            if (!nearest) break;
+            shockStrike(nearest, chainDamage, cfg, ctx);
+            struck.add(nearest);
+            ctx.effects.push({ kind: 'lightning', x: nearest.x, y: nearest.y, age: 0, lifetime: 0.2, active: true, chain: true });
+            src = nearest;
+        }
+    }
+    if (!fired) {
+        // No valid target: stay primed so the next arrival is zapped at once.
+        if (owned.timer < 0) owned.timer = 0;
+        return;
     }
     if (ctx.audio) ctx.audio.shootShock();
     owned.timer = cfg.cooldown * cdMul;
@@ -1202,6 +1593,13 @@ function frostmoteUpdate(dt, owned, ctx) {
         } else {
             e.applyChill(Math.max(0.3, cfg.slowMul - chillBonus), cfg.slowDuration);
         }
+        // Winterveil (the evolved motes): a hard-freeze proc (Rimecore's
+        // freezeChanceBonus deepens it). Field absent on base Frostmote;
+        // applyFreeze is boss-exempt so no permafreeze.
+        if (cfg.freezeChance) {
+            const fc = cfg.freezeChance + (p.freezeChanceBonus ?? 0);
+            if (Math.random() < fc) e.applyFreeze(cfg.freezeDuration ?? 0.5);
+        }
         ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
         if (!e.active) ctx.killed.push(e);
     }
@@ -1213,6 +1611,236 @@ function frostmoteUpdate(dt, owned, ctx) {
         motes.push({ a, r0: 18 + Math.random() * 22, spd: (cfg.radius / 0.7) * (0.7 + Math.random() * 0.4) });
     }
     ctx.effects.push({ kind: 'frostmote', x: p.x, y: p.y, radius: cfg.radius, motes, age: 0, lifetime: 0.7, active: true });
+}
+
+// ─── Armory pt. 1 behaviors (the four NEW kinds) ───────────────────────
+// Gameplay state for these lives on owned.state (like the orbit blades'
+// bladePositions) and is DRAWN by WeaponSystem.drawWeaponVisuals — no
+// cosmetic-effect round-trips for things that carry damage.
+
+// Ashfang: throw a spinning cinder fang at the nearest husk; it flies out
+// `range`, then homes back to the player. Each husk is hit once per PASS
+// per CAST (fangs from one cast share per-pass hit sets, so a big target
+// spanning both arcs — a boss — never gets double-dipped by one throw; the
+// turn switches to the fresh return-pass set). Fangs keep flying while the
+// cooldown rests, so multiple casts can be airborne.
+function ashfangUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    const p = ctx.player;
+    const discs = owned.state.discs;
+
+    // Advance live fangs (backwards so a caught fang can splice out).
+    for (let i = discs.length - 1; i >= 0; i--) {
+        const d = discs[i];
+        d.spin += 9 * dt;
+        if (d.phase === 0) {
+            d.x += d.vx * dt;
+            d.y += d.vy * dt;
+            d.dist += cfg.discSpeed * dt;
+            if (d.dist >= cfg.range) d.phase = 1;                    // turn = fresh pass set
+        } else {
+            // Return pass homes on the PLAYER (who may have moved).
+            const dx = p.x - d.x, dy = p.y - d.y;
+            const len = Math.hypot(dx, dy) || 1;
+            if (len < 46) { discs.splice(i, 1); continue; }          // caught
+            d.x += (dx / len) * cfg.discSpeed * dt;
+            d.y += (dy / len) * cfg.discSpeed * dt;
+        }
+        const passHit = d.hit[d.phase];
+        for (const e of ctx.enemies) {
+            if (!e.active || passHit.has(e)) continue;
+            if (!circleOverlap(d.x, d.y, cfg.discRadius, e.x, e.y, e.radius)) continue;
+            // Same wall discipline as the orbit blades: no unseen hits.
+            if (ctx.los && !ctx.los(e.x, e.y)) continue;
+            e.takeDamage(d.damage);
+            ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: d.damage });
+            if (!e.active) ctx.killed.push(e);
+            passHit.add(e);
+        }
+    }
+
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    const target = nearestEnemy(p, ctx.enemies, ctx.inView);
+    if (!target) {
+        if (owned.timer < 0) owned.timer = 0;
+        return;
+    }
+
+    // Damage locks in at throw time (one powerRoll per cast, like a shot).
+    const dmg = cfg.damage * (p.damageMul ?? 1) * powerRoll(p);
+    const baseAngle = Math.atan2(target.y - p.y, target.x - p.x);
+    const count = cfg.count ?? 1;
+    // One out-pass + one return-pass hit set SHARED by the whole cast
+    // (indexed by d.phase): overlapping fangs can't stack on one husk, so
+    // single-target DPS is exactly 2×damage/cooldown at every fang count.
+    const hit = [new Set(), new Set()];
+    for (let i = 0; i < count; i++) {
+        // Extra fangs fan out so a pack is carved, not one husk double-tapped.
+        const a = baseAngle + (count > 1 ? (i - (count - 1) / 2) * 0.5 : 0);
+        discs.push({
+            x: p.x, y: p.y,
+            vx: Math.cos(a) * cfg.discSpeed, vy: Math.sin(a) * cfg.discSpeed,
+            dist: 0, phase: 0, spin: a, damage: dmg, hit,
+        });
+    }
+    if (ctx.audio) ctx.audio.shootFire();
+    owned.timer = cfg.cooldown * (p.cooldownMul ?? 1);
+}
+
+// Kindle Ray: a channeled wand ray. While a visible husk is in range the ray
+// stays ON (state.on drives the draw) and TICKS every tickInterval, searing
+// every husk within `width` of the player→target segment. No projectiles, no
+// travel time — pure uptime, throttled by the tick cadence.
+function kindleRayUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    const st = owned.state;
+    const p = ctx.player;
+
+    // Acquire: nearest husk in reach, on-screen, and in line of sight.
+    const rSq = cfg.range * cfg.range;
+    const canHit = (x, y) => {
+        const dx = x - p.x, dy = y - p.y;
+        return dx * dx + dy * dy <= rSq
+            && (!ctx.inView || ctx.inView(x, y))
+            && (!ctx.los || ctx.los(x, y));
+    };
+    const target = nearestEnemy(p, ctx.enemies, canHit);
+    if (!target) {
+        st.on = false;
+        // Stay primed: the first tick lands the instant a target appears.
+        if (owned.timer > 0) owned.timer = Math.max(0, owned.timer - dt);
+        return;
+    }
+    st.on = true;
+    st.phase += dt * 10;                       // draw-flicker driver
+    if (st.phase > TWO_PI) st.phase -= TWO_PI;
+    st.tx = target.x;
+    st.ty = target.y;
+
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    owned.timer = cfg.tickInterval * (p.cooldownMul ?? 1);
+
+    // One tick: closest-point-on-segment test against every husk.
+    const dmg = cfg.damage * (p.damageMul ?? 1) * powerRoll(p);
+    const bx = target.x - p.x, by = target.y - p.y;
+    const lenSq = bx * bx + by * by || 1;
+    const burnScale = p.fireRoundScale ?? 1;
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        let t = ((e.x - p.x) * bx + (e.y - p.y) * by) / lenSq;
+        t = t < 0 ? 0 : (t > 1 ? 1 : t);
+        const cx = p.x + bx * t, cy = p.y + by * t;
+        const w = cfg.width + e.radius;
+        if ((e.x - cx) * (e.x - cx) + (e.y - cy) * (e.y - cy) > w * w) continue;
+        if (ctx.los && !ctx.los(e.x, e.y)) continue;
+        e.takeDamage(dmg);
+        ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
+        if (!e.active) ctx.killed.push(e);
+        // Dawnfire Ray: each tick also stamps a burn (absent on the base ray).
+        if (cfg.burnDps) e.applyBurn(cfg.burnDps * burnScale, cfg.burnDuration ?? 2.0);
+    }
+}
+
+// Cindermine: lay an ember mine at the player's feet on a cadence (movement
+// makes it a breadcrumb trap-line). A mine arms after armTime, then ERUPTS
+// when any husk enters triggerRadius — damaging + burning everything within
+// blastRadius. Mines persist until tripped; maxMines caps the live field
+// (the timer holds primed at a full field, so a blast re-lays immediately).
+// A mine stranded past MINE_RECLAIM_DIST is silently reclaimed: without it,
+// kiting away from a full untripped field (enemies chase the PLAYER, not the
+// mines) would hold the cadence primed forever and leave the slot dead.
+const MINE_RECLAIM_DIST_SQ = 1200 * 1200; // comfortably off-screen (half-diag ≈ 1101)
+function emberMineUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    const p = ctx.player;
+    const mines = owned.state.mines;
+
+    for (let i = mines.length - 1; i >= 0; i--) {
+        const m = mines[i];
+        m.age += dt;
+        const sx = m.x - p.x, sy = m.y - p.y;
+        if (sx * sx + sy * sy > MINE_RECLAIM_DIST_SQ) { mines.splice(i, 1); continue; }
+        if (m.age < cfg.armTime) continue;
+        let tripped = false;
+        for (const e of ctx.enemies) {
+            if (!e.active) continue;
+            if (circleOverlap(m.x, m.y, cfg.triggerRadius, e.x, e.y, e.radius)) { tripped = true; break; }
+        }
+        if (!tripped) continue;
+        // Erupt: one powerRoll per blast; knockback radiates from the mine.
+        const dmg = cfg.damage * (p.damageMul ?? 1) * powerRoll(p);
+        const burnScale = p.fireRoundScale ?? 1;
+        for (const e of ctx.enemies) {
+            if (!e.active) continue;
+            if (!circleOverlap(m.x, m.y, cfg.blastRadius, e.x, e.y, e.radius)) continue;
+            const dx = e.x - m.x, dy = e.y - m.y;
+            const len = Math.hypot(dx, dy) || 1;
+            e.takeDamage(dmg, (dx / len) * KNOCKBACK.strength * 0.6, (dy / len) * KNOCKBACK.strength * 0.6);
+            ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
+            if (!e.active) ctx.killed.push(e);
+            if (cfg.burnDps) e.applyBurn(cfg.burnDps * burnScale, cfg.burnDuration ?? 2.5);
+        }
+        ctx.effects.push({
+            kind: 'blast', x: m.x, y: m.y, radius: cfg.blastRadius,
+            age: 0, lifetime: 0.4, active: true,
+        });
+        if (ctx.audio) ctx.audio.shootFire();
+        mines.splice(i, 1);
+    }
+
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    if (mines.length >= cfg.maxMines) {
+        owned.timer = 0;                        // field full — hold primed
+        return;
+    }
+    mines.push({ x: p.x, y: p.y, age: 0 });
+    owned.timer = cfg.cooldown * (p.cooldownMul ?? 1);
+}
+
+// Wakefire: drop a ground-fire patch every `spacing` px of MOVEMENT (standing
+// still stops the wake — movement is the weapon). Patches live patchLife
+// seconds; every tickInterval, each husk standing in any patch takes one
+// tick (one tick per husk per interval, however many patches it straddles).
+function wakefireUpdate(dt, owned, ctx) {
+    const cfg = WEAPONS[owned.id].perLevel[owned.level];
+    const st = owned.state;
+    const p = ctx.player;
+    const patches = st.patches;
+
+    const mdx = p.x - st.lastX, mdy = p.y - st.lastY;
+    if (mdx * mdx + mdy * mdy >= cfg.spacing * cfg.spacing) {
+        st.lastX = p.x;
+        st.lastY = p.y;
+        patches.push({ x: p.x, y: p.y, age: 0 });
+        if (patches.length > cfg.maxPatches) patches.shift(); // oldest dies first
+    }
+
+    // Age + expire (pushed in order, uniform life → oldest is always first).
+    for (const pa of patches) pa.age += dt;
+    while (patches.length && patches[0].age >= cfg.patchLife) patches.shift();
+
+    owned.timer -= dt;
+    if (owned.timer > 0) return;
+    owned.timer = cfg.tickInterval * (p.cooldownMul ?? 1);
+    if (patches.length === 0) return;
+
+    const dmg = cfg.damage * (p.damageMul ?? 1) * powerRoll(p);
+    const burnScale = p.fireRoundScale ?? 1;
+    for (const e of ctx.enemies) {
+        if (!e.active) continue;
+        for (const pa of patches) {
+            if (!circleOverlap(pa.x, pa.y, cfg.patchRadius, e.x, e.y, e.radius)) continue;
+            e.takeDamage(dmg);
+            ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
+            if (!e.active) ctx.killed.push(e);
+            // Wildfire Wake: the patches also stamp a burn (absent on base).
+            if (cfg.burnDps) e.applyBurn(cfg.burnDps * burnScale, cfg.burnDuration ?? 2.0);
+            break;
+        }
+    }
 }
 
 // Hearth Totem: periodic restorative pulse that mends the player a little.

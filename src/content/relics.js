@@ -132,6 +132,29 @@ export const RELICS = [
         description: '+12% Move Speed and -5% weapon cooldowns.',
         apply(p) { p.speed *= 1.12; p.cooldownMul *= 0.95; },
     },
+    // ── Build-warping (v1.3, P2.6) ────────────────────────────────────────
+    // Multi-stat TRADES that bend a run's shape, not single-stat nudges.
+    // Still single declarative hooks: every field touched is frame-clamped
+    // (damageMul/cooldownMul via CAPS) or bounded (crit ≤ 0.8), and the
+    // downsides use the same fields pacts already push, so nothing new leaks.
+    {
+        id: 'glasswick-idol', name: 'Glasswick Idol', rarity: 'epic',
+        description: '+25% weapon damage and -10% cooldowns — but take 12% MORE damage. All wick, no wax.',
+        apply(p) {
+            p.damageMul *= 1.25;
+            p.cooldownMul *= 0.90;
+            p.damageTakenMul = (p.damageTakenMul ?? 1) * 1.12;
+        },
+    },
+    {
+        id: 'stormglass-prism', name: 'Stormglass Prism', rarity: 'epic',
+        description: '+12% crit chance and +0.6 crit damage — but -12% weapon damage. Feast or fizzle.',
+        apply(p) {
+            p.critChance = Math.min(0.8, (p.critChance ?? 0) + 0.12);
+            p.critMul = (p.critMul ?? 2) + 0.6;
+            p.damageMul *= 0.88;
+        },
+    },
     // ── Legendary ─────────────────────────────────────────────────────────
     {
         id: 'wick-eternal', name: 'Wick Eternal', rarity: 'legendary',

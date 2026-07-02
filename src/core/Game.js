@@ -28,6 +28,7 @@ import {
     WICK_ROADS,
     LIEUTENANT,
     SKIP_ONBOARDING,
+    MAX_WEAPON_SLOTS,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Easing } from './Easing.js';
@@ -4053,6 +4054,8 @@ export class Game {
         base.bossHpMul = Math.min(1 + (this.time / 60) * BOSS.hpPerMinute, BOSS.maxHpMul);
         base.bossResist = Math.min((this.time / 60) * BOSS.resistPerMinute, BOSS.maxResist);
         base.ownedWeaponCount = this.weaponSystem.owned.length;
+        // Slot cap (P0.3): the level-up overlay renders "SLOTS n/cap".
+        base.weaponSlotCap = MAX_WEAPON_SLOTS;
         // Debug-only; reduce (not filter) to avoid a per-frame array alloc.
         base.evolvedWeaponCount = this.showDebug
             ? this.weaponSystem.owned.reduce((n, w) => n + (WEAPONS[w.id]?.evolved ? 1 : 0), 0)
