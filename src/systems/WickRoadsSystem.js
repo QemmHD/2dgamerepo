@@ -12,6 +12,7 @@ import { FUSIONS, findEligibleFusions } from '../content/fusions.js';
 import { PACTS, getPact } from '../content/pacts.js';
 import { ROADS, getRoad } from '../content/roads.js';
 import { WEAPONS } from '../content/weapons.js';
+import { fusedLevel } from './WeaponSystem.js';
 
 // Rarity draft weights (rarer = less likely to be offered).
 const RARITY_WEIGHT = {
@@ -43,17 +44,26 @@ function relicToChoice(relic) {
     };
 }
 
-function fusionToChoice(f) {
+// The card quotes the EXACT level the fusion will start at (inherited from the
+// ingredients' levels — see WeaponSystem.fusedLevel) so the fuse is an informed
+// trade, not a leap of faith.
+function fusionToChoice(f, game) {
     const an = WEAPONS[f.a]?.name ?? f.a;
     const bn = WEAPONS[f.b]?.name ?? f.b;
+    const owned = game?.weaponSystem?.owned ?? [];
+    const lvl = fusedLevel(
+        owned.find((o) => o.id === f.a),
+        owned.find((o) => o.id === f.b),
+        WEAPONS[f.fusedWeaponId]
+    );
     return {
         id: `fuse:${f.fusedWeaponId}`,
         kind: 'fusion',
         rarity: 'epic',               // fusions read as a rare, exciting pull
         cardLabel: 'FUSE',
-        cardLevelText: 'Weapon',
+        cardLevelText: `Weapon Lv ${lvl}`,
         name: f.name,
-        description: `Fuse ${an} + ${bn} into ${f.name}.`,
+        description: `Fuse ${an} + ${bn} into ${f.name} at Lv ${lvl}.`,
         apply(game) {
             game.weaponSystem.fuseWeapons(f.a, f.b, f.fusedWeaponId);
         },
@@ -82,8 +92,10 @@ function pactToChoice(pact) {
 
 // Branching Roads — the post-boss CROSSROADS fork. A road is a pact-shaped card
 // whose apply(game) sets the disposable per-segment bias + a permanent boon (see
-// content/roads.js). All three roads are ALWAYS offered (a fixed fork, not a
-// weighted draw), so the choice is a clear risk/reward read every time.
+// content/roads.js). The fork always deals exactly THREE roads (the overlay lays
+// out 3 cards) — an unweighted distinct draw from the pool, so every road stays
+// a clear risk/reward read and the fork varies run to run now that the pool has
+// grown past three.
 function roadToChoice(road) {
     return {
         id: `road:${road.id}`,
@@ -104,8 +116,17 @@ function roadToChoice(road) {
     };
 }
 
-export function rollRoadChoices() {
-    return ROADS.map(roadToChoice);
+export function rollRoadChoices(count = 3) {
+    // Distinct unweighted sample of `count` roads (partial Fisher–Yates on a
+    // copy) — never mutates ROADS, never repeats a road within one fork.
+    const pool = ROADS.slice();
+    const n = Math.min(count, pool.length);
+    for (let i = 0; i < n; i++) {
+        const j = i + ((Math.random() * (pool.length - i)) | 0);
+        const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    pool.length = n;
+    return pool.map(roadToChoice);
 }
 
 // Weighted, distinct draw of up to `count` choices. At most ONE eligible fusion
@@ -116,7 +137,7 @@ export function rollAltarChoices(game, count = 3) {
     const ownedRelics = new Set(Array.isArray(game._runRelics) ? game._runRelics : []);
     const takenPacts = new Set(Array.isArray(game._runPacts) ? game._runPacts : []);
     const relicPool = RELICS.filter((r) => !ownedRelics.has(r.id));
-    const fusionPool = findEligibleFusions(game).map(fusionToChoice);
+    const fusionPool = findEligibleFusions(game).map((f) => fusionToChoice(f, game));
     const pactPool = PACTS.filter((p) => !takenPacts.has(p.id)).map(pactToChoice);
     const chosen = [];
 

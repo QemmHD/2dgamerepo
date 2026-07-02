@@ -1,5 +1,6 @@
 // Branching Roads — the Wick Roads' post-boss fork. When a boss falls (except the
-// run-ending 3rd), the player is frozen for a CROSSROADS pick-one of three roads.
+// run-ending 3rd), the player is frozen for a CROSSROADS pick-one of three roads
+// (drawn from this pool — see rollRoadChoices in WickRoadsSystem).
 // A road is a SEGMENT-scoped risk/reward choice: it biases the stretch UNTIL the
 // next boss (enemy mix + difficulty multipliers, folded into waveState by
 // Game._applyRunScale and cleared at the next boss via Game._clearSegmentRoad) and
@@ -60,6 +61,36 @@ export const ROADS = [
                 game.player.hp = Math.min(game.player.maxHp, game.player.hp + game.player.maxHp * 0.2);
             }
             retint(game, '#463a5a', 0.22, '#c9a8ff');
+        },
+    },
+    {
+        id: 'teeming',
+        name: 'The Teeming Road',
+        rarity: 'uncommon',
+        tintAccent: '#a8e063',
+        description: 'The Hollow SWARMS — far more bodies, but frailer. Feast on them: +12% XP for the run.',
+        apply(game) {
+            // Swarm bias: frail bodies flood in (cap rides the ≤220 waveState
+            // clamp; hp/elite drop so it's volume, not a stat wall).
+            game.segmentScale = { hp: 0.85, speed: 1, damage: 1, elite: 0.85, cap: 1.3, interval: 0.8 };
+            game.segmentWeights = { mite: 40, bat: 30, crawler: 30, slime: 24 };
+            if (game.player) game.player.xpMultiplier = (game.player.xpMultiplier ?? 1) * 1.12;
+            retint(game, '#3d5a24', 0.16, '#a8e063');
+        },
+    },
+    {
+        id: 'hunted',
+        name: 'The Hunted Road',
+        rarity: 'rare',
+        tintAccent: '#ff6a7a',
+        description: 'The elite Hollow HUNT you — more elites, quicker on the chase. Their spoils: better chest luck.',
+        apply(game) {
+            game.segmentScale = { hp: 1, speed: 1.08, damage: 1, elite: 1.35, cap: 1, interval: 1 };
+            game.segmentWeights = { speedDemon: 30, skeleton: 26, charger: 24 };
+            // Chest luck shifts elite/boss chest rolls toward upgrades (same
+            // field Pact of Avarice buffs; read by ChestRewards).
+            if (game.player) game.player.chestLuck = (game.player.chestLuck ?? 0) + 0.12;
+            retint(game, '#5a2430', 0.18, '#ff6a7a');
         },
     },
 ];

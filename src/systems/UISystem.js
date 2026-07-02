@@ -6,6 +6,7 @@ import {
     SPRITE_SS,
     COMBO,
     BOSS_TIERS,
+    DEV_MODE,
 } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import {
@@ -1234,6 +1235,9 @@ export class UISystem {
     }
 
     _drawDebugButton(ctx, state) {
+        // Dev aid only (?dev=1): hidden from players, matching Game's gating
+        // of the tap hotspot — no faint HUD button invites a stray tap.
+        if (!DEV_MODE) return;
         const { x: btnX, y: btnY, w: btnW, h: btnH } = this.getDebugButtonRect();
         const press = this._pressAmt(state, 'dbg');
         const s = 1 - 0.05 * press;
@@ -1348,8 +1352,10 @@ export class UISystem {
         ctx.textBaseline = 'bottom';
         ctx.fillStyle = 'rgba(255,255,255,0.6)';
         ctx.font = `20px ${FONT}`;
+        // No dev-tool talk here: the debug pointer moved behind ?dev=1 (see
+        // MenuRenderer DEV_MODE) — a new player's teach line is play-only.
         ctx.fillText(
-            'WASD / Arrows  •  Touch left half to move  •  Tap DBG (or `) for debug',
+            'WASD / Arrows to move  •  Touch left half to move',
             INTERNAL_WIDTH / 2,
             INTERNAL_HEIGHT - 22 - sa.bottom
         );
@@ -1793,11 +1799,23 @@ export class UISystem {
             statsStartY + Math.ceil(stats.length / 2) * lineH + 20
         );
 
-        // Reward lines — celebrate what this run newly earned: completed daily
-        // trials, unlocked achievements, and any cosmetics those achievements
-        // granted (the grind payoff). Stacked + pulsing; the loadout lists below
-        // shift down only when more than one reward type fires (usually 0–1).
+        // Reward lines — celebrate what this run newly earned: battle-pass XP,
+        // completed daily trials, unlocked achievements, and any cosmetics those
+        // achievements granted (the grind payoff). Stacked + pulsing; the loadout
+        // lists below shift down only when more than one reward type fires.
         const rewardLines = [];
+        // Vigil (battle-pass) XP — earned every run, so the core meta reward is
+        // VISIBLE at death instead of silently banked (state.bpResult is set in
+        // Game._enterGameOver). A pass level-up gets an extra shout.
+        const bp = state.bpResult;
+        if (bp && bp.gained > 0) {
+            rewardLines.push({
+                text: bp.leveledUp
+                    ? `⬥ +${bp.gained} VIGIL XP → PASS LV ${bp.levelAfter} — LEVEL UP! ⬥`
+                    : `⬥ +${bp.gained} VIGIL XP → PASS LV ${bp.levelAfter} ⬥`,
+                color: '#ff5a8a',
+            });
+        }
         if (Array.isArray(summary.dailies) && summary.dailies.length)
             rewardLines.push({ text: `✦ DAILY TRIAL — ${summary.dailies.join('  ·  ')} ✦`, color: '#5fe87a' });
         if (Array.isArray(summary.achievements) && summary.achievements.length)

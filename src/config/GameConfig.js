@@ -620,7 +620,9 @@ export const BOSS = {
     //   bossHpMul = 1 + minutes * hpPerMinute  (10m→3.0×, 20m→5.0×, 30m→7.0×)
     //   resist    = min(minutes * resistPerMinute, maxResist)
     // 0.20 (was 0.16) so the 10-15 min boss is a real fight, not a 1s delete,
-    // while 30 min lands exactly on the 7× ceiling.
+    // while 30 min lands exactly on the 7× ceiling. Re-verified against the
+    // 20-min hypergrowth wall (ENDLESS_SCALING): runs now realistically reach
+    // the 20-30 min bracket this curve was written for, so it stands as-is.
     hpPerMinute: 0.20,
     maxHpMul: 7.0,
     // Flat HP multiplier on EVERY boss (folded into bossHpMul in Game._spawnBoss)
@@ -895,8 +897,11 @@ export const WAVES = [
         startTime: 240,
         name: 'Direhusks March',
         announcement: 'Vigil 5: Direhusks March — the heavy Hollow arrive',
-        spawnIntervalMul: 0.52,
-        maxAlive: 125,
+        // Monotonic vs Vigil 4 (0.48 / 140): this wave used to RELAX cadence
+        // (0.52) and cap (125), reading as a lull right when the heavies were
+        // announced. 0.46 / 142 keeps pressure climbing into Vigil 6 (0.44 / 145).
+        spawnIntervalMul: 0.46,
+        maxAlive: 142,
         typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8, healer: 9, shielder: 8, speedDemon: 18, brawler: 20, dreadhulk: 6, skeleton: 20, zombie: 16 },
         eliteChance: 0.04,
         healthMul: 1.65,
@@ -957,9 +962,14 @@ export const ENDLESS_SCALING = {
     // Game still applies), AND twilight enemies now grow in BOTH speed and
     // damage every minute (on top of the normal ramps, re-clamped to the
     // ceilings) so standing still in the deep endless game gets you killed.
+    // Floor 0.55 → 0.15 with a compensating ramp: the old floor STEP-JUMPED the
+    // elite rate at 9:00, straight into the tier-3 apex boss window. 0.15 meets
+    // the normal ramp exactly at the turn (0.08 + 4×0.018 = 0.152), so the
+    // elite rate is CONTINUOUS and CLIMBS to the 0.9 cap around minute ~21 —
+    // right where the hypergrowth wall below takes over.
     twilightMinutesBeyond: 4,
-    twilightEliteFloor: 0.55,
-    twilightEliteRampPerMin: 0.05,
+    twilightEliteFloor: 0.15,
+    twilightEliteRampPerMin: 0.06,
     twilightEliteCap: 0.9,
     twilightSpeedPerMin: 0.025,
     twilightSpeedCap: 0.45,
@@ -972,8 +982,13 @@ export const ENDLESS_SCALING = {
     // time-limit: even a maxed build eventually can't keep up. Composure relief
     // (skill) doesn't stop the wall — it just buys more time against it. The mul is
     // clamped to hyperMulCap so the math can never overflow to Infinity/NaN.
-    hyperStartMinutes: 13,
-    hyperPerMinuteMul: 2.0,
+    // Wall moved 13 → 20 min and softened 2.0 → 1.4×/min: the payoff loop
+    // (L8 base + evolution, realistically minute 9–12) now gets a real window
+    // to be PLAYED, and BOSS.hpPerMinute / CAPS — both tuned for 20–30-min
+    // builds — are live targets again. 1.4× still compounds to ~28× by minute
+    // 30, so the wall remains an inevitable end, just not a 2-minute cliff.
+    hyperStartMinutes: 20,
+    hyperPerMinuteMul: 1.4,
     hyperMulCap: 1e6,
 };
 
@@ -1314,3 +1329,9 @@ export const UI = {
 };
 
 export const DEBUG_DEFAULT_ON = true;
+
+// Dev tooling gate: the debug HUD/button, time-jump keys, CHEATS panel and
+// dev-only settings toggles only activate when the page was opened with
+// ?dev=1 (e.g. the artshot harness or a local test URL). Guarded for non-DOM
+// environments (tools import config under node).
+export const DEV_MODE = typeof location !== 'undefined' && /[?&]dev=1(?:&|$)/.test(location.search);

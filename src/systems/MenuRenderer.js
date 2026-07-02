@@ -9,7 +9,7 @@
 // one place (here) and is never duplicated for hit-testing.
 
 import { roundRectPath, clamp01, easeOutCubic } from '../render/DrawUtils.js';
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS, pactTier } from '../config/GameConfig.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS, DEV_MODE, pactTier } from '../config/GameConfig.js';
 import { rarityColor, rarityName, RARITIES } from '../content/rarities.js';
 import { getRarityIcon } from '../assets/CustomIcons.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
@@ -65,13 +65,17 @@ export const MENU_TABS = [
     { id: 'settings', label: 'SETTINGS', accent: '#9fb0c4' },
 ];
 
+// Dev tooling gate: the Debug/Unlock-Maps toggles and the CHEATS panel are
+// developer aids, not player features — they only render in DEV_MODE (?dev=1;
+// see GameConfig.js, which also gates the debug HUD + time-jump keys).
+
 const SETTING_TOGGLES = [
-    { key: 'debug', label: 'Debug Mode' },
+    { key: 'debug', label: 'Debug Mode', dev: true },
     { key: 'screenShake', label: 'Screen Shake' },
     { key: 'damageNumbers', label: 'Damage Numbers' },
     { key: 'particles', label: 'Particles' },
     { key: 'reducedEffects', label: 'Reduced Effects (mobile)' },
-    { key: 'unlockMaps', label: 'Unlock All Maps (testing)' },
+    { key: 'unlockMaps', label: 'Unlock All Maps (testing)', dev: true },
 ];
 
 export class MenuRenderer {
@@ -1851,6 +1855,10 @@ export class MenuRenderer {
         let y = c.y + 40;
         ctx.textBaseline = 'middle';
         for (const t of SETTING_TOGGLES) {
+            // Dev-only toggles hide from players — unless one is already ON
+            // (a save flipped it before the ?dev=1 gate existed), so a stranded
+            // save always has a visible off switch; once off it disappears.
+            if (t.dev && !DEV_MODE && save.settings[t.key] !== true) continue;
             const val = save.settings[t.key] === true;
             ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = `600 26px ${FONT}`;
             ctx.fillText(t.label, innerX, y + 26);
@@ -1888,22 +1896,26 @@ export class MenuRenderer {
         ctx.fillText('Themed music + sound effects. Adjust to taste; 0% mutes.', innerX, y + 20);
 
         // ── Cheats (testing) ──────────────────────────────────────────────
-        y += 52;
-        ctx.fillStyle = '#ff8a5c'; ctx.font = `700 22px ${FONT}`;
-        ctx.fillText('CHEATS (testing)', innerX, y + 6);
-        ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `500 17px ${FONT}`;
-        ctx.fillText('Grant coins / unlock everything to test cases, gear & cosmetics.', innerX + 220, y + 6);
-        y += 22;
-        const cheats = [
-            { label: '+1,000 ◎', action: 'cheatCoins', arg: 1000 },
-            { label: '+10,000 ◎', action: 'cheatCoins', arg: 10000 },
-            { label: 'Unlock All Items', action: 'cheatUnlockAll', arg: null },
-        ];
-        const cbW = (innerW - 2 * 20) / 3, cbH = 56;
-        for (let i = 0; i < cheats.length; i++) {
-            const ch = cheats[i];
-            const r = { x: innerX + i * (cbW + 20), y, w: cbW, h: cbH };
-            this._button(ctx, r, ch.label, { accent: '#5a3a22', action: ch.action, arg: ch.arg, fontSize: 22 });
+        // Dev-only (?dev=1): hotspots only register when drawn, so hiding the
+        // panel also disables the cheat actions for regular players.
+        if (DEV_MODE) {
+            y += 52;
+            ctx.fillStyle = '#ff8a5c'; ctx.font = `700 22px ${FONT}`;
+            ctx.fillText('CHEATS (testing)', innerX, y + 6);
+            ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `500 17px ${FONT}`;
+            ctx.fillText('Grant coins / unlock everything to test cases, gear & cosmetics.', innerX + 220, y + 6);
+            y += 22;
+            const cheats = [
+                { label: '+1,000 ◎', action: 'cheatCoins', arg: 1000 },
+                { label: '+10,000 ◎', action: 'cheatCoins', arg: 10000 },
+                { label: 'Unlock All Items', action: 'cheatUnlockAll', arg: null },
+            ];
+            const cbW = (innerW - 2 * 20) / 3, cbH = 56;
+            for (let i = 0; i < cheats.length; i++) {
+                const ch = cheats[i];
+                const r = { x: innerX + i * (cbW + 20), y, w: cbW, h: cbH };
+                this._button(ctx, r, ch.label, { accent: '#5a3a22', action: ch.action, arg: ch.arg, fontSize: 22 });
+            }
         }
     }
 
