@@ -873,6 +873,9 @@ export class Game {
         if (cosmeticNames.length && this.audio) this.audio.cosmeticReward();
         if (this.runSummary) {
             this.runSummary.achievements = names;
+            // One gentle chime however many unlocked — sits politely under
+            // the game-over stinger.
+            if (names.length) this.audio.achievementChime();
             if (cosmeticNames.length) this.runSummary.cosmeticUnlocks = cosmeticNames;
         }
     }
@@ -1007,6 +1010,9 @@ export class Game {
         if (this.screen !== 'gameplay' || this.gameOver ||
             this.upgradeChoices || this.chestReward) return;
         this.paused = !this.paused;
+        // The hearth damps down while paused (soft whoosh + held music dim).
+        if (this.paused) this.audio.pauseIn(); else this.audio.pauseOut();
+        this.audio.setPaused(this.paused);
         this._updateJoystickEnabled();
     }
 
@@ -1473,6 +1479,7 @@ export class Game {
             );
             this._pushFeedback('levelup', 0.5);
             this.particles.levelUpBurst(this.player.x, this.player.y);
+            this.audio.evolve();
         }
         this.chestReward = { reward, age: 0 };
         this._updateJoystickEnabled();
@@ -1509,7 +1516,11 @@ export class Game {
         const choice = this.altar.choices[idx];
         if (!choice) return;
         choice.apply(this);
-        this.audio.upgrade();
+        // Flavor-matched pick cues: fusion = forge slam, pact = dark bargain,
+        // everything else keeps the standard upgrade chirp.
+        if (choice.kind === 'fusion') this.audio.fusionForge();
+        else if (choice.kind === 'pact') this.audio.pactSworn();
+        else this.audio.upgrade();
         if (choice.kind === 'fusion') {
             // Fusing is a run-defining moment — announce it like an evolution.
             this.waveDirector.announce(`⚔ FUSED — ${choice.name.toUpperCase()} ⚔`, 3.0, '#ffd3ec');
@@ -1555,6 +1566,7 @@ export class Game {
         const choices = rollRoadChoices();
         if (!choices || !choices.length) return;
         this.altar = { choices, age: 0, kind: 'crossroads' };
+        this.audio.shrineChime();
         this._updateJoystickEnabled();
     }
 
@@ -1689,12 +1701,17 @@ export class Game {
                 if (s._healAccum >= interval) {
                     const amt = (def.healPerSec || 8) * s._healAccum;
                     s._healAccum = 0;
+                    let mended = false;
                     for (const a of enemies) {
                         if (!a.active || a.hp >= a.maxHp) continue;
                         const dx = a.x - s.x, dy = a.y - s.y;
                         if (dx * dx + dy * dy > r2) continue;
                         a.hp = Math.min(a.maxHp, a.hp + amt);
+                        mended = true;
                     }
+                    // Hollow mend-shimmer so players learn to hunt healers by
+                    // ear (long cue gap + on-screen gate keep it sparse).
+                    if (mended && this._inView(s.x, s.y, 0)) this.audio.healerPulse();
                 }
             } else if (def.support === 'shield') {
                 const mul = def.shieldMul || 0.6;
@@ -1704,6 +1721,12 @@ export class Game {
                     if (dx * dx + dy * dy > r2) continue;
                     a.shieldTimer = 0.35;
                     a.shieldMul = mul;
+                }
+                // One metallic ward chime per shielder as it first raises the
+                // aura on screen — NEVER per tick (it refreshes every frame).
+                if (!s._shieldCuePlayed && this._inView(s.x, s.y, 0)) {
+                    s._shieldCuePlayed = true;
+                    this.audio.shield();
                 }
             }
         }
@@ -1795,6 +1818,7 @@ export class Game {
         if (!def || !def.boss) return;
         this.bossWarning = { id, name: def.bossName ?? id, epithet: def.epithet ?? null, tier: def.tier ?? null, timer: BOSS.warningDuration, total: BOSS.warningDuration };
         this.waveDirector.announce('⚠  BOSS INCOMING  ⚠', BOSS.warningDuration, '#ff4040');
+        this.audio.bossTelegraph();
         this._shake(SCREEN_SHAKE.intensity * 0.4, 0.3);
     }
 
@@ -1806,6 +1830,7 @@ export class Game {
         const type = pool.length ? pool[Math.floor(Math.random() * pool.length)] : 'brute';
         this.lieutenantWarning = { type, timer: LIEUTENANT.warningDuration, total: LIEUTENANT.warningDuration };
         this.waveDirector.announce('⚔  ELITE APPROACHES  ⚔', LIEUTENANT.warningDuration, LIEUTENANT.color);
+        this.audio.lieutenantWarn();
         this._shake(SCREEN_SHAKE.intensity * 0.3, 0.25);
     }
 
@@ -1892,6 +1917,7 @@ export class Game {
                 // scalar (see BOSS.enrage + Enemy.update), so no discrete bump here.
                 this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t25, def.supportTypes);
                 this.waveDirector.announce(`${e.name.toUpperCase()} ENRAGES!`, 2.0, '#ff3326');
+                this.audio.enrage();
                 this._shake(SCREEN_SHAKE.intensity * 0.9, 0.5);
             }
         }
@@ -2100,6 +2126,8 @@ export class Game {
         const def = e.affixDef;
         if (!def) return;
         if (e.affix === 'volatile') {
+            // A crowd-damaging blast should never be silent (muffled thump).
+            if (this._inView(e.x, e.y, 120)) this.audio.volatileBoom();
             const r2 = def.explodeRadius * def.explodeRadius;
             for (const other of this.enemies) {
                 if (!other.active || other === e) continue;
@@ -2335,15 +2363,22 @@ export class Game {
         if (this.waveState.twilight && !this._twilightAnnounced) {
             this._twilightAnnounced = true;
             this.waveDirector.announce('✦ TWILIGHT — THE HORDE TURNS ✦', 3.6, '#c97bff');
-            this.audio.bossSpawn();
+            this.audio.dreadDrone();
             this._shake(SCREEN_SHAKE.intensity * 0.7, 0.5);
         }
         // HYPERGROWTH onset — the wall begins; enemies now double every minute.
         if ((this.waveState.hyperMul ?? 1) > 1 && !this._hyperAnnounced) {
             this._hyperAnnounced = true;
             this.waveDirector.announce('☠ THE DARK DEVOURS — FLEE OR FALL ☠', 4.0, '#ff3326');
-            this.audio.bossSpawn();
+            this.audio.dreadDrone();
             this._shake(SCREEN_SHAKE.intensity * 0.9, 0.6);
+        }
+        // Wave transition: one low horn swell as the Vigil index advances (the
+        // banner is queued by WaveDirector). time<1 resyncs the latch per run.
+        if (this.time < 1 || this._lastWaveIdx === undefined) this._lastWaveIdx = this.waveState.index;
+        else if (this.waveState.index !== this._lastWaveIdx) {
+            this._lastWaveIdx = this.waveState.index;
+            this.audio.waveStart();
         }
 
         // One boss at a time: gate the scheduler on a live "is any boss alive"
@@ -2455,7 +2490,14 @@ export class Game {
 
         for (const e of this.enemies) {
             if (!e.active) continue;
+            // Charger brace/dash cues ride the windup timer transitions (the
+            // windup IS the dodge warning) — on-screen chargers only.
+            const wasWinding = e.type === 'charger' && e.windupTimer > 0;
             e.update(dt, this.player, this.enemyProjectiles, this.obstacleSystem);
+            if (e.type === 'charger' && this._inView(e.x, e.y, 0)) {
+                if (!wasWinding && e.windupTimer > 0) this.audio.chargerWindup();
+                else if (wasWinding && e.windupTimer <= 0) this.audio.chargerDash();
+            }
             // Enemies (including elites + bosses) can't walk through walls.
             // Resolving after their move keeps them chasing while sliding along
             // obstacles instead of clipping through or stacking inside them.
@@ -2742,6 +2784,7 @@ export class Game {
                     // Setpiece payoff: a banner, a heavy layered burst, and a
                     // strong shake so an apex kill lands.
                     this.waveDirector.announce(`${e.name.toUpperCase()} DEFEATED!`, 3.0, '#ff6a4a');
+                    this.audio.bossDefeat();
                     this.particles.bossDeathBurst(e.x, e.y, '#ff8c4a');
                     this._shake(SCREEN_SHAKE.intensity * 1.1, 0.5);
                     // Setpiece punch: a hard freeze-frame + a triple expanding
@@ -2766,6 +2809,7 @@ export class Game {
                     this._spawnRing(e.x, e.y, { maxR: 260, width: 10, life: 0.55, color: LIEUTENANT.color, ease: 'outCubic' });
                     this._dropCoinBurst(e.x, e.y, LIEUTENANT.coinCount, LIEUTENANT.coinValue);
                     if (Math.random() < LIEUTENANT.chestChance) this._dropChest(e.x, e.y);
+                    this.audio.lieutenantDown();
                     this.waveDirector.announce(`${e.name} SLAIN`, 2.5, LIEUTENANT.color);
                     this.particles.deathBurst(e.x, e.y, LIEUTENANT.color);
                     this._shake(SCREEN_SHAKE.intensity * 0.5, 0.25);
@@ -2866,7 +2910,8 @@ export class Game {
                 if (s._sibling && s._sibling.active) s._sibling.active = false;
                 this.particles.pickupSparkle(s.x, s.y, '#ff9ecf');
                 this.particles.pickupSparkle(s.x, s.y - 8, '#ffd3ec');
-                this.audio.chest();
+                // Mystical wick-chime — distinct from the chest's loot latch.
+                this.audio.shrineChime();
             }
         }
         // Present whichever reward overlay is queued — only one is ever open at a
@@ -2935,11 +2980,21 @@ export class Game {
         if (this.activeBossRef) {
             intensity = Math.max(intensity, 0.55 + 0.45 * (1 - this.activeBossRef.hp / this.activeBossRef.maxHp));
         }
-        this.audio.setIntensity(intensity);
+        // Near death the world closes in: cap the music brightness so the
+        // heartbeat + dimmed groove read as danger without any alarm sound.
+        const lowHp = this.player.hp > 0 && this.player.hp < this.player.maxHp * 0.25;
+        this.audio.setIntensity(lowHp ? Math.min(intensity, 0.25) : intensity);
 
         compactInPlace(this.enemies);
         compactInPlace(this.projectiles);
+        // New enemy shots this frame → one soft incoming-fire pip, gated to
+        // on-screen shooters (the cue's own min-gap keeps volleys as a chorus).
+        if (this.enemyProjectiles.length > (this._epCount ?? 0)) {
+            const p = this.enemyProjectiles[this.enemyProjectiles.length - 1];
+            if (p && this._inView(p.x, p.y, 60)) this.audio.enemyShoot();
+        }
         compactInPlace(this.enemyProjectiles);
+        this._epCount = this.enemyProjectiles.length;
         compactInPlace(this.hazards);
         compactInPlace(this.rings);
         compactInPlace(this.gems);
@@ -2962,6 +3017,13 @@ export class Game {
             if (dmg >= this.player.maxHp * 0.12) this._hitStop(0.05);
         }
         this._lastHp = this.player.hp;
+
+        // Near-death heartbeat: a soft ~1Hz ember pulse while HP is critical —
+        // cozy dread, never a klaxon. Resets the instant HP recovers.
+        if (this.player.hp > 0 && this.player.hp < this.player.maxHp * 0.25) {
+            this._heartbeatT = (this._heartbeatT ?? 0) - dt;
+            if (this._heartbeatT <= 0) { this.audio.heartbeat(); this._heartbeatT = 0.85; }
+        } else this._heartbeatT = 0;
 
         // Second Wind: trickle HP back while no enemy is within the safe
         // radius. Applied after the heal-flash check so the tiny per-frame

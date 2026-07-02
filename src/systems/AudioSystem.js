@@ -554,10 +554,18 @@ export class AudioSystem {
     }
 
     // ── SFX (throttled) ────────────────────────────────────────────────────
+    // Per-cue min-gap plus a GLOBAL soft voice budget: at swarm scale many
+    // different cues can align on the same instant and mud the mix, so
+    // texture cues get dropped once a short rolling window is saturated.
+    // Signature cues (fanfares, boss beats, hurt) always play.
     _play(name, minGap, fn) {
         if (!this.ctx || !this.sfxBus) return;
         const now = this.ctx.currentTime;
         if (this._lastSfx[name] && now - this._lastSfx[name] < minGap) return;
+        if (!AudioSystem.PRIORITY_CUES.has(name)) {
+            if (now - (this._sfxWindowT || 0) > 0.1) { this._sfxWindowT = now; this._sfxWindowN = 0; }
+            if (++this._sfxWindowN > 9) return;
+        }
         this._lastSfx[name] = now;
         fn(now);
     }
@@ -583,8 +591,20 @@ export class AudioSystem {
     shield() { this._play('shield', 0.12, (t) => { this._metal(440, t, { dur: 0.3, gain: 0.07, ratios: [1, 2.0, 3.0, 4.1], cutoff: 3600 }); this._voice(330, t, 0.28, 0.06, { type: 'triangle', slideTo: 440, cutoff: 2400, detune: 6 }); }); }
     thorns() { this._play('thorns', 0.1, (t) => { this._metal(660, t, { dur: 0.12, gain: 0.05, ratios: [1, 2.0, 3.0], cutoff: 3400 }); this._noise(t, 0.04, 0.03, 3000, this.sfxBus); }); }
     dash()   { this._play('dash', 0.12, (t) => { this._noise(t, 0.14, 0.06, 900 + this._rand(-100, 100), this.sfxBus, 3600); this._voice(240, t, 0.1, 0.05, { type: 'sine', slideTo: 520, cutoff: 2000, attack: 0.004 }); this._sub(120, t, { dur: 0.08, gain: 0.05 }); }); }
-    enemyShoot() { this._play('enemyShoot', 0.08, (t) => this._voice(300, t, 0.07, 0.05, { type: 'triangle', slideTo: 200, cutoff: 1400, attack: 0.002 })); }
+    enemyShoot() { this._play('enemyShoot', 0.08, (t) => this._voice(300 * this._rand(0.92, 1.08), t, 0.07, 0.05, { type: 'triangle', slideTo: 200, cutoff: 1400, attack: 0.002 })); }
     waveStart()  { this._play('waveStart', 0.4, (t) => { this._voice(196, t, 0.5, 0.10, { type: 'sawtooth', slideTo: 294, cutoff: 1400, detune: 8, shape: 2 }); this._sub(65, t, { dur: 0.5, gain: 0.10, slideTo: 98 }); this._noise(t, 0.4, 0.05, 1200, this.sfxBus, 400); }); }
+    // Charger brace: a short tension inhale — the audible "dodge now" cue.
+    chargerWindup() { this._play('chargerWindup', 0.3, (t) => { this._voice(160, t, 0.22, 0.055, { type: 'sawtooth', slideTo: 340, cutoff: 1500, shape: 2.5 }); this._noise(t, 0.2, 0.03, 900, this.sfxBus, 2400); }); }
+    // Charger dash commit: a low whoosh, softer than the player's dash.
+    chargerDash() { this._play('chargerDash', 0.25, (t) => { this._noise(t, 0.16, 0.05, 700 + this._rand(-80, 80), this.sfxBus, 2800); this._sub(90, t, { dur: 0.1, gain: 0.05, slideTo: 60 }); }); }
+    // Volatile elite pop: a muffled ember thump — dangerous, not deafening.
+    volatileBoom() { this._play('volatile', 0.12, (t) => { this._sub(75, t, { dur: 0.28, gain: 0.14, slideTo: 42 }); this._noise(t, 0.24, 0.08, 480, this.sfxBus, 160); this._voice(150, t, 0.12, 0.05, { type: 'triangle', slideTo: 80, cutoff: 900, shape: 2 }); }); }
+    // Enemy healer's mend pulse — an inverted, hollow heal so players learn
+    // to hunt healers by ear. Long gap + low gain: information, not noise.
+    healerPulse() { this._play('healerPulse', 0.6, (t) => { this._voice(660, t, 0.22, 0.04, { type: 'sine', slideTo: 495, cutoff: 3000, detune: 4 }); this._voice(440, t + 0.08, 0.24, 0.03, { type: 'sine', slideTo: 330, cutoff: 2600 }); }); }
+    // Near-death heartbeat: one soft lub-dub. Game pulses this while HP is
+    // critical — cozy dread, never a klaxon (quiet sub + tiny crackle).
+    heartbeat() { this._play('heartbeat', 0.45, (t) => { this._sub(52, t, { dur: 0.1, gain: 0.13 }); this._sub(48, t + 0.16, { dur: 0.12, gain: 0.10 }); this._noise(t, 0.05, 0.012, 800, this.sfxBus); }); }
 
     // ── Pickups / weapons ──
     coin()   { this._play('coin', 0.035, (t) => { if (this._playSample('coin')) return; const f = 1046 * this._rand(0.97, 1.04); this._pluck(f, t, { dur: 0.12, gain: 0.09, cutoff: 4200, damp: 0.7 }); this._voice(f * Math.pow(2, 7 / 12), t + 0.04, 0.1, 0.045, { type: 'sine', cutoff: 4600 }); }); }
@@ -597,7 +617,7 @@ export class AudioSystem {
     // ── Cases / rewards ──
     chest()  { this._play('chest', 0.1, (t) => { if (this._playSample('chest')) { this._bell(t + 0.06, 523); return; } this._noise(t, 0.14, 0.06, 600, this.sfxBus, 180); this._metal(180, t + 0.02, { dur: 0.18, gain: 0.05, ratios: [1, 1.9, 3.1], cutoff: 2800 }); this._bell(t + 0.06, 523); }); }
     forge()  { this._play('forge', 0.06, (t) => { this._metal(220, t, { dur: 0.22, gain: 0.11, ratios: [1, 2.76, 5.4, 8.9], cutoff: 3200 }); this._sub(60, t, { dur: 0.14, gain: 0.10 }); this._noise(t, 0.16, 0.10, 520, this.sfxBus, 1400); }); }
-    spinTick(pitch = 1) { this._play('spinTick', 0.0, (t) => { this._voice(430 * pitch, t, 0.03, 0.05, { type: 'triangle', cutoff: 2600, attack: 0.001 }); this._click(430 * pitch, t, 0.02); }); }
+    spinTick(pitch = 1) { this._play('spinTick', 0.03, (t) => { this._voice(430 * pitch, t, 0.03, 0.05, { type: 'triangle', cutoff: 2600, attack: 0.001 }); this._click(430 * pitch, t, 0.02); }); }
     caseOpen() { this._play('caseOpen', 0.1, (t) => { this._noise(t, 0.34, 0.10, 300, this.sfxBus, 2600); this._voice(330, t, 0.2, 0.08, { type: 'sine', slideTo: 660, cutoff: 2400 }); this._sub(80, t, { dur: 0.3, gain: 0.07, slideTo: 130 }); }); }
     // Reveal chime — pitch/length/sparkle scale with the won RARITY; big pulls
     // add a sub floor + shimmer and duck the music harder.
@@ -689,4 +709,136 @@ export class AudioSystem {
             for (let i = 0; i < 3; i++) this._voice(98, t + 0.16 * i, 0.18, 0.12, { type: 'sine', slideTo: 60, cutoff: 500, attack: 0.004 });
         });
     }
+
+    // Boss defeated: a deep anvil strike blooming into a warm 3-note bell
+    // rise — a shorter, earthier sibling of the victory fanfare. The run's
+    // biggest payoff should never land mute under the music switch.
+    bossDefeat() {
+        this._play('bossDefeat', 0.5, (t) => {
+            this._duck(0.6, 0.15, 0.7);
+            this._metal(165, t, { dur: 0.5, gain: 0.11, ratios: [1, 2.76, 5.4], cutoff: 2600 });
+            this._sub(55, t, { dur: 0.4, gain: 0.14 });
+            const notes = [392, 523, 659];
+            for (let i = 0; i < notes.length; i++) {
+                this._voice(notes[i], t + 0.16 + 0.13 * i, 0.4, 0.11, { type: 'triangle', cutoff: 4200, detune: 6 });
+                this._bell(t + 0.16 + 0.13 * i, notes[i], 0.05);
+            }
+            this._noise(t + 0.2, 0.6, 0.04, 6000, this.sfxBus);
+        });
+    }
+    // Lieutenant slain: a mid-tier payoff between kill() and the boss stinger
+    // — one warm bell over a small anvil tap and a coin-ish shimmer.
+    lieutenantDown() {
+        this._play('ltDown', 0.3, (t) => {
+            this._metal(220, t, { dur: 0.28, gain: 0.07, ratios: [1, 2.76, 5.4], cutoff: 2800 });
+            this._bell(t + 0.08, 659, 0.10);
+            this._pluck(1318, t + 0.16, { dur: 0.14, gain: 0.06, cutoff: 4600, damp: 0.72 });
+            this._sub(70, t, { dur: 0.2, gain: 0.07 });
+        });
+    }
+    // Lighter, shorter telegraph for the lieutenant "ELITE APPROACHES" — a
+    // threat tier below the boss groan.
+    lieutenantWarn() {
+        this._play('ltWarn', 0.25, (t) => {
+            this._voice(260, t, 0.2, 0.06, { type: 'sawtooth', slideTo: 560, cutoff: 2200, detune: 5, shape: 2 });
+            this._metal(180, t, { dur: 0.2, gain: 0.035, ratios: [1, 1.4, 1.9], cutoff: 1800 });
+        });
+    }
+    // Boss enrage / phase snap: a low metallic snarl with a rising rumble —
+    // the fight's difficulty spike made audible.
+    enrage() {
+        this._play('enrage', 0.4, (t) => {
+            this._voice(90, t, 0.5, 0.10, { type: 'sawtooth', slideTo: 190, cutoff: 900, detune: 9, shape: 3 });
+            this._noise(t, 0.5, 0.07, 300, this.sfxBus, 1200);
+            this._metal(140, t + 0.08, { dur: 0.4, gain: 0.05, ratios: [1, 1.4, 2.1], cutoff: 1500 });
+            this._duck(0.35, 0.1, 0.5);
+        });
+    }
+    // Weapon EVOLUTION reveal: metal reborn in the ember — a forge slam that
+    // blooms into an ascending bell arpeggio with an airy shimmer.
+    evolve() {
+        this._play('evolve', 0.3, (t) => {
+            this._duck(0.5, 0.12, 0.6);
+            this._metal(220, t, { dur: 0.24, gain: 0.10, ratios: [1, 2.76, 5.4, 8.9], cutoff: 3200 });
+            this._sub(65, t, { dur: 0.2, gain: 0.10 });
+            const root = 523;
+            for (let i = 0; i < 4; i++) {
+                this._voice(root * Math.pow(2, i / 3), t + 0.14 + 0.08 * i, 0.3, 0.09,
+                    { type: 'triangle', cutoff: 4600, detune: 6, shape: 1.5 });
+            }
+            this._bell(t + 0.46, root * 2, 0.07);
+            this._noise(t + 0.14, 0.5, 0.045, 6800, this.sfxBus);
+        });
+    }
+    // Weapon FUSION at the shrine: heavier than evolve — a double forge slam
+    // under a two-bell rise. Two weapons hammered into one.
+    fusionForge() {
+        this._play('fusion', 0.3, (t) => {
+            this._duck(0.5, 0.12, 0.6);
+            this._metal(180, t, { dur: 0.26, gain: 0.11, ratios: [1, 2.76, 5.4, 8.9], cutoff: 3000 });
+            this._metal(240, t + 0.14, { dur: 0.24, gain: 0.09, ratios: [1, 2.76, 5.4], cutoff: 3400 });
+            this._sub(58, t, { dur: 0.3, gain: 0.12 });
+            this._bell(t + 0.3, 587, 0.10);
+            this._bell(t + 0.46, 880, 0.08);
+            this._noise(t + 0.2, 0.4, 0.04, 6400, this.sfxBus);
+        });
+    }
+    // Pact sworn: a devil's bargain — two dark descending tones over a sub,
+    // deliberately NOT a cheerful chirp.
+    pactSworn() {
+        this._play('pact', 0.3, (t) => {
+            this._voice(311, t, 0.35, 0.09, { type: 'triangle', slideTo: 220, cutoff: 1800, detune: 7, shape: 1.5 });
+            this._voice(220, t + 0.18, 0.45, 0.08, { type: 'triangle', slideTo: 147, cutoff: 1400, detune: 7 });
+            this._sub(55, t + 0.1, { dur: 0.5, gain: 0.10 });
+            this._noise(t, 0.3, 0.02, 700, this.sfxBus, 250);
+        });
+    }
+    // Wick Shrine / Crossroads: a mystical wick-chime — soft bell + airy
+    // shimmer, distinct from the chest's loot latch.
+    shrineChime() {
+        this._play('shrine', 0.2, (t) => {
+            this._bell(t, 784, 0.09);
+            this._bell(t + 0.12, 1175, 0.06);
+            this._noise(t, 0.5, 0.035, 7000, this.sfxBus);
+            this._voice(392, t, 0.4, 0.05, { type: 'sine', slideTo: 440, cutoff: 3000, detune: 5 });
+        });
+    }
+    // Twilight / Hypergrowth onset: a long detuned dread-swell — "the horde
+    // turns" — distinct from an actual boss arriving (no percussion).
+    dreadDrone() {
+        this._play('dread', 0.5, (t) => {
+            this._voice(98, t, 1.3, 0.09, { type: 'sawtooth', slideTo: 110, cutoff: 700, detune: 14, shape: 2 });
+            this._voice(65, t + 0.2, 1.2, 0.07, { type: 'triangle', cutoff: 500, detune: 10 });
+            this._noise(t, 1.1, 0.03, 400, this.sfxBus, 900);
+            this._duck(0.3, 0.3, 0.8);
+        });
+    }
+    // Achievement / daily-challenge earned: one gentle two-note chime, kept
+    // soft so it sits politely under the game-over stinger.
+    achievementChime() {
+        this._play('achieve', 0.25, (t) => {
+            this._bell(t, 880, 0.07);
+            this._bell(t + 0.14, 1319, 0.06);
+            this._noise(t, 0.3, 0.02, 6500, this.sfxBus);
+        });
+    }
+    // Pause: the hearth damps down (and music dims while held); resume is the
+    // reverse breath. setPaused holds the duck for the whole pause.
+    pauseIn()  { this._play('pauseIn', 0.1, (t) => { this._voice(520, t, 0.12, 0.06, { type: 'sine', slideTo: 320, cutoff: 2200 }); this._noise(t, 0.12, 0.03, 1400, this.sfxBus, 500); }); }
+    pauseOut() { this._play('pauseOut', 0.1, (t) => { this._voice(320, t, 0.12, 0.06, { type: 'sine', slideTo: 520, cutoff: 2400 }); this._noise(t, 0.1, 0.025, 900, this.sfxBus, 2200); }); }
+    setPaused(on) {
+        if (!this.ctx || !this.musicDuck) return;
+        const g = this.musicDuck.gain, now = this.ctx.currentTime;
+        g.cancelScheduledValues(now);
+        g.setValueAtTime(g.value, now);
+        g.linearRampToValueAtTime(on ? 0.45 : 1.0, now + 0.15);
+    }
 }
+
+// Cues that always play, even when the global texture-cue budget saturates —
+// the signature beats the mix is built around.
+AudioSystem.PRIORITY_CUES = new Set([
+    'levelUp', 'boss', 'bossDefeat', 'bossTelegraph', 'enrage', 'victory',
+    'gameover', 'reveal', 'cosmeticReward', 'evolve', 'fusion', 'pact',
+    'hurt', 'heartbeat', 'waveStart', 'ltWarn', 'ltDown', 'dread', 'shrine',
+]);
