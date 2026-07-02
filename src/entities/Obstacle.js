@@ -343,14 +343,19 @@ export class Obstacle {
         const pat = getWallPattern(this.def.styleType, ctx);
         // VERTICAL side wall (collision is tall + thin): the baseline-up slab
         // below is for wide horizontal (front/back) walls and would render a
-        // tall side wall as a short stub. Instead draw a full-height centered
-        // strip spanning the wall's collision footprint, so side walls actually
-        // read as walls.
+        // tall side wall as a short stub. Instead draw a strip that runs the
+        // FULL ring silhouette — from the back wall's top edge down to the
+        // front wall's base — so the four segments read as ONE building shell
+        // (the front slab, drawn later in painter's order, covers the strip's
+        // bottom end; the strip covers the back slab's corner end).
         const col = this.def.col;
         if (col && col.hh > col.hw * 1.6) {
-            const sw = col.hw * 2, sh = col.hh * 2;
+            const sw = col.hw * 2;                 // wall thickness
+            const yTop = -col.hh - sw / 2 - h;     // back wall's top edge
+            const yBot = col.hh + sw / 2;          // front wall's base line
+            const sh = yBot - yTop;
             ctx.fillStyle = pat || p.base;
-            ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+            ctx.fillRect(-sw / 2, yTop, sw, sh);
             if (pat) {
                 // Biome tint wash over the (untinted) texture, so the body
                 // matches the tinted coping/edges + tinted prop sprites.
@@ -358,25 +363,36 @@ export class Obstacle {
                     ctx.save();
                     ctx.globalAlpha = this.tint.amt;
                     ctx.fillStyle = this.tint.color;
-                    ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+                    ctx.fillRect(-sw / 2, yTop, sw, sh);
                     ctx.restore();
                 }
-                // Shade the strip so a side wall reads dimmer than the lit
-                // front face (the texture itself is authored front-lit).
-                ctx.fillStyle = 'rgba(10,8,14,0.30)';
-                ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+                // Gentle shade so the side reads a step dimmer than the lit
+                // front face without looking like a different material.
+                ctx.fillStyle = 'rgba(10,8,14,0.14)';
+                ctx.fillRect(-sw / 2, yTop, sw, sh);
+                // Edge highlights down both sides tie into the front coping.
+                ctx.save();
+                ctx.globalAlpha = 0.30;
+                ctx.fillStyle = p.top;
+                ctx.fillRect(-sw / 2, yTop, 5, sh);
+                ctx.fillRect(sw / 2 - 5, yTop, 5, sh);
+                ctx.restore();
+                // Coping cap across the strip's top — continues the crown
+                // line of the back wall across the corner.
+                ctx.fillStyle = p.top;
+                ctx.fillRect(-sw / 2, yTop, sw, 10);
             } else {
                 // Lit top edge (a thin coping down the strip's outer side).
                 ctx.fillStyle = p.top;
-                ctx.fillRect(-sw / 2, -sh / 2, Math.max(4, sw * 0.30), sh);
+                ctx.fillRect(-sw / 2, yTop, Math.max(4, sw * 0.30), sh);
                 // Mortar courses across the strip.
                 ctx.strokeStyle = p.edge; ctx.lineWidth = 2;
-                for (let yy = -sh / 2 + 16; yy < sh / 2 - 2; yy += 22) {
+                for (let yy = yTop + 16; yy < yBot - 2; yy += 22) {
                     ctx.beginPath(); ctx.moveTo(-sw / 2, yy); ctx.lineTo(sw / 2, yy); ctx.stroke();
                 }
             }
             ctx.strokeStyle = p.edge;
-            ctx.lineWidth = 3; ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+            ctx.lineWidth = 3; ctx.strokeRect(-sw / 2, yTop, sw, sh);
             return;
         }
         // Body.
