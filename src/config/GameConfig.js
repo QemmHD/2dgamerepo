@@ -813,6 +813,17 @@ export const BOSS_ATTACK = {
 export const MAX_WEAPON_LEVEL = 8;
 export const MAX_PASSIVE_LEVEL = 5;
 
+// Weapon/ability SLOT CAP (P0.3 draft economy): weapons and abilities share
+// the WeaponSystem.owned list, and a run holds at most this many. Once full,
+// NEW weapon/ability cards leave the level-up draft entirely (UpgradeSystem
+// gates on it). Note this only prunes the draft once every slot is FILLED —
+// a 1-2 weapon focused build still sees all unowned-weapon cards all run —
+// so the cap bounds loadout size and per-frame update cost; the lever that
+// makes L8 + evolution reachable in-window is pity × Patron favor (see
+// UpgradeSystem PITY_PER_LEVEL). Surfaced on the level-up UI ("SLOTS n/5")
+// so the constraint is a visible decision, never a silent no-op pick.
+export const MAX_WEAPON_SLOTS = 5;
+
 // Legacy block kept so Projectile's default opts still resolve cleanly when
 // a weapon doesn't pass per-projectile overrides. The starter weapon uses
 // the per-level table from content/weapons.js, not these values.

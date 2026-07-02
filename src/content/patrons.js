@@ -15,31 +15,37 @@ export const PATRONS = {
     pyre: {
         id: 'pyre', name: 'Pyre', title: 'the Everburning', color: '#ff7a3c',
         blurb: 'Burn the horde to ash — favors fire weapons and damage perks.',
-        weapons: ['emberWisp', 'infernoStorm', 'cinderAura'],
+        // Armory pt. 1: the returning cinder fang joins the fire pool.
+        weapons: ['emberWisp', 'infernoStorm', 'cinderAura', 'ashfang', 'twinfangCyclone'],
         passives: ['pyromancersTinder', 'emberzeal', 'lastLight', 'glasswick'],
     },
     rime: {
         id: 'rime', name: 'Rime', title: 'the Stillness', color: '#7fe0ff',
         blurb: 'Freeze the field in place — favors frost weapons and control perks.',
-        weapons: ['orbitingBlade', 'celestialBlades', 'frostmote'],
+        // Armory pt. 1: Frostmote's new evolution stays in the frost lane.
+        weapons: ['orbitingBlade', 'celestialBlades', 'frostmote', 'winterveil'],
         passives: ['frostbiteCore', 'tempo', 'spellbook'],
     },
     tempest: {
         id: 'tempest', name: 'Tempest', title: 'the Chain', color: '#c9a3ff',
-        blurb: 'Strike fast, crit hard, chain everywhere — favors shock weapons and crit/speed perks.',
-        weapons: ['lightningMark', 'voltWand', 'thunderCrown'],
+        blurb: 'Strike fast, chain everywhere, never stop moving — favors shock weapons and speed perks.',
+        // Armory pt. 1: Stormsurge (the Stormwand's evolution) + Wakefire —
+        // the move-to-attack trail is at home with the speed perks.
+        weapons: ['lightningMark', 'voltWand', 'thunderCrown', 'stormsurge', 'wakefire', 'wildfireWake'],
         passives: ['executioner', 'windBoots', 'featherstep'],
     },
     dawn: {
         id: 'dawn', name: 'Dawn', title: 'the Mending', color: '#ffe08a',
         blurb: 'Outlast everything — favors radiant weapons and sustain perks.',
-        weapons: ['holyPulse', 'divineNova', 'hearthTotem'],
+        // Armory pt. 1: the channeled Kindle Ray is Dawn's steady light.
+        weapons: ['holyPulse', 'divineNova', 'hearthTotem', 'kindleRay', 'dawnfireRay'],
         passives: ['secondWind', 'blooddrinker'],
     },
     iron: {
         id: 'iron', name: 'Iron', title: 'the Bulwark', color: '#b8c2cc',
         blurb: 'An unbreakable wall of raw power — favors arcane weapons and defense perks.',
-        weapons: ['arcaneBolt', 'arcaneStorm'],
+        // Armory pt. 1: Cindermine's hold-the-line zone denial fits the wall.
+        weapons: ['arcaneBolt', 'arcaneStorm', 'emberMine', 'ashquake'],
         passives: ['ironHeart', 'thickHide', 'thorns', 'stoneheart', 'powerStone'],
     },
 };

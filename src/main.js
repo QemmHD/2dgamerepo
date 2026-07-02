@@ -15,6 +15,7 @@ import { clearHeroFrameCache, clearDecorationCache } from './assets/ProceduralSp
 import { loadObstacleSprites } from './assets/ObstacleSprites.js';
 import { loadDecorSprites } from './assets/DecorSprites.js';
 import { WEAPON_AURA } from './content/weapons.js';
+import { WEAPON_FX_GLOWS } from './systems/WeaponSystem.js';
 import { COSMETICS } from './content/cosmetics.js';
 import { PRISM_COLORS } from './assets/CosmeticFx.js';
 
@@ -117,6 +118,9 @@ async function boot() {
     // Warm the weapon-aura glow colors too, so the first weapon pickup /
     // evolution / aura color-swap doesn't rasterize a 128px glow mid-frame.
     for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
+    // Same for the weapon-visual FX glows (beam/mine/trail/fang) — several
+    // aren't aura colors, so the first patch/ray frame would otherwise build.
+    for (const c of WEAPON_FX_GLOWS) getGlowSprite(c);
     // Warm every cosmetic colour (rarity prestige FX glows in the equipped
     // piece's own colour) + the quantized prism hues (mythic hue-cycle).
     for (const k in COSMETICS) { const c = COSMETICS[k].color; if (c) getGlowSprite(c); }

@@ -39,6 +39,12 @@ const REQ = {
     defense: { ok: (g) => ownsAnyPassive(g, ['ironHeart', 'thickHide', 'stoneheart', 'thorns']), label: 'a defense perk' },
     arsenal4: { ok: (g) => arsenalSize(g) >= 4, label: '4+ weapons & perks' },
     sustain: { ok: (g) => ownsAnyPassive(g, ['secondWind', 'blooddrinker']), label: 'a sustain perk' },
+    // Armory pt. 1: any ground-claiming fire weapon (mines or the wake).
+    groundfire: {
+        ok: (g) => ownsWeapon(g, 'emberMine') || ownsWeapon(g, 'ashquake')
+            || ownsWeapon(g, 'wakefire') || ownsWeapon(g, 'wildfireWake'),
+        label: 'a ground-fire weapon',
+    },
 };
 
 // Builder: recipe (`reqs`) is declarative so we can derive both availability
@@ -70,6 +76,15 @@ export const KEYSTONES = [
         desc: 'Below 35% HP, deal +40% damage — burn brightest at the end.',
         reqs: [REQ.fireOrRage],
         apply: (g) => { g.player.lowHpDamageBonus = (g.player.lowHpDamageBonus ?? 0) + 0.40; },
+    }),
+    mk({
+        // Armory pt. 1: a capstone for the new ground-claiming kinds (mine /
+        // trail). burnDamageMul is read at the existing burn tick — the same
+        // single hook Wildfire uses, so no new per-frame scan.
+        id: 'scorched-earth', name: 'Scorched Earth', patron: 'pyre',
+        desc: 'Ground you claim is home turf: every burn you set sears 50% harder.',
+        reqs: [REQ.groundfire],
+        apply: (g) => { g.player.burnDamageMul = (g.player.burnDamageMul ?? 1) * 1.5; },
     }),
     mk({
         id: 'overcharge', name: 'Overcharge', patron: 'tempest',

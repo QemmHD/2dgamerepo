@@ -17,9 +17,10 @@
 import { pickWeighted } from '../core/MathUtils.js';
 import { WEAPONS, WEAPON_IDS } from '../content/weapons.js';
 import { PASSIVES, PASSIVE_IDS } from '../content/passives.js';
-import { MAX_WEAPON_LEVEL, MAX_PASSIVE_LEVEL } from '../config/GameConfig.js';
+import { MAX_WEAPON_LEVEL, MAX_PASSIVE_LEVEL, MAX_WEAPON_SLOTS, CAPS } from '../config/GameConfig.js';
 import { cardPatronMul } from '../content/patrons.js';
 import { KEYSTONES } from '../content/keystones.js';
+import { EVOLUTIONS } from '../content/evolutions.js';
 
 const STAT_UPGRADES = [
     {
@@ -31,6 +32,12 @@ const STAT_UPGRADES = [
         rarity: 'common',
         weight: 1.0,
         maxStacks: 5,
+        // CAP-AWARE (P0.3): _applyPlayerCaps clamps speed at CAPS.moveSpeed
+        // every frame, so once the clamp engages this card is a silent no-op —
+        // stop offering it instead of eroding trust with a dead pick.
+        available(game) {
+            return (game.player?.speed ?? 0) < CAPS.moveSpeed;
+        },
         apply(game) {
             game.player.speed *= 1.18;
         },
@@ -44,6 +51,10 @@ const STAT_UPGRADES = [
         rarity: 'common',
         weight: 1.0,
         maxStacks: 5,
+        // CAP-AWARE (P0.3): dead once pickupRange sits at its frame-clamp.
+        available(game) {
+            return (game.player?.pickupRange ?? 0) < CAPS.pickupRange;
+        },
         apply(game) {
             game.player.pickupRange *= 1.4;
         },
@@ -143,6 +154,16 @@ const WEIGHT_NEW_WEAPON = 0.9;
 const WEIGHT_WEAPON_UPGRADE = 1.1;
 const WEIGHT_NEW_PASSIVE = 0.85;
 const WEIGHT_PASSIVE_UPGRADE = 1.05;
+// PITY (P0.3): each level a weapon already holds adds this much to its
+// upgrade card's weight, so an invested weapon snowballs toward its cap —
+// e.g. an L7 weapon rolls at 1.1 × (1 + 6×0.35) ≈ 3.4×. Pity ALONE does not
+// reach L8 inside the 3-boss campaign (~minute 8): 1.1–3.4 weight in a
+// ~35-weight pool shows the card in only ~10–26% of the ~21 drafts the XP
+// curve allows by then (median no-Patron L8 lands ~minute 14). It is the
+// pity × committed-Patron favor (×2.6 — patrons.js) product that lands a
+// focused weapon at L8 around minute 4, comfortably in-window; an
+// uncommitted run treats L8 + evolution as a long shot, not the plan.
+const PITY_PER_LEVEL = 0.35;
 // Rarer perks roll less often, so a high-rarity card feels like a score (and
 // its card is tinted by rarity in the level-up UI). Drives the "perk lottery".
 const RARITY_WEIGHT = { common: 1.25, uncommon: 1.0, rare: 0.6, epic: 0.32, legendary: 0.18, mythic: 0.1 };
@@ -216,26 +237,51 @@ export class UpgradeSystem {
         }
         // Per-unowned-weapon unlock entries. Evolved weapons are reached only
         // via chest evolution, and FUSION weapons only via a Wick Shrine fuse —
-        // neither is ever offered as a level-up choice.
-        for (const id of WEAPON_IDS) {
-            if (ownedWeaponIds.has(id)) continue;
-            if (WEAPONS[id].evolved || WEAPONS[id].fusion) continue;
-            pool.push(newWeaponChoice(id));
+        // neither is ever offered as a level-up choice. SLOT CAP (P0.3): once
+        // the loadout holds MAX_WEAPON_SLOTS weapons/abilities, new-weapon
+        // cards leave the pool entirely, so a FULL loadout's late drafts
+        // concentrate on the weapons committed to. (The L8-in-window lever
+        // itself is pity × Patron favor — see PITY_PER_LEVEL.)
+        const slotsUsed = game.weaponSystem.owned.length;
+        if (slotsUsed < MAX_WEAPON_SLOTS) {
+            for (const id of WEAPON_IDS) {
+                if (ownedWeaponIds.has(id)) continue;
+                if (WEAPONS[id].evolved || WEAPONS[id].fusion) continue;
+                pool.push(newWeaponChoice(id, slotsUsed));
+            }
         }
 
-        // Per-owned-passive upgrade entries (skip maxed passives).
+        // Per-owned-passive upgrade entries (skip maxed passives, and — P0.3 —
+        // passives whose every effect sits at its CAPS frame-clamp, which the
+        // passive's own available() reports).
         const ownedPassiveIds = new Set();
         for (const p of game.passiveSystem.owned) {
             ownedPassiveIds.add(p.id);
             const def = PASSIVES[p.id];
             const max = def?.maxLevel ?? MAX_PASSIVE_LEVEL;
+            if (def?.available && !def.available(game)) continue;
             if (p.level < max) {
                 pool.push(passiveUpgradeChoice(p, def));
             }
         }
-        // Per-unowned-passive unlock entries.
+        // CATALYST OVERRIDE: a passive that is the evolution catalyst of an
+        // OWNED, not-yet-evolved base weapon must stay draftable even when its
+        // stat sits at a CAPS clamp — evolving needs the passive at ANY level,
+        // so the unlock buys eligibility, not the (dead) stat bump. Without
+        // this, capping speed/damage/cooldown via other sources before owning
+        // the catalyst would silently lock the evolution for the run.
+        const neededCatalysts = new Set();
+        for (const evo of EVOLUTIONS) {
+            if (ownedWeaponIds.has(evo.baseWeaponId) && !ownedWeaponIds.has(evo.evolvedWeaponId)) {
+                neededCatalysts.add(evo.requiredPassiveId);
+            }
+        }
+        // Per-unowned-passive unlock entries (same CAP gate as upgrades,
+        // except for needed catalysts).
         for (const id of PASSIVE_IDS) {
             if (ownedPassiveIds.has(id)) continue;
+            const def = PASSIVES[id];
+            if (!neededCatalysts.has(id) && def?.available && !def.available(game)) continue;
             pool.push(newPassiveChoice(id));
         }
 
@@ -279,6 +325,13 @@ const STAT_FIELDS = [
     { key: 'speedMul',        label: 'Speed',      fmt: (v) => `+${Math.round((v - 1) * 100)}%` },
     { key: 'width',           label: 'Width',      fmt: (v) => `${Math.round(v)}` },
     { key: 'motes',           label: 'Motes',      fmt: (v) => `${v}` },
+    // Armory pt. 1 kinds (boomerang / beam / mine / trail).
+    { key: 'range',           label: 'Range',      fmt: (v) => `${Math.round(v)}` },
+    { key: 'tickInterval',    label: 'Tick',       fmt: (v) => `${v.toFixed(2)}s` },
+    { key: 'blastRadius',     label: 'Blast',      fmt: (v) => `${Math.round(v)}` },
+    { key: 'maxMines',        label: 'Mines',      fmt: (v) => `${v}` },
+    { key: 'patchRadius',     label: 'Patch',      fmt: (v) => `${Math.round(v)}` },
+    { key: 'burnDps',         label: 'Burn/s',     fmt: (v) => `${Math.round(v)}` },
     { key: 'slowDuration',    label: 'Slow Time',  fmt: (v) => `${v.toFixed(1)}s` },
     // Slow strength is derived from the multiplier (lower mul = stronger slow).
     { key: 'slowMul',         label: 'Slow',       fmt: (v) => `${Math.round((1 - v) * 100)}%` },
@@ -327,14 +380,18 @@ function weaponUpgradeChoice(owned) {
         description: describeWeaponUpgrade(def, owned.level, next),
         cardLevelText: `Lv ${owned.level} → ${next}`,
         rarity: 'rare',
-        weight: WEIGHT_WEAPON_UPGRADE,
+        // Pity-weighted: deep investment pulls its own upgrades (see
+        // PITY_PER_LEVEL above).
+        weight: WEIGHT_WEAPON_UPGRADE * (1 + PITY_PER_LEVEL * (owned.level - 1)),
         apply(game) {
             game.weaponSystem.levelUpWeapon(owned.id);
         },
     };
 }
 
-function newWeaponChoice(id) {
+// `slotsUsed` (P0.3): the card states which loadout slot it would fill, so
+// the ~5-slot cap is a visible constraint at pick time, not a surprise.
+function newWeaponChoice(id, slotsUsed = 0) {
     const def = WEAPONS[id];
     const isAbility = !!def?.ability;
     const summary = firstLevelSummary(def);
@@ -345,7 +402,7 @@ function newWeaponChoice(id) {
         cardLabel: isAbility ? 'NEW ABILITY' : 'NEW WEAPON',
         name: def?.name ?? id,
         description: summary ? `${prose}   ${summary}` : prose,
-        cardLevelText: 'Lv 1',
+        cardLevelText: `Lv 1 • Slot ${slotsUsed + 1}/${MAX_WEAPON_SLOTS}`,
         rarity: 'epic',
         weight: WEIGHT_NEW_WEAPON,
         apply(game) {

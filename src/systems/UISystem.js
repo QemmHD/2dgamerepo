@@ -1479,8 +1479,15 @@ export class UISystem {
 
         ctx.globalAlpha = bg;
         ctx.font = `34px ${FONT}`;
-        ctx.fillStyle = 'rgba(255,255,255,0.78)';
-        const sub = `Choose an upgrade  •  LV ${state.player.level}`
+        // Weapon/ability slot meter (P0.3): the ~5-slot loadout cap is a real
+        // draft constraint, so it reads right on the pick screen. The whole
+        // line turns amber once full — new-weapon cards have left the pool at
+        // that point, and the meter says why.
+        const slotsFull = state.weaponSlotCap && state.ownedWeaponCount >= state.weaponSlotCap;
+        ctx.fillStyle = slotsFull ? '#ffd166' : 'rgba(255,255,255,0.78)';
+        const slotText = state.weaponSlotCap
+            ? `  •  SLOTS ${state.ownedWeaponCount}/${state.weaponSlotCap}${slotsFull ? ' (FULL)' : ''}` : '';
+        const sub = `Choose an upgrade  •  LV ${state.player.level}${slotText}`
             + (state.pendingLevelUps > 0 ? `  (${state.pendingLevelUps + 1} pending)` : '');
         ctx.fillText(sub, INTERNAL_WIDTH / 2, 290);
         // First-run onboarding: one warm reassurance line on the very first

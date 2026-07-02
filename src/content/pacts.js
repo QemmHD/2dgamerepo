@@ -78,6 +78,32 @@ export const PACTS = [
         curse: 'Enemies gain +25% HP and +20% damage.', boon: '+40% weapon damage.',
         apply(g) { g.runScale.hp *= 1.25; g.runScale.damage *= 1.2; g.player.damageMul *= 1.4; },
     },
+    // ── Build-warping (v1.3, P2.6): bargains that change HOW you play the ──
+    // rest of the run, not just how big the numbers are.
+    {
+        // Starve the level curve, feast on everything else — warps the run
+        // from draft-chasing into kill-and-collect (fewer level-ups means the
+        // pity-weighted draft you DO get matters more).
+        id: 'pact-famine', name: 'Pact of Famine', rarity: 'epic',
+        curse: '-30% XP from gems.', boon: '+30% weapon damage, +25% coins, better chest luck.',
+        apply(g) {
+            g.player.xpMultiplier *= 0.70;
+            g.player.damageMul *= 1.3;
+            g.player.coinMul = (g.player.coinMul ?? 1) * 1.25;
+            g.player.chestLuck = (g.player.chestLuck ?? 0) + 0.10;
+        },
+    },
+    {
+        // Trade the kite for the bunker: slower feet, but a relentless rate
+        // of fire and a thicker hide — hold ground instead of running it.
+        id: 'pact-stillwick', name: 'Pact of the Still Wick', rarity: 'epic',
+        curse: '-18% move speed.', boon: '-18% weapon cooldowns and take 12% less damage.',
+        apply(g) {
+            g.player.speed *= 0.82;
+            g.player.cooldownMul *= 0.82;
+            g.player.damageTakenMul = (g.player.damageTakenMul ?? 1) * 0.88;
+        },
+    },
 ];
 
 const PACT_BY_ID = Object.fromEntries(PACTS.map((p) => [p.id, p]));

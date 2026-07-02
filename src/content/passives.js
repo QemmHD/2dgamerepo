@@ -19,6 +19,27 @@
 //
 // To add a passive, append an entry below — the UpgradeSystem reads
 // PASSIVES dynamically.
+//
+// CAP-AWARE availability (P0.3): a passive may declare available(game) —
+// checked by UpgradeSystem for BOTH its "new" and "upgrade" cards. Stats that
+// Game._applyPlayerCaps hard-clamps every frame (damageMul, cooldownMul,
+// speed, pickupRange — see CAPS) make further picks silent no-ops once the
+// clamp engages, so those cards must stop appearing. Multi-effect passives
+// stay offered while ANY of their effects still has headroom. ONE exception,
+// applied by UpgradeSystem: the "new" card of an evolution CATALYST for an
+// owned base weapon ignores this gate — evolving needs the passive at any
+// level, so a capped stat must never lock an evolution out of the run.
+
+import { CAPS } from '../config/GameConfig.js';
+
+// The clamps set the field EXACTLY to its ceiling, so strict compares read
+// "still has headroom". Optional-chained: available() is only called with a
+// live run, but stay safe on partial construction.
+const speedRoom = (g) => (g.player?.speed ?? 0) < CAPS.moveSpeed;
+const damageRoom = (g) => (g.player?.damageMul ?? 1) < CAPS.damageMul;
+const cooldownRoom = (g) => (g.player?.cooldownMul ?? 1) > CAPS.cooldownMulFloor;
+const pickupRoom = (g) => (g.player?.pickupRange ?? 0) < CAPS.pickupRange;
+const regenRoom = (g) => (g.player?.regenPerSecond ?? 0) < CAPS.regenPerSecond;
 
 export const PASSIVES = {
     spellbook: {
@@ -26,6 +47,7 @@ export const PASSIVES = {
         name: 'Quickwick',
         description: '-12% weapon cooldowns per level.',
         maxLevel: 5,
+        available: cooldownRoom,
         apply(player) {
             player.cooldownMul *= 0.88;
         },
@@ -36,6 +58,7 @@ export const PASSIVES = {
         name: 'Brightstone',
         description: '+14% weapon damage per level.',
         maxLevel: 5,
+        available: damageRoom,
         apply(player) {
             player.damageMul *= 1.14;
         },
@@ -46,6 +69,7 @@ export const PASSIVES = {
         name: 'Emberstride',
         description: '+10% movement speed per level.',
         maxLevel: 5,
+        available: speedRoom,
         apply(player) {
             player.speed *= 1.10;
         },
@@ -56,6 +80,7 @@ export const PASSIVES = {
         name: 'Gleamcharm',
         description: '+20% gem pickup range per level.',
         maxLevel: 5,
+        available: pickupRoom,
         apply(player) {
             player.pickupRange *= 1.20;
         },
@@ -99,6 +124,7 @@ export const PASSIVES = {
         name: 'Rekindle',
         description: 'Regenerate +1.2 HP/s when no enemy is near, per level.',
         maxLevel: 5,
+        available: regenRoom,
         apply(player) {
             player.regenPerSecond += 1.2;
         },
@@ -179,6 +205,8 @@ export const PASSIVES = {
         description: '+22% weapon damage per level, but +7% damage taken — burn hot.',
         maxLevel: 3,
         rarity: 'epic',
+        // Once damage is capped, this is ONLY the downside — a trap pick.
+        available: damageRoom,
         apply(player) {
             player.damageMul *= 1.22;
             player.damageTakenMul *= 1.07;
@@ -190,6 +218,8 @@ export const PASSIVES = {
         name: 'Featherstep',
         description: '+9% move speed and +8% pickup range per level.',
         maxLevel: 4,
+        // Multi-effect: keep offering while EITHER stat has headroom.
+        available: (g) => speedRoom(g) || pickupRoom(g),
         apply(player) {
             player.speed *= 1.09;
             player.pickupRange *= 1.08;
@@ -227,6 +257,8 @@ export const PASSIVES = {
         description: '−7% cooldowns and +5% move speed per level.',
         maxLevel: 4,
         rarity: 'uncommon',
+        // Multi-effect: keep offering while EITHER stat has headroom.
+        available: (g) => cooldownRoom(g) || speedRoom(g),
         apply(player) {
             player.cooldownMul *= 0.93;
             player.speed *= 1.05;
