@@ -52,21 +52,25 @@ export const WEAPONS = {
     arcaneBolt: {
         id: 'arcaneBolt',
         name: 'Cinderbolt',
-        description: 'Flings a living cinder at the nearest husk.',
+        description: 'Kill-shots LEAP to another husk. Element-less by design.',
         kind: 'projectile',
         evolvesTo: null,
         // Signature: ricochet-on-kill — a lethal bolt leaps to the next
-        // nearest unhit foe (independent of pierce). ricochet count grows
-        // with level so it reads as an escalating chain-reaction sniper.
+        // nearest unhit foe (independent of pierce). Now active from L1 so the
+        // DEFAULT starter has an identity its stat-twin siblings (Pyre Wisp /
+        // Stormwand) don't copy, instead of being strictly outclassed by them.
+        // The element-less-ness is the deliberate trade (keystone recipes need
+        // an element) — the description says so. L8 ricochet stays at 3 so the
+        // Cinderstorm evolution (ricochet 4, twin bolts) still clearly wins.
         perLevel: [
             null,
-            { damage: 17, cooldown: 0.52, projectileSpeed: 935,  pierce: 0, projectileRadius: 15, ricochet: 0, ricochetRange: 360 },
-            { damage: 20, cooldown: 0.50, projectileSpeed: 940,  pierce: 0, projectileRadius: 15, ricochet: 0, ricochetRange: 360 },
-            { damage: 24, cooldown: 0.48, projectileSpeed: 980,  pierce: 1, projectileRadius: 15, ricochet: 0, ricochetRange: 360 },
-            { damage: 29, cooldown: 0.44, projectileSpeed: 1020, pierce: 1, projectileRadius: 15, ricochet: 1, ricochetRange: 360 },
-            { damage: 34, cooldown: 0.40, projectileSpeed: 1060, pierce: 1, projectileRadius: 16, ricochet: 1, ricochetRange: 360 },
+            { damage: 17, cooldown: 0.52, projectileSpeed: 935,  pierce: 0, projectileRadius: 15, ricochet: 1, ricochetRange: 360 },
+            { damage: 20, cooldown: 0.50, projectileSpeed: 940,  pierce: 0, projectileRadius: 15, ricochet: 1, ricochetRange: 360 },
+            { damage: 24, cooldown: 0.48, projectileSpeed: 980,  pierce: 1, projectileRadius: 15, ricochet: 1, ricochetRange: 360 },
+            { damage: 29, cooldown: 0.44, projectileSpeed: 1020, pierce: 1, projectileRadius: 15, ricochet: 2, ricochetRange: 360 },
+            { damage: 34, cooldown: 0.40, projectileSpeed: 1060, pierce: 1, projectileRadius: 16, ricochet: 2, ricochetRange: 360 },
             { damage: 40, cooldown: 0.36, projectileSpeed: 1120, pierce: 1, projectileRadius: 16, ricochet: 2, ricochetRange: 360 },
-            { damage: 47, cooldown: 0.32, projectileSpeed: 1180, pierce: 2, projectileRadius: 17, ricochet: 2, ricochetRange: 360 },
+            { damage: 47, cooldown: 0.32, projectileSpeed: 1180, pierce: 2, projectileRadius: 17, ricochet: 3, ricochetRange: 360 },
             { damage: 56, cooldown: 0.28, projectileSpeed: 1260, pierce: 2, projectileRadius: 18, ricochet: 3, ricochetRange: 360 },
         ],
         update: arcaneBoltUpdate,
@@ -275,9 +279,13 @@ export const WEAPONS = {
         perLevel: [
             null,
             {
-                // Evolution payoff: twin bolts that clearly out-damage + out-burn
-                // a maxed Pyre Wisp (14 dmg / 20 burnDps).
-                damage: 22, cooldown: 0.44, projectileSpeed: 940,
+                // Evolution payoff pass (same parity method as Cinderstorm): a
+                // maxed Pyre Wisp is 56 dmg @0.28s (~200 DPS) + 28 burnDps. The
+                // old 22 dmg twin (~100 DPS) was a strict DOWNGRADE — a trap
+                // evolution citing stale stats ("14 dmg / 20 burnDps"). 50 dmg
+                // ×2 @0.44s (~227 DPS) + a burn nearly twice as hot + deep
+                // pierce now reads as a real upgrade without deleting bosses.
+                damage: 50, cooldown: 0.44, projectileSpeed: 940,
                 projectileRadius: 20, projectiles: 2, spread: 0.18, pierce: 4,
                 burnDps: 46, burnDuration: 5.0,
             },

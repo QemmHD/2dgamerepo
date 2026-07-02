@@ -2,8 +2,11 @@
 // base weapons into one new SCALABLE weapon (see the `fusion: true` entries in
 // weapons.js). Unlike an evolution (base at max level + a passive → maxLevel-1
 // payoff), a fusion only needs BOTH ingredients owned at ANY level, consumes both
-// slots, and the result keeps leveling — so it's a net-neutral-or-better slot
-// trade that can never soft-lock a run by eating its only damage source.
+// slots, and the result keeps leveling. The result also INHERITS the ingredients'
+// investment — it starts at floor(avg(levelA, levelB)), clamped to the fusion's
+// maxLevel (WeaponSystem.fusedLevel) — so the trade is net-neutral-or-better at
+// EVERY level, never an L8+L8 → L1 punish, and can never soft-lock a run by
+// eating its only damage source.
 //
 // Add a fusion by appending a recipe here + its weapon def in weapons.js — no
 // system code change.

@@ -32,6 +32,15 @@ function weaponMaxLevel(def) {
     return def?.maxLevel ?? MAX_WEAPON_LEVEL;
 }
 
+// Level a fusion starts at: floor of the ingredients' average level, clamped
+// to [1, fusion maxLevel]. Exported so the Wick Shrine card can show the exact
+// result level BEFORE the player commits the fuse (an informed trade).
+export function fusedLevel(ownedA, ownedB, fusedDef) {
+    const la = ownedA?.level ?? 1;
+    const lb = ownedB?.level ?? 1;
+    return Math.max(1, Math.min(weaponMaxLevel(fusedDef), Math.floor((la + lb) / 2)));
+}
+
 export class WeaponSystem {
     constructor(startingWeaponId = 'arcaneBolt') {
         this.owned = [];
@@ -86,16 +95,20 @@ export class WeaponSystem {
     // first ingredient's slot becomes the fusion (keeping slot order stable); the
     // second is removed. No-op unless BOTH ingredients are owned and the fusion
     // def exists — so it can never drop the player to zero weapons.
+    // The result INHERITS its ingredients' investment — level = floor of their
+    // average, clamped to the fusion's maxLevel — so fusing two leveled weapons
+    // is truly net-neutral-or-better (fusions.js), never an L8+L8 → L1 punish.
     fuseWeapons(idA, idB, fusedId) {
         const idxA = this.owned.findIndex((o) => o.id === idA);
         const idxB = this.owned.findIndex((o) => o.id === idB);
         const def = WEAPONS[fusedId];
         if (idxA < 0 || idxB < 0 || idxA === idxB || !def) return false;
         const initial = def.initialState ? def.initialState() : {};
+        const level = fusedLevel(this.owned[idxA], this.owned[idxB], def);
         const keep = Math.min(idxA, idxB);
         const drop = Math.max(idxA, idxB);
         this.owned.splice(drop, 1);            // remove the second ingredient first
-        this.owned[keep] = { id: fusedId, level: 1, timer: 0, state: initial };
+        this.owned[keep] = { id: fusedId, level, timer: 0, state: initial };
         this.version++;
         return true;
     }

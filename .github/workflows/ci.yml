@@ -1,0 +1,71 @@
+# CI — automates the repo's existing verify-before-ship pattern:
+#   1. node --check every ES module under src/ (syntax gate, no bundler)
+#   2. node tools/validate-assets.js (every AI/licensed asset is credited)
+#   3. headless-Chromium harness smoke: boot the REAL game for 20 sim-seconds
+#      via tools/artshot/harness.html and assert zero exceptions (EXC: 0)
+#      and a live swarm (enemies > 0), read from the harness's document.title
+#      ("DONE EXC:<n> enemies:<m>").
+# Mirrors the manual gate in CLAUDE.md; pages.yml still owns deploys.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Node 22+: `node --check` auto-detects ESM syntax in .js files (this
+      # no-bundler repo has no package.json "type" field to declare it).
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax-check all src modules
+        run: |
+          set -e
+          find src tools -name '*.js' -o -name '*.mjs' | while read -r f; do
+            node --check "$f"
+          done
+          echo "node --check: all modules OK"
+
+      - name: Validate asset credits
+        run: node tools/validate-assets.js
+
+      - name: Harness smoke (EXC 0, enemies alive)
+        run: |
+          set -e
+          # Serve the repo root exactly like local verification does.
+          python3 tools/artshot/serve.py 8909 . &
+          sleep 1
+          # Prefer the dev container's pinned Playwright Chromium when present
+          # (so this step runs identically in local sandboxes); fall back to
+          # the runner image's Chrome.
+          CHROME=$(ls /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 || true)
+          CHROME=${CHROME:-$(command -v google-chrome || command -v chromium-browser || command -v chromium)}
+          echo "Using browser: $CHROME"
+          # --dump-dom serializes the page after the virtual-time budget, so
+          # the <title> carries the harness's final "DONE EXC:<n> enemies:<m>".
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+            --autoplay-policy=no-user-gesture-required \
+            --disable-background-networking --disable-component-update \
+            --force-device-scale-factor=1 --window-size=1600,900 \
+            --virtual-time-budget=15000 --user-data-dir="$(mktemp -d)" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=20&badge=1" \
+            > /tmp/harness-dom.html
+          TITLE=$(grep -o '<title>[^<]*</title>' /tmp/harness-dom.html | head -1)
+          echo "Harness title: $TITLE"
+          echo "$TITLE" | grep -q 'DONE EXC:0 ' || { echo 'FAIL: harness reported exceptions (or never finished)'; exit 1; }
+          ENEMIES=$(echo "$TITLE" | grep -o 'enemies:[0-9-]*' | cut -d: -f2)
+          [ "${ENEMIES:-0}" -gt 0 ] || { echo "FAIL: no live enemies after 20s (enemies=$ENEMIES)"; exit 1; }
+          echo "Harness smoke OK ($TITLE)"

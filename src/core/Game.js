@@ -5,6 +5,7 @@ import {
     WORLD_HEIGHT,
     WORLD_BOUNDS_COLOR,
     DEBUG_DEFAULT_ON,
+    DEV_MODE,
     INTERNAL_WIDTH,
     INTERNAL_HEIGHT,
     CONTACT_FLASH_DURATION,
@@ -195,14 +196,18 @@ export class Game {
         const touchPrimary = typeof window.matchMedia === 'function'
             ? window.matchMedia('(pointer: coarse)').matches
             : ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-        this.showDebug = (DEBUG_DEFAULT_ON && !touchPrimary) || this.saveSystem.getSetting('debug') === true;
+        // Debug HUD is a dev aid only (?dev=1): without DEV_MODE it can never
+        // switch on — not by default, not from a save's debug setting — so the
+        // time-jump keys below stay out of reach of regular players.
+        this.showDebug = DEV_MODE &&
+            ((DEBUG_DEFAULT_ON && !touchPrimary) || this.saveSystem.getSetting('debug') === true);
         // Performance/accessibility render flags (re-read at each run start).
         this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
         this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
         this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
 
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'Backquote' || e.code === 'F2') {
+            if (DEV_MODE && (e.code === 'Backquote' || e.code === 'F2')) {
                 this.showDebug = !this.showDebug;
                 return;
             }
@@ -244,8 +249,9 @@ export class Game {
             }
             // Debug-only time-jump (NOT a player feature): with the debug
             // overlay on, ] skips +60s and \ skips +300s so 5/10/20/30-min
-            // balance can be tested quickly. Gated by showDebug + live play.
-            if (this.showDebug && this.screen === 'gameplay' && !this.paused &&
+            // balance can be tested quickly. Gated by DEV_MODE (showDebug can
+            // only be true under it, but belt-and-braces) + live play.
+            if (DEV_MODE && this.showDebug && this.screen === 'gameplay' && !this.paused &&
                 !this.chestReward && !this.upgradeChoices && !this.altar) {
                 if (e.code === 'BracketRight') { e.preventDefault(); this._debugSkipTime(60); return; }
                 if (e.code === 'Backslash') { e.preventDefault(); this._debugSkipTime(300); return; }
@@ -299,6 +305,9 @@ export class Game {
         });
 
         const tryToggleDebugAt = (clientX, clientY) => {
+            // The DBG hotspot only exists in DEV_MODE (UISystem skips drawing
+            // the button too), so players can't tap the debug HUD on.
+            if (!DEV_MODE) return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const r = this.ui.getDebugButtonRect();
             const slop = DEBUG_BUTTON_TOUCH_SLOP;
@@ -413,6 +422,11 @@ export class Game {
 
         const tryRestartAt = (clientX, clientY) => {
             if (this.screen !== 'gameOver') return false;
+            // Debounce: the buttons only fade in from age 0.7 (UISystem), so a
+            // tap still falling on the death moment can't instantly restart /
+            // leave before the player has even seen the summary. Taps are
+            // consumed (not passed through) so nothing behind the overlay fires.
+            if (this.gameOverAge < 0.7) return true;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const rRestart = this.ui.getRestartButtonRect();
             if (inRect(pos, rRestart)) { this._pressFeedback('restart'); this.restart(); return true; }
@@ -641,7 +655,7 @@ export class Game {
         this._comboMilestoneIdx = 0;
         // Twilight (elite-army endgame) one-shot announce latch.
         this._twilightAnnounced = false;
-        // Hypergrowth ("the wall", 13-min doubling) one-shot announce latch.
+        // Hypergrowth ("the wall", compounding from min 20) one-shot announce latch.
         this._hyperAnnounced = false;
         // Run objectives: ids completed this run + the list (for the game-over
         // summary). Repeatable each run.
@@ -663,8 +677,12 @@ export class Game {
         this.feedback = [];
         // Tracks HP between frames so a rise can fire a heal flash centrally.
         this._lastHp = this.player.maxHp;
-        // Starting coins granted by the shop this run — excluded from the
-        // banked total so the Starting Coins upgrade doesn't refund itself.
+        // Battle-pass XP gained by the last finished run (set in _enterGameOver,
+        // drawn on the game-over summary). Cleared so a restart can't show stale XP.
+        this.bpResult = null;
+        // Starting coins granted by the shop this run — _bankRunCoins banks
+        // them only for a PLAYED run (see the guard there), so an instant
+        // pause→RESTART abandon can't mint the seed for free.
         this.startingCoinsGranted = 0;
 
         // A fresh run should never inherit a half-armed save-reset confirm.
@@ -766,8 +784,8 @@ export class Game {
         this.player.damageMul = (this.player.damageMul ?? 1) * pDamage;
         this.player.pickupRange *= pPickup;
         this.player.damageTakenMul = (this.player.damageTakenMul ?? 1) * pIncoming;
-        // Remember how many coins the shop handed us so _enterGameOver can
-        // bank only what was *earned* this run, not the granted seed.
+        // Remember how many coins the shop handed us so _bankRunCoins can
+        // withhold the granted seed from an instantly-abandoned run.
         this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
         // Level-up agency resources: 1 free reroll baseline so the feature
         // is discoverable, plus whatever the shop granted onto the player.
@@ -991,13 +1009,19 @@ export class Game {
     }
 
     // Bank coins earned this run into the save total, exactly once (guarded
-    // by bankedThisRun). Excludes the shop-granted starting seed. Returns the
-    // amount banked (0 if already banked).
+    // by bankedThisRun). Returns the amount banked (0 if already banked).
+    // The Heirloom Cinders seed BANKS TOO (run coins have no mid-run spend, so
+    // always excluding it made that purchased upgrade a literal no-op) — but
+    // only for a run that was PLAYED: ended in death/victory, or lasted ≥60s.
+    // Otherwise pause→RESTART spam would mint floor(seed × coinMul) every few
+    // seconds for zero play; an instant abandon banks only what was picked up.
     _bankRunCoins() {
         if (this.bankedThisRun) return 0;
+        const seedEarned = this.gameOver || this.victory !== null || this.time >= 60;
+        const seed = seedEarned ? 0 : (this.startingCoinsGranted ?? 0);
         // Coin-gain gear/charms boost the BANKED total (player.coinMul, 1 by
         // default). Applied here so the in-run HUD stays a clean integer.
-        const raw = Math.max(0, (this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0));
+        const raw = Math.max(0, (this.player.coins ?? 0) - seed);
         const earned = Math.floor(raw * (this.player.coinMul ?? 1));
         if (earned > 0) this.saveSystem.addCoins(earned);
         this.bankedThisRun = true;
@@ -1411,9 +1435,13 @@ export class Game {
             if ((m[o.metric] ?? 0) >= o.target) {
                 this._objDone.add(o.id);
                 this._objCompleted.push(o.id);
-                this.saveSystem.addCoins(o.reward);
+                // Coin-gain builds apply to objective payouts too (same
+                // player.coinMul the banked run total already respects), so a
+                // coin build is as strong as its cards advertise.
+                const reward = Math.floor(o.reward * (this.player.coinMul ?? 1));
+                this.saveSystem.addCoins(reward);
                 this.audio.objective();
-                this.waveDirector.announce(`✓ ${o.name}  +${o.reward}`, 2.2, '#7fe0a0');
+                this.waveDirector.announce(`✓ ${o.name}  +${reward}`, 2.2, '#7fe0a0');
             }
         }
     }
@@ -2366,7 +2394,7 @@ export class Game {
             this.audio.dreadDrone();
             this._shake(SCREEN_SHAKE.intensity * 0.7, 0.5);
         }
-        // HYPERGROWTH onset — the wall begins; enemies now double every minute.
+        // HYPERGROWTH onset — the wall begins; enemies now compound every minute.
         if ((this.waveState.hyperMul ?? 1) > 1 && !this._hyperAnnounced) {
             this._hyperAnnounced = true;
             this.waveDirector.announce('☠ THE DARK DEVOURS — FLEE OR FALL ☠', 4.0, '#ff3326');
@@ -3924,6 +3952,9 @@ export class Game {
         base.bossesDefeated = this.bossesDefeated;
         base.runSummary = this.runSummary;
         base.newBest = this.newBest;
+        // Battle-pass XP from this run (set in _enterGameOver) — the game-over
+        // summary draws it, so the meta reward is VISIBLE, not silently banked.
+        base.bpResult = this.bpResult;
         base.paused = this.paused;
         base.shakeEnabled = this.shakeEnabled;
         base.rerolls = this.rerolls;
