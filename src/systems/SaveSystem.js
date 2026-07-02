@@ -97,7 +97,18 @@ function defaultData() {
         daily: { day: 0, completed: [] },
         // Daily Road: the current day's best score for the curated daily run
         // ({ day, best }; auto-resets when the day rolls — see recordDailyRoadScore).
-        dailyRoad: { day: 0, best: 0 },
+        // prevBest keeps YESTERDAY's best across the roll so the menu can show it.
+        // caseDay latches the day whose free first-clear case was already claimed
+        // (see claimDailyRoadCase).
+        dailyRoad: { day: 0, best: 0, prevBest: 0, caseDay: 0 },
+        // Day streak: consecutive UTC days with at least one finished run
+        // ({ day: last played day, count }). Celebratory only — a lapsed streak
+        // just restarts at 1, it never punishes (see recordDayStreak).
+        streak: { day: 0, count: 0 },
+        // Onboarding/staged-menu progress: which menu tabs the player has
+        // OPENED at least once (drives the one-time "NEW" badge on tabs that
+        // unlock by progression — see MenuRenderer tabUnlocked).
+        onboarding: { tabsSeen: [] },
         // Pact Mastery: highest Pact tier (active-Trial count, 0..N) a run has
         // CLEARED (3-boss victory) per character id — the "can't-farm" ladder.
         pactMastery: {},
@@ -277,12 +288,31 @@ export class SaveSystem {
                 : [],
         };
 
-        // Daily Road best-of-day: { day (int ≥ 0), best (int ≥ 0) }. Old saves
-        // lack the field → default { 0, 0 } (implicit migration, no version bump).
+        // Daily Road best-of-day: { day (int ≥ 0), best (int ≥ 0), prevBest,
+        // caseDay }. Old saves lack the field(s) → defaults (implicit
+        // migration, no bump).
         const drd = data.dailyRoad && typeof data.dailyRoad === 'object' ? data.dailyRoad : {};
         const dailyRoad = {
             day: Number.isInteger(drd.day) && drd.day > 0 ? drd.day : 0,
             best: Number.isFinite(drd.best) && drd.best > 0 ? Math.floor(drd.best) : 0,
+            prevBest: Number.isFinite(drd.prevBest) && drd.prevBest > 0 ? Math.floor(drd.prevBest) : 0,
+            caseDay: Number.isInteger(drd.caseDay) && drd.caseDay > 0 ? drd.caseDay : 0,
+        };
+
+        // Day streak: { day (int ≥ 0), count (int ≥ 0) }. Implicit-default field.
+        const dst = data.streak && typeof data.streak === 'object' ? data.streak : {};
+        const streak = {
+            day: Number.isInteger(dst.day) && dst.day > 0 ? dst.day : 0,
+            count: Number.isFinite(dst.count) && dst.count > 0 ? Math.floor(dst.count) : 0,
+        };
+
+        // Onboarding/staged-menu progress. A pre-update save (runs already
+        // recorded, no onboarding key) marks every tab as seen so veterans
+        // don't get 9 sudden "NEW" badges the day the staging ships.
+        const ALL_TABS = ['play', 'skills', 'attune', 'loadout', 'character', 'shop', 'battlepass', 'stats', 'settings'];
+        const dob = data.onboarding && typeof data.onboarding === 'object' ? data.onboarding : null;
+        const onboarding = {
+            tabsSeen: dob ? validateIdList(dob.tabsSeen, []) : (stats.runs > 0 ? [...ALL_TABS] : []),
         };
 
         // Pact Mastery: { [characterId]: highestClearedTier (non-negative int) }.
@@ -314,7 +344,7 @@ export class SaveSystem {
             }
         }
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, pactMastery, discoveredRelics, relicAttunement, version: 7 };
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, version: 7 };
     }
 
     save() {
@@ -637,17 +667,69 @@ export class SaveSystem {
     }
 
     // ── Daily Road best-of-day ───────────────────────────────────────────
-    // Bank a curated-daily-run score for `day`, auto-resetting the record when the
-    // day rolls (mirrors getDailyState). Returns true if it's a new best today.
+    // Bank a curated-daily-run score for `day`, auto-resetting the record when
+    // the day rolls (mirrors getDailyState). The roll stashes YESTERDAY's best
+    // into prevBest (only when the old record is exactly day-1, so a stale
+    // record never masquerades as "yesterday") and carries caseDay across (a
+    // past day's latch can never match today, so it's harmless). Returns
+    // { best: new-best-today?, firstToday: first daily score of this day? }.
     recordDailyRoadScore(day, score) {
-        if (!this.data.dailyRoad || typeof this.data.dailyRoad !== 'object' || this.data.dailyRoad.day !== day) {
-            this.data.dailyRoad = { day, best: 0 };
+        const old = this.data.dailyRoad;
+        const firstToday = !old || typeof old !== 'object' || old.day !== day;
+        if (firstToday) {
+            this.data.dailyRoad = {
+                day, best: 0,
+                prevBest: (old && old.day === day - 1) ? (old.best ?? 0) : 0,
+                caseDay: (old && old.caseDay) || 0,
+            };
         }
         const v = Math.max(0, Math.floor(score || 0));
         let best = false;
         if (v > this.data.dailyRoad.best) { this.data.dailyRoad.best = v; best = true; }
         this.save();
-        return best;
+        return { best, firstToday };
+    }
+
+    // Once-a-day Daily Road free-case latch: returns true only the FIRST call
+    // for `day` (Game grants the first-CLEAR-of-day Ember case on it — see
+    // _bankDailyRoad). Persisted on dailyRoad.caseDay, so a failed attempt
+    // before the clear never burns the day's case.
+    claimDailyRoadCase(day) {
+        if (!Number.isInteger(day) || day <= 0) return false;
+        if (!this.data.dailyRoad || typeof this.data.dailyRoad !== 'object') {
+            this.data.dailyRoad = { day: 0, best: 0, prevBest: 0, caseDay: 0 };
+        }
+        if (this.data.dailyRoad.caseDay === day) return false;
+        this.data.dailyRoad.caseDay = day;
+        this.save();
+        return true;
+    }
+
+    // ── Day streak (celebratory only — never punishes) ───────────────────
+    // Marks `day` as played and returns the streak length. Consecutive days
+    // extend it; a gap restarts at 1; same-day calls are idempotent.
+    recordDayStreak(day) {
+        if (!Number.isInteger(day) || day <= 0) return 0;
+        if (!this.data.streak || typeof this.data.streak !== 'object') this.data.streak = { day: 0, count: 0 };
+        const st = this.data.streak;
+        if (st.day === day) return st.count;
+        st.count = st.day === day - 1 ? (st.count ?? 0) + 1 : 1;
+        st.day = day;
+        this.save();
+        return st.count;
+    }
+
+    // ── Staged menu tabs ─────────────────────────────────────────────────
+    // Acknowledge a tab's one-time "NEW" badge (recorded on first open).
+    markTabSeen(id) {
+        if (typeof id !== 'string' || !id) return;
+        if (!this.data.onboarding || typeof this.data.onboarding !== 'object') {
+            this.data.onboarding = { tabsSeen: [] };
+        }
+        const seen = this.data.onboarding.tabsSeen;
+        if (seen.includes(id)) return;
+        seen.push(id);
+        this.save();
     }
 
     // ── Gamble quota: 5 plays per rolling hour ───────────────────────────

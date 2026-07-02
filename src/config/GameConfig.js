@@ -983,10 +983,14 @@ export const ENDLESS_SCALING = {
     // (skill) doesn't stop the wall — it just buys more time against it. The mul is
     // clamped to hyperMulCap so the math can never overflow to Infinity/NaN.
     // Wall moved 13 → 20 min and softened 2.0 → 1.4×/min: the payoff loop
-    // (L8 base + evolution, realistically minute 9–12) now gets a real window
-    // to be PLAYED, and BOSS.hpPerMinute / CAPS — both tuned for 20–30-min
-    // builds — are live targets again. 1.4× still compounds to ~28× by minute
-    // 30, so the wall remains an inevitable end, just not a 2-minute cliff.
+    // (L8 base + evolution — Monte Carlo against the real UpgradeSystem/
+    // ChestRewards measures median ~min 13–14 when focused, ~16 typical, so
+    // it usually lands AFTER the ~min-12 boss-3 victory; pulling it earlier
+    // is P0.3, v1.3) now gets a real window to be PLAYED, and BOSS.hpPerMinute
+    // / CAPS — both tuned for 20–30-min builds — are live targets again. The
+    // wall window itself holds: 96–99.9% of evolving runs evolve before
+    // minute 20. 1.4× still compounds to ~28× by minute 30, so the wall
+    // remains an inevitable end, just not a 2-minute cliff.
     hyperStartMinutes: 20,
     hyperPerMinuteMul: 1.4,
     hyperMulCap: 1e6,
@@ -1335,3 +1339,8 @@ export const DEBUG_DEFAULT_ON = true;
 // ?dev=1 (e.g. the artshot harness or a local test URL). Guarded for non-DOM
 // environments (tools import config under node).
 export const DEV_MODE = typeof location !== 'undefined' && /[?&]dev=1(?:&|$)/.test(location.search);
+
+// First-run onboarding opt-out (?skipOnboarding=1): keeps harness/CI
+// screenshots deterministic — a fresh headless profile has runs === 0, which
+// would otherwise arm the guided-first-run hint sequence (see Game.js).
+export const SKIP_ONBOARDING = typeof location !== 'undefined' && /[?&]skipOnboarding=1(?:&|$)/.test(location.search);
