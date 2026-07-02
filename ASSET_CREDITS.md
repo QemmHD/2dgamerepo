@@ -209,3 +209,15 @@ until it loads.
 All world sprites load via never-rejecting loaders (`ObstacleSprites.js`,
 `DecorSprites.js`, `WorldTextures.js`); every consumer keeps its procedural
 drawing as the fallback, so a missing file can never break the game.
+
+### Special/support enemy roster — animated sheets
+
+| File | Source | Tool / Model | Notes |
+| --- | --- | --- | --- |
+| `src/assets/enemies/charger_anim.png` | Generated | higgsfield (Nano Banana 2) | Charging boar, 4-pose cycle (2×2 grid img2img from the procedural sprite, identity + palette locked; sliced via `strip-frames.mjs --anchor=bottom`). Procedural fallback kept. |
+| `src/assets/enemies/juggernaut_anim.png` | Generated | higgsfield (Nano Banana 2) | Armored slate behemoth, slow breath/step cycle. |
+| `src/assets/enemies/healer_anim.png` | Generated | higgsfield (Nano Banana 2) | Green-robed healer monk, chant/pray cycle. |
+| `src/assets/enemies/shielder_anim.png` | Generated | higgsfield (Nano Banana 2) | Hex-shield orb, brace/glint cycle. |
+| `src/assets/enemies/speed_demon_anim.png` | Generated | higgsfield (Nano Banana 2) | Dart-imp speedster, quill-angle flutter (no motion blur). |
+| `src/assets/enemies/dreadhulk_anim.png` | Generated | higgsfield (Nano Banana 2) | Dark slate hulk with ice-blue markings, ponderous cycle. |
+| `src/assets/enemies/brawler_anim.png` | Generated | higgsfield (Nano Banana 2) | Ape bruiser, fists/punch/slam cycle. |
