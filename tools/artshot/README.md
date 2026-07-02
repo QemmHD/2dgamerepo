@@ -41,6 +41,7 @@ CHROME=/opt/pw-browsers/chromium-1194/chrome-linux/chrome
 | `badge`   | –       | `1` stamps an `EXC:<n>` exception-count badge top-left         |
 | `screen`  | `run`   | `menu` shoots the main menu instead of a run                   |
 | `tab`     | `play`  | menu tab when `screen=menu`                                     |
+| `skipOnboarding` | `1` (forced) | the harness forces `1` (fresh profiles have `runs === 0`, which would arm the first-run hint pill over showcase shots); pass `0` to shoot the hints themselves |
 
 ## Notes
 
