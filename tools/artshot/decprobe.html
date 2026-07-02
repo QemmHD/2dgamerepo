@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>dec probe</title>
+<style>body{margin:0;background:#e0e}</style></head><body>
+<canvas id="c" width="1200" height="300"></canvas>
+<script type="module">
+// Throwaway: render exactly what the game's decoration resolver returns for
+// each type (after the AI load + cache clear), on magenta so any opaque
+// background is unmissable. PUTs the sheet.
+import { prewarmSprites, getDecorationSprite, clearDecorationCache } from '../../src/assets/ProceduralSprites.js';
+import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
+import { MAP } from '../../src/config/GameConfig.js';
+prewarmSprites();
+const ok = await loadDecorSprites();
+if (ok) clearDecorationCache();
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+ctx.fillStyle = '#dd00dd'; ctx.fillRect(0, 0, cv.width, cv.height);
+ctx.font = '12px monospace';
+let x = 10;
+for (const t of MAP.decorationTypes) {
+  const s = getDecorationSprite(t);
+  ctx.drawImage(s, x, 40);
+  ctx.fillStyle = '#000';
+  ctx.fillText(t + ' ' + s.width + 'x' + s.height, x, 30);
+  x += Math.max(90, s.width + 16);
+}
+cv.toBlob(async (b) => {
+  await fetch('/__save/decprobe.png', { method: 'PUT', body: b });
+  document.title = 'DONE ok=' + ok;
+});
+</script></body></html>

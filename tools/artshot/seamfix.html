@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>seamfix</title>
+<style>body{margin:0;background:#111;color:#9f9;font:13px monospace}</style></head><body>
+<pre id="log"></pre>
+<script type="module">
+// seamfix — make an AI-generated texture tile seamlessly: blend the image's
+// wrapped copy (offset by half) into the border bands so opposite edges become
+// continuous, then PUT the fixed tile plus a 3x3 tiled preview for eyeballing.
+// Query: img=<path>  size=<out px, default 512>  margin=<band px, default 28>
+//        sx,sy,sw,sh=<source crop, default full image>  out=<name>
+const q = new URLSearchParams(location.search);
+const log = (m) => document.getElementById('log').textContent += m + '\n';
+const SIZE = parseInt(q.get('size') || '512', 10);
+const M = parseInt(q.get('margin') || '28', 10);
+const OUT = q.get('out') || 'seamfixed';
+const img = new Image();
+img.onload = async () => {
+  const sx = parseInt(q.get('sx') || '0', 10), sy = parseInt(q.get('sy') || '0', 10);
+  const sw = parseInt(q.get('sw') || String(img.width), 10);
+  const sh = parseInt(q.get('sh') || String(img.height), 10);
+  // Base: cropped + scaled to SIZE.
+  const base = document.createElement('canvas');
+  base.width = SIZE; base.height = SIZE;
+  const bx = base.getContext('2d');
+  bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = 'high';
+  bx.drawImage(img, sx, sy, sw, sh, 0, 0, SIZE, SIZE);
+  // Wrapped copy: offset by half in both axes (edges of this ARE continuous
+  // across a tile repeat by construction).
+  const off = document.createElement('canvas');
+  off.width = SIZE; off.height = SIZE;
+  const ox = off.getContext('2d');
+  const H = SIZE / 2;
+  for (const [dx, dy] of [[-H,-H],[H,-H],[-H,H],[H,H]]) ox.drawImage(base, dx, dy);
+  // Edge mask: opaque at the borders, fading to transparent M px inward.
+  const mask = document.createElement('canvas');
+  mask.width = SIZE; mask.height = SIZE;
+  const mx = mask.getContext('2d');
+  mx.globalCompositeOperation = 'lighter';
+  const grads = [
+    [0, 0, M, 0], [SIZE, 0, SIZE - M, 0],   // left, right
+    [0, 0, 0, M], [0, SIZE, 0, SIZE - M],   // top, bottom
+  ];
+  for (const [x0, y0, x1, y1] of grads) {
+    const g = mx.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    mx.fillStyle = g;
+    mx.fillRect(0, 0, SIZE, SIZE);
+  }
+  // Apply the mask to the wrapped copy, then lay it over the base.
+  ox.globalCompositeOperation = 'destination-in';
+  ox.drawImage(mask, 0, 0);
+  bx.drawImage(off, 0, 0);
+  // 3x3 tiled preview.
+  const prev = document.createElement('canvas');
+  prev.width = SIZE * 3; prev.height = SIZE * 3;
+  const px = prev.getContext('2d');
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) px.drawImage(base, i * SIZE, j * SIZE);
+  for (const [cv, name] of [[base, OUT + '.png'], [prev, OUT + '_tiled.png']]) {
+    const blob = await new Promise((r) => cv.toBlob(r));
+    await fetch('/__save/' + name, { method: 'PUT', body: blob });
+    log('OK ' + name);
+  }
+  document.title = 'DONE';
+};
+img.onerror = () => { log('LOAD FAIL'); document.title = 'FAIL'; };
+img.src = '/' + q.get('img');
+</script></body></html>

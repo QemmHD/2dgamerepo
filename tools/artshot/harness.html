@@ -28,6 +28,8 @@
     seconds  game-time to simulate before the shot (default 12)
     badge    "1" stamps an EXC:<n> exception-count badge top-left (self-check)
     screen   "menu" to shoot the main menu instead of a run; with tab=<name>
+    tp       teleport before the shot: "building" (just south of the first
+             placed building, doorway in view) or "x,y" world coords
 -->
 <div id="stage"><canvas id="game"></canvas></div>
 <script type="module">
@@ -51,7 +53,9 @@ import { loadIconGlyphs } from '../../src/assets/CustomIcons.js';
 import { loadMonsterSprites } from '../../src/assets/MonsterSprites.js';
 import { loadEnemyAiSprites } from '../../src/assets/EnemySprites.js';
 import { loadHeroAiSprites } from '../../src/assets/HeroAiSprites.js';
-import { clearHeroFrameCache } from '../../src/assets/ProceduralSprites.js';
+import { clearHeroFrameCache, clearDecorationCache } from '../../src/assets/ProceduralSprites.js';
+import { loadObstacleSprites } from '../../src/assets/ObstacleSprites.js';
+import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
 import { Enemy } from '../../src/entities/Enemy.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 
@@ -84,7 +88,10 @@ async function boot() {
 
     prewarmSprites();
     for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
-    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites(), loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); })]);
+    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites(),
+        loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); }),
+        loadObstacleSprites(),
+        loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); })]);
 
     game = new Game({ renderer, input, loop });
     game.showDebug = false;          // no debug grid/HUD in the art frame
@@ -133,6 +140,21 @@ async function boot() {
                 ERR.push('frame ' + i + ': ' + String(e && e.stack || e));
                 break;
             }
+        }
+        // Teleport for close-ups (buildings live far from spawn), then settle
+        // a few frames so the camera catches up before the final render.
+        const TP = params.get('tp');
+        if (TP) {
+            try {
+                if (TP === 'building') {
+                    const b = game.obstacleSystem.obstacles.find((o) => o.type === 'buildingFloor');
+                    if (b) { game.player.x = b.x; game.player.y = b.y + 240; }
+                } else {
+                    const [tx, ty] = TP.split(',').map(Number);
+                    if (Number.isFinite(tx) && Number.isFinite(ty)) { game.player.x = tx; game.player.y = ty; }
+                }
+                for (let i = 0; i < 30; i++) game.update(DT);
+            } catch (e) { ERR.push('tp: ' + String(e && e.stack || e)); }
         }
         game.render();
     }

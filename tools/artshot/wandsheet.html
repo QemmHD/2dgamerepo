@@ -33,7 +33,9 @@ import { loadIconGlyphs } from '../../src/assets/CustomIcons.js';
 import { loadMonsterSprites } from '../../src/assets/MonsterSprites.js';
 import { loadEnemyAiSprites } from '../../src/assets/EnemySprites.js';
 import { loadHeroAiSprites } from '../../src/assets/HeroAiSprites.js';
-import { clearHeroFrameCache } from '../../src/assets/ProceduralSprites.js';
+import { clearHeroFrameCache, clearDecorationCache } from '../../src/assets/ProceduralSprites.js';
+import { loadObstacleSprites } from '../../src/assets/ObstacleSprites.js';
+import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 
 const ERR = [];
@@ -52,7 +54,10 @@ async function boot() {
     const loop = new GameLoop({ update: (dt) => game.update(dt), render: () => game.render() });
     prewarmSprites();
     for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
-    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites(), loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); })]);
+    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites(),
+        loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); }),
+        loadObstacleSprites(),
+        loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); })]);
     game = new Game({ renderer, input, loop });
     game.showDebug = false;
     game._startRun();

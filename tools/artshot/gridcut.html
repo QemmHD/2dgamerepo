@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>gridcut</title>
+<style>body{margin:0;background:#111;color:#9f9;font:13px monospace}</style></head><body>
+<pre id="log"></pre>
+<script type="module">
+// gridcut — slice a 2x2 (or NxM) AI generation into per-cell game sprites.
+// Part of the artshot pipeline (serve repo root with serve.py, results PUT
+// back under __out/). Two modes per cell:
+//   trim: alpha-trim the cell (use AFTER key-sprite keyed the background),
+//         then fit into the target W×H canvas anchored bottom-center —
+//         matches how Obstacle.js / decor sprites are drawn (base at bottom).
+//   crop: opaque crop of the full cell scaled to exactly W×H (textures/decals).
+//   tile: like crop but from the WHOLE image (single-cell seamless textures).
+// Query:
+//   img=<path from server root>   e.g. __out/gridA.png
+//   cells=name:cx,cy,W,H,mode;... cx,cy = cell col,row (0-based) in a 2x2
+//   grid=CxR                      grid dims (default 2x2)
+//   pad=<px>                      inset per cell before trim (default 8)
+//   anchor=bottom|center          placement inside target box (default bottom)
+//   out=<prefix>                  output name prefix (default 'cut_')
+const q = new URLSearchParams(location.search);
+const log = (m) => document.getElementById('log').textContent += m + '\n';
+const IMG = q.get('img');
+const [GC, GR] = (q.get('grid') || '2x2').split('x').map(Number);
+const PAD = parseInt(q.get('pad') || '8', 10);
+const ANCHOR = q.get('anchor') || 'bottom';
+const PREFIX = q.get('out') || 'cut_';
+const CELLS = (q.get('cells') || '').split(';').filter(Boolean).map((s) => {
+  const [name, rest] = s.split(':');
+  const [cx, cy, w, h, mode] = rest.split(',');
+  return { name, cx: +cx, cy: +cy, w: +w, h: +h, mode: mode || 'trim' };
+});
+
+const img = new Image();
+img.onload = async () => {
+  const cw = Math.floor(img.width / GC), ch = Math.floor(img.height / GR);
+  for (const c of CELLS) {
+    const sx = c.mode === 'tile' ? 0 : c.cx * cw + PAD;
+    const sy = c.mode === 'tile' ? 0 : c.cy * ch + PAD;
+    const sw = c.mode === 'tile' ? img.width : cw - PAD * 2;
+    const sh = c.mode === 'tile' ? img.height : ch - PAD * 2;
+    const out = document.createElement('canvas');
+    out.width = c.w; out.height = c.h;
+    const ox = out.getContext('2d');
+    ox.imageSmoothingEnabled = true;       // area-average downscale
+    ox.imageSmoothingQuality = 'high';
+    if (c.mode === 'trim') {
+      // Read the cell, find the alpha bounding box, fit bottom/center.
+      const cell = document.createElement('canvas');
+      cell.width = sw; cell.height = sh;
+      const cx2 = cell.getContext('2d', { willReadFrequently: true });
+      cx2.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      const d = cx2.getImageData(0, 0, sw, sh).data;
+      let x0 = sw, y0 = sh, x1 = -1, y1 = -1;
+      for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+        if (d[(y * sw + x) * 4 + 3] > 24) {
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+      }
+      if (x1 < 0) { log('EMPTY ' + c.name); continue; }
+      const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+      const k = Math.min(c.w / bw, c.h / bh);
+      const dw = bw * k, dh = bh * k;
+      const dx = (c.w - dw) / 2;
+      const dy = ANCHOR === 'bottom' ? c.h - dh : (c.h - dh) / 2;
+      ox.drawImage(cell, x0, y0, bw, bh, dx, dy, dw, dh);
+    } else {
+      ox.drawImage(img, sx, sy, sw, sh, 0, 0, c.w, c.h);
+    }
+    const blob = await new Promise((r) => out.toBlob(r));
+    await fetch('/__save/' + PREFIX + c.name + '.png', { method: 'PUT', body: blob });
+    log('OK ' + c.name + ' ' + c.w + 'x' + c.h + ' mode=' + c.mode);
+  }
+  document.title = 'DONE';
+};
+img.onerror = () => { log('LOAD FAIL ' + IMG); document.title = 'FAIL'; };
+img.src = '/' + IMG;
+</script></body></html>
