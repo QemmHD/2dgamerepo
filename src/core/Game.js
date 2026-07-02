@@ -3914,6 +3914,17 @@ export class Game {
                 const S = strip.height;
                 const spanW = WORLD_WIDTH + S * 2, spanH = WORLD_HEIGHT + S * 2;
                 ctx.save();
+                // Out-of-bounds wash: everything beyond the playable rect
+                // drops a step darker BEFORE the fence draws, so the palisade
+                // clearly divides in from out instead of blending into the
+                // same ground texture on both sides. M covers the farthest
+                // the camera can peek past the edge.
+                const M = 1600;
+                ctx.fillStyle = 'rgba(6,5,10,0.42)';
+                ctx.fillRect(-hw - M, -hh - M, WORLD_WIDTH + M * 2, M);
+                ctx.fillRect(-hw - M, hh, WORLD_WIDTH + M * 2, M);
+                ctx.fillRect(-hw - M, -hh, M, WORLD_HEIGHT);
+                ctx.fillRect(hw, -hh, M, WORLD_HEIGHT);
                 ctx.fillStyle = pat;
                 // Top edge — wall stands ON the north boundary, rising outward.
                 ctx.save(); ctx.translate(-hw - S, -hh - S);
@@ -3927,6 +3938,17 @@ export class Game {
                 // Left edge (rotated 90° ccw: tips point outward/west).
                 ctx.save(); ctx.translate(-hw - S, hh + S); ctx.rotate(-Math.PI / 2);
                 ctx.fillRect(0, 0, spanH, S); ctx.restore();
+                // Contact shadow hugging the inside of the fence line —
+                // stepped translucent bands (cheap fills, no per-frame
+                // gradient) that ground the palisade and lift it off the
+                // identical ground texture inside.
+                ctx.fillStyle = 'rgba(0,0,0,0.10)';
+                for (const wd of [30, 18, 8]) {
+                    ctx.fillRect(-hw, -hh, WORLD_WIDTH, wd);
+                    ctx.fillRect(-hw, hh - wd, WORLD_WIDTH, wd);
+                    ctx.fillRect(-hw, -hh, wd, WORLD_HEIGHT);
+                    ctx.fillRect(hw - wd, -hh, wd, WORLD_HEIGHT);
+                }
                 ctx.restore();
                 return;
             }
