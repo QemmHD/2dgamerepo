@@ -1,0 +1,214 @@
+// UIStateBuilder — builds the per-frame UI snapshot Game hands to
+// UISystem.draw (P1.5 carve-out of Game._buildUIState). Pure read: it never
+// mutates game state, only assembles the screen-appropriate fields into a
+// fresh snapshot object (one per frame — same shape/cost as before the move).
+
+import { BOSS, CAPS, COMBO, COMPOSURE, MAX_WEAPON_SLOTS } from '../config/GameConfig.js';
+import { OBJECTIVE_COUNT } from '../content/objectives.js';
+import { WEAPONS, WEAPON_AURA } from '../content/weapons.js';
+import { currentDayNumber } from '../content/dailyChallenges.js';
+import { keystoneBreadcrumbs } from '../content/keystones.js';
+import { findEligibleEvolutions } from '../content/evolutions.js';
+
+export function buildUIState(game) {
+    // Fields every screen needs. Press/feedback animation state is
+    // always included so flashes can play across transitions.
+    const base = {
+        screen: game.screen,
+        showDebug: game.showDebug,
+        saveData: game.saveSystem.data,
+        pressFx: game.pressFx,
+        feedback: game.feedback,
+    };
+
+    // Start/shop screen: only the shop data is meaningful. Skip every
+    // gameplay snapshot + the per-frame evolution scan entirely.
+    if (game.screen === 'start') {
+        base.resetConfirming = game.resetConfirming;
+        base.resetConfirmTimer = game.resetConfirmTimer;
+        base.stats = game.saveSystem.data.stats;
+        // Menu state consumed by MenuRenderer.
+        base.menuTab = game.menuTab;
+        base.caseAnim = game.minigame.caseAnim;
+        base.menuToast = game.menuToastTimer > 0 ? game.menuToast : null;
+        base.gamblePlays = game.saveSystem.gamblePlaysInfo();
+        // "Vigil Endures": pre-run difficulty + active Trial modifiers.
+        base.difficulty = game.saveSystem.getDifficulty();
+        base.selectedModifiers = [...game.selectedModifiers];
+        base.selectedPatron = game.selectedPatron;
+        // Daily Road: today's best (for the menu's "best today" readout). Gated
+        // on the record's day so a new UTC day shows 0 until a run is played
+        // (the record self-resets on the first daily of the new day).
+        const _dr = game.saveSystem.data.dailyRoad;
+        const _today = currentDayNumber();
+        base.dailyRoadBest = (_dr && _dr.day === _today) ? (_dr.best ?? 0) : 0;
+        // Yesterday's best: either stashed at today's day-roll (prevBest) or,
+        // if no daily has run yet today, a record dated exactly yesterday.
+        base.dailyRoadPrevBest = _dr
+            ? (_dr.day === _today ? (_dr.prevBest ?? 0) : (_dr.day === _today - 1 ? (_dr.best ?? 0) : 0))
+            : 0;
+        // Day streak for the PLAY tab — alive if the last played day is
+        // today or yesterday (a yesterday-streak still extends by playing).
+        const _st = game.saveSystem.data.streak;
+        base.dayStreak = (_st && (_st.day === _today || _st.day === _today - 1)) ? (_st.count ?? 0) : 0;
+        return base;
+    }
+
+    // Gameplay + game-over share the HUD.
+    base.time = game.time;
+    base.player = game.player;
+    base.camera = game.camera;
+    base.kills = game.kills;
+    base.combo = game.combo;
+    base.comboTimer = game.comboTimer;
+    base.comboWindow = COMBO.window;
+    base.objectivesDone = game._objDone ? game._objDone.size : 0;
+    base.objectivesTotal = OBJECTIVE_COUNT;
+    base.objectivesCompleted = game._objCompleted || [];
+    base.enemyCount = game.enemies.length;
+    base.projectileCount = game.projectiles.length;
+    base.gemCount = game.gems.length;
+    base.coinCount = game.coins.length;
+    base.effectCount = game.weaponSystem.effects.length;
+    // Perf-HUD counters (only computed when the debug panel is open, since
+    // activeCount scans the particle pool).
+    base.enemyProjectileCount = game.enemyProjectiles.length;
+    base.hazardCount = game.hazards.length;
+    base.pickupCount = game.gems.length + game.coins.length + game.chests.length + game.healthOrbs.length;
+    base.particleCount = game.showDebug ? game.particles.activeCount() : 0;
+    base.ownedWeapons = game.weaponSystem.snapshotForUI();
+    // Ability cooldowns for the HUD pips: one entry per owned ABILITY
+    // (def.ability) with its remaining/total cooldown + ready state. Total
+    // uses the level's base cooldown × the player's cooldown multiplier so
+    // the fill matches what the ability actually uses.
+    const cdMul = game.player.cooldownMul ?? 1;
+    const abilityCds = [];
+    for (const w of game.weaponSystem.owned) {
+        const def = WEAPONS[w.id];
+        if (!def || !def.ability) continue;
+        const lvl = def.perLevel[w.level];
+        const total = Math.max(0.01, (lvl?.cooldown ?? 1) * cdMul);
+        const remaining = Math.max(0, w.timer ?? 0);
+        abilityCds.push({
+            id: w.id,
+            name: def.name,
+            color: (WEAPON_AURA[w.id] && WEAPON_AURA[w.id].color) || '#cdd8e6',
+            remaining,
+            total,
+            ready: remaining <= 0.001,
+        });
+    }
+    base.abilityCooldowns = abilityCds;
+    base.ownedPassives = game.passiveSystem.snapshotForUI();
+    base.runCoins = game.player.coins ?? 0;
+    base.chestLuck = game.player.chestLuck ?? 0;
+    base.waveState = game.waveState;
+    // Pressure-wave tracking for the HUD (live counters + 0..1 pressure).
+    base.wavePressure = game.waveState?.pressure ?? 0;
+    base.waveKills = game.waveDirector.killsThisWave ?? 0;
+    base.waveSpawned = game.waveDirector.spawnedThisWave ?? 0;
+    base.waveTimeIn = game.waveDirector.timeInWave ?? 0;
+    base.waveAnnouncement = game.waveDirector.announcement;
+    base.activeBoss = game.activeBossRef ? {
+        name: game.activeBossRef.name,
+        epithet: game.activeBossRef.epithet ?? null,
+        tier: game.activeBossRef.tier ?? null,
+        hp: game.activeBossRef.hp,
+        maxHp: game.activeBossRef.maxHp,
+        phase: game.activeBossRef.phase ?? 1,
+        enraged: !!game.activeBossRef.phase2Entered,
+        x: game.activeBossRef.x,
+        y: game.activeBossRef.y,
+    } : null;
+    base.bossWarning = game.bossWarning
+        ? { name: game.bossWarning.name, epithet: game.bossWarning.epithet ?? null,
+            tier: game.bossWarning.tier ?? null, t: 1 - game.bossWarning.timer / game.bossWarning.total }
+        : null;
+    // Lieutenant mini-boss: a small HP bar + its own warning tell.
+    base.activeLieutenant = game.activeLieutenantRef ? {
+        name: game.activeLieutenantRef.name,
+        hp: game.activeLieutenantRef.hp,
+        maxHp: game.activeLieutenantRef.maxHp,
+    } : null;
+    base.lieutenantWarning = game.lieutenantWarning
+        ? { t: 1 - game.lieutenantWarning.timer / game.lieutenantWarning.total }
+        : null;
+    base.chestCount = game.chests.length;
+    base.chestReward = game.chestReward;
+    base.pendingChests = game.pendingChests;
+    base.altar = game.altar;
+    base.pendingAltars = game.pendingAltars;
+    base.nextBossTime = game.bossDirector.getNextSpawnTime();
+    // Boss scheduler state for the debug panel: live count + why a spawn
+    // is/ isn't happening + when the next one is eligible.
+    const bossAliveNow = game.enemies.some((e) => e.active && e.boss);
+    base.bossActiveCount = game.enemies.reduce((n, e) => n + (e.active && e.boss ? 1 : 0), 0);
+    base.bossStatus = game.bossDirector.getStatus(game.time, bossAliveNow);
+    // Player power multipliers (debug): show the run's effective scaling.
+    base.playerDamageMul = game.player.damageMul;
+    base.playerCooldownMul = game.player.cooldownMul;
+    base.playerSpeed = game.player.speed;
+    base.playerXpMul = game.player.xpMultiplier;
+    base.playerPickupRange = game.player.pickupRange;
+    base.healPerSecondCap = CAPS.healPerSecond;
+    // Enemy + boss time-scaling readouts for late-game balancing.
+    base.minute = game.time / 60;
+    base.enemyHpMul = game.waveState?.healthMul ?? 1;
+    base.enemySpeedMul = game.waveState?.speedMul ?? 1;
+    base.enemyDamageMul = game.waveState?.damageMul ?? 1;
+    // Composure (skill-adaptive relief): the meter, the endless surcharge it
+    // gates against, and the resulting incoming-damage cut currently in effect.
+    base.composure = game.player.composure ?? 1;
+    base.endlessSurcharge = game.player.endlessSurcharge ?? 0;
+    base.composureRelief = COMPOSURE.enabled
+        ? COMPOSURE.maxRelief * (game.player.composure ?? 1) * (game.player.endlessSurcharge ?? 0)
+        : 0;
+    base.hyperMul = game.waveState?.hyperMul ?? 1;
+    base.bossHpMul = Math.min(1 + (game.time / 60) * BOSS.hpPerMinute, BOSS.maxHpMul);
+    base.bossResist = Math.min((game.time / 60) * BOSS.resistPerMinute, BOSS.maxResist);
+    base.ownedWeaponCount = game.weaponSystem.owned.length;
+    // Slot cap (P0.3): the level-up overlay renders "SLOTS n/cap".
+    base.weaponSlotCap = MAX_WEAPON_SLOTS;
+    // Debug-only; reduce (not filter) to avoid a per-frame array alloc.
+    base.evolvedWeaponCount = game.showDebug
+        ? game.weaponSystem.owned.reduce((n, w) => n + (WEAPONS[w.id]?.evolved ? 1 : 0), 0)
+        : 0;
+    base.auraStyle = game._auraSnapshot ? game._auraSnapshot.label : '';
+    base.auraIntensity = game._auraSnapshot ? game._auraSnapshot.intensity : 0;
+    base.auraRadius = game._auraSnapshot ? game._auraSnapshot.radius : 0;
+    // Only the debug panel shows this, and the scan walks every
+    // evolution every frame — so only pay for it when debug is on.
+    base.eligibleEvolutionCount = game.showDebug ? findEligibleEvolutions(game).length : 0;
+    base.spawnTimer = game.spawner.timer;
+    base.spawnInterval = game.spawner.nextInterval;
+    base.inContact = game.collisionSystem.inContact;
+    base.upgradeChoices = game.upgradeChoices;
+    base.upgradeCounts = game.upgradeSystem.appliedCounts;
+    base.pendingLevelUps = game.pendingLevelUps;
+    // Keystone breadcrumbs (only while the level-up overlay is up): which
+    // recipe-gated capstones are one piece short, so the screen can hint
+    // what to build toward. Cheap; computed only during a level-up.
+    if (game.upgradeChoices) {
+        const counts = game.upgradeSystem.appliedCounts;
+        base.keystoneHints = keystoneBreadcrumbs(game, (id) => (counts[`keystone:${id}`] ?? 0) >= 1, 2);
+    }
+    base.levelUpAge = game.levelUpAge;
+    // First-run onboarding: the active gameplay hint pill (null when done/
+    // veteran) + the extra reassurance line on the first level-up overlay.
+    base.onboardingHint = game._onboardingHintText();
+    base.onboardingLevelUp = !!(game.onboarding && game.onboarding.step >= 3 && game.upgradeChoices);
+    base.gameOver = game.gameOver;
+    base.gameOverAge = game.gameOverAge;
+    base.bossesDefeated = game.bossesDefeated;
+    base.runSummary = game.runSummary;
+    base.newBest = game.newBest;
+    // Battle-pass XP from this run (set in _enterGameOver) — the game-over
+    // summary draws it, so the meta reward is VISIBLE, not silently banked.
+    base.bpResult = game.bpResult;
+    base.paused = game.paused;
+    base.shakeEnabled = game.shakeEnabled;
+    base.rerolls = game.rerolls;
+    base.banishes = game.banishes;
+    base.alters = game.alters;
+    return base;
+}
