@@ -929,7 +929,7 @@ export class MenuRenderer {
         const innerX = rx + 28, innerW = rw - 56;
         this._panel(ctx, rx, c.y, rw, c.h, null, undefined, { corners: true });
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 24px ${FONT}`;
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 24px ${HEAD}`;
         ctx.fillText('Equipped Loadout', innerX, c.y + 38);
 
         const eq = save.gear.equipped;
@@ -995,7 +995,7 @@ export class MenuRenderer {
         y += sec - gearGap;
 
         // Biome selector.
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(20)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(20)}px ${HEAD}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillText('Biome', innerX, y + lbl * 0.72);
         y += lbl;
         const bw = (innerW - 14 * (MAP_ORDER.length - 1)) / MAP_ORDER.length;
@@ -1046,7 +1046,7 @@ export class MenuRenderer {
         y += diffRow + sec;
 
         // Difficulty row (3 tiers).
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${HEAD}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillText('Difficulty', innerX, y + lbl * 0.72);
         y += lbl;
         const dW = (innerW - 20) / 3;
@@ -1111,7 +1111,7 @@ export class MenuRenderer {
         const dDone = dState.day === dDay && Array.isArray(dState.completed) ? dState.completed : [];
         const dChs = pickDailyChallenges(dDay);
         const dGotN = dChs.filter((cc) => dDone.includes(cc.id)).length;
-        ctx.fillStyle = '#ffd479'; ctx.font = `800 ${fs(19)}px ${FONT}`;
+        ctx.fillStyle = '#ffd479'; ctx.font = `800 ${fs(19)}px ${HEAD}`;
         ctx.fillText(`Today's Trials  ${dGotN}/${dChs.length}`, innerX, y + lbl * 0.72);
         if ((state.dayStreak ?? 0) > 0) {
             ctx.textAlign = 'right'; ctx.fillStyle = '#ff9a4a'; ctx.font = `800 ${fs(17)}px ${FONT}`;
@@ -1234,7 +1234,7 @@ export class MenuRenderer {
         const dd = (state.saveData && state.saveData.daily) || { day: 0, completed: [] };
         const doneToday = dd.day === day && Array.isArray(dd.completed) ? dd.completed : [];
         const todays = pickDailyChallenges(day);
-        ctx.fillStyle = '#ffd479'; ctx.font = `800 30px ${FONT}`;
+        ctx.fillStyle = '#ffd479'; ctx.font = `800 30px ${HEAD}`;
         const doneN = todays.filter((cc) => doneToday.includes(cc.id)).length;
         ctx.fillText(`Today's Trials  ${doneN}/${todays.length}`, c.x + 34, c.y + 44);
         const dcGap = 14;
@@ -1259,7 +1259,7 @@ export class MenuRenderer {
         }
         const statsTop0 = dcTop + dcH + 22;
 
-        ctx.fillStyle = '#a8d5f7'; ctx.font = `800 34px ${FONT}`;
+        ctx.fillStyle = '#a8d5f7'; ctx.font = `800 34px ${HEAD}`;
         ctx.textAlign = 'left';
         ctx.fillText('Lifetime Vigil', c.x + 34, statsTop0 + 30);
         const fmtTime = (sec) => { sec = Math.floor(sec || 0); const m = Math.floor(sec / 60), ss = sec % 60; return `${m}:${String(ss).padStart(2, '0')}`; };
@@ -1298,7 +1298,7 @@ export class MenuRenderer {
         const claimed = (state.saveData && state.saveData.achievements && state.saveData.achievements.claimed) || [];
         const aTop = top + Math.ceil(rows.length / cols) * rowH + 16;
         const earnedN = ACHIEVEMENTS.filter((a) => claimed.includes(a.id)).length;
-        ctx.fillStyle = '#ffce54'; ctx.font = `800 24px ${FONT}`; ctx.textAlign = 'left';
+        ctx.fillStyle = '#ffce54'; ctx.font = `800 24px ${HEAD}`; ctx.textAlign = 'left';
         ctx.fillText(`Achievements  ${earnedN}/${ACHIEVEMENTS.length}`, c.x + 34, aTop);
         const acols = 4, agap = 14;       // 4 columns → 4 rows for 16 (fits short panels)
         const aW = (c.w - 68 - agap * (acols - 1)) / acols;
@@ -1512,7 +1512,7 @@ export class MenuRenderer {
 
         // Intro line — what this panel does (permanent, applied at run start).
         ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(255,158,207,0.92)'; ctx.font = `700 21px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,158,207,0.92)'; ctx.font = `700 21px ${HEAD}`;
         ctx.fillText('RELIC ATTUNEMENT', c.x, c.y + 4);
         ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 17px ${FONT}`;
         ctx.fillText('Spend coins for permanent, always-on relic bonuses — applied at the start of every run.', c.x, c.y + 28);
@@ -1958,7 +1958,7 @@ export class MenuRenderer {
         const featY = c.y + gridH + featGap;
         this._panel(ctx, c.x, featY, c.w, featH, 'rgba(24,18,34,0.92)', '#c08bff');
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#c08bff'; ctx.font = `800 22px ${FONT}`;
+        ctx.fillStyle = '#c08bff'; ctx.font = `800 22px ${HEAD}`;
         ctx.fillText('✦ FEATURED PRESTIGE', c.x + 24, featY + 30);
         ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 15px ${FONT}`;
         ctx.fillText('— earn the look', c.x + 360, featY + 29);
@@ -2039,7 +2039,7 @@ export class MenuRenderer {
 
         // Progress header + bar.
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`;
+        ctx.fillStyle = '#fff'; ctx.font = `700 30px ${HEAD}`;
         ctx.fillText(`Vigil Level ${prog.level} / ${BP_MAX_LEVEL}`, c.x, c.y + 20);
         ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `600 22px ${FONT}`;
         ctx.fillText(prog.atMax ? 'MAX' : `${prog.levelXp} / ${prog.levelNeed} XP`, c.x + c.w, c.y + 20);
@@ -2153,7 +2153,7 @@ export class MenuRenderer {
         // panel also disables the cheat actions for regular players.
         if (DEV_MODE) {
             y += 52;
-            ctx.fillStyle = '#ff8a5c'; ctx.font = `700 22px ${FONT}`;
+            ctx.fillStyle = '#ff8a5c'; ctx.font = `700 22px ${HEAD}`;
             ctx.fillText('CHEATS (testing)', innerX, y + 6);
             ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `500 17px ${FONT}`;
             ctx.fillText('Grant coins / unlock everything to test cases, gear & cosmetics.', innerX + 220, y + 6);
