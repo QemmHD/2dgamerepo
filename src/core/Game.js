@@ -1080,16 +1080,20 @@ export class Game {
     _onboardingHintText() {
         const ob = this.onboarding;
         if (!ob || this.gameOver) return null;
+        // Two plain-language lines each (split on \n by the HUD banner), written
+        // for someone new to games — every term is explained, not assumed.
         switch (ob.step) {
-            case 0: return 'Move — WASD / arrows, or drag the left half';
-            case 1: return 'Your wand fires on its own — focus on dodging';
-            case 2: return ob.seenGem ? 'Grab the glowing shards — they fuel your next level' : null;
+            case 0: return 'Move with the W A S D keys or the arrow keys (on a phone, drag the\nleft side of the screen). Enemies chase you — keep moving to stay safe.';
+            case 1: return 'Your wand attacks all by itself — you never press a button to fight.\nJust concentrate on steering away from the enemies.';
+            case 2: return ob.seenGem
+                ? 'Defeated enemies drop glowing shards. Walk over them to pick them up —\nthey fill the bar at the bottom that leads to your next "level up".'
+                : null;
             case 3: return null;  // rendered inside the level-up overlay
-            case 4: return 'Coins drop from tougher foes — they bank for the menu when the run ends';
-            case 5: return 'Chain kills quickly to build a COMBO — milestones pay bonus coins';
-            case 6: return 'Watch for Wick Shrines on the ground — stand on one to claim a relic';
-            case 7: return 'Survive to the BOSS — beat it for a chest; three bosses claims the biome';
-            case 8: return 'That\'s the loop: level up, grab relics, slay bosses. Fight on! 🔥';
+            case 4: return 'Tougher enemies drop coins. Coins are saved when the run ends, so you\ncan spend them back at base to get permanently stronger.';
+            case 5: return 'Defeat several enemies quickly in a row to build a "combo" (a kill\nstreak). Longer streaks reward you with bonus coins.';
+            case 6: return 'A glowing shrine can appear on the ground. Stand on it to choose a\n"relic" — a special power that lasts for the rest of this run.';
+            case 7: return 'A "boss" is a big, powerful enemy. Stay alive until it appears and\ndefeat it. Beating three bosses clears the whole area.';
+            case 8: return 'That\'s it: collect shards to level up, grab relics, and beat bosses.\nWhen your health runs out the run ends — then spend your coins. Good luck!';
             default: return null;
         }
     }

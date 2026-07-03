@@ -1405,15 +1405,21 @@ export class UISystem {
             const done = lesson.done;
             const accent = done ? '#5fd36a' : '#ffd166';
             const label = `TUTORIAL  ·  LESSON ${lesson.n} / ${lesson.total}`;
-            const body = done ? `✓  Nice!` : lesson.text;
+            // Hint text can be multi-line (\n): the non-gamer copy runs long, so
+            // it's authored as 1–2 lines and drawn line-by-line (fillText ignores
+            // \n). The done-flash is always a single short line.
+            const bodyLines = done ? ['✓  Nice!'] : String(lesson.text).split('\n');
+            const bodyFontPx = done ? 27 : 22;
             ctx.save();
             ctx.textAlign = 'center';
-            ctx.font = `bold 27px ${FONT}`;
-            const bodyW = ctx.measureText(body).width;
+            ctx.font = `bold ${bodyFontPx}px ${FONT}`;
+            let bodyW = 0;
+            for (const ln of bodyLines) bodyW = Math.max(bodyW, ctx.measureText(ln).width);
             const cw = Math.max(bodyW + 72, 420);
-            const chh = 92;
+            const lineGap = 27;
+            const chh = 74 + bodyLines.length * lineGap;
             const cx0 = INTERNAL_WIDTH / 2 - cw / 2;
-            const y0 = INTERNAL_HEIGHT - 200 - sa.bottom;   // clears the bottom bars
+            const y0 = INTERNAL_HEIGHT - chh - 108 - sa.bottom;   // clears the bottom bars
             // Card + pulsing accent border.
             roundRectPath(ctx, cx0, y0, cw, chh, 16);
             ctx.fillStyle = 'rgba(8,7,12,0.9)'; ctx.fill();
@@ -1437,10 +1443,13 @@ export class UISystem {
                     : i === lesson.n - 1 ? accent : 'rgba(255,255,255,0.22)';
                 ctx.fill();
             }
-            // The lesson line (or ✓ Nice! on the done-flash).
-            ctx.font = `bold 27px ${FONT}`;
+            // The lesson line(s) (or ✓ Nice! on the done-flash).
+            ctx.font = `bold ${bodyFontPx}px ${FONT}`;
             ctx.fillStyle = done ? '#c9f5cf' : '#ffe9b0';
-            ctx.fillText(body, INTERNAL_WIDTH / 2, y0 + 70);
+            const bodyTop = y0 + 62;
+            for (let i = 0; i < bodyLines.length; i++) {
+                ctx.fillText(bodyLines[i], INTERNAL_WIDTH / 2, bodyTop + i * lineGap);
+            }
             ctx.restore();
             return;
         }
@@ -1568,9 +1577,13 @@ export class UISystem {
         // level-up so a new player commits instead of freezing at the choice.
         if (state.onboardingLevelUp) {
             ctx.fillStyle = '#ffd166';
-            ctx.font = `bold 27px ${FONT}`;
-            ctx.fillText('Your first pick! Every card makes you stronger — there are no wrong choices.',
-                INTERNAL_WIDTH / 2, 334);
+            ctx.font = `bold 25px ${FONT}`;
+            ctx.fillText('You "leveled up"! Collecting shards fills a bar; when it\'s full you pick one upgrade.',
+                INTERNAL_WIDTH / 2, 330);
+            ctx.font = `600 20px ${FONT}`;
+            ctx.fillStyle = 'rgba(255,233,176,0.9)';
+            ctx.fillText('Tap any card below — every one makes you stronger, so there are no wrong choices.',
+                INTERNAL_WIDTH / 2, 358);
         }
         ctx.globalAlpha = 1;
 
