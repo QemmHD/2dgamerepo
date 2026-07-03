@@ -1069,8 +1069,11 @@ export class Game {
         const ob = this.onboarding;
         if (!ob || this.gameOver) return null;
         const text = this._onboardingHintText();
-        if (!text) return null;
-        return { n: ob.step + 1, total: 9, text, done: !!ob.done };
+        // No banner unless there's a hint line — EXCEPT during the ✓ done-flash,
+        // which shows "✓ Nice!" regardless (some steps, e.g. shards, have a
+        // conditional hint that can be null the moment they complete).
+        if (!text && !ob.done) return null;
+        return { n: ob.step + 1, total: 9, text: text || '', done: !!ob.done };
     }
 
     // The active gameplay hint pill text (null when nothing should show).
