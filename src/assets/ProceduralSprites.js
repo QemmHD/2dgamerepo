@@ -137,6 +137,9 @@ export const PARTICLE_GLOW_COLORS = [
     // Elite halo gold (the cached additive elite ring) so the first elite
     // spawn never rasterizes its 128px glow mid-frame.
     '#ffd166',
+    // HUD under-glows: boss-name enrage red + the combo-streak tier colors,
+    // so the first enrage / hot streak never rasterizes a glow mid-combat.
+    '#ff2a1e', '#cde4ff', '#7fe0a0', '#ff9a4a', '#ff3df0',
 ];
 
 // ── Ground tile ────────────────────────────────────────────────────────

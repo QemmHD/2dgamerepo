@@ -79,6 +79,7 @@ import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 import { HazardSystem } from '../systems/HazardSystem.js';
 import { MinigameOverlay } from '../systems/MinigameOverlay.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
+import { TOUR_STEPS } from '../content/tutorialTour.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
@@ -162,6 +163,13 @@ export class Game {
         // Main-menu state: active tab + transient case-opening animation +
         // a short-lived toast for claim/case feedback.
         this.menuTab = 'play';
+        // Guided menu tour: { idx } while walking TOUR_STEPS, else null. While
+        // active, _menuAction only honors tourNext/tourSkip — the tour is fully
+        // guided. Armed on the first menu visit until save.onboarding.tourDone.
+        this.menuTour = null;
+        // Set by Settings' REPLAY TUTORIAL so the next run re-arms the in-run
+        // hint pills even on a veteran save (consumed by _startRun).
+        this._forceRunHints = false;
         // Transient pre-run "Trial" modifier selection (ids); never persisted.
         this.selectedModifiers = new Set();
         // Daily Road: when a run is launched via the DAILY ROAD menu button, this
@@ -229,6 +237,9 @@ export class Game {
                 }
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault();
+                    // While the guided tour is up, Space/Enter advances it
+                    // (matching the NEXT button) instead of launching a run.
+                    if (this.menuTour) { this._menuAction('tourNext', null); return; }
                     this.dailyMode = false;   // keyboard start is always a NORMAL run
                     this._startRun();
                 }
@@ -536,6 +547,10 @@ export class Game {
         // (MenuRenderer). ?skipOnboarding=1 keeps harness/CI shots on the menu.
         if (!SKIP_ONBOARDING && (this.saveSystem.data.stats?.runs ?? 0) === 0) {
             this._startRun();
+        } else if (!SKIP_ONBOARDING && !this.saveSystem.isTourDone()) {
+            // Booting onto the menu with the guided tour still owed (e.g. the
+            // player closed the game right after their first run) → resume it.
+            this._armMenuTour();
         }
     }
 
@@ -867,9 +882,11 @@ export class Game {
         // non-blocking hint sequence — move → auto-attack → shards → first
         // level-up pick — ticked by _tickOnboarding, drawn as a HUD pill by
         // UISystem. Never a modal wall; gameplay is untouched.
-        this.onboarding = (!SKIP_ONBOARDING && (this.saveSystem.data.stats?.runs ?? 0) === 0)
+        this.onboarding = (!SKIP_ONBOARDING
+            && ((this.saveSystem.data.stats?.runs ?? 0) === 0 || this._forceRunHints))
             ? { step: 0, timer: 0, moved: 0, armed: true }
             : null;
+        this._forceRunHints = false;   // Replay-Tutorial re-teach is one run only
         this.screen = 'gameplay';
         // Kick the driving gameplay theme (resume covers the keyboard-start path
         // where no menu tap fired yet).
@@ -901,14 +918,44 @@ export class Game {
         // Back at the menu, a Daily is over — clear the flag so the next launch
         // (button OR keyboard) is a normal run unless DAILY ROAD is chosen again.
         this.dailyMode = false;
+        // The guided menu tour fires on the first menu visit AFTER a recorded
+        // run (right when the guided first run ends) and re-fires until
+        // finished or skipped. The runs>=1 gate keeps a pause-quit of the very
+        // first run from touring before the run lesson is even complete.
+        if (!SKIP_ONBOARDING && !this.saveSystem.isTourDone()
+            && (this.saveSystem.data.stats?.runs ?? 0) >= 1) this._armMenuTour();
         this._updateJoystickEnabled();
     }
 
+    // ── Guided menu tour ─────────────────────────────────────────────────
+    // Fully guided walk over TOUR_STEPS: each step focuses one tab (switching
+    // to it + acknowledging its NEW badge, which is also what permanently
+    // unlocks the staged menu). While active, only Next/Skip are honored.
+    _armMenuTour() {
+        this.menuTour = { idx: 0 };
+        this._applyTourStep();
+    }
+
+    _applyTourStep() {
+        const step = TOUR_STEPS[this.menuTour?.idx];
+        if (!step) return;
+        this.menuTab = step.tab;
+        this.saveSystem.markTabSeen(step.tab);
+    }
+
+    _endMenuTour() {
+        this.menuTour = null;
+        this.saveSystem.setTourDone(true);
+        this.menuTab = 'play';
+    }
+
     // ── First-run onboarding (guided first run) ──────────────────────────
-    // Gentle in-run teach moments for a brand-new save: each step advances on
-    // its trigger, with a timeout so the sequence can never wedge (a player
-    // who ignores a hint still moves on). Step 3 (the level-up pick) is drawn
-    // inside the level-up overlay itself and completes in selectUpgrade.
+    // Teach moments for a brand-new save covering the WHOLE run loop: move →
+    // auto-attack → shards → first level-up pick → coins → combo → shrines →
+    // boss → send-off. Each step advances on its trigger, with a timeout so
+    // the sequence can never wedge (a player who ignores a hint still moves
+    // on). Step 3 (the level-up pick) is drawn inside the level-up overlay
+    // itself and advances in selectUpgrade.
     _tickOnboarding(dt) {
         const ob = this.onboarding;
         if (!ob || this.gameOver) return;
@@ -931,7 +978,29 @@ export class Game {
                     this._advanceOnboarding();
                 }
                 break;
-            default: break;  // step 3 waits on the first level-up pick
+            case 3: break;  // waits on the first level-up pick (selectUpgrade advances)
+            // Steps 4-7 hold a minimum 2.5s read time before their trigger can
+            // advance them — a trigger that's ALREADY true at step entry (e.g.
+            // coins seeded by the run-start-coins perk on a Replay-Tutorial run)
+            // would otherwise flash the pill for a single frame.
+            case 4:    // coins — advance once one is picked up (or read + move on)
+                if ((ob.timer > 2.5 && (this.player.coins ?? 0) > 0) || ob.timer > 10) this._advanceOnboarding();
+                break;
+            case 5:    // combo — advance on a real chain (or read + move on)
+                if ((ob.timer > 2.5 && this.combo >= 5) || ob.timer > 12) this._advanceOnboarding();
+                break;
+            case 6:    // shrines — the altar claim advances this (selectAltar path,
+                       // mirroring selectUpgrade — the overlay gate hides this.altar
+                       // from this tick), or read + move on.
+                if (ob.timer > 18) this._advanceOnboarding();
+                break;
+            case 7:    // the boss — advance when the warning fires (or read + move on)
+                if ((ob.timer > 2.5 && this.bossWarning) || ob.timer > 20) this._advanceOnboarding();
+                break;
+            case 8:    // send-off — linger long enough to read, then done for good
+                if (ob.timer > 7) this._advanceOnboarding();
+                break;
+            default: break;
         }
     }
 
@@ -939,6 +1008,8 @@ export class Game {
         if (!this.onboarding) return;
         this.onboarding.step += 1;
         this.onboarding.timer = 0;
+        // Past the send-off → the guided run is complete.
+        if (this.onboarding.step > 8) this.onboarding = null;
     }
 
     // The active gameplay hint pill text (null when nothing should show).
@@ -949,7 +1020,13 @@ export class Game {
             case 0: return 'Move — WASD / arrows, or drag the left half';
             case 1: return 'Your wand fires on its own — focus on dodging';
             case 2: return ob.seenGem ? 'Grab the glowing shards — they fuel your next level' : null;
-            default: return null;  // step 3 renders inside the level-up overlay
+            case 3: return null;  // rendered inside the level-up overlay
+            case 4: return 'Coins drop from tougher foes — they bank for the menu when the run ends';
+            case 5: return 'Chain kills quickly to build a COMBO — milestones pay bonus coins';
+            case 6: return 'Watch for Wick Shrines on the ground — stand on one to claim a relic';
+            case 7: return 'Survive to the BOSS — beat it for a chest; three bosses claims the biome';
+            case 8: return 'That\'s the loop: level up, grab relics, slay bosses. Fight on! 🔥';
+            default: return null;
         }
     }
 
@@ -1317,6 +1394,19 @@ export class Game {
         // every interaction a click sound.
         this.audio.resume();
         this.audio.click();
+        // Guided tour owns the menu while it's up: Next advances (finishing on
+        // the last step), Skip ends it, and every other action is swallowed so
+        // the player can't wander (or buy anything by accident) mid-lesson.
+        if (this.menuTour) {
+            if (action === 'tourNext') {
+                this.menuTour.idx += 1;
+                if (this.menuTour.idx >= TOUR_STEPS.length) this._endMenuTour();
+                else this._applyTourStep();
+            } else if (action === 'tourSkip') {
+                this._endMenuTour();
+            }
+            return;
+        }
         if (action !== 'resetSave' && action !== 'tab') this.resetConfirming = false;
         switch (action) {
             // Opening a tab acknowledges its one-time "NEW" badge (staged
@@ -1366,6 +1456,11 @@ export class Game {
                 break;
             }
             case 'caseContinue': this.minigame.dismissCase(); break;
+            case 'replayTutorial':
+                this.saveSystem.setTourDone(false);
+                this._forceRunHints = true;      // next run re-teaches the loop
+                this._armMenuTour();
+                break;
             case 'cheatCoins': this.saveSystem.addCoins(arg); this._setToast(`+${arg} coins`); break;
             case 'cheatUnlockAll': {
                 const n = this.saveSystem.cheatUnlockAll();
@@ -1497,8 +1592,9 @@ export class Game {
         if (!this.upgradeChoices) return;
         const upgrade = this.upgradeChoices[idx];
         if (!upgrade) return;
-        // First level-up pick made — the onboarding sequence is complete.
-        if (this.onboarding && this.onboarding.step >= 3) this.onboarding = null;
+        // First level-up pick made — move on to the meta lessons (coins,
+        // combo, shrines, boss). Later picks (step already past 3) don't reset.
+        if (this.onboarding && this.onboarding.step === 3) this._advanceOnboarding();
         this.upgradeSystem.apply(upgrade, this);
         this.audio.upgrade();
         this.setUpgradeChoices(null);
@@ -1563,6 +1659,10 @@ export class Game {
         if (!this.altar) return;
         const choice = this.altar.choices[idx];
         if (!choice) return;
+        // First shrine claimed — the shrine lesson is learned. (Event-driven,
+        // mirroring selectUpgrade: the overlay gate keeps _tickOnboarding from
+        // ever observing this.altar, so the tick can't do this itself.)
+        if (this.onboarding && this.onboarding.step === 6) this._advanceOnboarding();
         choice.apply(this);
         // Flavor-matched pick cues: fusion = forge slam, pact = dark bargain,
         // everything else keeps the standard upgrade chirp.

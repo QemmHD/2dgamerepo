@@ -434,18 +434,21 @@ export class UISystem {
         ctx.save();
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 14;
-        ctx.fillStyle = color;
+        // Cached tier-colored glow behind the streak text (replaces the last
+        // HUD per-frame shadowBlur) — breathes hotter with the streak pulse.
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        this._hudGlow(ctx, rx - 84, y, 90, color, 0.14 + 0.06 * (pulse - 1) / 0.06);
+        ctx.restore();
+        ctx.globalAlpha = 1;
         ctx.font = `900 ${Math.round(34 * pulse)}px ${FONT}`;
-        ctx.fillText(`${combo}× STREAK`, rx, y);
-        ctx.shadowBlur = 0;
-        // Draining window bar beneath the text (right-aligned).
+        this._textWithShadow(ctx, `${combo}× STREAK`, rx, y, color);
+        // Draining window bar beneath the text (right-aligned), in the same
+        // recessed glass gutter the HP/XP bars sit in.
         const barW = 168, barH = 6, bx = rx - barW, by = y + 22;
-        ctx.fillStyle = 'rgba(255,255,255,0.14)';
-        ctx.fillRect(bx, by, barW, barH);
-        ctx.fillStyle = color;
-        ctx.fillRect(bx + barW * (1 - frac), by, barW * frac, barH);
+        this._hudBarTrack(ctx, bx, by, barW, barH);
+        roundRectPath(ctx, bx + barW * (1 - frac), by, barW * frac, barH, 3);
+        ctx.fillStyle = color; ctx.fill();
         ctx.restore();
     }
 
@@ -573,14 +576,15 @@ export class UISystem {
         const pct = Math.max(0, Math.min(1, lt.hp / lt.maxHp));
         ctx.save();
         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-        ctx.fillStyle = '#ffc24a'; ctx.font = `700 15px ${FONT}`;
-        ctx.fillText('⚔ LIEUTENANT', INTERNAL_WIDTH / 2, barY - 4);
-        roundRectPath(ctx, barX, barY, barW, barH, 6);
-        ctx.fillStyle = 'rgba(10,8,10,0.78)'; ctx.fill();
-        roundRectPath(ctx, barX + 1.5, barY + 1.5, (barW - 3) * pct, barH - 3, 5);
-        ctx.fillStyle = '#ffb03a'; ctx.fill();
-        roundRectPath(ctx, barX, barY, barW, barH, 6);
-        ctx.strokeStyle = 'rgba(255,194,74,0.7)'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.font = `700 15px ${FONT}`;
+        // Dark underlayer so the label reads over bright terrain.
+        this._textWithShadow(ctx, '⚔ LIEUTENANT', INTERNAL_WIDTH / 2, barY - 4, '#ffc24a');
+        // Same recessed-gutter + gradient/gloss recipe as the boss bar, scaled
+        // down — the mini-boss reads as kin to the boss, not a flat strip.
+        this._hudBarTrack(ctx, barX, barY, barW, barH);
+        drawStatBar(ctx, barX, barY, barW, barH, pct,
+            { from: '#ff8c1a', to: '#ffc24a' },
+            { radius: 6, border: 'rgba(255,194,74,0.75)', borderWidth: 2 });
         ctx.restore();
     }
 
@@ -631,13 +635,18 @@ export class UISystem {
         }
         // Enrage retints the name + appends an ENRAGED tag so the phase-2
         // setpiece reads clearly even before the player notices faster attacks.
-        ctx.fillStyle = enraged ? '#ff3326' : '#ff6b6b';
+        // Cached ember under-glow (throbbing while enraged) replaces the old
+        // per-frame shadowBlur — this is the busiest moment on screen.
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const throb = enraged ? 0.6 + 0.4 * Math.sin((state.time ?? 0) * 6) : 1;
+        this._hudGlow(ctx, INTERNAL_WIDTH / 2, padTop - 18, enraged ? 70 : 52,
+            enraged ? '#ff2a1e' : '#ff5a4a', (enraged ? 0.22 : 0.10) * throb);
+        ctx.restore();
+        ctx.globalAlpha = easeOutCubic(this.bossSlideT);
         ctx.font = `bold 26px ${FONT}`;
-        ctx.shadowColor = enraged ? 'rgba(255,60,40,0.6)' : 'rgba(0,0,0,0.5)';
-        ctx.shadowBlur = enraged ? 12 : 6;
         const label = enraged ? `${boss.name.toUpperCase()} — ENRAGED` : boss.name.toUpperCase();
-        ctx.fillText(label, INTERNAL_WIDTH / 2, padTop - 6);
-        ctx.shadowBlur = 0;
+        this._textWithShadow(ctx, label, INTERNAL_WIDTH / 2, padTop - 6, enraged ? '#ff3326' : '#ff6b6b');
 
         drawStatBar(ctx, barX, padTop, barW, barH, pct,
             enraged ? { from: '#ff2a1e', to: '#ffae3c' } : { from: '#ff4757', to: '#ff8c40' },
