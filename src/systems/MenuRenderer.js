@@ -566,10 +566,30 @@ export class MenuRenderer {
         return { x: x0 + i * (tabW + gap), y: sa.top + 104, w: tabW, h: 62, accent: tabs[i].accent };
     }
 
+    // A downward-pointing "look here" chevron bouncing just outside a target
+    // rect on the given edge ('top' points DOWN at the rect from above; 'bottom'
+    // points UP at it from below). Gold, outlined, animated — the tour's arrow.
+    _drawTourArrow(ctx, rect, edge, t) {
+        const bounce = 5 + 5 * Math.sin(t * 6);
+        let ax, ay, dir;
+        if (edge === 'bottom') { ax = rect.x + rect.w / 2; ay = rect.y + rect.h + 26 + bounce; dir = -1; }
+        else { ax = rect.x + rect.w / 2; ay = rect.y - 26 - bounce; dir = 1; }
+        ctx.save();
+        ctx.fillStyle = '#ffe066'; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay + dir * 18);
+        ctx.lineTo(ax - 18, ay - dir * 8); ctx.lineTo(ax - 7, ay - dir * 8);
+        ctx.lineTo(ax, ay + dir * 4); ctx.lineTo(ax + 7, ay - dir * 8); ctx.lineTo(ax + 18, ay - dir * 8);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.restore();
+    }
+
     // ── GUIDED MENU TOUR OVERLAY ─────────────────────────────────────────
-    // Four dim bands leave the spotlit tab at full brightness, an animated
-    // accent ring marks it, and the lesson card carries title + lines +
-    // progress + NEXT / SKIP TOUR (the only live hotspots while touring).
+    // The screen dims with the spotlit tab AND the step's referenced control
+    // (START RUN / a buy button / a case…) cut out of the dim; each gets an
+    // animated accent ring + a bouncing "look here" arrow; the lesson card
+    // carries title + lines + progress + NEXT / SKIP TOUR (the only live
+    // hotspots while touring).
     _drawTourOverlay(ctx, state) {
         const tour = state.menuTour;
         const save = state.saveData || {};
@@ -577,15 +597,31 @@ export class MenuRenderer {
         const t = this._t || 0;
         const spot = this._tabRectFor(save, tour.tab);
         const m = 6; // spotlight margin around the tab chip
+        // The control this step points at (its hotspot was registered while the
+        // tab's content drew, just before this overlay). First match wins.
+        let ctrl = null;
+        if (tour.highlightAction) {
+            const hs = this.hotspots || [];
+            for (const r of hs) { if (r.action === tour.highlightAction) { ctrl = r; break; } }
+        }
+        // Build the dim as a full-screen fill with the spotlight rects cut out
+        // (even-odd), so BOTH the tab and the control read at full brightness.
+        const holes = [];
+        if (spot) holes.push({ x: spot.x - m, y: spot.y - m, w: spot.w + m * 2, h: spot.h + m * 2 });
+        if (ctrl) holes.push({ x: ctrl.x - 6, y: ctrl.y - 6, w: ctrl.w + 12, h: ctrl.h + 12 });
         ctx.save();
         ctx.fillStyle = 'rgba(4,3,3,0.72)';
+        if (holes.length && ctx.roundRect) {
+            ctx.beginPath();
+            ctx.rect(0, 0, W, H);
+            for (const hh of holes) ctx.roundRect(hh.x, hh.y, hh.w, hh.h, 14);
+            ctx.fill('evenodd');
+        } else {
+            ctx.fillRect(0, 0, W, H);   // no holes / no roundRect → flat dim
+        }
+        // Spotlit tab: glow + accent ring + a bouncing arrow pointing up at it.
         if (spot) {
             const sx = spot.x - m, sy = spot.y - m, sw = spot.w + m * 2, sh = spot.h + m * 2;
-            ctx.fillRect(0, 0, W, sy);                                  // above
-            ctx.fillRect(0, sy, sx, sh);                                // left
-            ctx.fillRect(sx + sw, sy, W - sx - sw, sh);                 // right
-            ctx.fillRect(0, sy + sh, W, H - sy - sh);                   // below
-            // Breathing accent ring + a soft glow so the spotlit tab POPS.
             const accent = spot.accent || '#ffce54';
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
@@ -594,16 +630,26 @@ export class MenuRenderer {
             ctx.restore();
             roundRectPath(ctx, sx, sy, sw, sh, 14);
             ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
-        } else {
-            ctx.fillRect(0, 0, W, H);
+            this._drawTourArrow(ctx, { x: sx, y: sy, w: sw, h: sh }, 'bottom', t);
+        }
+        // Highlighted control: pulsing green ring + a "look here" arrow above it.
+        if (ctrl) {
+            const rx = ctrl.x - 6, ry = ctrl.y - 6, rw = ctrl.w + 12, rh = ctrl.h + 12;
+            ctx.save();
+            ctx.globalAlpha = 0.7 + 0.3 * Math.sin(t * 5);
+            roundRectPath(ctx, rx, ry, rw, rh, 12);
+            ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 3.5; ctx.stroke();
+            ctx.restore();
+            this._drawTourArrow(ctx, { x: rx, y: ry, w: rw, h: rh }, 'top', t);
         }
 
-        // Lesson card.
+        // Lesson card — placed on the OPPOSITE half from a highlighted control
+        // so the card never covers the very thing it's pointing at.
         const lines = tour.lines || [];
         const cw = 900;
         const chh = 118 + lines.length * 30 + 86;
         const cx = W / 2 - cw / 2;
-        const cy = Math.min(H - chh - 60, 320);
+        const cy = (ctrl && ctrl.y < H * 0.5) ? (H - chh - 70) : Math.min(H - chh - 60, 300);
         this._panel(ctx, cx, cy, cw, chh, null, 'rgba(255,180,120,0.22)', { corners: true });
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ffd479';

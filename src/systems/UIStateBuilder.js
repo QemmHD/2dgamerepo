@@ -201,9 +201,12 @@ export function buildUIState(game) {
         base.keystoneHints = keystoneBreadcrumbs(game, (id) => (counts[`keystone:${id}`] ?? 0) >= 1, 2);
     }
     base.levelUpAge = game.levelUpAge;
-    // First-run onboarding: the active gameplay hint pill (null when done/
-    // veteran) + the extra reassurance line on the first level-up overlay.
-    base.onboardingHint = game._onboardingHintText();
+    // First-run onboarding: the tutorial banner snapshot (lesson n/total +
+    // text + ✓ done-flash; null when done/veteran), the world-space point the
+    // lesson is about (the HUD draws a chevron pointer over it), and the extra
+    // reassurance line on the first level-up overlay.
+    base.onboardingLesson = game._onboardingLessonState();
+    base.tutorialTarget = game._tutorialTarget || null;
     base.onboardingLevelUp = !!(game.onboarding && game.onboarding.step >= 3 && game.upgradeChoices);
     base.gameOver = game.gameOver;
     base.gameOverAge = game.gameOverAge;

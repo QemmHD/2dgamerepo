@@ -15,6 +15,7 @@ export const TOUR_STEPS = [
     {
         tab: 'play',
         title: 'Welcome to the Forge',
+        highlightAction: 'startRun',
         lines: [
             'This is your base camp. From here you pick a hero — each of the six',
             'monkeys has its own signature power — then a biome, an optional Patron,',
@@ -25,6 +26,7 @@ export const TOUR_STEPS = [
     {
         tab: 'skills',
         title: 'Skills — permanent power',
+        highlightAction: 'buyUpgrade',
         lines: [
             'Coins you bank from runs buy PERMANENT upgrade levels here: max HP,',
             'damage, crit, speed, XP gain and more. They apply to every future run.',
@@ -35,6 +37,7 @@ export const TOUR_STEPS = [
     {
         tab: 'shop',
         title: 'Shop — cases, forge & mines',
+        highlightAction: 'openCase',
         lines: [
             'Cases turn coins into gear and cosmetics. Every case shows its exact',
             'odds, and a pity counter guarantees a Rare+ before too long. The Ember',
@@ -90,6 +93,7 @@ export const TOUR_STEPS = [
     {
         tab: 'settings',
         title: 'Settings — comfort & control',
+        highlightAction: 'replayTutorial',
         lines: [
             'Audio volumes, screen shake, damage numbers, and a reduced-effects mode',
             'for weaker phones. You can REPLAY this tutorial from here any time —',

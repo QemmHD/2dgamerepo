@@ -959,14 +959,26 @@ export class Game {
     _tickOnboarding(dt) {
         const ob = this.onboarding;
         if (!ob || this.gameOver) return;
+        // Lesson-complete flash: hold the green ✓ banner for a beat before
+        // moving on, so the player SEES that what they just did was the lesson.
+        if (ob.done) {
+            ob.doneTimer -= dt;
+            this._tutorialTarget = null;   // stop pointing once the lesson lands
+            if (ob.doneTimer <= 0) this._advanceOnboarding();
+            return;
+        }
         ob.timer += dt;
+        // World-space pointer target for the current lesson — the HUD draws a
+        // bouncing chevron over it so the hint points AT the thing it teaches.
+        this._tutorialTarget = this._onboardingTarget();
         switch (ob.step) {
             case 0: {  // teach movement — advance once they've actually walked a bit
                 const dx = this.player.x - (ob.px ?? this.player.x);
                 const dy = this.player.y - (ob.py ?? this.player.y);
                 ob.px = this.player.x; ob.py = this.player.y;
                 ob.moved += Math.hypot(dx, dy);
-                if (ob.moved > 140 || ob.timer > 10) this._advanceOnboarding();
+                if (ob.moved > 140) this._completeOnboardingStep();
+                else if (ob.timer > 10) this._advanceOnboarding();
                 break;
             }
             case 1:    // the wand auto-fires — a beat to watch it happen
@@ -974,9 +986,8 @@ export class Game {
                 break;
             case 2:    // XP shards — wait for one to exist so the hint points at something
                 if (!ob.seenGem && this.gems.length > 0) { ob.seenGem = true; ob.timer = 0; }
-                if ((ob.seenGem && ob.timer > 6) || this.player.level > 1 || ob.timer > 20) {
-                    this._advanceOnboarding();
-                }
+                if ((ob.seenGem && ob.timer > 6) || this.player.level > 1) this._completeOnboardingStep();
+                else if (ob.timer > 20) this._advanceOnboarding();
                 break;
             case 3: break;  // waits on the first level-up pick (selectUpgrade advances)
             // Steps 4-7 hold a minimum 2.5s read time before their trigger can
@@ -984,10 +995,12 @@ export class Game {
             // coins seeded by the run-start-coins perk on a Replay-Tutorial run)
             // would otherwise flash the pill for a single frame.
             case 4:    // coins — advance once one is picked up (or read + move on)
-                if ((ob.timer > 2.5 && (this.player.coins ?? 0) > 0) || ob.timer > 10) this._advanceOnboarding();
+                if (ob.timer > 2.5 && (this.player.coins ?? 0) > 0) this._completeOnboardingStep();
+                else if (ob.timer > 10) this._advanceOnboarding();
                 break;
             case 5:    // combo — advance on a real chain (or read + move on)
-                if ((ob.timer > 2.5 && this.combo >= 5) || ob.timer > 12) this._advanceOnboarding();
+                if (ob.timer > 2.5 && this.combo >= 5) this._completeOnboardingStep();
+                else if (ob.timer > 12) this._advanceOnboarding();
                 break;
             case 6:    // shrines — the altar claim advances this (selectAltar path,
                        // mirroring selectUpgrade — the overlay gate hides this.altar
@@ -995,7 +1008,8 @@ export class Game {
                 if (ob.timer > 18) this._advanceOnboarding();
                 break;
             case 7:    // the boss — advance when the warning fires (or read + move on)
-                if ((ob.timer > 2.5 && this.bossWarning) || ob.timer > 20) this._advanceOnboarding();
+                if (ob.timer > 2.5 && this.bossWarning) this._completeOnboardingStep();
+                else if (ob.timer > 20) this._advanceOnboarding();
                 break;
             case 8:    // send-off — linger long enough to read, then done for good
                 if (ob.timer > 7) this._advanceOnboarding();
@@ -1004,12 +1018,62 @@ export class Game {
         }
     }
 
+    // The lesson's trigger fired: latch the ✓ state for a short beat (the
+    // banner turns green) before _tickOnboarding advances. Timeouts skip this
+    // — nothing was accomplished, so nothing flashes.
+    _completeOnboardingStep() {
+        const ob = this.onboarding;
+        if (!ob || ob.done) return;
+        ob.done = true;
+        ob.doneTimer = 1.1;
+    }
+
     _advanceOnboarding() {
         if (!this.onboarding) return;
         this.onboarding.step += 1;
         this.onboarding.timer = 0;
+        this.onboarding.done = false;
+        this._tutorialTarget = null;
         // Past the send-off → the guided run is complete.
         if (this.onboarding.step > 8) this.onboarding = null;
+    }
+
+    // World-space point the current lesson is ABOUT (nearest shard / coin /
+    // shrine, the live boss), or null. Cheap scans over capped arrays, only
+    // while the guided run is active.
+    _onboardingTarget() {
+        const ob = this.onboarding;
+        if (!ob) return null;
+        const nearest = (list) => {
+            let best = null, bd = Infinity;
+            for (const e of list) {
+                if (e.active === false) continue;
+                const d = (e.x - this.player.x) ** 2 + (e.y - this.player.y) ** 2;
+                if (d < bd) { bd = d; best = e; }
+            }
+            return best ? { x: best.x, y: best.y } : null;
+        };
+        switch (ob.step) {
+            case 2: return nearest(this.gems);
+            case 4: return nearest(this.coins);
+            case 6: return nearest(this.shrines);
+            case 7: return this.activeBossRef ? { x: this.activeBossRef.x, y: this.activeBossRef.y } : null;
+            default: return null;
+        }
+    }
+
+    // The full tutorial-banner snapshot for the HUD: lesson number/total, the
+    // hint text, and whether the ✓ done-flash is showing. Null when no banner
+    // should draw (no tutorial, dead, or the step teaches inside an overlay).
+    _onboardingLessonState() {
+        const ob = this.onboarding;
+        if (!ob || this.gameOver) return null;
+        const text = this._onboardingHintText();
+        // No banner unless there's a hint line — EXCEPT during the ✓ done-flash,
+        // which shows "✓ Nice!" regardless (some steps, e.g. shards, have a
+        // conditional hint that can be null the moment they complete).
+        if (!text && !ob.done) return null;
+        return { n: ob.step + 1, total: 9, text: text || '', done: !!ob.done };
     }
 
     // The active gameplay hint pill text (null when nothing should show).
@@ -1661,8 +1725,9 @@ export class Game {
         if (!choice) return;
         // First shrine claimed — the shrine lesson is learned. (Event-driven,
         // mirroring selectUpgrade: the overlay gate keeps _tickOnboarding from
-        // ever observing this.altar, so the tick can't do this itself.)
-        if (this.onboarding && this.onboarding.step === 6) this._advanceOnboarding();
+        // ever observing this.altar, so the tick can't do this itself.) The ✓
+        // flash shows for a beat once the overlay closes.
+        if (this.onboarding && this.onboarding.step === 6) this._completeOnboardingStep();
         choice.apply(this);
         // Flavor-matched pick cues: fusion = forge slam, pact = dark bargain,
         // everything else keeps the standard upgrade chirp.

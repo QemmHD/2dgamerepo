@@ -1353,29 +1353,94 @@ export class UISystem {
         ctx.restore();
     }
 
+    // Bouncing world-space pointer at the CURRENT lesson's subject (nearest
+    // shard / coin / shrine, or the boss): a pulsing ring + a chevron hovering
+    // above it when on-screen, or an edge arrow toward it when off-screen — so
+    // the tutorial literally points AT the thing it's talking about.
+    _drawTutorialPointer(ctx, state) {
+        const tgt = state.tutorialTarget;
+        const cam = state.camera;
+        if (!tgt || !cam) return;
+        const cx = INTERNAL_WIDTH / 2, cy = INTERNAL_HEIGHT / 2;
+        const sx = (tgt.x - cam.x) + cx;
+        const sy = (tgt.y - cam.y) + cy;
+        const t = performanceNowSafe() * 0.001;
+        const bounce = 4 + 4 * Math.sin(t * 6);
+        const m = 96;
+        ctx.save();
+        if (sx >= m && sx <= INTERNAL_WIDTH - m && sy >= m && sy <= INTERNAL_HEIGHT - m) {
+            const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+            ctx.strokeStyle = `rgba(255,224,120,${0.45 + 0.4 * pulse})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(sx, sy, 30 + 6 * pulse, 0, Math.PI * 2); ctx.stroke();
+            const chY = sy - 56 - bounce;   // chevron hovers above, points down
+            ctx.fillStyle = '#ffe066'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(sx, chY + 20); ctx.lineTo(sx - 17, chY - 6); ctx.lineTo(sx - 6, chY - 6);
+            ctx.lineTo(sx, chY + 4); ctx.lineTo(sx + 6, chY - 6); ctx.lineTo(sx + 17, chY - 6);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+        } else {
+            const ang = Math.atan2(sy - cy, sx - cx);
+            const ux = Math.cos(ang), uy = Math.sin(ang);
+            const tt = Math.min(Math.abs((cx - m) / (ux || 1e-6)), Math.abs((cy - m) / (uy || 1e-6)));
+            ctx.translate(cx + ux * tt, cy + uy * tt); ctx.rotate(ang);
+            ctx.fillStyle = '#ffe066'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(28, 0); ctx.lineTo(-14, -18); ctx.lineTo(-4, 0); ctx.lineTo(-14, 18);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        ctx.restore();
+    }
+
     _drawControlHint(ctx, state) {
         if (state.upgradeChoices || state.gameOver || state.chestReward || state.paused) return;
         const sa = this.renderer.safeArea;
-        // First-run onboarding pill takes this slot while active — a bigger,
-        // pulsing contextual teach moment (move → auto-attack → shards) fed by
-        // Game._tickOnboarding. It REPLACES the old permanent teach line.
-        if (state.onboardingHint) {
+        // First-run TUTORIAL banner — a framed, clearly-labelled "LESSON n/9"
+        // card with progress dots + a ✓ done-flash, plus a world pointer at the
+        // thing the lesson teaches. Fed by Game._onboardingLessonState. This is
+        // the guided first run; it REPLACES the old permanent teach line.
+        const lesson = state.onboardingLesson;
+        if (lesson) {
+            this._drawTutorialPointer(ctx, state);
             const t = performanceNowSafe() * 0.001;
-            // Sits clear ABOVE the HP/XP bars (which own the bottom ~90px).
-            const y = INTERNAL_HEIGHT - 160 - sa.bottom;
+            const done = lesson.done;
+            const accent = done ? '#5fd36a' : '#ffd166';
+            const label = `TUTORIAL  ·  LESSON ${lesson.n} / ${lesson.total}`;
+            const body = done ? `✓  Nice!` : lesson.text;
             ctx.save();
-            ctx.font = `bold 26px ${FONT}`;
-            const tw = ctx.measureText(state.onboardingHint).width;
-            const pw = tw + 56, ph = 52;
-            roundRectPath(ctx, INTERNAL_WIDTH / 2 - pw / 2, y - ph / 2, pw, ph, ph / 2);
-            ctx.fillStyle = 'rgba(10,8,14,0.78)'; ctx.fill();
-            ctx.globalAlpha = 0.6 + 0.35 * Math.sin(t * 4);
-            ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2.5; ctx.stroke();
-            ctx.globalAlpha = 1;
             ctx.textAlign = 'center';
+            ctx.font = `bold 27px ${FONT}`;
+            const bodyW = ctx.measureText(body).width;
+            const cw = Math.max(bodyW + 72, 420);
+            const chh = 92;
+            const cx0 = INTERNAL_WIDTH / 2 - cw / 2;
+            const y0 = INTERNAL_HEIGHT - 200 - sa.bottom;   // clears the bottom bars
+            // Card + pulsing accent border.
+            roundRectPath(ctx, cx0, y0, cw, chh, 16);
+            ctx.fillStyle = 'rgba(8,7,12,0.9)'; ctx.fill();
+            ctx.save();
+            ctx.globalAlpha = 0.7 + 0.3 * Math.sin(t * 4);
+            roundRectPath(ctx, cx0, y0, cw, chh, 16);
+            ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+            ctx.restore();
+            // "TUTORIAL · LESSON n/total" label strip.
             ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#ffe9b0';
-            ctx.fillText(state.onboardingHint, INTERNAL_WIDTH / 2, y + 1);
+            ctx.font = `700 15px ${FONT}`;
+            ctx.fillStyle = accent;
+            ctx.fillText(label, INTERNAL_WIDTH / 2, y0 + 20);
+            // Progress dots (done = green, current = accent, upcoming = faint).
+            const dn = lesson.total, dotsW = dn * 16;
+            for (let i = 0; i < dn; i++) {
+                const dx = INTERNAL_WIDTH / 2 - dotsW / 2 + i * 16 + 8;
+                ctx.beginPath();
+                ctx.arc(dx, y0 + 42, i === lesson.n - 1 ? 5 : 3.5, 0, Math.PI * 2);
+                ctx.fillStyle = i < lesson.n - 1 ? 'rgba(95,211,106,0.75)'
+                    : i === lesson.n - 1 ? accent : 'rgba(255,255,255,0.22)';
+                ctx.fill();
+            }
+            // The lesson line (or ✓ Nice! on the done-flash).
+            ctx.font = `bold 27px ${FONT}`;
+            ctx.fillStyle = done ? '#c9f5cf' : '#ffe9b0';
+            ctx.fillText(body, INTERNAL_WIDTH / 2, y0 + 70);
             ctx.restore();
             return;
         }
