@@ -6,6 +6,7 @@ import {
     SPRITE_SS,
     COMBO,
     BOSS_TIERS,
+    DEV_MODE,
 } from '../config/GameConfig.js';
 import { TWO_PI } from '../core/MathUtils.js';
 import {
@@ -1234,6 +1235,9 @@ export class UISystem {
     }
 
     _drawDebugButton(ctx, state) {
+        // Dev aid only (?dev=1): hidden from players, matching Game's gating
+        // of the tap hotspot — no faint HUD button invites a stray tap.
+        if (!DEV_MODE) return;
         const { x: btnX, y: btnY, w: btnW, h: btnH } = this.getDebugButtonRect();
         const press = this._pressAmt(state, 'dbg');
         const s = 1 - 0.05 * press;
@@ -1343,13 +1347,42 @@ export class UISystem {
     _drawControlHint(ctx, state) {
         if (state.upgradeChoices || state.gameOver || state.chestReward || state.paused) return;
         const sa = this.renderer.safeArea;
+        // First-run onboarding pill takes this slot while active — a bigger,
+        // pulsing contextual teach moment (move → auto-attack → shards) fed by
+        // Game._tickOnboarding. It REPLACES the old permanent teach line.
+        if (state.onboardingHint) {
+            const t = performanceNowSafe() * 0.001;
+            // Sits clear ABOVE the HP/XP bars (which own the bottom ~90px).
+            const y = INTERNAL_HEIGHT - 160 - sa.bottom;
+            ctx.save();
+            ctx.font = `bold 26px ${FONT}`;
+            const tw = ctx.measureText(state.onboardingHint).width;
+            const pw = tw + 56, ph = 52;
+            roundRectPath(ctx, INTERNAL_WIDTH / 2 - pw / 2, y - ph / 2, pw, ph, ph / 2);
+            ctx.fillStyle = 'rgba(10,8,14,0.78)'; ctx.fill();
+            ctx.globalAlpha = 0.6 + 0.35 * Math.sin(t * 4);
+            ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2.5; ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffe9b0';
+            ctx.fillText(state.onboardingHint, INTERNAL_WIDTH / 2, y + 1);
+            ctx.restore();
+            return;
+        }
+        // The old always-on teach line now retires after a few runs — veterans
+        // know how to move; new players get the onboarding pills above instead.
+        const runs = state.saveData?.stats?.runs ?? 0;
+        if (runs >= 3) return;
         ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillStyle = 'rgba(255,255,255,0.6)';
         ctx.font = `20px ${FONT}`;
+        // No dev-tool talk here: the debug pointer moved behind ?dev=1 (see
+        // MenuRenderer DEV_MODE) — a new player's teach line is play-only.
         ctx.fillText(
-            'WASD / Arrows  •  Touch left half to move  •  Tap DBG (or `) for debug',
+            'WASD / Arrows to move  •  Touch left half to move',
             INTERNAL_WIDTH / 2,
             INTERNAL_HEIGHT - 22 - sa.bottom
         );
@@ -1446,10 +1479,25 @@ export class UISystem {
 
         ctx.globalAlpha = bg;
         ctx.font = `34px ${FONT}`;
-        ctx.fillStyle = 'rgba(255,255,255,0.78)';
-        const sub = `Choose an upgrade  •  LV ${state.player.level}`
+        // Weapon/ability slot meter (P0.3): the ~5-slot loadout cap is a real
+        // draft constraint, so it reads right on the pick screen. The whole
+        // line turns amber once full — new-weapon cards have left the pool at
+        // that point, and the meter says why.
+        const slotsFull = state.weaponSlotCap && state.ownedWeaponCount >= state.weaponSlotCap;
+        ctx.fillStyle = slotsFull ? '#ffd166' : 'rgba(255,255,255,0.78)';
+        const slotText = state.weaponSlotCap
+            ? `  •  SLOTS ${state.ownedWeaponCount}/${state.weaponSlotCap}${slotsFull ? ' (FULL)' : ''}` : '';
+        const sub = `Choose an upgrade  •  LV ${state.player.level}${slotText}`
             + (state.pendingLevelUps > 0 ? `  (${state.pendingLevelUps + 1} pending)` : '');
         ctx.fillText(sub, INTERNAL_WIDTH / 2, 290);
+        // First-run onboarding: one warm reassurance line on the very first
+        // level-up so a new player commits instead of freezing at the choice.
+        if (state.onboardingLevelUp) {
+            ctx.fillStyle = '#ffd166';
+            ctx.font = `bold 27px ${FONT}`;
+            ctx.fillText('Your first pick! Every card makes you stronger — there are no wrong choices.',
+                INTERNAL_WIDTH / 2, 334);
+        }
         ctx.globalAlpha = 1;
 
         const rects = this.getLevelUpCardRects(choices.length);
@@ -1793,13 +1841,35 @@ export class UISystem {
             statsStartY + Math.ceil(stats.length / 2) * lineH + 20
         );
 
-        // Reward lines — celebrate what this run newly earned: completed daily
-        // trials, unlocked achievements, and any cosmetics those achievements
-        // granted (the grind payoff). Stacked + pulsing; the loadout lists below
-        // shift down only when more than one reward type fires (usually 0–1).
+        // Reward lines — celebrate what this run newly earned: battle-pass XP,
+        // completed daily trials, unlocked achievements, and any cosmetics those
+        // achievements granted (the grind payoff). Stacked + pulsing; the loadout
+        // lists below shift down only when more than one reward type fires.
         const rewardLines = [];
+        // Vigil (battle-pass) XP — earned every run, so the core meta reward is
+        // VISIBLE at death instead of silently banked (state.bpResult is set in
+        // Game._enterGameOver). A pass level-up gets an extra shout.
+        const bp = state.bpResult;
+        if (bp && bp.gained > 0) {
+            rewardLines.push({
+                text: bp.leveledUp
+                    ? `⬥ +${bp.gained} VIGIL XP → PASS LV ${bp.levelAfter} — LEVEL UP! ⬥`
+                    : `⬥ +${bp.gained} VIGIL XP → PASS LV ${bp.levelAfter} ⬥`,
+                color: '#ff5a8a',
+            });
+        }
+        // Daily Road payout — the curated daily always pays score-band coins,
+        // plus the first-clear-of-day free case (label carried on the summary).
+        if (summary.dailyRoadScore != null) {
+            let txt = `◆ DAILY ROAD ${summary.dailyRoadScore} — +${summary.dailyRoadCoins ?? 0} coins`;
+            if (summary.dailyRoadCase) txt += `  ·  case: ${summary.dailyRoadCase}`;
+            rewardLines.push({ text: txt + ' ◆', color: '#ff9ecf' });
+        }
         if (Array.isArray(summary.dailies) && summary.dailies.length)
             rewardLines.push({ text: `✦ DAILY TRIAL — ${summary.dailies.join('  ·  ')} ✦`, color: '#5fe87a' });
+        // Day streak — celebratory only, shown once it's actually a streak.
+        if ((summary.streak ?? 0) >= 2)
+            rewardLines.push({ text: `🔥 ${summary.streak}-DAY VIGIL STREAK 🔥`, color: '#ff9a4a' });
         if (Array.isArray(summary.achievements) && summary.achievements.length)
             rewardLines.push({ text: `★ ACHIEVEMENT — ${summary.achievements.join('  ·  ')} ★`, color: '#ffce54' });
         if (Array.isArray(summary.cosmeticUnlocks) && summary.cosmeticUnlocks.length)

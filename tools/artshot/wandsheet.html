@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>EMBERWAKE wand-hold sheet</title>
+<style>html,body{margin:0;background:#000}</style>
+</head>
+<body>
+<!--
+  Held-weapon verification sheet (dev tooling — NOT deployed). Boots the real
+  game, then forces every facing × pose combo on the live player (idle carry /
+  mid-walk carry / cast-aiming with fire flash) and composites a cropped
+  contact sheet, so a single PNG proves the wand rides the sprite's real paw
+  in every animation frame. PUTs the sheet back via serve.py /__save/.
+  Serve the repo ROOT: python3 tools/artshot/serve.py <port> .
+  then open /tools/artshot/wandsheet.html?out=wandsheet.png
+-->
+<div><canvas id="game"></canvas></div>
+<script type="module">
+window.AudioContext = undefined;
+window.webkitAudioContext = undefined;
+
+import { Renderer } from '../../src/systems/Renderer.js';
+import { GameLoop } from '../../src/core/GameLoop.js';
+import { Game } from '../../src/core/Game.js';
+import { Input } from '../../src/core/Input.js';
+import { KeyboardInput } from '../../src/core/KeyboardInput.js';
+import { TouchJoystick } from '../../src/core/TouchJoystick.js';
+import { prewarmSprites, getGlowSprite } from '../../src/assets/ProceduralSprites.js';
+import { loadLpcSprites } from '../../src/assets/LpcSprites.js';
+import { loadWorldTextures } from '../../src/assets/WorldTextures.js';
+import { loadIconGlyphs } from '../../src/assets/CustomIcons.js';
+import { loadMonsterSprites } from '../../src/assets/MonsterSprites.js';
+import { loadEnemyAiSprites } from '../../src/assets/EnemySprites.js';
+import { loadHeroAiSprites } from '../../src/assets/HeroAiSprites.js';
+import { clearHeroFrameCache, clearDecorationCache } from '../../src/assets/ProceduralSprites.js';
+import { loadObstacleSprites } from '../../src/assets/ObstacleSprites.js';
+import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
+import { WEAPON_AURA } from '../../src/content/weapons.js';
+
+const ERR = [];
+window.addEventListener('error', (e) => ERR.push(String(e.message || e.error || e)));
+const params = new URLSearchParams(location.search);
+const OUT = params.get('out') || 'wandsheet.png';
+const DT = 1 / 60;
+
+async function boot() {
+    const canvas = document.getElementById('game');
+    const renderer = new Renderer(canvas);
+    const keyboard = new KeyboardInput();
+    const touch = new TouchJoystick(renderer);
+    const input = new Input({ keyboard, touch });
+    let game;
+    const loop = new GameLoop({ update: (dt) => game.update(dt), render: () => game.render() });
+    prewarmSprites();
+    for (const k in WEAPON_AURA) getGlowSprite(WEAPON_AURA[k].color);
+    await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites(),
+        loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); }),
+        loadObstacleSprites(),
+        loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); })]);
+    game = new Game({ renderer, input, loop });
+    game.showDebug = false;
+    game._startRun();
+    game.player.damageTakenMul = 0;
+    // Short settle so the loadout visuals exist; kill spawned enemies so no
+    // overlap wanders into the crop.
+    for (let i = 0; i < 30; i++) {
+        try {
+            game.update(DT);
+            if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);
+        } catch (e) { ERR.push('settle ' + i + ': ' + String(e && e.stack || e)); break; }
+    }
+    game.enemies.length = 0;
+    game.projectiles.length = 0;
+    if (game.particles) game.particles.length = 0;
+
+    const p = game.player;
+    // Aim per facing for the cast row (roughly "ahead + a bit down" so the
+    // pivot in the raised fist is visible).
+    const AIMS = { down: 1.15, right: 0.15, left: Math.PI - 0.15, up: -1.35 };
+    const FACINGS = ['down', 'right', 'left', 'up'];
+    const MODES = [
+        { name: 'idle carry',  set: () => { p.moving = false; p.castTimer = 0; } },
+        { name: 'walk carry',  set: () => { p.moving = true; p.bobTimer = 0.19; p.castTimer = 0; } },
+        { name: 'walk carry 2',set: () => { p.moving = true; p.bobTimer = 0.36; p.castTimer = 0; } },
+        { name: 'CAST + fire', set: (f) => { p.moving = false; p.castTimer = 0.15; p.aimAngle = AIMS[f];
+                                             for (const v of (p.loadout || [])) if (v && v.isPrimary) v.fireFlash = 0.7; } },
+    ];
+
+    // Contact sheet: cols = facings, rows = modes. Crop a box around the
+    // player from the live canvas after each forced render.
+    const CROP = 330;                      // logical px around the player
+    const sheet = document.createElement('canvas');
+    const cell = 300, pad = 26;
+    sheet.width = pad + FACINGS.length * (cell + 6);
+    sheet.height = pad + MODES.length * (cell + 22);
+    const sx = sheet.getContext('2d');
+    sx.fillStyle = '#131313'; sx.fillRect(0, 0, sheet.width, sheet.height);
+    sx.font = 'bold 13px monospace';
+
+    for (let r = 0; r < MODES.length; r++) {
+        for (let c = 0; c < FACINGS.length; c++) {
+            const f = FACINGS[c];
+            p.facing = f;
+            p.hitFlashTimer = 0;
+            p.vx = f === 'left' ? -1 : f === 'right' ? 1 : 0;
+            p.vy = f === 'up' ? -1 : f === 'down' ? 1 : 0;
+            MODES[r].set(f);
+            try { game.render(); } catch (e) { ERR.push('render ' + f + ' ' + MODES[r].name + ': ' + String(e && e.stack || e)); }
+            // Player screen position: the camera keeps the player centred on
+            // the logical canvas; renderer.scale = device px per logical px.
+            const px = canvas.width / 2, py = canvas.height / 2;
+            const box = CROP * renderer.scale;
+            sx.imageSmoothingEnabled = false;
+            sx.drawImage(canvas, px - box / 2, py - box / 2, box, box,
+                pad + c * (cell + 6), pad + r * (cell + 22), cell, cell);
+            sx.fillStyle = '#8f8';
+            sx.fillText(f + ' — ' + MODES[r].name, pad + c * (cell + 6) + 4, pad + r * (cell + 22) + 14);
+        }
+    }
+    sx.fillStyle = ERR.length ? '#f44' : '#4f4';
+    sx.fillText('EXC: ' + ERR.length + (ERR.length ? ' | ' + ERR[0].slice(0, 90) : ''), pad, 16);
+    await new Promise((res) => sheet.toBlob(async (b) => {
+        await fetch('/__save/' + OUT, { method: 'PUT', body: b });
+        res();
+    }));
+    document.title = 'DONE EXC:' + ERR.length;
+}
+boot().catch((e) => { ERR.push('boot: ' + String(e && e.stack || e)); document.title = 'BOOTFAIL'; });
+</script>
+</body>
+</html>

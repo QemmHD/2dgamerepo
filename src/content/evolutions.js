@@ -53,12 +53,74 @@ export const EVOLUTIONS = [
         catalystName: 'Brightstone',
         chestRewardText: 'Wildpyre erupts.',
     },
+    // ── Armory pt. 1 (v1.3) ────────────────────────────────────────────
+    // The two evolutions the roster was MISSING (Stormwand, Frostmote) plus
+    // one for each of the four new weapon kinds — every base weapon now has
+    // an evolution to chase. Every catalyst below sits in ITS WEAPON'S OWN
+    // Patron pool (patrons.js): committing that Patron — the realistic path
+    // to a base at L8 in-window — favors the catalyst at ×2.6 too, instead
+    // of cutting it to the rival ×0.35 rate and starving the recipe.
+    {
+        id: 'stormsurge',
+        baseWeaponId: 'voltWand',
+        evolvedWeaponId: 'stormsurge',
+        requiredPassiveId: 'featherstep',
+        evolvedName: 'Stormsurge',
+        catalystName: 'Featherstep',
+        chestRewardText: 'Stormsurge crackles alive.',
+    },
+    {
+        id: 'winterveil',
+        baseWeaponId: 'frostmote',
+        evolvedWeaponId: 'winterveil',
+        requiredPassiveId: 'frostbiteCore',
+        evolvedName: 'Winterveil',
+        catalystName: 'Rimecore',
+        chestRewardText: 'Winterveil descends.',
+    },
+    {
+        id: 'twinfangCyclone',
+        baseWeaponId: 'ashfang',
+        evolvedWeaponId: 'twinfangCyclone',
+        requiredPassiveId: 'pyromancersTinder',
+        evolvedName: 'Twinfang Cyclone',
+        catalystName: 'Tinderheart',
+        chestRewardText: 'Twinfang Cyclone whirls.',
+    },
+    {
+        id: 'dawnfireRay',
+        baseWeaponId: 'kindleRay',
+        evolvedWeaponId: 'dawnfireRay',
+        requiredPassiveId: 'secondWind',
+        evolvedName: 'Dawnfire Ray',
+        catalystName: 'Rekindle',
+        chestRewardText: 'Dawnfire Ray ignites.',
+    },
+    {
+        id: 'ashquake',
+        baseWeaponId: 'emberMine',
+        evolvedWeaponId: 'ashquake',
+        requiredPassiveId: 'thorns',
+        evolvedName: 'Ashquake',
+        catalystName: 'Backdraft',
+        chestRewardText: 'Ashquake rumbles underfoot.',
+    },
+    {
+        id: 'wildfireWake',
+        baseWeaponId: 'wakefire',
+        evolvedWeaponId: 'wildfireWake',
+        requiredPassiveId: 'windBoots',
+        evolvedName: 'Wildfire Wake',
+        catalystName: 'Emberstride',
+        chestRewardText: 'Wildfire Wake spreads.',
+    },
 ];
 
 // Returns the subset of EVOLUTIONS the player is currently eligible for:
 // owns the base weapon at max level, owns the required passive (any level),
 // and hasn't already evolved this weapon.
 import { MAX_WEAPON_LEVEL } from '../config/GameConfig.js';
+import { WEAPONS } from './weapons.js';
 
 export function findEligibleEvolutions(game) {
     const ownedWeapons = new Map();
@@ -71,7 +133,10 @@ export function findEligibleEvolutions(game) {
         if (ownedWeapons.has(evo.evolvedWeaponId)) continue;
         const base = ownedWeapons.get(evo.baseWeaponId);
         if (!base) continue;
-        if (base.level < MAX_WEAPON_LEVEL) continue;
+        // Per-weapon cap, not the global one: abilities like Frostmote max at
+        // 5 (def.maxLevel), so the global-8 check would never let them evolve.
+        const baseMax = WEAPONS[evo.baseWeaponId]?.maxLevel ?? MAX_WEAPON_LEVEL;
+        if (base.level < baseMax) continue;
         if (!ownedPassives.has(evo.requiredPassiveId)) continue;
         eligible.push(evo);
     }

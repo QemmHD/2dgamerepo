@@ -6,6 +6,7 @@ import {
     ELEMENT,
     BOSS,
     BOSS_ATTACK,
+    LIEUTENANT,
     SPRITE_SIZE,
     HIT_FLASH_DURATION,
     KNOCKBACK,
@@ -56,7 +57,7 @@ import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
 const SPAWN_POP_DUR = 0.28;
 // Airborne creatures don't get a ground contact shadow (they'd read as
 // floating over their own shadow). Bosses draw their own presence shadow.
-const AIRBORNE_TYPES = new Set(['bat', 'mite']);
+const AIRBORNE_TYPES = new Set(['bat', 'mite', 'bomber', 'teleporter']);
 
 // Plain chasers within this range of the player get the "smarter" chase
 // (intercept lead + weave + obstacle steering). Far-off trash keeps the cheap
@@ -71,14 +72,22 @@ const FRAMES_BY_TYPE = {
     brute:           { get: () => getLpcFrames('orc'), hz: 7, directional: true },
     crawler:         { get: () => getEnemyAiFrames('crawler') || getMonsterFrames('crawler') || getCrawlerFrames(), hz: 9 },
     spitter:         { get: () => getEnemyAiFrames('spitter') || getMonsterFrames('spitter') || getSpitterFrames(), hz: 6 },
-    charger:         { get: getChargerFrames,         hz: 3 },
+    charger:         { get: () => getEnemyAiFrames('charger')    || getChargerFrames(),    hz: 3 },
     mite:            { get: () => getEnemyAiFrames('mite')    || getMonsterFrames('mite')    || getMiteFrames(),    hz: 12 },
-    juggernaut:      { get: getJuggernautFrames,      hz: 1.2 },
-    healer:          { get: getHealerFrames,          hz: 6 },
-    shielder:        { get: getShielderFrames,        hz: 3 },
-    speedDemon:      { get: getSpeedDemonFrames,       hz: 16 },
-    dreadhulk:       { get: getDreadhulkFrames,        hz: 1.1 },
-    brawler:         { get: getBrawlerFrames,          hz: 4 },
+    juggernaut:      { get: () => getEnemyAiFrames('juggernaut') || getJuggernautFrames(), hz: 1.2 },
+    healer:          { get: () => getEnemyAiFrames('healer')     || getHealerFrames(),     hz: 6 },
+    shielder:        { get: () => getEnemyAiFrames('shielder')   || getShielderFrames(),   hz: 3 },
+    speedDemon:      { get: () => getEnemyAiFrames('speedDemon') || getSpeedDemonFrames(), hz: 16 },
+    // P1.3 behavior types REUSE the canonical creature bodies (slime / bee /
+    // eyeball / bat) — identical fallback chains to their hosts, so the
+    // procedural drawers stay the safety net. Identity comes from behavior +
+    // the procedural tells in draw(), never from new art.
+    splitter:        { get: () => getEnemyAiFrames('slime')   || getMonsterFrames('slime')   || getSlimeFrames(),   hz: 5 },
+    bomber:          { get: () => getEnemyAiFrames('mite')    || getMonsterFrames('mite')    || getMiteFrames(),    hz: 14 },
+    summoner:        { get: () => getEnemyAiFrames('spitter') || getMonsterFrames('spitter') || getSpitterFrames(), hz: 5 },
+    teleporter:      { get: () => getEnemyAiFrames('bat')     || getMonsterFrames('bat')     || getBatFrames(),     hz: 11 },
+    dreadhulk:       { get: () => getEnemyAiFrames('dreadhulk')  || getDreadhulkFrames(),  hz: 1.1 },
+    brawler:         { get: () => getEnemyAiFrames('brawler')    || getBrawlerFrames(),    hz: 4 },
     // Imported LPC humanoid models — directional 8-frame walk cycles.
     skeleton:        { get: () => getLpcFrames('skeleton'),      hz: 9, directional: true },
     zombie:          { get: () => getLpcFrames('zombie'),        hz: 6, directional: true },
@@ -179,6 +188,12 @@ export class Enemy {
         this.dashDirY = 0;
         // Spitter bolt damage carries the elite contact-damage scaling.
         this.projectileDamage = (def.projectileDamage ?? 0) * dmgMul;
+        // Bomber self-detonation damage (same scaling); 0 for everyone else.
+        this.blastDamage = (def.blastDamage ?? 0) * dmgMul;
+        // Teleporter blink bookkeeping: where the last blink STARTED, so the
+        // Game can sparkle both ends of the jump.
+        this._blinkFromX = 0;
+        this._blinkFromY = 0;
 
         // Elite affix (rolled only on elites). Swift bumps speed; volatile /
         // splitting are handled by Game at the death site.
@@ -436,6 +451,69 @@ export class Enemy {
                 this._windupAimX = nx; this._windupAimY = ny;
                 this.attackTimer = this.def.chargeInterval;
             }
+        } else if (!frozen && this.behavior === 'bomber') {
+            // Kamikaze (P1.3): sprint straight in, then PLANT and wind up a
+            // self-detonation. The Game observes the windup transitions — it
+            // paints the blast circle (a delayedZone in the hazard pool) at
+            // plant time and pops the bee at commit, so both the dodge and
+            // the damage ride the proven boss-zone path.
+            this.attackTimer -= dt;
+            if (this.windupTimer > 0) {
+                this.windupTimer -= dt;
+                moveX = 0; moveY = 0; // planted — the telegraph must not drift
+                this._windupAimX = nx; this._windupAimY = ny;
+            } else if (this.attackTimer <= 0 && len <= this.def.triggerRange) {
+                this.windupTimer = this.def.windup;
+                this._windupAimX = nx; this._windupAimY = ny;
+                this.attackTimer = this.def.fireInterval;
+            }
+        } else if (!frozen && this.behavior === 'summoner') {
+            // Caller (P1.3): spitter-style spacing, then a channel windup.
+            // The call itself is fulfilled by Game (alive-cap gated).
+            const kd = this.def.keepDistance;
+            if (len < kd - 40) { moveX = -nx; moveY = -ny; }
+            else if (len > kd + 80) { moveX = nx; moveY = ny; }
+            else { moveX = 0; moveY = 0; }
+
+            this.attackTimer -= dt;
+            if (this.windupTimer > 0) {
+                this.windupTimer -= dt;
+                moveX = 0; moveY = 0; // braces while channeling the call
+                this._windupAimX = nx; this._windupAimY = ny;
+            } else if (this.attackTimer <= 0 && len <= this.def.fireRange) {
+                this.windupTimer = this.def.windup;
+                this._windupAimX = nx; this._windupAimY = ny;
+                this.attackTimer = this.def.fireInterval;
+            }
+        } else if (!frozen && this.behavior === 'teleporter') {
+            // Blink-bat (P1.3): chases normally, but at range it winds up a
+            // short pre-blink tell, then reappears FLANKING the player. The
+            // Game clamps + wall-resolves the landing spot right after this
+            // update, so a blink can never end inside cover.
+            this.attackTimer -= dt;
+            if (this.windupTimer > 0) {
+                this.windupTimer -= dt;
+                moveX = 0; moveY = 0; // holds still through the pre-blink tell
+                this._windupAimX = nx; this._windupAimY = ny;
+                if (this.windupTimer <= 0) {
+                    this._blinkFromX = this.x;
+                    this._blinkFromY = this.y;
+                    const a = Math.random() * TWO_PI;
+                    this.x = player.x + Math.cos(a) * this.def.blinkRadius;
+                    this.y = player.y + Math.sin(a) * this.def.blinkRadius;
+                }
+            } else if (this.attackTimer <= 0 &&
+                       len >= this.def.blinkMinRange && len <= this.def.blinkMaxRange) {
+                this.windupTimer = this.def.windup;
+                this._windupAimX = nx; this._windupAimY = ny;
+                this.attackTimer = this.def.fireInterval;
+            }
+        } else if (!frozen && this.behavior === 'lieutenant') {
+            // Lieutenant mini-boss (P1.3): default chase + a 2-move slice of
+            // the boss attack vocabulary (LIEUTENANT.attacks). Braces through
+            // a windup so the gold charge-arc tell reads clearly.
+            runLieutenantAI(this, dt, player, this._bossOut);
+            if (this.windupTimer > 0) { moveX = 0; moveY = 0; }
         } else if (!frozen && this.behavior === 'support') {
             // Healer/Shielder: hang back from the player (like a spitter) so it
             // survives to keep buffing the front line. Its aura effect itself is
@@ -500,7 +578,11 @@ export class Enemy {
         // ground telegraph it already painted (the shockwave commits at the
         // boss's live position, so drift would desync the warning ring). The
         // impulse is dropped, not banked, so it doesn't snap on release.
-        const bossPlanted = this.boss && (this.bossWindupTimer > 0 || this.activeAttack || this.bossDashTimer > 0);
+        // Lieutenants (and planted bombers) get the same treatment while
+        // winding up — their committed attack/blast must land on the spot
+        // that was telegraphed.
+        const bossPlanted = (this.boss && (this.bossWindupTimer > 0 || this.activeAttack || this.bossDashTimer > 0)) ||
+            ((this.lieutenant || this.behavior === 'bomber') && this.windupTimer > 0);
         if (bossPlanted) {
             this.knockbackVx = 0;
             this.knockbackVy = 0;
@@ -705,14 +787,58 @@ export class Enemy {
             ctx.stroke();
         }
 
-        // Attack wind-up telegraph (spitter shot / charger lunge): a charge arc
-        // that fills as the wind-up completes + a directional chevron toward the
-        // player, so a discrete attack reads and can be dodged. Bosses use their
-        // own ground telegraph (bossWindupTimer), so this only fires for the
-        // regular attackers. Pre-scale, procedural, timer-gated → free when idle.
-        if (!this.boss && this.windupTimer > 0 && this.def.windup > 0) {
-            const wp = clamp(1 - this.windupTimer / this.def.windup, 0, 1);
-            const warn = this.behavior === 'charger' ? '#ff6a3c'
+        // P1.3 behavior tells (all def/behavior-gated, so legacy types pay
+        // nothing; all strokes/cached blits, no gradients):
+        //   splitter   = a double ring — "two creatures in one".
+        //   summoner   = a slow-orbiting trio of call motes.
+        //   teleporter = a phase-shimmer ring (alpha flickers).
+        //   bomber     = a warm armed-payload glow (cached glow sprite).
+        if (this.def.splitInto) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = hexToHalo(this.def.tint || '#b48cff', 0.4);
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(0, 0, baseR * 0.62, 0, TWO_PI); ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, 0, baseR * 0.78, 0, TWO_PI); ctx.stroke();
+        } else if (this.behavior === 'summoner') {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = hexToHalo(this.def.tint || '#c97bff', 0.6);
+            const oa = this.animTimer * 1.8 + this.animOffset;
+            for (let k = 0; k < 3; k++) {
+                const a = oa + (k / 3) * TWO_PI;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * baseR * 0.85, Math.sin(a) * baseR * 0.85, 5, 0, TWO_PI);
+                ctx.fill();
+            }
+        } else if (this.behavior === 'teleporter') {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = hexToHalo(this.def.tint || '#7fe0ff', 0.25 + 0.3 * Math.abs(Math.sin(this.animTimer * 5 + this.animOffset)));
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(0, 0, baseR * 0.8, 0, TWO_PI); ctx.stroke();
+        } else if (this.behavior === 'bomber') {
+            const gr = baseR * 0.75;
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.22 + 0.16 * Math.sin(this.animTimer * 7 + this.animOffset);
+            ctx.drawImage(getGlowSprite('#ff9a4a'), -gr, -gr, gr * 2, gr * 2);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+        }
+
+        // Attack wind-up telegraph (spitter shot / charger lunge / the P1.3
+        // bomber plant, summoner channel, teleporter pre-blink, and lieutenant
+        // specials): a charge arc that fills as the wind-up completes + a
+        // directional chevron toward the player, so a discrete attack reads
+        // and can be dodged. Bosses use their own ground telegraph
+        // (bossWindupTimer), so this only fires for the regular attackers.
+        // Pre-scale, procedural, timer-gated → free when idle. Lieutenants
+        // carry their windup length per-attack (_ltWindupDur), not on def.
+        const wupTot = this.lieutenant ? this._ltWindupDur : this.def.windup;
+        if (!this.boss && this.windupTimer > 0 && wupTot > 0) {
+            const wp = clamp(1 - this.windupTimer / wupTot, 0, 1);
+            const warn = this.lieutenant ? '#ffc24a'
+                : this.behavior === 'charger' ? '#ff6a3c'
+                : this.behavior === 'bomber' ? '#ff9a3c'
+                : this.behavior === 'summoner' ? '#b48cff'
+                : this.behavior === 'teleporter' ? '#7fe0ff'
                 : this.behavior === 'spitter' ? '#c97bff' : '#ffcc4a';
             // Anchor on the collision radius (the creature's real size) so the
             // tell hugs the enemy rather than the padded sprite frame.
@@ -755,9 +881,10 @@ export class Enemy {
             const q = this.hitFlashTimer / HIT_FLASH_DURATION;
             sx *= 1 + 0.20 * q; sy *= 1 - 0.16 * q;
         }
-        // Wind-up anticipation: coil tighter (squat) as the attack nears release.
-        if (!this.boss && this.windupTimer > 0 && this.def.windup > 0) {
-            const wp = clamp(1 - this.windupTimer / this.def.windup, 0, 1);
+        // Wind-up anticipation: coil tighter (squat) as the attack nears
+        // release (wupTot covers lieutenants' per-attack windups too).
+        if (!this.boss && this.windupTimer > 0 && wupTot > 0) {
+            const wp = clamp(1 - this.windupTimer / wupTot, 0, 1);
             sx *= 1 + 0.10 * wp; sy *= 1 - 0.06 * wp;
         }
         // Non-bosses lean into their horizontal movement — reads as weight.
@@ -955,6 +1082,56 @@ function steerAround(x, y, dx, dy, radius, obs) {
         }
     }
     return { x: nx, y: ny };
+}
+
+// ── Lieutenant mini-boss AI (P1.3) ─────────────────────────────────────
+// A 2-move slice of the apex-boss vocabulary (kit + windup lengths live in
+// LIEUTENANT.attacks; Game._spawnLieutenant arms ltAttacks/ltTimers/_bossOut).
+// Mirrors runBossAI's timer → windup → commit shape with none of the
+// phase/enrage machinery, and commits through the SAME commitBossAttack
+// pipeline (hazard pool / enemy-bolt loop), so telegraphs, walls-block-
+// damage, and i-frames all behave exactly like a boss's. Range-gated so an
+// off-screen lieutenant can never bombard the player; the visible tell is
+// the standard trash charge-arc (gold) driven by windupTimer/_ltWindupDur.
+function runLieutenantAI(e, dt, player, out) {
+    if (!e.ltAttacks || !out) return;
+    const dx = player.x - e.x, dy = player.y - e.y;
+    if (e.windupTimer > 0) {
+        e.windupTimer -= dt;
+        // Track the player through the windup so the chevron tell stays honest.
+        const l = Math.hypot(dx, dy) || 1;
+        e._windupAimX = dx / l; e._windupAimY = dy / l;
+        if (e.windupTimer <= 0) {
+            e.windupTimer = 0;
+            commitBossAttack(e, e._ltActive, player, out);
+            e._ltActive = null;
+        }
+        return;
+    }
+    const range = LIEUTENANT.attackRange ?? 950;
+    const inRange = dx * dx + dy * dy <= range * range;
+    for (const atk of e.ltAttacks) {
+        // Cooldowns floor at ready-and-waiting (they don't bank negative
+        // time), then the attack fires as soon as the player is in range.
+        if (e.ltTimers[atk.id] > 0) e.ltTimers[atk.id] -= dt;
+        if (e.ltTimers[atk.id] <= 0 && inRange) {
+            e._ltActive = atk;
+            e._ltWindupDur = atk.windup;
+            e.windupTimer = atk.windup;
+            e.ltTimers[atk.id] = atk.cooldown;
+            const l = Math.hypot(dx, dy) || 1;
+            e._windupAimX = dx / l; e._windupAimY = dy / l;
+            // A slam's blast radius gets the boss-style ground warning ring
+            // (the other kinds paint their own hazard warns at commit). The
+            // owner ref lets HazardSystem PAUSE the ring while a freeze proc
+            // pauses this windup (lieutenants aren't freeze-exempt like
+            // bosses), so the ring and the commit can never desync.
+            if (atk.kind === 'shockwave' && out.hazards) {
+                out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: atk.rMax, age: 0, lifetime: atk.windup, active: true, owner: e });
+            }
+            break; // one windup at a time
+        }
+    }
 }
 
 function runBossAI(e, dt, player, out) {

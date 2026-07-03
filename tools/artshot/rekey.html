@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>rekey</title>
+<style>body{margin:0;background:#111;color:#9f9;font:13px monospace}</style></head><body>
+<pre id="log"></pre>
+<script type="module">
+// rekey — flood-fill the edge-connected NEAR-BLACK background of an AI grid to
+// pure WHITE, so black-background generations feed straight into
+// strip-frames.mjs (which keys near-white). No-op on white-background images.
+// Query: img=<path> out=<name.png> [thresh=48]
+const q = new URLSearchParams(location.search);
+const log = (m) => document.getElementById('log').textContent += m + '\n';
+const T = parseInt(q.get('thresh') || '48', 10);
+const img = new Image();
+img.onload = async () => {
+  const W = img.width, H = img.height;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(img, 0, 0);
+  const id = cx.getImageData(0, 0, W, H);
+  const d = id.data;
+  const dark = (i) => d[i] < T && d[i + 1] < T && d[i + 2] < T;
+  const seen = new Uint8Array(W * H);
+  const stack = [];
+  for (let x = 0; x < W; x++) { stack.push(x, 0, x, H - 1); }
+  for (let y = 0; y < H; y++) { stack.push(0, y, W - 1, y); }
+  let n = 0;
+  while (stack.length) {
+    const y = stack.pop(), x = stack.pop();
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const p = y * W + x;
+    if (seen[p]) continue;
+    seen[p] = 1;
+    if (!dark(p * 4)) continue;
+    d[p * 4] = 255; d[p * 4 + 1] = 255; d[p * 4 + 2] = 255; d[p * 4 + 3] = 255;
+    n++;
+    stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+  }
+  cx.putImageData(id, 0, 0);
+  const blob = await new Promise((r) => c.toBlob(r));
+  await fetch('/__save/' + (q.get('out') || 'rekeyed.png'), { method: 'PUT', body: blob });
+  log('OK flooded ' + n + ' px');
+  document.title = 'DONE';
+};
+img.onerror = () => { document.title = 'FAIL'; };
+img.src = '/' + q.get('img');
+</script></body></html>

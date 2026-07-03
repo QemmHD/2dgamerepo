@@ -31,11 +31,20 @@ const FILES = {};
 // palettes as the LPC sheets they fall back to), NOT re-themes: the classic
 // look, animated.
 const ANIM_SHEETS = {
-    slime:   { file: 'slime_anim.png',   cols: 4 },
-    bat:     { file: 'bat_anim.png',     cols: 4 },
-    crawler: { file: 'snake_anim.png',   cols: 4 },
-    spitter: { file: 'eyeball_anim.png', cols: 4 },
-    mite:    { file: 'bee_anim.png',     cols: 4 },
+    slime:      { file: 'slime_anim.png',       cols: 4 },
+    bat:        { file: 'bat_anim.png',         cols: 4 },
+    crawler:    { file: 'snake_anim.png',       cols: 4 },
+    spitter:    { file: 'eyeball_anim.png',     cols: 4 },
+    mite:       { file: 'bee_anim.png',         cols: 4 },
+    // Special/support roster (same 2×2-pose-grid recipe, identities and
+    // palettes locked to the original procedural designs).
+    charger:    { file: 'charger_anim.png',     cols: 4 },
+    juggernaut: { file: 'juggernaut_anim.png',  cols: 4 },
+    healer:     { file: 'healer_anim.png',      cols: 4 },
+    shielder:   { file: 'shielder_anim.png',    cols: 4 },
+    speedDemon: { file: 'speed_demon_anim.png', cols: 4 },
+    dreadhulk:  { file: 'dreadhulk_anim.png',   cols: 4 },
+    brawler:    { file: 'brawler_anim.png',     cols: 4 },
 };
 
 // Directional ANIMATED sheets — pre-rendered from a rigged+animated 3D model of

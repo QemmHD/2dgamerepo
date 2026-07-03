@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>alphacheck</title></head><body>
+<pre id="log"></pre>
+<script type="module">
+// alphacheck — report per-image transparency stats for keyed sprites (PUTs a
+// JSON report). Catches "keying silently failed" (opaque background) bugs the
+// eye can miss because viewers render transparency as white.
+// Query: imgs=<csv of paths from server root>&out=<name.json>
+const q = new URLSearchParams(location.search);
+const files = (q.get('imgs') || '').split(',').filter(Boolean);
+const OUT = q.get('out') || 'alphacheck.json';
+const report = {};
+for (const f of files) {
+  const img = new Image();
+  const ok = await new Promise((r) => { img.onload = () => r(true); img.onerror = () => r(false); img.src = '/' + f; });
+  if (!ok) { report[f] = { error: 'load failed' }; continue; }
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(img, 0, 0);
+  const d = cx.getImageData(0, 0, c.width, c.height).data;
+  let clear = 0, total = c.width * c.height, cornerA = [];
+  for (let i = 3; i < d.length; i += 4) if (d[i] < 16) clear++;
+  for (const [x, y] of [[0,0],[c.width-1,0],[0,c.height-1],[c.width-1,c.height-1]]) {
+    cornerA.push(d[(y * c.width + x) * 4 + 3]);
+  }
+  report[f] = { w: c.width, h: c.height, clearPct: Math.round(clear / total * 100), corners: cornerA };
+}
+await fetch('/__save/' + OUT, { method: 'PUT', body: JSON.stringify(report, null, 1) });
+document.getElementById('log').textContent = JSON.stringify(report, null, 1);
+document.title = 'DONE';
+</script></body></html>

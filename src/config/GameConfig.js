@@ -299,6 +299,80 @@ export const ENEMY = {
         shieldMul: 0.55,       // allies in range take 55% damage while shielded
         tint: '#7fd0ff',
     },
+    // ── P1.3 new trash behaviors (v1.4) ─────────────────────────────────
+    // All four REUSE the canonical creature bodies (PR #103 identities) with
+    // procedural tells — no new art, and the Enemy.js fallback chain is the
+    // same one their host creature already rides.
+    // Splitter: a swollen gel slime that BURSTS into two live slimelets on
+    // death — the pack you kill becomes the pack you didn't. No live
+    // behavior; the split resolves at the death site (Game._splitOnDeath),
+    // children are plain types so a split can never recurse.
+    splitter: {
+        hp: 74,
+        speed: 112,
+        radius: 62,
+        contactDamage: 12,
+        xpValue: 3,
+        visualScale: 1.22,
+        tint: '#b48cff',
+        splitInto: { type: 'slime', count: 2, hpFrac: 0.5 },
+    },
+    // Bomber: a kamikaze bee that sprints in, PLANTS, and detonates itself
+    // after a readable windup. The blast circle is painted as a delayedZone
+    // the moment it plants (Game pushes it into the hazard pool), so the
+    // dodge is telegraphed exactly like a boss zone. Dies in its own blast
+    // — self-detonation never routes through the kill/reward path.
+    bomber: {
+        hp: 24,
+        speed: 262,
+        radius: 34,
+        contactDamage: 7,
+        xpValue: 2,
+        visualScale: 0.78,
+        tint: '#ffd166',
+        behavior: 'bomber',
+        fireInterval: 1.2,   // re-arm delay if a windup is spoiled by a freeze
+        windup: 0.85,        // plant-to-boom telegraph time
+        triggerRange: 170,   // plants when this close
+        blastRadius: 165,
+        blastDamage: 22,
+    },
+    // Summoner: a hollow eye that hangs back (spitter-style spacing) and
+    // CALLS reinforcements on a slow cadence. Fulfilment goes through
+    // Game._spawnBossSupport — the same alive-cap gate boss summons use —
+    // so summon pressure can never blow past the wave cap / maxEnemyCap.
+    summoner: {
+        hp: 66,
+        speed: 98,
+        radius: 46,
+        contactDamage: 6,
+        xpValue: 4,
+        tint: '#c97bff',
+        behavior: 'summoner',
+        keepDistance: 470,   // holds this gap from the player
+        fireInterval: 7.0,   // seconds between calls
+        windup: 0.9,         // channel telegraph before the call lands
+        fireRange: 1050,     // won't channel beyond this
+        summonCount: 3,
+        summonTypes: { mite: 2, bat: 1 },
+    },
+    // Teleporter: a blink-bat that winds up, vanishes, and reappears
+    // FLANKING the player — punishes tunnel-visioning one approach lane.
+    // The windup arc is the pre-blink tell; arrival sparkles mark both ends.
+    teleporter: {
+        hp: 38,
+        speed: 205,
+        radius: 44,
+        contactDamage: 12,
+        xpValue: 3,
+        tint: '#7fe0ff',
+        behavior: 'teleporter',
+        fireInterval: 4.5,   // seconds between blinks
+        windup: 0.4,         // pre-blink telegraph
+        blinkMinRange: 420,  // only blinks when the gap is worth closing
+        blinkMaxRange: 1000,
+        blinkRadius: 300,    // reappears this far from the player, random side
+    },
     // Bosses are still Enemy instances; the `boss: true` flag flips on the
     // boss HP bar, chest drop on death, and lets the constructor pull in
     // bossName + visualScale. They scale with wave just like other enemies.
@@ -620,7 +694,9 @@ export const BOSS = {
     //   bossHpMul = 1 + minutes * hpPerMinute  (10m→3.0×, 20m→5.0×, 30m→7.0×)
     //   resist    = min(minutes * resistPerMinute, maxResist)
     // 0.20 (was 0.16) so the 10-15 min boss is a real fight, not a 1s delete,
-    // while 30 min lands exactly on the 7× ceiling.
+    // while 30 min lands exactly on the 7× ceiling. Re-verified against the
+    // 20-min hypergrowth wall (ENDLESS_SCALING): runs now realistically reach
+    // the 20-30 min bracket this curve was written for, so it stands as-is.
     hpPerMinute: 0.20,
     maxHpMul: 7.0,
     // Flat HP multiplier on EVERY boss (folded into bossHpMul in Game._spawnBoss)
@@ -739,6 +815,27 @@ export const LIEUTENANT = {
     // Curated heavy-hitter pool (all exist in ENEMY); filtered to those present.
     types: ['brute', 'juggernaut', 'dreadhulk'],
     color: '#ffc24a',
+    // P1.3 — each lieutenant type borrows 2 moves from the boss attack
+    // vocabulary (commitBossAttack kinds), tuned well below boss numbers.
+    // Driven by runLieutenantAI (Enemy.js): timer → windup (the standard
+    // trash charge-arc telegraph, gold-tinted) → commit through the exact
+    // boss pipeline (hazard pool / enemy-bolt loop). Only vocabulary kinds
+    // that don't touch boss-only state (spiral/wall/charge) are used.
+    attackRange: 950,      // won't start a windup beyond this (no off-screen bombardment)
+    attacks: {
+        brute: [
+            { id: 'ltGore', kind: 'fan', cooldown: 6.0, windup: 0.7, count: 7, spread: 0.9, projectileSpeed: 470, projectileDamage: 14 },
+            { id: 'ltSlam', kind: 'shockwave', cooldown: 8.5, windup: 0.8, damage: 22, growth: 760, rMax: 460, band: 95 },
+        ],
+        juggernaut: [
+            { id: 'ltQuake', kind: 'zones', cooldown: 8.5, windup: 0.8, count: 4, zoneRadius: 140, spreadRadius: 340, damage: 20, warn: 0.9 },
+            { id: 'ltStomp', kind: 'shockwave', cooldown: 6.5, windup: 0.7, damage: 20, growth: 900, rMax: 420, band: 88 },
+        ],
+        dreadhulk: [
+            { id: 'ltSeekers', kind: 'seekers', cooldown: 9.0, windup: 0.7, count: 3, projectileSpeed: 340, projectileDamage: 20, turnRate: 3.0, maxSpeed: 480, color: '#8fa3bd' },
+            { id: 'ltMiasma', kind: 'lingering', cooldown: 10.5, windup: 0.8, count: 3, zoneRadius: 120, spread: 300, tickDamage: 8, warn: 0.7, duration: 3.5, color: '#9a86d0' },
+        ],
+    },
 };
 
 // Rolled affixes layered onto an elite for visible variety + a death/while-
@@ -804,12 +901,47 @@ export const BOSS_ATTACK = {
     enrageRetintColor: '#ff5a3c',
 };
 
+// ── P1.2 biome signature hazards ────────────────────────────────────────
+// One hazard identity per map (maps.js `hazard` picks the kind): emberwood
+// BRAMBLES (thorn patches: tick damage + a soft snag-slow), hollowreach ICE
+// SLICKS (no damage — steering skids), crypts GLOOM (the veil squeezes the
+// player's light + a small tick), dunes QUICKSAND (a heavy wade-slow).
+// Patches ride the SAME Game-owned hazard pool as boss zones/lingering
+// fields, spawned on a cadence by HazardSystem.updateBiome and drawn fully
+// procedurally (flat fills/strokes + a bright rim so they read on the dark
+// ground — no gradients, no AI-art dependency). Every patch telegraphs
+// (blooms in over `warn`) before it does anything, and the spawn ring
+// (spawnMin) guarantees one can never open underfoot.
+export const BIOME_HAZARD = {
+    firstDelay: 22,       // grace before the biome's first patch
+    interval: 9.5,        // seconds between spawn wakes (jittered)
+    intervalJitter: 0.35, // ± fraction of interval
+    maxActive: 5,         // live-patch cap (perf + fairness)
+    spawnMin: 340,        // never underfoot (> max patch r + player radius)
+    spawnMax: 640,
+    brambles:  { r: 130, warn: 1.1, duration: 6.5, tickDamage: 6, slowMul: 0.78, color: '#4c5c22', rim: '#c8e06a' },
+    iceSlick:  { r: 165, warn: 0.9, duration: 9.0, color: '#9cc8e8', rim: '#e6f6ff' },
+    gloom:     { r: 175, warn: 1.0, duration: 8.0, tickDamage: 5, lightCut: 0.5, color: '#120b22', rim: '#8f79c8' },
+    quicksand: { r: 150, warn: 0.9, duration: 9.0, slowMul: 0.5, color: '#8a6a2e', rim: '#e8c987' },
+};
+
 // ── Weapons ────────────────────────────────────────────────────────────
 // Per-weapon balance lives in src/content/weapons.js so behavior functions
 // (which need real code) and stat tables can stay together. The cap on
 // how high any weapon can level lives here for easy tuning.
 export const MAX_WEAPON_LEVEL = 8;
 export const MAX_PASSIVE_LEVEL = 5;
+
+// Weapon/ability SLOT CAP (P0.3 draft economy): weapons and abilities share
+// the WeaponSystem.owned list, and a run holds at most this many. Once full,
+// NEW weapon/ability cards leave the level-up draft entirely (UpgradeSystem
+// gates on it). Note this only prunes the draft once every slot is FILLED —
+// a 1-2 weapon focused build still sees all unowned-weapon cards all run —
+// so the cap bounds loadout size and per-frame update cost; the lever that
+// makes L8 + evolution reachable in-window is pity × Patron favor (see
+// UpgradeSystem PITY_PER_LEVEL). Surfaced on the level-up UI ("SLOTS n/5")
+// so the constraint is a visible decision, never a silent no-op pick.
+export const MAX_WEAPON_SLOTS = 5;
 
 // Legacy block kept so Projectile's default opts still resolve cleanly when
 // a weapon doesn't pass per-projectile overrides. The starter weapon uses
@@ -885,7 +1017,8 @@ export const WAVES = [
         announcement: 'Vigil 4: Gathering Hollow — the dark presses in',
         spawnIntervalMul: 0.48,
         maxAlive: 140,
-        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24, healer: 6, speedDemon: 18, brawler: 14, skeleton: 16 },
+        // P1.3: splitters + bombers join at Vigil 4 (the first "tricks" wave).
+        typeWeights: { slime: 35, bat: 25, crawler: 40, spitter: 20, charger: 12, mite: 24, healer: 6, speedDemon: 18, brawler: 14, skeleton: 16, splitter: 10, bomber: 8 },
         eliteChance: 0.02,
         healthMul: 1.45,
         speedMul: 1.17,
@@ -895,9 +1028,13 @@ export const WAVES = [
         startTime: 240,
         name: 'Direhusks March',
         announcement: 'Vigil 5: Direhusks March — the heavy Hollow arrive',
-        spawnIntervalMul: 0.52,
-        maxAlive: 125,
-        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8, healer: 9, shielder: 8, speedDemon: 18, brawler: 20, dreadhulk: 6, skeleton: 20, zombie: 16 },
+        // Monotonic vs Vigil 4 (0.48 / 140): this wave used to RELAX cadence
+        // (0.52) and cap (125), reading as a lull right when the heavies were
+        // announced. 0.46 / 142 keeps pressure climbing into Vigil 6 (0.44 / 145).
+        spawnIntervalMul: 0.46,
+        maxAlive: 142,
+        // P1.3: summoners + teleporters arrive with the heavies (Vigil 5).
+        typeWeights: { slime: 25, bat: 25, crawler: 25, brute: 25, spitter: 20, charger: 18, mite: 26, juggernaut: 8, healer: 9, shielder: 8, speedDemon: 18, brawler: 20, dreadhulk: 6, skeleton: 20, zombie: 16, splitter: 12, bomber: 10, summoner: 6, teleporter: 10 },
         eliteChance: 0.04,
         healthMul: 1.65,
         speedMul: 1.22,
@@ -909,7 +1046,11 @@ export const WAVES = [
         announcement: 'Vigil 6: The Long Dark — hold the light!',
         spawnIntervalMul: 0.44,
         maxAlive: 145,
-        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20, mite: 28, juggernaut: 14, speedDemon: 22, brawler: 22, dreadhulk: 10, skeleton: 22, zombie: 18, emberskeleton: 16 },
+        // Shielder carries into the final vigil (at its Vigil-5 weight):
+        // map enemyMix multipliers only SKEW what a wave already offers, so
+        // without a base weight here Hollowreach's shielder ×1.6 "shelled
+        // heavies" lever went dead for the whole Vigil-6/endless stretch.
+        typeWeights: { slime: 20, bat: 25, crawler: 25, brute: 30, spitter: 22, charger: 20, mite: 28, juggernaut: 14, shielder: 8, speedDemon: 22, brawler: 22, dreadhulk: 10, skeleton: 22, zombie: 18, emberskeleton: 16, splitter: 12, bomber: 12, summoner: 8, teleporter: 12 },
         eliteChance: 0.08,
         healthMul: 1.9,
         speedMul: 1.28,
@@ -957,9 +1098,14 @@ export const ENDLESS_SCALING = {
     // Game still applies), AND twilight enemies now grow in BOTH speed and
     // damage every minute (on top of the normal ramps, re-clamped to the
     // ceilings) so standing still in the deep endless game gets you killed.
+    // Floor 0.55 → 0.15 with a compensating ramp: the old floor STEP-JUMPED the
+    // elite rate at 9:00, straight into the tier-3 apex boss window. 0.15 meets
+    // the normal ramp exactly at the turn (0.08 + 4×0.018 = 0.152), so the
+    // elite rate is CONTINUOUS and CLIMBS to the 0.9 cap around minute ~21 —
+    // right where the hypergrowth wall below takes over.
     twilightMinutesBeyond: 4,
-    twilightEliteFloor: 0.55,
-    twilightEliteRampPerMin: 0.05,
+    twilightEliteFloor: 0.15,
+    twilightEliteRampPerMin: 0.06,
     twilightEliteCap: 0.9,
     twilightSpeedPerMin: 0.025,
     twilightSpeedCap: 0.45,
@@ -972,8 +1118,17 @@ export const ENDLESS_SCALING = {
     // time-limit: even a maxed build eventually can't keep up. Composure relief
     // (skill) doesn't stop the wall — it just buys more time against it. The mul is
     // clamped to hyperMulCap so the math can never overflow to Infinity/NaN.
-    hyperStartMinutes: 13,
-    hyperPerMinuteMul: 2.0,
+    // Wall moved 13 → 20 min and softened 2.0 → 1.4×/min: the payoff loop
+    // (L8 base + evolution — Monte Carlo against the real UpgradeSystem/
+    // ChestRewards measures median ~min 13–14 when focused, ~16 typical, so
+    // it usually lands AFTER the ~min-12 boss-3 victory; pulling it earlier
+    // is P0.3, v1.3) now gets a real window to be PLAYED, and BOSS.hpPerMinute
+    // / CAPS — both tuned for 20–30-min builds — are live targets again. The
+    // wall window itself holds: 96–99.9% of evolving runs evolve before
+    // minute 20. 1.4× still compounds to ~28× by minute 30, so the wall
+    // remains an inevitable end, just not a 2-minute cliff.
+    hyperStartMinutes: 20,
+    hyperPerMinuteMul: 1.4,
     hyperMulCap: 1e6,
 };
 
@@ -1314,3 +1469,14 @@ export const UI = {
 };
 
 export const DEBUG_DEFAULT_ON = true;
+
+// Dev tooling gate: the debug HUD/button, time-jump keys, CHEATS panel and
+// dev-only settings toggles only activate when the page was opened with
+// ?dev=1 (e.g. the artshot harness or a local test URL). Guarded for non-DOM
+// environments (tools import config under node).
+export const DEV_MODE = typeof location !== 'undefined' && /[?&]dev=1(?:&|$)/.test(location.search);
+
+// First-run onboarding opt-out (?skipOnboarding=1): keeps harness/CI
+// screenshots deterministic — a fresh headless profile has runs === 0, which
+// would otherwise arm the guided-first-run hint sequence (see Game.js).
+export const SKIP_ONBOARDING = typeof location !== 'undefined' && /[?&]skipOnboarding=1(?:&|$)/.test(location.search);

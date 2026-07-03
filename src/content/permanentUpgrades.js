@@ -77,7 +77,10 @@ export const PERMANENT_UPGRADES = [
     {
         id: 'startingCoins',
         name: 'Heirloom Cinders',
-        description: '+5 starting run coins per level',
+        // The seed is real money now: it banks with the run's earnings when
+        // the run is actually PLAYED (death/victory or ≥60s — the guard in
+        // Game._bankRunCoins stops restart-spam from minting it for free).
+        description: '+5 run coins per level, banked at run’s end',
         maxLevel: 10,
         costAt(level) { return 20 + level * 10; },
         apply(player, level) {

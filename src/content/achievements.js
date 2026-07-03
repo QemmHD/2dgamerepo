@@ -16,8 +16,13 @@ export const ACHIEVEMENTS = [
     { id: 'coins_10k',    name: 'Cinder Hoard',     desc: 'Earn 10,000 coins lifetime.',      coins: 150, check: (s) => (s.totalCoinsEarned || 0) >= 10000 },
     { id: 'cases_25',     name: 'Curator',          desc: 'Open 25 cases.',                   coins: 100, check: (s) => (s.casesOpened || 0) >= 25 },
     { id: 'hard_win',     name: 'Nightmare Slain',  desc: 'Win a run on Nightmare difficulty.', coins: 400, check: (s) => (s.hardWins || 0) >= 1 },
-    { id: 'gauntlet_3k',  name: 'Gauntlet Runner',  desc: 'Score 3,000+ in the Gauntlet.',    coins: 250, check: (s) => (s.bestGauntletScore || 0) >= 3000 },
-    { id: 'gauntlet_8k',  name: 'Endless Warden',   desc: 'Score 8,000+ in the Gauntlet.',    coins: 500, check: (s) => (s.bestGauntletScore || 0) >= 8000 },
+    // Gauntlet score = seconds + 2.5×kills + 500×bosses. Retuned for the 20-min
+    // hypergrowth wall (ENDLESS_SCALING.hyperStartMinutes; death ~min 25-28):
+    // a continued run crosses ~8k around minute 15-17 and a run TO the wall
+    // lands ~25-35k, so Runner = a committed continue, Warden = the deep-endless
+    // chase. Ids keep their historic names so claimed saves stay claimed.
+    { id: 'gauntlet_3k',  name: 'Gauntlet Runner',  desc: 'Score 8,000+ in the Gauntlet.',    coins: 250, check: (s) => (s.bestGauntletScore || 0) >= 8000 },
+    { id: 'gauntlet_8k',  name: 'Endless Warden',   desc: 'Score 25,000+ in the Gauntlet.',   coins: 500, check: (s) => (s.bestGauntletScore || 0) >= 25000 },
     { id: 'playtime_1h',  name: 'Devoted',          desc: 'Play for 1 hour total.',           coins: 150, check: (s) => (s.playtimeSec || 0) >= 3600 },
     { id: 'nightmare_10', name: 'Dread Reaper',     desc: 'Fell 10 bosses on Nightmare.',     coins: 350, check: (s) => (s.eliteBossesDefeated || 0) >= 10 },
     { id: 'wave_master',  name: 'Wavebreaker',      desc: 'Reach wave 6 in a run.',           coins: 120, check: (s) => (s.bestWave || 0) >= 6 },

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>audio probe</title>
+<style>body{margin:0;background:#111;color:#9f9;font:13px monospace}</style></head><body>
+<pre id="log"></pre>
+<script type="module">
+// audioprobe — headless QA for the procedural SFX engine: renders every cue
+// into an OfflineAudioContext, checks for exceptions / silence / clipping,
+// and PUTs (a) a JSON report and (b) a 16-bit WAV "SFX reel" you can actually
+// listen to (each cue ~0.9s apart, in the listed order).
+const log = (m) => document.getElementById('log').textContent += m + '\n';
+const SR = 44100;
+const CUES = [
+  'click','equip','upgrade','reroll','banish','deny','purchase',
+  'hurt','kill','crit','impact','freeze','burn','heal','shield','thorns','dash',
+  'enemyShoot','waveStart','chargerWindup','chargerDash','volatileBoom','healerPulse','heartbeat',
+  'coin','gem','streak','shootBolt','shootFire','shootShock',
+  'chest','shrineChime','forge','caseOpen','objective',
+  'levelUp','bossSpawn','bossTelegraph','bossAttack','lieutenantWarn','lieutenantDown',
+  'enrage','evolve','fusionForge','pactSworn','dreadDrone','achievementChime',
+  'bossDefeat','gameOver','victoryFanfare','pauseIn','pauseOut',
+];
+const GAP = 0.9;
+const TOTAL = Math.ceil((CUES.length + 2) * GAP) + 2;
+const off = new OfflineAudioContext(2, SR * TOTAL, SR);
+// Shim so AudioSystem's feature detect + `new AudioContext()` lands on our
+// offline context (constructor returning an object overrides `this`).
+window.AudioContext = function () { return off; };
+window.webkitAudioContext = window.AudioContext;
+
+const { AudioSystem } = await import('../../src/systems/AudioSystem.js');
+const a = new AudioSystem();
+a.resume();   // builds the graph; offline ctx.resume() is a no-op pre-render
+a.stopMusic ? a.stopMusic() : null;   // cues only — no music scheduler noise
+
+const report = { cues: {}, errors: [] };
+// _play throttles by ctx.currentTime which stays 0 pre-render on an offline
+// ctx — schedule each cue at its slot by monkey-patching _play's clock via
+// the internal _lastSfx map reset and wrapping fn time.
+let slot = 0;
+for (const name of CUES) {
+  const t0 = 1 + slot * GAP;
+  try {
+    if (typeof a[name] !== 'function') { report.errors.push(name + ': MISSING METHOD'); slot++; continue; }
+    // Redirect "now" for this cue: _play uses ctx.currentTime (0 offline), so
+    // wrap the cue's synth calls by temporarily shifting the throttle map and
+    // letting the fn receive t=currentTime, then offsetting via a patched
+    // _play that adds t0.
+    const orig = a._play.bind(a);
+    a._play = (n, gap, fn) => { a._lastSfx[n] = -999; orig(n, 0, () => fn(t0)); };
+    if (name === 'reveal') a.reveal('legendary'); else a[name]();
+    a._play = orig;
+    report.cues[name] = { t: t0 };
+    slot++;
+  } catch (e) {
+    report.errors.push(name + ': ' + String(e && e.message || e));
+    slot++;
+  }
+}
+
+const buf = await off.startRendering();
+// Analyze: global peak + per-cue window peak/rms.
+const L = buf.getChannelData(0), R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
+let peak = 0, clip = 0;
+for (let i = 0; i < L.length; i++) {
+  const v = Math.max(Math.abs(L[i]), Math.abs(R[i]));
+  if (v > peak) peak = v;
+  if (v >= 0.985) clip++;
+}
+for (const name of Object.keys(report.cues)) {
+  const c = report.cues[name];
+  const s = Math.floor(c.t * SR), e = Math.min(L.length, s + Math.floor(GAP * SR));
+  let p = 0, sum = 0;
+  for (let i = s; i < e; i++) { const v = Math.abs(L[i]); if (v > p) p = v; sum += v * v; }
+  c.peak = +p.toFixed(3);
+  c.rms = +Math.sqrt(sum / (e - s)).toFixed(4);
+  if (p < 0.005) report.errors.push(name + ': SILENT');
+}
+report.globalPeak = +peak.toFixed(3);
+report.clippedSamples = clip;
+await fetch('/__save/audio_report.json', { method: 'PUT', body: JSON.stringify(report, null, 1) });
+
+// Encode 16-bit stereo WAV of the reel.
+const n = L.length, out = new DataView(new ArrayBuffer(44 + n * 4));
+const ws = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+ws(0, 'RIFF'); out.setUint32(4, 36 + n * 4, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 2, true);
+out.setUint32(24, SR, true); out.setUint32(28, SR * 4, true); out.setUint16(32, 4, true);
+out.setUint16(34, 16, true); ws(36, 'data'); out.setUint32(40, n * 4, true);
+for (let i = 0; i < n; i++) {
+  out.setInt16(44 + i * 4, Math.max(-1, Math.min(1, L[i])) * 32767, true);
+  out.setInt16(46 + i * 4, Math.max(-1, Math.min(1, R[i])) * 32767, true);
+}
+await fetch('/__save/sfx_reel.wav', { method: 'PUT', body: out.buffer });
+log(JSON.stringify(report, null, 1));
+document.title = 'DONE err:' + report.errors.length;
+</script></body></html>

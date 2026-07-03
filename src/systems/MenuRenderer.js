@@ -9,7 +9,7 @@
 // one place (here) and is never duplicated for hit-testing.
 
 import { roundRectPath, clamp01, easeOutCubic } from '../render/DrawUtils.js';
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS, pactTier } from '../config/GameConfig.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS, DEV_MODE, pactTier } from '../config/GameConfig.js';
 import { rarityColor, rarityName, RARITIES } from '../content/rarities.js';
 import { getRarityIcon } from '../assets/CustomIcons.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
@@ -30,7 +30,7 @@ import { getHeroFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { getMenuImages } from '../assets/MenuImages.js';
 import { getGearEmblem } from '../assets/GearEmblems.js';
 import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
-import { drawPixelCloak, drawPixelHat, shade } from '../assets/PixelArt.js';
+import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
@@ -65,13 +65,45 @@ export const MENU_TABS = [
     { id: 'settings', label: 'SETTINGS', accent: '#9fb0c4' },
 ];
 
+// Staged menu unlock: a brand-new player sees only PLAY + SETTINGS instead of
+// a 9-tab dump; the rest unlock at their natural first-use moments (computed
+// from live save stats, so a veteran save unlocks everything instantly and
+// nothing is ever re-locked). Newly unlocked tabs wear a one-time "NEW" badge
+// until first opened (save.onboarding.tabsSeen, marked by Game's tab action).
+export function tabUnlocked(id, save) {
+    // Once SEEN, forever unlocked — this is what actually guarantees "nothing
+    // is ever re-locked": pre-staging saves (runs > 0) are seeded with every
+    // tab seen (SaveSystem._validate), so a veteran with zero casesOpened /
+    // relics / totalCoinsEarned keeps the tabs that were already visible.
+    if (save?.onboarding?.tabsSeen?.includes(id)) return true;
+    const s = (save && save.stats) || {};
+    switch (id) {
+        case 'play':
+        case 'settings': return true;
+        // First coins banked — spendable balance counts too, so a payout that
+        // bypasses the lifetime stat can never leave a coin-holder tab-less.
+        case 'skills': return (s.totalCoinsEarned ?? 0) > 0 || (save?.totalCoins ?? 0) > 0;
+        case 'loadout': return (s.casesOpened ?? 0) > 0;                  // first gear case opened
+        case 'attune': return (save?.discoveredRelics?.length ?? 0) > 0;  // first relic claimed
+        case 'character':
+        case 'shop':
+        case 'battlepass':
+        case 'stats': return (s.runs ?? 0) >= 1;                          // first run finished
+        default: return true;
+    }
+}
+
+// Dev tooling gate: the Debug/Unlock-Maps toggles and the CHEATS panel are
+// developer aids, not player features — they only render in DEV_MODE (?dev=1;
+// see GameConfig.js, which also gates the debug HUD + time-jump keys).
+
 const SETTING_TOGGLES = [
-    { key: 'debug', label: 'Debug Mode' },
+    { key: 'debug', label: 'Debug Mode', dev: true },
     { key: 'screenShake', label: 'Screen Shake' },
     { key: 'damageNumbers', label: 'Damage Numbers' },
     { key: 'particles', label: 'Particles' },
     { key: 'reducedEffects', label: 'Reduced Effects (mobile)' },
-    { key: 'unlockMaps', label: 'Unlock All Maps (testing)' },
+    { key: 'unlockMaps', label: 'Unlock All Maps (testing)', dev: true },
 ];
 
 export class MenuRenderer {
@@ -482,7 +514,7 @@ export class MenuRenderer {
         // Coin bank pill (right-aligned).
         this._coinBank(ctx, INTERNAL_WIDTH - sa.right - 56, sa.top + 54, save.totalCoins);
 
-        this._drawTabBar(ctx, state.menuTab);
+        this._drawTabBar(ctx, state);
 
         const tab = state.menuTab || 'play';
         if (tab === 'play') this._drawPlay(ctx, state);
@@ -511,12 +543,28 @@ export class MenuRenderer {
         if (state.caseAnim) this._drawCaseOverlay(ctx, state.caseAnim);
     }
 
-    _drawTabBar(ctx, activeTab) {
+    _drawTabBar(ctx, state) {
+        const activeTab = state.menuTab;
+        const save = state.saveData || {};
+        // Staged unlock: only earned tabs render (the bar re-lays-out wider
+        // chips while few are unlocked — a new player starts at just 2).
+        const tabs = MENU_TABS.filter((t) => tabUnlocked(t.id, save));
+        const seen = (save.onboarding && save.onboarding.tabsSeen) || [];
+        // Dot-badge sources: unclaimed Battle-Pass levels + unfinished dailies
+        // (the Today's-Trials strip lives on PLAY). Cheap per-frame reads.
+        const day = currentDayNumber();
+        const dd = save.daily || { day: 0, completed: [] };
+        const doneN = dd.day === day && Array.isArray(dd.completed) ? dd.completed.length : 0;
+        const dailiesLeft = ((save.stats?.runs ?? 0) >= 1) && doneN < pickDailyChallenges(day).length;
+        const bpClaimed = (save.battlePass && save.battlePass.claimed) || [];
+        const bpLevel = bpProgress(save.battlePass?.xp ?? 0).level;
+        let bpClaimable = false;
+        for (let lv = 1; lv <= bpLevel; lv++) { if (!bpClaimed.includes(lv)) { bpClaimable = true; break; } }
         const sa = this._sa();
         const x0 = sa.left + 56;
         const w = INTERNAL_WIDTH - sa.left - sa.right - 112;
         const gap = 10;
-        const tabW = (w - gap * (MENU_TABS.length - 1)) / MENU_TABS.length;
+        const tabW = (w - gap * (tabs.length - 1)) / tabs.length;
         const y = sa.top + 104;
         const h = 62;
         const time = this._t || 0;
@@ -533,8 +581,8 @@ export class MenuRenderer {
             this._tabGrad = tgr; this._tabGradY = y;
         }
         let activeX = x0;
-        for (let i = 0; i < MENU_TABS.length; i++) {
-            const t = MENU_TABS[i];
+        for (let i = 0; i < tabs.length; i++) {
+            const t = tabs[i];
             const x = x0 + i * (tabW + gap);
             const active = t.id === activeTab;
             const accent = t.accent || '#ffce54';
@@ -582,6 +630,26 @@ export class MenuRenderer {
                 ctx.fillRect(x + 14, y + h - 7, tabW - 28, 3); ctx.globalAlpha = 1;
             }
             this._hot(x, y, tabW, h, 'tab', t.id);
+            // Badges (top-right corner): a one-time "NEW" pill on a freshly
+            // unlocked tab (cleared on first open via save.onboarding.tabsSeen),
+            // else a small accent dot when the tab holds something actionable
+            // (unclaimed Battle-Pass rewards / unfinished Today's Trials).
+            const isNew = !active && !seen.includes(t.id) && t.id !== 'play' && t.id !== 'settings';
+            const hasDot = (t.id === 'battlepass' && bpClaimable) || (t.id === 'play' && dailiesLeft);
+            if (isNew) {
+                const bw = 42, bh = 20, bx = x + tabW - bw + 6, by = y - 8;
+                ctx.globalAlpha = 0.85 + Math.sin(time * 3 + i) * 0.15;
+                roundRectPath(ctx, bx, by, bw, bh, bh / 2);
+                ctx.fillStyle = '#ffce54'; ctx.fill();
+                ctx.fillStyle = '#221604'; ctx.font = `800 12px ${FONT}`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('NEW', bx + bw / 2, by + bh / 2 + 0.5);
+                ctx.globalAlpha = 1;
+            } else if (hasDot) {
+                ctx.beginPath(); ctx.arc(x + tabW - 10, y + 10, 6, 0, TAU);
+                ctx.fillStyle = accent; ctx.fill();
+                ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+            }
         }
         // Sliding accent indicator that eases toward the active tab on switch
         // (replaces the old hue-cycling RGB underline; warm-biases the bar).
@@ -593,7 +661,7 @@ export class MenuRenderer {
             this._tabIndicX += (targetX - this._tabIndicX) * k;
             this._tabIndicW += (targetW - this._tabIndicW) * k;
         }
-        const acc = (MENU_TABS.find((tt) => tt.id === activeTab) || {}).accent || '#ffce54';
+        const acc = (tabs.find((tt) => tt.id === activeTab) || {}).accent || '#ffce54';
         ctx.fillStyle = acc;
         ctx.fillRect(this._tabIndicX, y + h - 4, this._tabIndicW, 3);
     }
@@ -616,7 +684,10 @@ export class MenuRenderer {
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let charSprite = null;
         // Front-facing idle, with a brief cast-pose flash every few seconds so
-        // the preview shows the new attack animation + matches in-game.
+        // the preview shows the new attack animation + matches in-game. The
+        // flag rides along to _drawAvatar so the held wand jumps to the raised
+        // cast fist with the body (LPC bodies alias cast to idle — no jump).
+        const castFlash = !ch.lpc && (this._t % 3.6) > 3.0;
         try {
             const d = getHeroFrames(ch.id, ch).dirs.down;
             charSprite = (this._t % 3.6) > 3.0 ? d.cast[0] : d.idle[0];
@@ -635,7 +706,7 @@ export class MenuRenderer {
         // down on short cards so its ring never bleeds into the CHARACTER label.
         const pedSc = Math.max(0.55, Math.min(1, c.h / 640));
         this._pedestal(ctx, ccx, c.y + c.h * 0.26 + 96 * pedSc, this._t, ch.accent || '#ff7a1e', pedSc);
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
         // Themed-skin caption ABOVE the name (with real clearance so long names
         // never collide with it), then the ellipsized name line.
         const nameY = c.y + c.h * 0.46;
@@ -736,7 +807,7 @@ export class MenuRenderer {
         const avail = startY - top - 12;
         const nGear = GEAR_CATEGORIES.length;
         const tRows = Math.ceil(RUN_MODIFIERS.length / 3); // Trials chip grid rows (3 cols)
-        const N = { gearRow: 52, gearGap: 9, sec: 18, lbl: 30, biome: 60, diff: 46, chip: 38, chipGap: 8 };
+        const N = { gearRow: 52, gearGap: 9, sec: 18, lbl: 30, biome: 60, diff: 46, chip: 38, chipGap: 8, daily: 42 };
         // The TRUE laid-out height for a given scale. Labels + chip rows have
         // their own lower floors (so text stays legible), which is exactly why
         // a naive avail/needed under-budgets — so we MEASURE with the real
@@ -750,12 +821,13 @@ export class MenuRenderer {
             + N.lbl * lblScale(s) + N.biome * s + N.sec * s
             + N.lbl * lblScale(s) + N.diff * s + N.sec * s   // Patron row (reuses diff height)
             + N.lbl * lblScale(s) + N.diff * s + N.sec * s
-            + N.lbl * lblScale(s) + (tRows * N.chip * chipScale(s) + (tRows - 1) * N.chipGap * s);
+            + N.lbl * lblScale(s) + (tRows * N.chip * chipScale(s) + (tRows - 1) * N.chipGap * s) + N.sec * s
+            + N.lbl * lblScale(s) + N.daily * chipScale(s);   // Today's Trials strip (daily loop)
         let s = 1;
         // Floor: low enough that even a degenerate ultra-short panel keeps every
         // section's row from overlapping the next (the label/chip legibility
-        // floors set an irreducible minimum; six sections need more shrink room
-        // than five did). Real devices land far above this.
+        // floors set an irreducible minimum; seven sections need more shrink
+        // room than six did). Real devices land far above this.
         const S_FLOOR = 0.12;
         if (fitH(1) > avail) {                        // doesn't fit at full size → shrink to fit
             let lo = S_FLOOR, hi = 1;
@@ -892,6 +964,41 @@ export class MenuRenderer {
             this._hot(mx, my, tW, chipRow, 'toggleModifier', m.id);
         }
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        y += tRows * chipRow + (tRows - 1) * chipGap + sec;
+
+        // ── Today's Trials + day streak — the daily loop, surfaced right beside
+        // the DAILY ROAD CTA instead of buried on STATS. Three read-only chips
+        // (completion lives in save.daily, evaluated at run end) + a celebratory
+        // streak counter (never punitive — a lapse just restarts it at 1).
+        const dDay = currentDayNumber();
+        const dState = save.daily || { day: 0, completed: [] };
+        const dDone = dState.day === dDay && Array.isArray(dState.completed) ? dState.completed : [];
+        const dChs = pickDailyChallenges(dDay);
+        const dGotN = dChs.filter((cc) => dDone.includes(cc.id)).length;
+        ctx.fillStyle = '#ffd479'; ctx.font = `800 ${fs(19)}px ${FONT}`;
+        ctx.fillText(`Today's Trials  ${dGotN}/${dChs.length}`, innerX, y + lbl * 0.72);
+        if ((state.dayStreak ?? 0) > 0) {
+            ctx.textAlign = 'right'; ctx.fillStyle = '#ff9a4a'; ctx.font = `800 ${fs(17)}px ${FONT}`;
+            ctx.fillText(`🔥 ${state.dayStreak}-day streak`, innerX + innerW, y + lbl * 0.72);
+            ctx.textAlign = 'left';
+        }
+        y += lbl;
+        const dRowH = N.daily * chipScale(s);
+        const dChipW = (innerW - tgap * (dChs.length - 1)) / Math.max(1, dChs.length);
+        for (let i = 0; i < dChs.length; i++) {
+            const cc = dChs[i];
+            const got = dDone.includes(cc.id);
+            const dcx = innerX + i * (dChipW + tgap);
+            roundRectPath(ctx, dcx, y, dChipW, dRowH, 8);
+            ctx.fillStyle = got ? 'rgba(95,211,106,0.14)' : 'rgba(255,212,121,0.06)'; ctx.fill();
+            ctx.strokeStyle = got ? '#5fd36a' : 'rgba(255,212,121,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = got ? '#5fd36a' : '#fff'; ctx.font = `800 ${fs(14)}px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, `${got ? '✓ ' : ''}${cc.name}`, dChipW - 24), dcx + 12, y + dRowH * 0.45);
+            ctx.fillStyle = got ? 'rgba(95,211,106,0.8)' : '#ffce54'; ctx.font = `800 ${fs(12)}px ${FONT}`;
+            ctx.fillText(got ? 'CLAIMED' : `+${cc.coins} coins`, dcx + 12, y + dRowH * 0.85);
+        }
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
         // START RUN (left) + DAILY ROAD (right) share the CTA row. START stays the
         // big animated call-to-action; DAILY launches the day's curated fixed run.
@@ -903,13 +1010,16 @@ export class MenuRenderer {
     }
 
     // DAILY ROAD launch button — a distinct pink/gold CTA showing the day's fixed
-    // setup (biome + forced road) and today's best score. Same-for-everyone each
-    // UTC day; forces Normal difficulty. Dispatches the 'startDaily' action.
+    // setup (biome + forced road) and today's best score (or yesterday's best to
+    // beat, or the first-run-of-day case payout when there's no record at all).
+    // Same-for-everyone each UTC day; forces Normal difficulty. Dispatches the
+    // 'startDaily' action.
     _drawDailyButton(ctx, r, state, t) {
         const setup = getDailySetup(currentDayNumber());
         const mapName = (MAPS[setup.mapId]?.name) || setup.mapId;
         const roadName = (getRoad(setup.roadId)?.name) || setup.roadId;
         const best = state.dailyRoadBest ?? 0;
+        const prev = state.dailyRoadPrevBest ?? 0;
         const glow = 0.5 + Math.sin(t * 3) * 0.25;
         roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
         ctx.fillStyle = 'rgba(60,26,44,0.95)'; ctx.fill();
@@ -924,7 +1034,10 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
         ctx.fillText(`${mapName} · ${roadName}`, r.x + r.w / 2, r.y + r.h / 2 + 6);
         ctx.fillStyle = 'rgba(255,206,84,0.9)'; ctx.font = `700 13px ${FONT}`;
-        ctx.fillText(best > 0 ? `Best today: ${best}` : 'No run yet today', r.x + r.w / 2, r.y + r.h / 2 + 24);
+        const scoreLine = best > 0 ? `Best today: ${best}`
+            : prev > 0 ? `Yesterday: ${prev} — beat it!`
+            : 'First run pays a free case';
+        ctx.fillText(scoreLine, r.x + r.w / 2, r.y + r.h / 2 + 24);
         this._hot(r.x, r.y, r.w, r.h, 'startDaily', null);
     }
 
@@ -1095,7 +1208,7 @@ export class MenuRenderer {
     // cached character frame) is supplied it's drawn as the body so the menu
     // model exactly matches the selected character; otherwise a procedural
     // blob is used as a fallback.
-    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null, hold = null, pawColor = '#f0d2a5') {
+    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null, hold = null, pawColor = '#f0d2a5', castPose = false) {
         // The avatar draws the body sprite at S=r*2.4, so the shared cosmetic +
         // weapon-skin helpers (authored in sprite-half units) take s = S/2.
         const S = r * 2.4;
@@ -1142,22 +1255,17 @@ export class MenuRenderer {
         if (heldProp) {
             const propSprite = getWeaponProp(heldProp.prop, heldProp.accent, heldProp.glow);
             if (propSprite) {
-                // Match the in-game articulated hold: a forearm reaches from the
-                // shoulder to the gripping hand (at a jaunty rest angle), with the
-                // weapon + paw at the hand — so the preview shows it actually held.
-                const H = hold || { grip: 0.18, lift: 0.12, scale: 1.0, tilt: 0 };
+                // Match the in-game hold: the wand rests in the body's OWN
+                // paw (the same measured anchors Player uses — no synthetic
+                // arm), with a little paw wrapped over the grip. During the
+                // periodic cast-pose flash the anchor jumps to the raised
+                // fist and the wand flicks up-out, mirroring the in-game cast.
+                const H = hold || { scale: 1.0, tilt: 0 };
                 const k = s / 91;
-                const pscale = k * 0.92 * H.scale;
-                const ang = 0.55 + H.tilt;
-                const sxp = cx + s * 0.13, syp = cy + s * 0.06;
-                const reach = s * 0.30 * H.scale;
-                const hxp = sxp + Math.cos(ang) * reach, hyp = syp + Math.sin(ang) * reach;
-                const armCol = ap.furColor || '#8b5a2b';
-                ctx.lineCap = 'round';
-                ctx.strokeStyle = shade(armCol, 0.42, 'dark'); ctx.lineWidth = 10 * k * H.scale;
-                ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(hxp, hyp); ctx.stroke();
-                ctx.strokeStyle = armCol; ctx.lineWidth = 6.5 * k * H.scale;
-                ctx.beginPath(); ctx.moveTo(sxp, syp); ctx.lineTo(hxp, hyp); ctx.stroke();
+                const pscale = k * 0.92 * (H.scale || 1);
+                const ang = (castPose ? -0.45 : -1.25) + (H.tilt || 0);
+                const hxp = cx + (castPose ? 49 : 34) * k;
+                const hyp = cy + (castPose ? -41 : 24) * k;
                 ctx.save();
                 ctx.translate(hxp, hyp);
                 ctx.rotate(ang);
@@ -1545,6 +1653,7 @@ export class MenuRenderer {
         const ap = resolveAppearance(save.cosmetics.equipped);
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let charSprite = null;
+        const castFlash = !ch.lpc && (this._t % 4.0) > 3.4;
         try {
             const d = getHeroFrames(ch.id, ch).dirs.down;
             charSprite = (this._t % 4.0) > 3.4 ? d.cast[0] : d.idle[0];
@@ -1560,7 +1669,7 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(192,139,255,0.12)';
         ctx.beginPath(); ctx.arc(0, 0, r * 0.92, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
-        this._drawAvatar(ctx, acx, acy, r, avatarAp, charSprite, null, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        this._drawAvatar(ctx, acx, acy, r, avatarAp, charSprite, null, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#fff'; ctx.font = `800 30px ${FONT}`;
         ctx.fillText(ch.name, acx, acy + r + 30);
@@ -1852,6 +1961,10 @@ export class MenuRenderer {
         let y = c.y + 40;
         ctx.textBaseline = 'middle';
         for (const t of SETTING_TOGGLES) {
+            // Dev-only toggles hide from players — unless one is already ON
+            // (a save flipped it before the ?dev=1 gate existed), so a stranded
+            // save always has a visible off switch; once off it disappears.
+            if (t.dev && !DEV_MODE && save.settings[t.key] !== true) continue;
             const val = save.settings[t.key] === true;
             ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = `600 26px ${FONT}`;
             ctx.fillText(t.label, innerX, y + 26);
@@ -1889,22 +2002,26 @@ export class MenuRenderer {
         ctx.fillText('Themed music + sound effects. Adjust to taste; 0% mutes.', innerX, y + 20);
 
         // ── Cheats (testing) ──────────────────────────────────────────────
-        y += 52;
-        ctx.fillStyle = '#ff8a5c'; ctx.font = `700 22px ${FONT}`;
-        ctx.fillText('CHEATS (testing)', innerX, y + 6);
-        ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `500 17px ${FONT}`;
-        ctx.fillText('Grant coins / unlock everything to test cases, gear & cosmetics.', innerX + 220, y + 6);
-        y += 22;
-        const cheats = [
-            { label: '+1,000 ◎', action: 'cheatCoins', arg: 1000 },
-            { label: '+10,000 ◎', action: 'cheatCoins', arg: 10000 },
-            { label: 'Unlock All Items', action: 'cheatUnlockAll', arg: null },
-        ];
-        const cbW = (innerW - 2 * 20) / 3, cbH = 56;
-        for (let i = 0; i < cheats.length; i++) {
-            const ch = cheats[i];
-            const r = { x: innerX + i * (cbW + 20), y, w: cbW, h: cbH };
-            this._button(ctx, r, ch.label, { accent: '#5a3a22', action: ch.action, arg: ch.arg, fontSize: 22 });
+        // Dev-only (?dev=1): hotspots only register when drawn, so hiding the
+        // panel also disables the cheat actions for regular players.
+        if (DEV_MODE) {
+            y += 52;
+            ctx.fillStyle = '#ff8a5c'; ctx.font = `700 22px ${FONT}`;
+            ctx.fillText('CHEATS (testing)', innerX, y + 6);
+            ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `500 17px ${FONT}`;
+            ctx.fillText('Grant coins / unlock everything to test cases, gear & cosmetics.', innerX + 220, y + 6);
+            y += 22;
+            const cheats = [
+                { label: '+1,000 ◎', action: 'cheatCoins', arg: 1000 },
+                { label: '+10,000 ◎', action: 'cheatCoins', arg: 10000 },
+                { label: 'Unlock All Items', action: 'cheatUnlockAll', arg: null },
+            ];
+            const cbW = (innerW - 2 * 20) / 3, cbH = 56;
+            for (let i = 0; i < cheats.length; i++) {
+                const ch = cheats[i];
+                const r = { x: innerX + i * (cbW + 20), y, w: cbW, h: cbH };
+                this._button(ctx, r, ch.label, { accent: '#5a3a22', action: ch.action, arg: ch.arg, fontSize: 22 });
+            }
         }
     }
 

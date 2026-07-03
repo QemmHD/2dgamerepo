@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>enemy refs</title>
+<style>body{margin:0;background:#111}</style></head><body>
+<canvas id="c" width="100" height="100"></canvas>
+<script type="module">
+// Render each named enemy's CURRENT sprite (frame 0, upscaled, on black) and
+// PUT one PNG per type — used as img2img reference media for the canonical
+// Nano Banana 2 creature-overhaul recipe (identity + palette locked to the
+// original art).
+import { prewarmSprites } from '../../src/assets/ProceduralSprites.js';
+import * as PS from '../../src/assets/ProceduralSprites.js';
+const q = new URLSearchParams(location.search);
+const TYPES = (q.get('types') || 'charger,juggernaut,healer,shielder,speedDemon,dreadhulk,brawler').split(',');
+prewarmSprites();
+const GET = {
+  charger: PS.getChargerFrames, juggernaut: PS.getJuggernautFrames,
+  healer: PS.getHealerFrames, shielder: PS.getShielderFrames,
+  speedDemon: PS.getSpeedDemonFrames, dreadhulk: PS.getDreadhulkFrames,
+  brawler: PS.getBrawlerFrames,
+};
+for (const t of TYPES) {
+  const frames = GET[t] ? GET[t]() : null;
+  if (!frames || !frames.length) { console.warn('no frames', t); continue; }
+  const f = frames[0];
+  const Z = Math.max(2, Math.round(1024 / Math.max(f.width, f.height)));
+  const cv = document.createElement('canvas');
+  cv.width = f.width * Z; cv.height = f.height * Z;
+  const cx = cv.getContext('2d');
+  cx.imageSmoothingEnabled = false;
+  cx.fillStyle = '#000'; cx.fillRect(0, 0, cv.width, cv.height);
+  cx.drawImage(f, 0, 0, cv.width, cv.height);
+  const blob = await new Promise((r) => cv.toBlob(r));
+  await fetch('/__save/ref_' + t + '.png', { method: 'PUT', body: blob });
+}
+document.title = 'DONE';
+</script></body></html>

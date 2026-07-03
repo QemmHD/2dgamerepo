@@ -5,6 +5,7 @@ import {
     WORLD_HEIGHT,
     WORLD_BOUNDS_COLOR,
     DEBUG_DEFAULT_ON,
+    DEV_MODE,
     INTERNAL_WIDTH,
     INTERNAL_HEIGHT,
     CONTACT_FLASH_DURATION,
@@ -17,15 +18,15 @@ import {
     CHEST,
     COIN,
     ELEMENT,
-    BOSS_ATTACK,
     CAPS,
     AURA,
     RENDER,
     COMBO,
     ENEMY_SEPARATION,
-    COMPOSURE,
     WICK_ROADS,
     LIEUTENANT,
+    BIOME_HAZARD,
+    SKIP_ONBOARDING,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Easing } from './Easing.js';
@@ -62,22 +63,22 @@ import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { evaluateAchievements } from '../content/achievements.js';
 import { evaluateDaily, currentDayNumber } from '../content/dailyChallenges.js';
-import { keystoneBreadcrumbs } from '../content/keystones.js';
 import { DIFFICULTY, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS } from '../config/GameConfig.js';
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
+import { getBorderStrip, getBorderPattern } from '../assets/ObstacleSprites.js';
 import { awardRun as awardBattlePassRun, claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
-import { openCase, buildCaseReel, MINES, MINES_HOUSE, rollMines, minesRawMultiplier } from '../systems/CaseSystem.js';
+import { openCase } from '../systems/CaseSystem.js';
 import { resolveAppearance, cosmeticsForAchievement, COSMETICS, cosmeticCoinCost } from '../content/cosmetics.js';
-import { findEligibleEvolutions } from '../content/evolutions.js';
-import { WEAPONS, WEAPON_AURA, computePlayerAura } from '../content/weapons.js';
+import { WEAPONS, computePlayerAura } from '../content/weapons.js';
 import { PERMANENT_UPGRADES, applyPermanentUpgrades, nextCost } from '../content/permanentUpgrades.js';
-import { OBJECTIVES, OBJECTIVE_COUNT } from '../content/objectives.js';
+import { OBJECTIVES } from '../content/objectives.js';
 import { getMap, getMapBosses, getMapTier, MAP_ORDER, DEFAULT_MAP } from '../content/maps.js';
 import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
-import { getGlowSprite } from '../assets/ProceduralSprites.js';
-import { roundRectPath, clamp01, easeOutCubic, easeOutBack } from '../render/DrawUtils.js';
+import { HazardSystem } from '../systems/HazardSystem.js';
+import { MinigameOverlay } from '../systems/MinigameOverlay.js';
+import { buildUIState } from '../systems/UIStateBuilder.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
@@ -95,6 +96,11 @@ const DEATH_COLORS = {
     bat: '#b48cff',
     crawler: '#9a7cff',
     brute: '#d8a060',
+    // P1.3 behavior types burst in their tell color.
+    splitter: '#b48cff',
+    bomber: '#ffd166',
+    summoner: '#c97bff',
+    teleporter: '#7fe0ff',
 };
 function deathColor(e) {
     if (e.boss) return '#ffd27a';
@@ -129,6 +135,9 @@ export class Game {
         // so they live across runs (particles are cleared on run start).
         this.lighting = new LightingSystem();
         this.particles = new ParticleSystem();
+        // Hazard sim + draw (stateless — the hazards array itself is run
+        // state, created/reset in _initRunState).
+        this.hazardSystem = new HazardSystem();
         // Procedural audio (synthesized; silent no-op when unsupported/headless).
         // Volumes seed from saved settings; the context resumes on first input.
         this.audio = new AudioSystem();
@@ -170,14 +179,10 @@ export class Game {
         // Run-scale layer (difficulty × modifiers); set fresh each run start.
         this.runScale = { hp: 1, speed: 1, damage: 1, elite: 1, cap: 1, interval: 1 };
         this.runBonus = { xp: 0, coin: 0 };
-        this.caseAnim = null;
-        // Mines mini-game overlay (coin gamble): state object while open, null
-        // otherwise. See _openMines.
-        this.mines = null;
-        // Free-running clock (seconds) for start-screen overlay animation (the
-        // Mines reveal pops / multiplier pulse). this.time is frozen on the menu,
-        // so overlay juice keys off this instead. Ticked while an overlay is up.
-        this._menuClock = 0;
+        // Start-screen minigames (case-opening reel + the Mines coin gamble):
+        // sim + overlay state live in MinigameOverlay (this.minigame.caseAnim /
+        // .mines while one is open, null otherwise).
+        this.minigame = new MinigameOverlay(this);
         this.menuToast = null;
         this.menuToastTimer = 0;
 
@@ -194,28 +199,32 @@ export class Game {
         const touchPrimary = typeof window.matchMedia === 'function'
             ? window.matchMedia('(pointer: coarse)').matches
             : ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-        this.showDebug = (DEBUG_DEFAULT_ON && !touchPrimary) || this.saveSystem.getSetting('debug') === true;
+        // Debug HUD is a dev aid only (?dev=1): without DEV_MODE it can never
+        // switch on — not by default, not from a save's debug setting — so the
+        // time-jump keys below stay out of reach of regular players.
+        this.showDebug = DEV_MODE &&
+            ((DEBUG_DEFAULT_ON && !touchPrimary) || this.saveSystem.getSetting('debug') === true);
         // Performance/accessibility render flags (re-read at each run start).
         this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
         this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
         this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
 
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'Backquote' || e.code === 'F2') {
+            if (DEV_MODE && (e.code === 'Backquote' || e.code === 'F2')) {
                 this.showDebug = !this.showDebug;
                 return;
             }
             if (this.screen === 'start') {
-                if (this.mines) {
+                if (this.minigame.mines) {
                     if (e.code === 'Space' || e.code === 'Enter') {
                         e.preventDefault();
-                        if (this.mines.stopped) this._dismissMines();
-                        else this._minesCashOut();
+                        if (this.minigame.mines.stopped) this.minigame.dismissMines();
+                        else this.minigame.minesCashOut();
                     }
                     return;
                 }
-                if (this.caseAnim) {
-                    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this._caseInput(); }
+                if (this.minigame.caseAnim) {
+                    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this.minigame.caseInput(); }
                     return;
                 }
                 if (e.code === 'Space' || e.code === 'Enter') {
@@ -243,8 +252,9 @@ export class Game {
             }
             // Debug-only time-jump (NOT a player feature): with the debug
             // overlay on, ] skips +60s and \ skips +300s so 5/10/20/30-min
-            // balance can be tested quickly. Gated by showDebug + live play.
-            if (this.showDebug && this.screen === 'gameplay' && !this.paused &&
+            // balance can be tested quickly. Gated by DEV_MODE (showDebug can
+            // only be true under it, but belt-and-braces) + live play.
+            if (DEV_MODE && this.showDebug && this.screen === 'gameplay' && !this.paused &&
                 !this.chestReward && !this.upgradeChoices && !this.altar) {
                 if (e.code === 'BracketRight') { e.preventDefault(); this._debugSkipTime(60); return; }
                 if (e.code === 'Backslash') { e.preventDefault(); this._debugSkipTime(300); return; }
@@ -298,6 +308,9 @@ export class Game {
         });
 
         const tryToggleDebugAt = (clientX, clientY) => {
+            // The DBG hotspot only exists in DEV_MODE (UISystem skips drawing
+            // the button too), so players can't tap the debug HUD on.
+            if (!DEV_MODE) return false;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const r = this.ui.getDebugButtonRect();
             const slop = DEBUG_BUTTON_TOUCH_SLOP;
@@ -412,6 +425,11 @@ export class Game {
 
         const tryRestartAt = (clientX, clientY) => {
             if (this.screen !== 'gameOver') return false;
+            // Debounce: the buttons only fade in from age 0.7 (UISystem), so a
+            // tap still falling on the death moment can't instantly restart /
+            // leave before the player has even seen the summary. Taps are
+            // consumed (not passed through) so nothing behind the overlay fires.
+            if (this.gameOverAge < 0.7) return true;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const rRestart = this.ui.getRestartButtonRect();
             if (inRect(pos, rRestart)) { this._pressFeedback('restart'); this.restart(); return true; }
@@ -423,19 +441,19 @@ export class Game {
         const tryStartScreenAt = (clientX, clientY) => {
             if (this.screen !== 'start') return false;
             // The Mines mini-game owns input while it's up.
-            if (this.mines) {
+            if (this.minigame.mines) {
                 const pos = this.renderer.clientToInternal(clientX, clientY);
-                if (this.mines.stopped) { this._dismissMines(); return true; }
-                if (inRect(pos, this._minesCashRect(), 0)) { this._minesCashOut(); return true; }
-                const tiles = this._minesTileRects();
+                if (this.minigame.mines.stopped) { this.minigame.dismissMines(); return true; }
+                if (inRect(pos, this.minigame.minesCashRect(), 0)) { this.minigame.minesCashOut(); return true; }
+                const tiles = this.minigame.minesTileRects();
                 for (let i = 0; i < tiles.length; i++) {
-                    if (inRect(pos, tiles[i], 0)) { this._minesReveal(i); return true; }
+                    if (inRect(pos, tiles[i], 0)) { this.minigame.minesReveal(i); return true; }
                 }
                 return true; // consume taps while the board is up
             }
             // The case-opening overlay owns input: a tap FAST-FORWARDS to the
             // reveal while spinning, or dismisses once the reward is shown.
-            if (this.caseAnim) { this._caseInput(); return true; }
+            if (this.minigame.caseAnim) { this.minigame.caseInput(); return true; }
             const pos = this.renderer.clientToInternal(clientX, clientY);
             // Dispatch against the menu's clickable regions (topmost wins).
             const hs = this.ui.menu.hotspots;
@@ -510,6 +528,15 @@ export class Game {
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) autoPause();
         });
+
+        // ── First-run onboarding: a brand-new save (zero recorded runs) skips
+        // the tabbed menu entirely and drops straight into a guided first run —
+        // _startRun arms the contextual hint sequence (see _tickOnboarding).
+        // The menu waits until the first death, when its tabs unlock staged
+        // (MenuRenderer). ?skipOnboarding=1 keeps harness/CI shots on the menu.
+        if (!SKIP_ONBOARDING && (this.saveSystem.data.stats?.runs ?? 0) === 0) {
+            this._startRun();
+        }
     }
 
     // The effective map id for THIS run: the Daily Road override (unlock-bypassed,
@@ -531,6 +558,11 @@ export class Game {
         // Damaging area hazards (boss shockwaves) + their telegraph decals.
         // Game-owned pool; cleared here so a restart never inherits one.
         this.hazards = [];
+        // ELITE bombers that self-detonated this frame — merged into the kill
+        // pipeline by _resolveCombat so a dodged elite still pays its rolled
+        // loot (affix death, chest/coin roll, gem, kill credit). A plain
+        // bomber's self-boom stays deliberately reward-free.
+        this._selfDetonated = [];
         // Expanding shockwave ring VFX (pure cosmetic; pooled). Spawned on
         // kills, boss deaths, and level-ups; updated + drawn in the world layer.
         this.rings = [];
@@ -640,7 +672,7 @@ export class Game {
         this._comboMilestoneIdx = 0;
         // Twilight (elite-army endgame) one-shot announce latch.
         this._twilightAnnounced = false;
-        // Hypergrowth ("the wall", 13-min doubling) one-shot announce latch.
+        // Hypergrowth ("the wall", compounding from min 20) one-shot announce latch.
         this._hyperAnnounced = false;
         // Run objectives: ids completed this run + the list (for the game-over
         // summary). Repeatable each run.
@@ -662,8 +694,12 @@ export class Game {
         this.feedback = [];
         // Tracks HP between frames so a rise can fire a heal flash centrally.
         this._lastHp = this.player.maxHp;
-        // Starting coins granted by the shop this run — excluded from the
-        // banked total so the Starting Coins upgrade doesn't refund itself.
+        // Battle-pass XP gained by the last finished run (set in _enterGameOver,
+        // drawn on the game-over summary). Cleared so a restart can't show stale XP.
+        this.bpResult = null;
+        // Starting coins granted by the shop this run — _bankRunCoins banks
+        // them only for a PLAYED run (see the guard there), so an instant
+        // pause→RESTART abandon can't mint the seed for free.
         this.startingCoinsGranted = 0;
 
         // A fresh run should never inherit a half-armed save-reset confirm.
@@ -765,8 +801,8 @@ export class Game {
         this.player.damageMul = (this.player.damageMul ?? 1) * pDamage;
         this.player.pickupRange *= pPickup;
         this.player.damageTakenMul = (this.player.damageTakenMul ?? 1) * pIncoming;
-        // Remember how many coins the shop handed us so _enterGameOver can
-        // bank only what was *earned* this run, not the granted seed.
+        // Remember how many coins the shop handed us so _bankRunCoins can
+        // withhold the granted seed from an instantly-abandoned run.
         this.startingCoinsGranted = Math.max(0, (this.player.coins ?? 0) - coinsBefore);
         // Level-up agency resources: 1 free reroll baseline so the feature
         // is discoverable, plus whatever the shop granted onto the player.
@@ -814,7 +850,26 @@ export class Game {
         if (this.lighting && this.lighting.setQuality) {
             this.lighting.setQuality({ strength: GFX.darkness.strength * this.mapDarkness });
         }
+        // P1.2 "Living Biomes": this map's persistent enemy-mix skew (weight
+        // MULTIPLIERS folded into waveState by _applyRunScale; results cached
+        // per wave index since both tables are static for the run) + its
+        // signature ground hazard, spawned on a cadence by
+        // HazardSystem.updateBiome into the shared hazard pool.
+        this._mapMix = biome.enemyMix ?? null;
+        this._mapMixCache = {};
+        this.biomeHazard = biome.hazard ? { kind: biome.hazard, timer: BIOME_HAZARD.firstDelay } : null;
+        // Crypts gloom pools: 0..1 player-light squeeze, eased by HazardSystem
+        // each frame and read by the render pass's player light.
+        this.gloomT = 0;
         this._lastHp = this.player.hp;
+        // First-run onboarding (armed for EVERY run until the first one is
+        // recorded, so a mid-first-run restart re-teaches cleanly): a small
+        // non-blocking hint sequence — move → auto-attack → shards → first
+        // level-up pick — ticked by _tickOnboarding, drawn as a HUD pill by
+        // UISystem. Never a modal wall; gameplay is untouched.
+        this.onboarding = (!SKIP_ONBOARDING && (this.saveSystem.data.stats?.runs ?? 0) === 0)
+            ? { step: 0, timer: 0, moved: 0, armed: true }
+            : null;
         this.screen = 'gameplay';
         // Kick the driving gameplay theme (resume covers the keyboard-start path
         // where no menu tap fired yet).
@@ -849,6 +904,55 @@ export class Game {
         this._updateJoystickEnabled();
     }
 
+    // ── First-run onboarding (guided first run) ──────────────────────────
+    // Gentle in-run teach moments for a brand-new save: each step advances on
+    // its trigger, with a timeout so the sequence can never wedge (a player
+    // who ignores a hint still moves on). Step 3 (the level-up pick) is drawn
+    // inside the level-up overlay itself and completes in selectUpgrade.
+    _tickOnboarding(dt) {
+        const ob = this.onboarding;
+        if (!ob || this.gameOver) return;
+        ob.timer += dt;
+        switch (ob.step) {
+            case 0: {  // teach movement — advance once they've actually walked a bit
+                const dx = this.player.x - (ob.px ?? this.player.x);
+                const dy = this.player.y - (ob.py ?? this.player.y);
+                ob.px = this.player.x; ob.py = this.player.y;
+                ob.moved += Math.hypot(dx, dy);
+                if (ob.moved > 140 || ob.timer > 10) this._advanceOnboarding();
+                break;
+            }
+            case 1:    // the wand auto-fires — a beat to watch it happen
+                if (ob.timer > 5) this._advanceOnboarding();
+                break;
+            case 2:    // XP shards — wait for one to exist so the hint points at something
+                if (!ob.seenGem && this.gems.length > 0) { ob.seenGem = true; ob.timer = 0; }
+                if ((ob.seenGem && ob.timer > 6) || this.player.level > 1 || ob.timer > 20) {
+                    this._advanceOnboarding();
+                }
+                break;
+            default: break;  // step 3 waits on the first level-up pick
+        }
+    }
+
+    _advanceOnboarding() {
+        if (!this.onboarding) return;
+        this.onboarding.step += 1;
+        this.onboarding.timer = 0;
+    }
+
+    // The active gameplay hint pill text (null when nothing should show).
+    _onboardingHintText() {
+        const ob = this.onboarding;
+        if (!ob || this.gameOver) return null;
+        switch (ob.step) {
+            case 0: return 'Move — WASD / arrows, or drag the left half';
+            case 1: return 'Your wand fires on its own — focus on dodging';
+            case 2: return ob.seenGem ? 'Grab the glowing shards — they fuel your next level' : null;
+            default: return null;  // step 3 renders inside the level-up overlay
+        }
+    }
+
     // ── 3rd-boss victory overlay ─────────────────────────────────────────
     // Claim any newly-earned lifetime achievements + grant their coin rewards.
     // Names are stashed on the run summary so the game-over screen can flag
@@ -872,6 +976,9 @@ export class Game {
         if (cosmeticNames.length && this.audio) this.audio.cosmeticReward();
         if (this.runSummary) {
             this.runSummary.achievements = names;
+            // One gentle chime however many unlocked — sits politely under
+            // the game-over stinger.
+            if (names.length) this.audio.achievementChime();
             if (cosmeticNames.length) this.runSummary.cosmeticUnlocks = cosmeticNames;
         }
     }
@@ -960,14 +1067,12 @@ export class Game {
                 finalWaveName: this.waveState?.name ?? '',
             };
             this.saveSystem.recordRun(this.runSummary);
-            // Daily Road: a WON daily banks its score too (same latch as game-over
-            // so leaving-on-victory then dying can't double-count).
-            if (this.dailyMode && !this._dailyRoadRecorded) {
-                const dscore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
-                this.dailyRoadBest = this.saveSystem.recordDailyRoadScore(currentDayNumber(), dscore);
-                this.runSummary.dailyRoadScore = dscore;
-                this._dailyRoadRecorded = true;
-            }
+            // Day streak: a finished run marks today played (idempotent within
+            // a day) — surfaced on the PLAY tab and the game-over summary.
+            this.runSummary.streak = this.saveSystem.recordDayStreak(currentDayNumber());
+            // Daily Road: a WON daily banks its score + payout too (same latch
+            // as game-over so leaving-on-victory then dying can't double-count).
+            this._bankDailyRoad();
             this._checkAchievements();
             this._checkDailyChallenges();
             this._runRecorded = true;
@@ -987,17 +1092,59 @@ export class Game {
     }
 
     // Bank coins earned this run into the save total, exactly once (guarded
-    // by bankedThisRun). Excludes the shop-granted starting seed. Returns the
-    // amount banked (0 if already banked).
+    // by bankedThisRun). Returns the amount banked (0 if already banked).
+    // The Heirloom Cinders seed BANKS TOO (run coins have no mid-run spend, so
+    // always excluding it made that purchased upgrade a literal no-op) — but
+    // only for a run that was PLAYED: ended in death/victory, or lasted ≥60s.
+    // Otherwise pause→RESTART spam would mint floor(seed × coinMul) every few
+    // seconds for zero play; an instant abandon banks only what was picked up.
     _bankRunCoins() {
         if (this.bankedThisRun) return 0;
+        const seedEarned = this.gameOver || this.victory !== null || this.time >= 60;
+        const seed = seedEarned ? 0 : (this.startingCoinsGranted ?? 0);
         // Coin-gain gear/charms boost the BANKED total (player.coinMul, 1 by
         // default). Applied here so the in-run HUD stays a clean integer.
-        const raw = Math.max(0, (this.player.coins ?? 0) - (this.startingCoinsGranted ?? 0));
+        const raw = Math.max(0, (this.player.coins ?? 0) - seed);
         const earned = Math.floor(raw * (this.player.coinMul ?? 1));
         if (earned > 0) this.saveSystem.addCoins(earned);
         this.bankedThisRun = true;
         return earned;
+    }
+
+    // Bank the Daily Road result, exactly once per run (shared by game-over
+    // and victory-leave, latched by _dailyRoadRecorded). Beyond the best-of-day
+    // record, the daily PAYS: score-band coins every run, plus a free Ember
+    // case on the first CLEAR of the day — so the curated run is a reward
+    // loop, not just a scoreboard. Everything lands on runSummary so the
+    // game-over screen can celebrate it.
+    _bankDailyRoad() {
+        if (!this.dailyMode || this._dailyRoadRecorded) return;
+        const dscore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
+        this.dailyRoadBest = this.saveSystem.recordDailyRoadScore(currentDayNumber(), dscore).best;
+        // Score-band coins (generous floor so even a short daily pays a little;
+        // capped well under a good normal run so it never replaces real play).
+        // Band coins are EARNED coins, so they fold into totalCoinsEarned too
+        // (addCoins alone only moves the spendable balance) — the Stats tab
+        // and the SKILLS-tab unlock both read the lifetime stat.
+        const coins = dscore >= 3000 ? 140 : dscore >= 1500 ? 90 : dscore >= 500 ? 50 : 20;
+        this.saveSystem.addCoins(coins);
+        this.saveSystem.incrementStat('totalCoinsEarned', coins);
+        // First CLEAR of the UTC day (3rd boss down — never a mere attempt, so
+        // launch-and-die can't farm it): one free Ember (basic) case — applied
+        // to the save immediately; the label rides the summary. The once-a-day
+        // latch lives in the save (claimDailyRoadCase), NOT on firstToday, so a
+        // failed first attempt doesn't burn the day's case.
+        let caseLabel = null;
+        if (this.bossesDefeated >= 3 && this.saveSystem.claimDailyRoadCase(currentDayNumber())) {
+            const r = openCase(this.saveSystem, 'basic', { free: true });
+            if (r.ok) caseLabel = r.label;
+        }
+        if (this.runSummary) {
+            this.runSummary.dailyRoadScore = dscore;
+            this.runSummary.dailyRoadCoins = coins;
+            this.runSummary.dailyRoadCase = caseLabel;
+        }
+        this._dailyRoadRecorded = true;
     }
 
     // Pause is only meaningful during live gameplay (overlays already
@@ -1006,6 +1153,9 @@ export class Game {
         if (this.screen !== 'gameplay' || this.gameOver ||
             this.upgradeChoices || this.chestReward) return;
         this.paused = !this.paused;
+        // The hearth damps down while paused (soft whoosh + held music dim).
+        if (this.paused) this.audio.pauseIn(); else this.audio.pauseOut();
+        this.audio.setPaused(this.paused);
         this._updateJoystickEnabled();
     }
 
@@ -1169,7 +1319,9 @@ export class Game {
         this.audio.click();
         if (action !== 'resetSave' && action !== 'tab') this.resetConfirming = false;
         switch (action) {
-            case 'tab': this.menuTab = arg; this.resetConfirming = false; break;
+            // Opening a tab acknowledges its one-time "NEW" badge (staged
+            // unlock — see MenuRenderer tabUnlocked + SaveSystem.markTabSeen).
+            case 'tab': this.menuTab = arg; this.saveSystem.markTabSeen(arg); this.resetConfirming = false; break;
             case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this._startRun(); break;
             case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this._startRun(); break;
             case 'setDifficulty': this.saveSystem.setDifficulty(arg); break;
@@ -1201,8 +1353,8 @@ export class Game {
             case 'toggleSetting': this._toggleSetting(arg); break;
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
-            case 'openCase': this._openCaseFlow(arg); break;
-            case 'openMines': this._openMines(arg); break;
+            case 'openCase': this.minigame.openCaseFlow(arg); break;
+            case 'openMines': this.minigame.openMines(arg); break;
             case 'claimBP': {
                 const r = claimBattlePass(this.saveSystem, arg);
                 this._setToast(r.ok ? `Claimed: ${r.label}` : 'Cannot claim');
@@ -1213,7 +1365,7 @@ export class Game {
                 this._setToast(n > 0 ? `Claimed ${n} reward${n > 1 ? 's' : ''}` : 'Nothing to claim');
                 break;
             }
-            case 'caseContinue': this._dismissCase(); break;
+            case 'caseContinue': this.minigame.dismissCase(); break;
             case 'cheatCoins': this.saveSystem.addCoins(arg); this._setToast(`+${arg} coins`); break;
             case 'cheatUnlockAll': {
                 const n = this.saveSystem.cheatUnlockAll();
@@ -1234,119 +1386,6 @@ export class Game {
         const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;
         this.saveSystem.setSetting(key, clamp(cur + delta, 0, 1));
         this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
-    }
-
-    _openCaseFlow(caseType) {
-        const res = openCase(this.saveSystem, caseType);
-        if (!res.ok) { this._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
-        // The reward is already applied to the save; the overlay presents it
-        // with a scrolling reel that decelerates onto the won item.
-        this.audio.caseOpen();
-        const { reel, landingIndex } = buildCaseReel(caseType, res);
-        // Anticipation: a better pull takes LONGER to settle (tenser slow-down),
-        // so the reveal feels earned. Tier drives spin time + the overlay's FX.
-        const tier = ({ common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, mythic: 5 })[res.rarity] ?? 0;
-        const spinTime = 2.4 + tier * 0.22;
-        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier };
-    }
-
-    _dismissCase() { this.caseAnim = null; }
-
-    // Case-overlay input: while the reel is still spinning, SNAP to the reveal
-    // (fast-forward) instead of cancelling — impatient players still see their
-    // prize. Once revealed, a tap closes the overlay.
-    _caseInput() {
-        const a = this.caseAnim;
-        if (!a) return;
-        const spinTime = a.spinTime ?? 2.6;
-        if (a.age < spinTime) {
-            a.age = spinTime;               // jump the reel to its landing
-            this.audio.reveal(a.result?.rarity);
-        } else {
-            this._dismissCase();
-        }
-    }
-
-    // ── Mines (coin gambling mini-game) ──────────────────────────────────
-    // Stake coins on a 5×5 grid hiding mines. Reveal safe tiles to ratchet the
-    // multiplier up; cash out to bank stake × multiplier, or hit a mine and
-    // lose it. Gated by the hourly gamble quota (5 plays / rolling hour).
-    _openMines(bet) {
-        if (this.caseAnim || this.mines) return;
-        if (this.saveSystem.data.totalCoins < bet) { this._setToast('Not enough coins'); return; }
-        if (!this.saveSystem.consumeGamblePlay()) {
-            const info = this.saveSystem.gamblePlaysInfo();
-            this._setToast(`No plays left — resets in ${Math.ceil(info.resetInMs / 60000)}m`);
-            return;
-        }
-        this.saveSystem.spendCoins(bet);
-        this.mines = {
-            bet, mineSet: rollMines(), revealed: [], safeRevealed: 0, mul: 1,
-            stopped: false, busted: false, cashed: false, result: null, age: 0,
-            // Overhaul juice (all keyed off this._menuClock):
-            revealTimes: {}, // idx → clock stamp (per-tile reveal pop)
-            bustIdx: null,   // which tile detonated (shock ring)
-            stopFxT: 0,      // clock stamp at stop (shake + flash + shock)
-            mulPrev: 1,      // multiplier before the last safe reveal (+Nx float)
-            mulPopT: 0,      // clock stamp of the last safe reveal (multiplier pop)
-        };
-        this.audio.forge();
-    }
-
-    // Reveal one tile. Safe → ratchet the multiplier; mine → bust + lose stake.
-    _minesReveal(i) {
-        const m = this.mines;
-        if (!m || m.stopped || i == null || i < 0 || i >= MINES.tiles || m.revealed.includes(i)) return;
-        m.revealed.push(i);
-        if (m.mineSet.includes(i)) {
-            m.busted = true; m.stopped = true;
-            m.bustIdx = i; m.revealTimes[i] = this._menuClock; m.stopFxT = this._menuClock;
-            m.result = { mul: 0, payout: 0, net: -m.bet };
-            this.audio.hurt();
-            return;
-        }
-        const prevMul = m.mul;
-        m.safeRevealed += 1;
-        m.mul = minesRawMultiplier(m.safeRevealed) * MINES_HOUSE;
-        m.mulPrev = prevMul; m.mulPopT = this._menuClock; m.revealTimes[i] = this._menuClock;
-        this.audio.spinTick();
-        // Cleared every safe tile → auto cash-out at the max multiplier.
-        if (m.safeRevealed >= MINES.tiles - MINES.mines) this._minesCashOut();
-    }
-
-    // Cash out the live multiplier (needs at least one safe reveal).
-    _minesCashOut() {
-        const m = this.mines;
-        if (!m || m.stopped || m.safeRevealed <= 0) return;
-        m.stopped = true; m.cashed = true; m.stopFxT = this._menuClock;
-        const payout = Math.floor(m.bet * m.mul);
-        m.result = { mul: m.mul, payout, net: payout - m.bet };
-        if (payout > 0) this.saveSystem.addCoins(payout);
-        this.audio.reveal(m.mul >= 8 ? 'mythic' : m.mul >= 4 ? 'legendary' : m.mul >= 2 ? 'epic' : 'rare');
-    }
-
-    _dismissMines() { this.mines = null; }
-
-    // Grid tile rects (internal coords) — shared by render + hit-testing. A
-    // fixed stacked layout: a header band (multiplier) above, the board here,
-    // the cash button below (see _minesCashRect). Render + input both call this,
-    // so the geometry stays in lock-step.
-    _minesTileRects() {
-        const cols = MINES.cols, rows = Math.ceil(MINES.tiles / cols);
-        const cell = 112, gap = 12;
-        const gw = cols * cell + (cols - 1) * gap;
-        const ox = INTERNAL_WIDTH / 2 - gw / 2;
-        const oy = 314;   // leaves a header band (118..300) for the multiplier
-        const rects = [];
-        for (let i = 0; i < MINES.tiles; i++) {
-            const c = i % cols, r = Math.floor(i / cols);
-            rects.push({ x: ox + c * (cell + gap), y: oy + r * (cell + gap), w: cell, h: cell });
-        }
-        return rects;
-    }
-
-    _minesCashRect() {
-        return { x: INTERNAL_WIDTH / 2 - 220, y: 942, w: 440, h: 76 };
     }
 
     _setToast(msg) { this.menuToast = msg; this.menuToastTimer = 2.5; }
@@ -1404,9 +1443,13 @@ export class Game {
             if ((m[o.metric] ?? 0) >= o.target) {
                 this._objDone.add(o.id);
                 this._objCompleted.push(o.id);
-                this.saveSystem.addCoins(o.reward);
+                // Coin-gain builds apply to objective payouts too (same
+                // player.coinMul the banked run total already respects), so a
+                // coin build is as strong as its cards advertise.
+                const reward = Math.floor(o.reward * (this.player.coinMul ?? 1));
+                this.saveSystem.addCoins(reward);
                 this.audio.objective();
-                this.waveDirector.announce(`✓ ${o.name}  +${o.reward}`, 2.2, '#7fe0a0');
+                this.waveDirector.announce(`✓ ${o.name}  +${reward}`, 2.2, '#7fe0a0');
             }
         }
     }
@@ -1436,6 +1479,16 @@ export class Game {
     _presentLevelUp() {
         if (this.pendingLevelUps <= 0) return;
         this.pendingLevelUps -= 1;
+        // Onboarding fast-forward: the FIRST level-up IS the step-3 teach
+        // moment, and it usually arrives before the timed hints get there
+        // (step 2 alone needs ~13–21s while _tickOnboarding is frozen behind
+        // this overlay). Jump straight to step 3 so the "first pick" line
+        // shows on THIS overlay and selectUpgrade's clear guard fires —
+        // otherwise it would slip to the second level-up.
+        if (this.onboarding && this.onboarding.step < 3) {
+            this.onboarding.step = 3;
+            this.onboarding.timer = 0;
+        }
         const choices = this.upgradeSystem.rollChoices(this, 3);
         this.setUpgradeChoices(choices.length > 0 ? choices : null);
     }
@@ -1444,6 +1497,8 @@ export class Game {
         if (!this.upgradeChoices) return;
         const upgrade = this.upgradeChoices[idx];
         if (!upgrade) return;
+        // First level-up pick made — the onboarding sequence is complete.
+        if (this.onboarding && this.onboarding.step >= 3) this.onboarding = null;
         this.upgradeSystem.apply(upgrade, this);
         this.audio.upgrade();
         this.setUpgradeChoices(null);
@@ -1472,6 +1527,7 @@ export class Game {
             );
             this._pushFeedback('levelup', 0.5);
             this.particles.levelUpBurst(this.player.x, this.player.y);
+            this.audio.evolve();
         }
         this.chestReward = { reward, age: 0 };
         this._updateJoystickEnabled();
@@ -1508,7 +1564,11 @@ export class Game {
         const choice = this.altar.choices[idx];
         if (!choice) return;
         choice.apply(this);
-        this.audio.upgrade();
+        // Flavor-matched pick cues: fusion = forge slam, pact = dark bargain,
+        // everything else keeps the standard upgrade chirp.
+        if (choice.kind === 'fusion') this.audio.fusionForge();
+        else if (choice.kind === 'pact') this.audio.pactSworn();
+        else this.audio.upgrade();
         if (choice.kind === 'fusion') {
             // Fusing is a run-defining moment — announce it like an evolution.
             this.waveDirector.announce(`⚔ FUSED — ${choice.name.toUpperCase()} ⚔`, 3.0, '#ffd3ec');
@@ -1554,6 +1614,7 @@ export class Game {
         const choices = rollRoadChoices();
         if (!choices || !choices.length) return;
         this.altar = { choices, age: 0, kind: 'crossroads' };
+        this.audio.shrineChime();
         this._updateJoystickEnabled();
     }
 
@@ -1663,9 +1724,28 @@ export class Game {
         // count past a perf-safe max on mobile (base cap is 180).
         ws.maxAlive = Math.min(220, Math.round((ws.maxAlive ?? 0) * r.cap * (s?.cap ?? 1)));
         ws.spawnIntervalMul = (ws.spawnIntervalMul ?? 1) * r.interval * (s?.interval ?? 1);
+        // P1.2 biome mix: MULTIPLY this map's skew into the wave's native
+        // table first. Multipliers only shift what the wave already offers
+        // (never add types), so Vigil-1 purity and the creature-unlock
+        // cadence survive — the map just leans the mix its own way. Both
+        // tables are static per run, so the merged result is cached per wave
+        // index and the steady-state frame allocates nothing.
+        if (this._mapMix) {
+            let tw = this._mapMixCache[ws.index];
+            if (!tw) {
+                tw = { ...ws.typeWeights };
+                for (const id in tw) {
+                    const m = this._mapMix[id];
+                    if (m) tw[id] *= m;
+                }
+                this._mapMixCache[ws.index] = tw;
+            }
+            ws.typeWeights = tw;
+        }
         // Enemy-MIX bias: merge the road's spawn weights onto a NEW typeWeights
         // object (getState returns a reference to the WAVES config table — never
         // mutate it in place). Null → the wave's native mix is untouched.
+        // Layered AFTER the biome mix so a road's segment bias wins outright.
         if (this.segmentWeights) ws.typeWeights = { ...ws.typeWeights, ...this.segmentWeights };
         return ws;
     }
@@ -1688,12 +1768,17 @@ export class Game {
                 if (s._healAccum >= interval) {
                     const amt = (def.healPerSec || 8) * s._healAccum;
                     s._healAccum = 0;
+                    let mended = false;
                     for (const a of enemies) {
                         if (!a.active || a.hp >= a.maxHp) continue;
                         const dx = a.x - s.x, dy = a.y - s.y;
                         if (dx * dx + dy * dy > r2) continue;
                         a.hp = Math.min(a.maxHp, a.hp + amt);
+                        mended = true;
                     }
+                    // Hollow mend-shimmer so players learn to hunt healers by
+                    // ear (long cue gap + on-screen gate keep it sparse).
+                    if (mended && this._inView(s.x, s.y, 0)) this.audio.healerPulse();
                 }
             } else if (def.support === 'shield') {
                 const mul = def.shieldMul || 0.6;
@@ -1703,6 +1788,12 @@ export class Game {
                     if (dx * dx + dy * dy > r2) continue;
                     a.shieldTimer = 0.35;
                     a.shieldMul = mul;
+                }
+                // One metallic ward chime per shielder as it first raises the
+                // aura on screen — NEVER per tick (it refreshes every frame).
+                if (!s._shieldCuePlayed && this._inView(s.x, s.y, 0)) {
+                    s._shieldCuePlayed = true;
+                    this.audio.shield();
                 }
             }
         }
@@ -1794,6 +1885,7 @@ export class Game {
         if (!def || !def.boss) return;
         this.bossWarning = { id, name: def.bossName ?? id, epithet: def.epithet ?? null, tier: def.tier ?? null, timer: BOSS.warningDuration, total: BOSS.warningDuration };
         this.waveDirector.announce('⚠  BOSS INCOMING  ⚠', BOSS.warningDuration, '#ff4040');
+        this.audio.bossTelegraph();
         this._shake(SCREEN_SHAKE.intensity * 0.4, 0.3);
     }
 
@@ -1805,6 +1897,7 @@ export class Game {
         const type = pool.length ? pool[Math.floor(Math.random() * pool.length)] : 'brute';
         this.lieutenantWarning = { type, timer: LIEUTENANT.warningDuration, total: LIEUTENANT.warningDuration };
         this.waveDirector.announce('⚔  ELITE APPROACHES  ⚔', LIEUTENANT.warningDuration, LIEUTENANT.color);
+        this.audio.lieutenantWarn();
         this._shake(SCREEN_SHAKE.intensity * 0.3, 0.25);
     }
 
@@ -1830,6 +1923,24 @@ export class Game {
         lt.name = 'LIEUTENANT';
         lt.radius = (def.radius ?? 30) * LIEUTENANT.radiusMul;
         lt.visualScale = (def.visualScale ?? 1) * LIEUTENANT.radiusMul;
+        // P1.3 — arm the borrowed boss vocabulary (1-2 mild attacks per type,
+        // LIEUTENANT.attacks). runLieutenantAI (Enemy.js) drives timers →
+        // windup (gold charge-arc tell) → commitBossAttack, so telegraphs +
+        // hazards flow through the exact boss pipeline. First cooldowns are
+        // part-elapsed so the opening special lands early but never instantly.
+        lt.behavior = 'lieutenant';
+        lt.ltAttacks = LIEUTENANT.attacks?.[type] ?? null;
+        lt.ltTimers = {};
+        if (lt.ltAttacks) {
+            for (const a of lt.ltAttacks) lt.ltTimers[a.id] = a.cooldown * (0.35 + Math.random() * 0.4);
+        }
+        lt._ltActive = null;
+        lt._ltWindupDur = 0;
+        lt._bossOut = {
+            enemyProjectiles: this.enemyProjectiles,
+            hazards: this.hazards,
+            summons: this.bossSummons,
+        };
         this.enemies.push(lt);
         this.audio.bossSpawn();   // a punchy cue, but no boss music switch
         this._shake(SCREEN_SHAKE.intensity * 0.5, 0.3);
@@ -1891,6 +2002,7 @@ export class Game {
                 // scalar (see BOSS.enrage + Enemy.update), so no discrete bump here.
                 this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t25, def.supportTypes);
                 this.waveDirector.announce(`${e.name.toUpperCase()} ENRAGES!`, 2.0, '#ff3326');
+                this.audio.enrage();
                 this._shake(SCREEN_SHAKE.intensity * 0.9, 0.5);
             }
         }
@@ -1911,16 +2023,25 @@ export class Game {
         for (const e of enemies) if (e.active) active++;
         if (active < cfg.minCountToRun) return;
 
+        // GC-clean spatial hash: numeric cell keys (gx*65536+gy is collision-
+        // free — the bounded world spans far fewer than ±32768 cells) and
+        // buckets that persist across frames. Only the buckets filled LAST
+        // frame are reset (tracked in _sepUsed), so at steady state the pass
+        // allocates nothing — the old string keys + fresh arrays were a big
+        // slice of the per-frame churn at the 180-enemy cap.
         const cell = cfg.cellSize;
         const grid = this._sepGrid || (this._sepGrid = new Map());
-        grid.clear();
+        const used = this._sepUsed || (this._sepUsed = []);
+        for (let i = 0; i < used.length; i++) used[i].length = 0;
+        used.length = 0;
         for (const e of enemies) {
             if (!e.active) continue;
             e._pushX = 0;
             e._pushY = 0;
-            const key = Math.floor(e.x / cell) + ',' + Math.floor(e.y / cell);
+            const key = Math.floor(e.x / cell) * 65536 + Math.floor(e.y / cell);
             let b = grid.get(key);
             if (!b) { b = []; grid.set(key, b); }
+            if (b.length === 0) used.push(b);
             b.push(e);
         }
 
@@ -1931,7 +2052,7 @@ export class Game {
             const gy = Math.floor(e.y / cell);
             for (let oy = -1; oy <= 1; oy++) {
                 for (let ox = -1; ox <= 1; ox++) {
-                    const b = grid.get((gx + ox) + ',' + (gy + oy));
+                    const b = grid.get((gx + ox) * 65536 + (gy + oy));
                     if (!b) continue;
                     for (const o of b) {
                         if (o === e) continue;
@@ -1968,6 +2089,11 @@ export class Game {
             let px = e._pushX;
             let py = e._pushY;
             if (px === 0 && py === 0) continue;
+            // A planted lieutenant/bomber ignores separation through its
+            // windup for the same reason Enemy.update drops its knockback:
+            // the commit lands at the enemy's live spot, so a swarm shove
+            // would drift the blast off the telegraph it already painted.
+            if ((e.lieutenant || e.behavior === 'bomber') && e.windupTimer > 0) continue;
             if (e.boss) { px *= cfg.bossPushResist; py *= cfg.bossPushResist; }
             const m = Math.hypot(px, py);
             if (m > cfg.maxPush) { const s = cfg.maxPush / m; px *= s; py *= s; }
@@ -2099,6 +2225,8 @@ export class Game {
         const def = e.affixDef;
         if (!def) return;
         if (e.affix === 'volatile') {
+            // A crowd-damaging blast should never be silent (muffled thump).
+            if (this._inView(e.x, e.y, 120)) this.audio.volatileBoom();
             const r2 = def.explodeRadius * def.explodeRadius;
             for (const other of this.enemies) {
                 if (!other.active || other === e) continue;
@@ -2129,7 +2257,14 @@ export class Game {
         } else if (e.affix === 'splitting') {
             const count = def.spawnCount ?? 2;
             const type = def.spawnType ?? 'crawler';
+            // Alive-cap gated per child (same as _splitOnDeath below): a
+            // twilight AoE wipe can pop many splitting affixes in one frame,
+            // and an on-death spawn must not burst past maxAlive.
+            const cap = this.waveState?.maxAlive ?? 120;
+            let live = 0;
+            for (const o of this.enemies) if (o.active) live++;
             for (let i = 0; i < count; i++) {
+                if (live >= cap) break;
                 const a = (i / count) * TWO_PI + Math.random() * 0.5;
                 const ox = e.x + Math.cos(a) * 40;
                 const oy = e.y + Math.sin(a) * 40;
@@ -2137,7 +2272,33 @@ export class Game {
                     healthMul: this.waveState.healthMul,
                     speedMul: this.waveState.speedMul,
                 }));
+                live++;
             }
+        }
+    }
+
+    // P1.3 splitter (def.splitInto) on-death burst: children spawn WEAKENED
+    // (hpFrac of the live wave scale) as plain types — never elite, never a
+    // splitter — so a split can't recurse or double-dip the reward path
+    // (children pay their own small XP when the player actually kills them).
+    _splitOnDeath(e) {
+        const s = e.def.splitInto;
+        const count = s.count ?? 2;
+        // Alive-cap gated like every other mid-fight spawn path (summoner
+        // calls, boss support, pack spawns): re-check before EACH child so an
+        // AoE wipe of a splitter clump can't burst past maxAlive.
+        const cap = this.waveState?.maxAlive ?? 120;
+        let live = 0;
+        for (const o of this.enemies) if (o.active) live++;
+        for (let i = 0; i < count; i++) {
+            if (live >= cap) break;
+            const a = (i / count) * TWO_PI + Math.random() * 0.6;
+            this.enemies.push(new Enemy(s.type ?? 'slime', e.x + Math.cos(a) * 46, e.y + Math.sin(a) * 46, {
+                healthMul: this.waveState.healthMul * (s.hpFrac ?? 0.5),
+                speedMul: this.waveState.speedMul,
+                contactDamageMul: this.waveState.damageMul ?? 1,
+            }));
+            live++;
         }
     }
 
@@ -2191,20 +2352,17 @@ export class Game {
                 .map((w) => WEAPONS[w.id].name),
         };
 
-        // Daily Road score — banked once per run (a daily can die at any point,
-        // so it's NOT gated on _gauntletActive). Reuses the gauntlet formula.
-        if (this.dailyMode && !this._dailyRoadRecorded) {
-            const dscore = Math.floor(this.time) + Math.floor(this.kills * 2.5) + this.bossesDefeated * 500;
-            this.dailyRoadBest = this.saveSystem.recordDailyRoadScore(currentDayNumber(), dscore);
-            this.runSummary.dailyRoadScore = dscore;
-            this._dailyRoadRecorded = true;
-        }
+        // Daily Road score + payout — banked once per run (a daily can die at
+        // any point, so it's NOT gated on _gauntletActive).
+        this._bankDailyRoad();
 
         // Fold the run into lifetime/best records; capture which bests were
         // beaten so the game-over summary can flag them. Skip if a victory-leave
         // already recorded this run (so the 3 boss kills aren't counted twice).
         this.newBest = this._runRecorded ? null : this.saveSystem.recordRun(this.runSummary);
         this._runRecorded = true;
+        // Day streak (idempotent within a day): today now counts as played.
+        this.runSummary.streak = this.saveSystem.recordDayStreak(currentDayNumber());
         // Award battle-pass (vigil) XP from the run and surface the gain on the
         // game-over screen.
         // Newly-earned lifetime achievements (claim + grant coins; surfaced on
@@ -2239,35 +2397,7 @@ export class Game {
         // ticks the reset-confirm timeout so the "tap again to confirm"
         // prompt times out cleanly.
         if (this.screen === 'start') {
-            if (this.resetConfirming) {
-                this.resetConfirmTimer -= dt;
-                if (this.resetConfirmTimer <= 0) this.resetConfirming = false;
-            }
-            if (this.caseAnim) {
-                const spinTime = this.caseAnim.spinTime ?? 2.6;
-                const wasSpinning = this.caseAnim.age < spinTime;
-                this.caseAnim.age += dt;
-                if (wasSpinning) {
-                    // Ratchet tick that SLOWS as the reel decelerates (50ms → ~290ms)
-                    // and RISES in pitch toward the landing — climbing higher when a
-                    // Rare+ is incoming, so your ears feel the pull coming.
-                    const p = Math.min(1, this.caseAnim.age / spinTime);
-                    const interval = 0.05 + p * p * 0.24;
-                    this.caseAnim._tick = (this.caseAnim._tick ?? 0) + dt;
-                    if (this.caseAnim.age < spinTime && this.caseAnim._tick >= interval) {
-                        this.caseAnim._tick = 0;
-                        const tier = this.caseAnim.tier || 0;
-                        const pitch = 0.72 + p * p * 1.0 + (tier >= 2 ? p * p * 0.55 : 0);
-                        this.audio.spinTick(pitch);
-                    }
-                }
-                // Fire the reveal chime the instant the reel settles — its pitch/
-                // richness scales with the won rarity (better pull = bigger noise).
-                if (wasSpinning && this.caseAnim.age >= spinTime) this.audio.reveal(this.caseAnim.result?.rarity);
-            }
-            if (this.mines) this._menuClock += dt;   // drives Mines reveal-pop / multiplier juice
-            if (this.mines && this.mines.stopped) this.mines.age += dt;
-            if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
+            this._updateMenuScreen(dt);
             return;
         }
         if (this.screen === 'gameOver') {
@@ -2317,13 +2447,52 @@ export class Game {
 
         this.time += dt;
 
+        this._updateComboAndObjectives(dt);
+        this._updateDirectors(dt);
+        const weaponResult = this._updatePlayerAndWeapons(dt);
+        const statusResult = this._updateEnemies(dt);
+        this._updateProjectiles(dt);
+        // Boss area hazards (shockwaves, delayed zones, beams, lingering
+        // pools) — simmed by the HazardSystem. Runs BEFORE the Second Wind
+        // regen check so HP/i-frames stay consistent within the frame.
+        // updateBiome first spawns this map's signature ground patches
+        // (P1.2) into the same pool, so a fresh patch telegraphs this frame.
+        this.hazardSystem.updateBiome(dt, this);
+        this.hazardSystem.update(dt, this);
+        this._updatePickups(dt);
+        this._resolveCombat(dt, weaponResult, statusResult);
+        this._updateWorldFx(dt);
+        this._updateRewardOverlays(dt);
+        this._updateEnemyScanAndCleanup(dt);
+    }
+
+    // ── update() phase methods (P1.5 split) — one per sim stage, called in
+    // exactly the order the old monolithic body ran ───────────────────────
+
+    // Start-screen tick: reset-confirm timeout, minigame overlays, toast.
+    _updateMenuScreen(dt) {
+        if (this.resetConfirming) {
+            this.resetConfirmTimer -= dt;
+            if (this.resetConfirmTimer <= 0) this.resetConfirming = false;
+        }
+        this.minigame.update(dt);
+        if (this.menuToastTimer > 0) this.menuToastTimer -= dt;
+    }
+
+    // Combo decay + run-objective checks.
+    _updateComboAndObjectives(dt) {
         // Combo decay: the streak lapses if no kill lands inside the window.
         if (this.comboTimer > 0) {
             this.comboTimer -= dt;
             if (this.comboTimer <= 0) { this.combo = 0; this._comboMilestoneIdx = 0; }
         }
         this._checkObjectives();
+    }
 
+    // Wave/boss/lieutenant direction: wave-state rebuild + announcements,
+    // boss + lieutenant scheduling/warnings, boss-summon drain, and the boss
+    // HP-threshold phases.
+    _updateDirectors(dt) {
         this.waveDirector.update(dt, this.time, this.enemies.length);
         this.waveState = this._applyRunScale(this.waveDirector.getState(this.time));
         // Feed the composure gate: how far the time-based endless damage ramp has
@@ -2334,15 +2503,22 @@ export class Game {
         if (this.waveState.twilight && !this._twilightAnnounced) {
             this._twilightAnnounced = true;
             this.waveDirector.announce('✦ TWILIGHT — THE HORDE TURNS ✦', 3.6, '#c97bff');
-            this.audio.bossSpawn();
+            this.audio.dreadDrone();
             this._shake(SCREEN_SHAKE.intensity * 0.7, 0.5);
         }
-        // HYPERGROWTH onset — the wall begins; enemies now double every minute.
+        // HYPERGROWTH onset — the wall begins; enemies now compound every minute.
         if ((this.waveState.hyperMul ?? 1) > 1 && !this._hyperAnnounced) {
             this._hyperAnnounced = true;
             this.waveDirector.announce('☠ THE DARK DEVOURS — FLEE OR FALL ☠', 4.0, '#ff3326');
-            this.audio.bossSpawn();
+            this.audio.dreadDrone();
             this._shake(SCREEN_SHAKE.intensity * 0.9, 0.6);
+        }
+        // Wave transition: one low horn swell as the Vigil index advances (the
+        // banner is queued by WaveDirector). time<1 resyncs the latch per run.
+        if (this.time < 1 || this._lastWaveIdx === undefined) this._lastWaveIdx = this.waveState.index;
+        else if (this.waveState.index !== this._lastWaveIdx) {
+            this._lastWaveIdx = this.waveState.index;
+            this.audio.waveStart();
         }
 
         // One boss at a time: gate the scheduler on a live "is any boss alive"
@@ -2392,8 +2568,16 @@ export class Game {
         }
         // Boss HP-threshold phases (75/50/25%) — one-shot support + aggression.
         this._updateBossThresholds();
+    }
 
+    // Player movement/caps/aura, the trash-spawner gate, and weapon fire.
+    // Returns the weapon system's { killed, hits } for _resolveCombat.
+    _updatePlayerAndWeapons(dt) {
         this.player.update(dt, this.input);
+        // First-run onboarding hints advance off live play (movement, gems,
+        // level) — ticked right after the player moves so step 0's distance
+        // accumulator sees this frame's step.
+        if (this.onboarding) this._tickOnboarding(dt);
         // Late-game flattening: clamp the global stacking stats every frame
         // (before weapons read them). Hard caps are idempotent on these
         // monotonic-growth fields; weapon per-level stats are unaffected.
@@ -2429,9 +2613,9 @@ export class Game {
             dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio
         );
 
-        // Held weapons: aim the loadout at the nearest enemy (the primary wand
-        // points at what it shoots; the halo bobs around the body). With no
-        // target, weapons rest along the hero's facing so they never snap to a
+        // Held weapon: aim the signature wand (owned[0], the menu-chosen
+        // starter) at the nearest enemy — it points at what it shoots. With no
+        // target, it rests along the hero's facing so it never snaps to a
         // stale angle. Snapshot the owned visuals for Player.draw, and hold the
         // cast pose whenever the primary weapon fires this frame.
         this.player.loadout = this.weaponSystem.getOwnedVisuals();
@@ -2451,10 +2635,74 @@ export class Game {
         }
         const primaryWeapon = this.weaponSystem.owned[0];
         if (primaryWeapon && primaryWeapon.firedThisFrame) this.player.triggerCast();
+        return weaponResult;
+    }
 
+    // Enemy movement + wall/arena resolve, soft separation, burn DoT, and
+    // support (healer/shielder) auras. Returns the burn tick's
+    // { killed, hits } for _resolveCombat.
+    _updateEnemies(dt) {
         for (const e of this.enemies) {
             if (!e.active) continue;
+            // Windup-timer TRANSITIONS drive every behavior's commit + cues
+            // (the windup IS the dodge warning): charger brace/dash, and the
+            // P1.3 bomber plant/boom, summoner call, teleporter blink, and
+            // lieutenant specials all ride the same before/after check.
+            const wasWinding = e.windupTimer > 0;
             e.update(dt, this.player, this.enemyProjectiles, this.obstacleSystem);
+            if (e.type === 'charger' && this._inView(e.x, e.y, 0)) {
+                if (!wasWinding && e.windupTimer > 0) this.audio.chargerWindup();
+                else if (wasWinding && e.windupTimer <= 0) this.audio.chargerDash();
+            } else if (e.behavior === 'bomber') {
+                if (!wasWinding && e.windupTimer > 0) {
+                    // Bomber planted: paint the blast circle as a delayedZone
+                    // (the hazard pool owns the detonation damage + flash, so
+                    // the dodge behaves exactly like a telegraphed boss zone —
+                    // LOS-checked, i-frame gated). Fires even if the bee dies
+                    // mid-windup: the warning that was painted stays honest.
+                    this.hazards.push({
+                        kind: 'delayedZone', x: e.x, y: e.y, r: e.def.blastRadius,
+                        damage: e.blastDamage, age: 0, lifetime: e.def.windup,
+                        hitPlayer: false, detonateAge: 0, active: true,
+                    });
+                    if (this._inView(e.x, e.y, 0)) this.audio.chargerWindup();
+                } else if (wasWinding && e.windupTimer <= 0 && e.active) {
+                    // Commit: the bee dies in its own blast. A PLAIN bomber is
+                    // deliberately NOT routed through the kill/reward path — a
+                    // self-detonation pays no XP/kill for standing clear. An
+                    // ELITE bomber still owes its rolled loot (affix death,
+                    // chest/coin roll, gem, kill credit), so it detonates INTO
+                    // the normal pipeline via _selfDetonated instead of
+                    // leaking the rewards its elite roll promised.
+                    e.active = false;
+                    if (e.elite) this._selfDetonated.push(e);
+                    else this.particles.deathBurst(e.x, e.y, '#ff9a4a');
+                    if (this._inView(e.x, e.y, 120)) this.audio.volatileBoom();
+                }
+            } else if (e.behavior === 'summoner') {
+                if (!wasWinding && e.windupTimer > 0) {
+                    if (this._inView(e.x, e.y, 0)) this.audio.chargerWindup();
+                } else if (wasWinding && e.windupTimer <= 0) {
+                    // Call fulfilled through _spawnBossSupport — the SAME
+                    // alive-cap gate boss summons use, so summon pressure can
+                    // never blow past the wave cap / maxEnemyCap.
+                    this._spawnBossSupport(e.x, e.y, e.def.summonCount ?? 3, e.def.summonTypes);
+                    if (this._inView(e.x, e.y, 0)) this.audio.healerPulse();
+                }
+            } else if (e.behavior === 'teleporter') {
+                if (wasWinding && e.windupTimer <= 0) {
+                    // Blink committed (the enemy moved itself): sparkle both
+                    // ends so the vanish/arrive reads even at screen edge.
+                    this.particles.pickupSparkle(e._blinkFromX, e._blinkFromY, '#7fe0ff');
+                    this.particles.pickupSparkle(e.x, e.y, '#7fe0ff');
+                    if (this._inView(e.x, e.y, 0)) this.audio.dash();
+                }
+            } else if (e.lieutenant) {
+                // Lieutenant specials: windup/commit cues (the gold charge arc
+                // + any ground telegraph are painted by Enemy/commitBossAttack).
+                if (!wasWinding && e.windupTimer > 0) { if (this._inView(e.x, e.y, 0)) this.audio.chargerWindup(); }
+                else if (wasWinding && e.windupTimer <= 0) { if (this._inView(e.x, e.y, 0)) this.audio.bossAttack(); }
+            }
             // Enemies (including elites + bosses) can't walk through walls.
             // Resolving after their move keeps them chasing while sliding along
             // obstacles instead of clipping through or stacking inside them.
@@ -2476,19 +2724,13 @@ export class Game {
         // is merged into allKilled below.
         const statusResult = this._tickStatuses(dt);
         this._tickSupportEnemies(dt);
+        // (Phase-2 boss enrage one-shots moved into the consolidated enemy
+        // scan below — one pass instead of five over the full array.)
+        return statusResult;
+    }
 
-        // Phase-2 enrage: a boss that just crossed its HP threshold announces
-        // + shakes exactly once (latched by enrageShouted). The phase flip
-        // itself happens inside the boss AI; this only fires the one-shot FX.
-        for (const e of this.enemies) {
-            if (e.active && e.boss && e.phase2Entered && !e.enrageShouted) {
-                e.enrageShouted = true;
-                this.waveDirector.announce('ENRAGED!', 1.2);
-                this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
-                this._spawnRing(e.x, e.y, { maxR: 300, width: 12, life: 0.5, color: '#ff3b4e', ease: 'outCubic' });
-            }
-        }
-
+    // Player projectiles + enemy bolts (movement, wall impacts, player hits).
+    _updateProjectiles(dt) {
         for (const p of this.projectiles) {
             if (!p.active) continue;
             const px = p.x, py = p.y;
@@ -2520,114 +2762,10 @@ export class Game {
                 ));
             }
         }
+    }
 
-        // Boss area hazards (expanding shockwaves) + their telegraph decals.
-        // Runs BEFORE the Second Wind regen check so HP/i-frames stay
-        // consistent within the frame. A shockwave damages the player once,
-        // when its expanding band first crosses them (i-frames handle the rest).
-        for (const hz of this.hazards) {
-            if (!hz.active) continue;
-            hz.age += dt;
-            if (hz.kind === 'bossTelegraph') {
-                hz.r = hz.rMax * Math.min(1, hz.age / hz.lifetime);
-                if (hz.age >= hz.lifetime) hz.active = false;
-                continue;
-            }
-            // delayedZone: a telegraphed danger circle that detonates ONCE when
-            // its warning fills, dealing damage if the player is still inside
-            // (and in line of sight). Lingers a few frames after for the blast FX.
-            if (hz.kind === 'delayedZone') {
-                if (hz.age >= hz.lifetime && !hz.hitPlayer) {
-                    hz.hitPlayer = true;
-                    const d = Math.hypot(this.player.x - hz.x, this.player.y - hz.y);
-                    if (d <= hz.r && this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
-                        const dealt = this.player.takeDamage(hz.damage);
-                        if (dealt > 0) {
-                            this._playerHurtShake(dealt);
-                            this._pushFeedback('hit', 0.32);
-                            this.damageNumbers.push(new DamageNumber(
-                                this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'));
-                        }
-                    }
-                    if (this.particles) this.particles.deathBurst(hz.x, hz.y, '#ff7a4a');
-                }
-                if (hz.hitPlayer) {
-                    hz.detonateAge += dt;
-                    if (hz.detonateAge > 0.18) hz.active = false;
-                }
-                continue;
-            }
-            // beam: a rotating laser LINE from the boss. Telegraphs during `warn`,
-            // then goes hot and sweeps across `sweep` radians. Damages the player
-            // (i-frame gated) whenever they're on the hot line within `length`.
-            if (hz.kind === 'beam') {
-                const hot = hz.age >= hz.warn;
-                const sweepT = Math.min(1, Math.max(0, (hz.age - hz.warn) / Math.max(0.001, hz.lifetime - hz.warn)));
-                hz.curAngle = hz.angle + hz.sweep * (hot ? sweepT : 0);
-                if (hot) {
-                    const dx = this.player.x - hz.x, dy = this.player.y - hz.y;
-                    const ca = Math.cos(hz.curAngle), sa = Math.sin(hz.curAngle);
-                    const along = dx * ca + dy * sa;            // distance along the beam
-                    const perp = Math.abs(dx * -sa + dy * ca);  // distance off the beam line
-                    if (along > 0 && along < hz.length && perp < hz.band + this.player.radius &&
-                        this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
-                        const dealt = this.player.takeDamage(hz.damage);
-                        if (dealt > 0) {
-                            this._playerHurtShake(dealt);
-                            this._pushFeedback('hit', 0.3);
-                            this.damageNumbers.push(new DamageNumber(
-                                this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'));
-                        }
-                    }
-                }
-                if (hz.age >= hz.lifetime) hz.active = false;
-                continue;
-            }
-            // lingering: a persistent pool that telegraphs, then SITS dealing
-            // damage-over-time (ticking every 0.4s, i-frame gated) until it fades.
-            if (hz.kind === 'lingering') {
-                if (hz.age >= hz.warn) {
-                    hz.tickTimer -= dt;
-                    if (hz.tickTimer <= 0) {
-                        hz.tickTimer = 0.4;
-                        const d = Math.hypot(this.player.x - hz.x, this.player.y - hz.y);
-                        if (d <= hz.r + this.player.radius &&
-                            this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
-                            const dealt = this.player.takeDamage(hz.tickDamage);
-                            if (dealt > 0) {
-                                this._playerHurtShake(dealt);
-                                this.damageNumbers.push(new DamageNumber(
-                                    this.player.x, this.player.y - this.player.radius, dealt, hz.color || '#ff7a33'));
-                            }
-                        }
-                    }
-                }
-                if (hz.age >= hz.lifetime) hz.active = false;
-                continue;
-            }
-            // shockwave: expand and damage the player once when the ring band
-            // sweeps across them.
-            hz.r += hz.growth * dt;
-            if (!hz.hitPlayer) {
-                const d = Math.hypot(this.player.x - hz.x, this.player.y - hz.y);
-                // A wall between the boss's shockwave origin and the player
-                // shields them — bosses can't damage through cover.
-                if (d >= hz.r - hz.band && d <= hz.r + hz.band &&
-                    this.obstacleSystem.hasLineOfSight(hz.x, hz.y, this.player.x, this.player.y)) {
-                    const dealt = this.player.takeDamage(hz.damage);
-                    if (dealt > 0) {
-                        hz.hitPlayer = true;
-                        this._playerHurtShake(dealt);
-                        this._pushFeedback('hit', 0.32);
-                        this.damageNumbers.push(new DamageNumber(
-                            this.player.x, this.player.y - this.player.radius, dealt, '#ff4757'
-                        ));
-                    }
-                }
-            }
-            if (hz.r >= hz.rMax) hz.active = false;
-        }
-
+    // XP gems (+ the level-up trigger), coins, and health orbs.
+    _updatePickups(dt) {
         let xpCollected = 0;
         for (const g of this.gems) {
             if (!g.active) continue;
@@ -2687,18 +2825,24 @@ export class Game {
                 this.audio.heal();
             }
         }
+    }
 
+    // Contact/projectile collisions + the merged kill/hit reward pipeline
+    // (gems, coins, chests, boss/lieutenant/elite setpieces, hit feedback).
+    _resolveCombat(dt, weaponResult, statusResult) {
         const collisionResult = this.collisionSystem.resolve(
             dt, this.player, this.enemies, this.projectiles
         );
 
         // Merge weapon-system hits/kills (orbit blades, pulse, lightning),
-        // projectile-collision results, and burn-DoT kills so gem drops, kill
-        // count, affix deaths, and damage numbers all flow through the same
-        // downstream path. (Burn damage numbers are already pushed, tinted,
-        // inside _tickStatuses — so only its killed list is merged here.)
+        // projectile-collision results, burn-DoT kills, and elite bomber
+        // self-detonations so gem drops, kill count, affix deaths, and damage
+        // numbers all flow through the same downstream path. (Burn damage
+        // numbers are already pushed, tinted, inside _tickStatuses — so only
+        // its killed list is merged here.)
         const allKilled = collisionResult.killed
-            .concat(weaponResult.killed, statusResult.killed);
+            .concat(weaponResult.killed, statusResult.killed, this._selfDetonated);
+        this._selfDetonated.length = 0;
         const allHits = collisionResult.hits.concat(weaponResult.hits);
 
         if (allKilled.length > 0) {
@@ -2711,6 +2855,10 @@ export class Game {
             for (const e of allKilled) {
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
                 if (e.affix) this._applyAffixDeath(e);
+                // P1.3 splitter: bursts into live slimelets (def-driven,
+                // unlike the rolled elite 'splitting' AFFIX — both can fire
+                // on an elite splitter, which is the fun kind of chaos).
+                if (e.def.splitInto) this._splitOnDeath(e);
                 this._dropGem(e.x, e.y);
                 // Rare health orb (skipped at full HP so it's never wasted).
                 if (this.player.hp < this.player.maxHp && Math.random() < HEALTH_DROP.chance) {
@@ -2741,6 +2889,7 @@ export class Game {
                     // Setpiece payoff: a banner, a heavy layered burst, and a
                     // strong shake so an apex kill lands.
                     this.waveDirector.announce(`${e.name.toUpperCase()} DEFEATED!`, 3.0, '#ff6a4a');
+                    this.audio.bossDefeat();
                     this.particles.bossDeathBurst(e.x, e.y, '#ff8c4a');
                     this._shake(SCREEN_SHAKE.intensity * 1.1, 0.5);
                     // Setpiece punch: a hard freeze-frame + a triple expanding
@@ -2765,6 +2914,7 @@ export class Game {
                     this._spawnRing(e.x, e.y, { maxR: 260, width: 10, life: 0.55, color: LIEUTENANT.color, ease: 'outCubic' });
                     this._dropCoinBurst(e.x, e.y, LIEUTENANT.coinCount, LIEUTENANT.coinValue);
                     if (Math.random() < LIEUTENANT.chestChance) this._dropChest(e.x, e.y);
+                    this.audio.lieutenantDown();
                     this.waveDirector.announce(`${e.name} SLAIN`, 2.5, LIEUTENANT.color);
                     this.particles.deathBurst(e.x, e.y, LIEUTENANT.color);
                     this._shake(SCREEN_SHAKE.intensity * 0.5, 0.25);
@@ -2824,7 +2974,11 @@ export class Game {
                 '#ff4757'
             ));
         }
+    }
 
+    // Cosmetic world FX: floating numbers, particles, shockwave rings, the
+    // damage-vignette decay, and the adaptive graphics governor.
+    _updateWorldFx(dt) {
         for (const d of this.damageNumbers) {
             if (d.active) d.update(dt);
         }
@@ -2839,7 +2993,10 @@ export class Game {
         // Damage vignette pulse decays back to clear.
         if (this.hitVignette > 0) this.hitVignette = Math.max(0, this.hitVignette - dt * 2.2);
         this._updateGfxGovernor(dt);
+    }
 
+    // Chest/shrine walk-ons + presenting whichever reward overlay is queued.
+    _updateRewardOverlays(dt) {
         // Chest pickup: chests sit until the player walks onto them, then
         // queue a chest reward overlay. Multiple chests collected in the
         // same tick are queued via pendingChests.
@@ -2865,7 +3022,8 @@ export class Game {
                 if (s._sibling && s._sibling.active) s._sibling.active = false;
                 this.particles.pickupSparkle(s.x, s.y, '#ff9ecf');
                 this.particles.pickupSparkle(s.x, s.y - 8, '#ffd3ec');
-                this.audio.chest();
+                // Mystical wick-chime — distinct from the chest's loot latch.
+                this.audio.shrineChime();
             }
         }
         // Present whichever reward overlay is queued — only one is ever open at a
@@ -2881,6 +3039,47 @@ export class Game {
         } else if (this.pendingAltars > 0 && !this.chestReward && !this.upgradeChoices && !this.altar) {
             this._presentAltar();
         }
+    }
+
+    // End-of-frame pass: the ONE consolidated enemy scan (P0.6) + everything
+    // fed by it (melee swing, arena safety-net, music intensity, Second Wind),
+    // pool compaction, HP-delta feedback, camera, and the death check.
+    _updateEnemyScanAndCleanup(dt) {
+        // ── ONE consolidated enemy scan ──────────────────────────────────
+        // Replaces five separate full-array passes (melee-nearest, boss ref,
+        // lieutenant ref, boss-enrage one-shot, Second-Wind proximity) that
+        // each walked this.enemies every frame at the 180-enemy cap. Runs
+        // after kills/pickups are processed so no ref can point at a corpse.
+        // Boss ref picks by max HP so a fresh stronger boss takes the HP bar
+        // over from an older weaker one; the lieutenant ref stays separate so
+        // it never feeds the arena safety-net (which keys on activeBossRef).
+        let nearestEnemy = null, nearestD2 = Infinity;
+        this.activeBossRef = null;
+        this.activeLieutenantRef = null;
+        for (const e of this.enemies) {
+            if (!e.active) continue;
+            const dx = e.x - this.player.x, dy = e.y - this.player.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < nearestD2) { nearestD2 = d2; nearestEnemy = e; }
+            if (e.boss) {
+                if (!this.activeBossRef || e.maxHp > this.activeBossRef.maxHp) {
+                    this.activeBossRef = e;
+                }
+                // Phase-2 enrage: a boss that crossed its HP threshold announces
+                // + shakes exactly once (latched by enrageShouted). The phase
+                // flip happens inside the boss AI; this only fires the one-shot FX.
+                if (e.phase2Entered && !e.enrageShouted) {
+                    e.enrageShouted = true;
+                    this.waveDirector.announce('ENRAGED!', 1.2);
+                    this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
+                    this._spawnRing(e.x, e.y, { maxR: 300, width: 12, life: 0.5, color: '#ff3b4e', ease: 'outCubic' });
+                }
+            } else if (e.lieutenant) {
+                if (!this.activeLieutenantRef || e.maxHp > this.activeLieutenantRef.maxHp) {
+                    this.activeLieutenantRef = e;
+                }
+            }
+        }
 
         // Melee swing animation: when the chosen starting weapon is a
         // melee/blade family, the hero rhythmically slashes toward the nearest
@@ -2889,39 +3088,12 @@ export class Game {
         if (this.playerSwingMelee) {
             this._swingCd -= dt;
             if (this._swingCd <= 0) {
-                let best = null, bd = 270 * 270;
-                for (const e of this.enemies) {
-                    if (!e.active) continue;
-                    const dx = e.x - this.player.x, dy = e.y - this.player.y;
-                    const d2 = dx * dx + dy * dy;
-                    if (d2 < bd) { bd = d2; best = e; }
-                }
-                if (best) {
-                    this.player.triggerSwing(Math.atan2(best.y - this.player.y, best.x - this.player.x));
+                if (nearestEnemy && nearestD2 < 270 * 270) {
+                    this.player.triggerSwing(Math.atan2(nearestEnemy.y - this.player.y, nearestEnemy.x - this.player.x));
                     this._swingCd = 0.34;
                 } else {
                     this._swingCd = 0.15; // nothing in reach — re-check soon
                 }
-            }
-        }
-
-        // Cache the strongest active boss for the UI HP bar. Picking by
-        // max HP means a fresh stronger boss takes the bar over from an
-        // older weaker one if they're alive at the same time.
-        this.activeBossRef = null;
-        for (const e of this.enemies) {
-            if (!e.active || !e.boss) continue;
-            if (!this.activeBossRef || e.maxHp > this.activeBossRef.maxHp) {
-                this.activeBossRef = e;
-            }
-        }
-        // Lieutenant mini-boss HP-bar ref (parallel to the boss ref; kept separate
-        // so it never feeds the arena safety-net below, which keys on activeBossRef).
-        this.activeLieutenantRef = null;
-        for (const e of this.enemies) {
-            if (!e.active || !e.lieutenant) continue;
-            if (!this.activeLieutenantRef || e.maxHp > this.activeLieutenantRef.maxHp) {
-                this.activeLieutenantRef = e;
             }
         }
         // Safety net: if a boss arena is up but no boss is alive (defeated by
@@ -2934,11 +3106,21 @@ export class Game {
         if (this.activeBossRef) {
             intensity = Math.max(intensity, 0.55 + 0.45 * (1 - this.activeBossRef.hp / this.activeBossRef.maxHp));
         }
-        this.audio.setIntensity(intensity);
+        // Near death the world closes in: cap the music brightness so the
+        // heartbeat + dimmed groove read as danger without any alarm sound.
+        const lowHp = this.player.hp > 0 && this.player.hp < this.player.maxHp * 0.25;
+        this.audio.setIntensity(lowHp ? Math.min(intensity, 0.25) : intensity);
 
         compactInPlace(this.enemies);
         compactInPlace(this.projectiles);
+        // New enemy shots this frame → one soft incoming-fire pip, gated to
+        // on-screen shooters (the cue's own min-gap keeps volleys as a chorus).
+        if (this.enemyProjectiles.length > (this._epCount ?? 0)) {
+            const p = this.enemyProjectiles[this.enemyProjectiles.length - 1];
+            if (p && this._inView(p.x, p.y, 60)) this.audio.enemyShoot();
+        }
         compactInPlace(this.enemyProjectiles);
+        this._epCount = this.enemyProjectiles.length;
         compactInPlace(this.hazards);
         compactInPlace(this.rings);
         compactInPlace(this.gems);
@@ -2962,18 +3144,21 @@ export class Game {
         }
         this._lastHp = this.player.hp;
 
+        // Near-death heartbeat: a soft ~1Hz ember pulse while HP is critical —
+        // cozy dread, never a klaxon. Resets the instant HP recovers.
+        if (this.player.hp > 0 && this.player.hp < this.player.maxHp * 0.25) {
+            this._heartbeatT = (this._heartbeatT ?? 0) - dt;
+            if (this._heartbeatT <= 0) { this.audio.heartbeat(); this._heartbeatT = 0.85; }
+        } else this._heartbeatT = 0;
+
         // Second Wind: trickle HP back while no enemy is within the safe
         // radius. Applied after the heal-flash check so the tiny per-frame
         // tick doesn't spam the green flash.
         if (this.player.regenPerSecond > 0 && this.player.hp < this.player.maxHp) {
+            // Nearest-enemy distance comes from the consolidated scan above
+            // (Infinity when the field is empty — trivially safe).
             const sr2 = SECOND_WIND_RADIUS * SECOND_WIND_RADIUS;
-            let safe = true;
-            for (const e of this.enemies) {
-                if (!e.active) continue;
-                const ex = e.x - this.player.x;
-                const ey = e.y - this.player.y;
-                if (ex * ex + ey * ey < sr2) { safe = false; break; }
-            }
+            const safe = nearestD2 >= sr2;
             if (safe) {
                 // Regen is capped by CAPS.regenPerSecond and shares the global
                 // sustained-heal budget (CAPS.healPerSecond) with Divine Nova.
@@ -3007,11 +3192,11 @@ export class Game {
         if (this.screen === 'start') {
             ctx.fillStyle = '#0a0e16';
             ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
-            this.ui.draw(ctx, this._buildUIState());
+            this.ui.draw(ctx, buildUIState(this));
             // The Mines overlay is Game-drawn (not part of the menu renderer),
             // so it must be painted here — the start screen returns before the
             // gameplay-tail overlay block below.
-            if (this.mines) this._drawMines(ctx);
+            if (this.minigame.mines) this.minigame.drawMines(ctx);
             return;
         }
 
@@ -3083,99 +3268,9 @@ export class Game {
             ctx.restore();
         }
 
-        // Boss telegraph decals — drawn on the GROUND, below entities, so the
-        // boss paints over them. A warning ring that fills in across the
-        // windup; no light (it reads as a warning, not a glow).
-        for (const hz of this.hazards) {
-            if (!hz.active || hz.kind !== 'bossTelegraph') continue;
-            if (!this._inView(hz.x, hz.y, hz.rMax + CULL_MARGIN)) continue;
-            const t = Math.min(1, hz.age / hz.lifetime);
-            ctx.save();
-            ctx.globalAlpha = 0.2 + 0.6 * t;
-            ctx.strokeStyle = BOSS_ATTACK.telegraphColor;
-            if (hz.charge) {
-                // A widening lane + arrowhead along the lunge heading: fills in
-                // over the windup so the player can read the charge and dodge.
-                const reach = (hz.reach ?? 360) * (0.5 + 0.5 * t);
-                const ex = hz.x + hz.dirX * reach, ey = hz.y + hz.dirY * reach;
-                const px = -hz.dirY, py = hz.dirX;       // perpendicular
-                const halfW = 26 + 22 * t;
-                ctx.fillStyle = BOSS_ATTACK.telegraphColor;
-                ctx.globalAlpha = 0.14 + 0.18 * t;
-                ctx.beginPath();
-                ctx.moveTo(hz.x + px * halfW * 0.5, hz.y + py * halfW * 0.5);
-                ctx.lineTo(hz.x - px * halfW * 0.5, hz.y - py * halfW * 0.5);
-                ctx.lineTo(ex - px * halfW, ey - py * halfW);
-                ctx.lineTo(ex + px * halfW, ey + py * halfW);
-                ctx.closePath();
-                ctx.fill();
-                ctx.globalAlpha = 0.35 + 0.5 * t;
-                ctx.lineWidth = 4;
-                ctx.beginPath();
-                ctx.moveTo(ex + hz.dirX * 18, ey + hz.dirY * 18);
-                ctx.lineTo(ex - px * halfW * 0.7, ey - py * halfW * 0.7);
-                ctx.lineTo(ex + px * halfW * 0.7, ey + py * halfW * 0.7);
-                ctx.closePath();
-                ctx.stroke();
-            } else {
-                ctx.lineWidth = hz.fan ? 4 : 5;
-                ctx.beginPath();
-                ctx.arc(hz.x, hz.y, Math.max(2, hz.r), 0, TWO_PI);
-                ctx.stroke();
-            }
-            ctx.restore();
-        }
-
-        // Delayed-AoE zones: a filling warning disc that flashes bright on
-        // detonation. Drawn on the ground (below entities) like the telegraphs.
-        for (const hz of this.hazards) {
-            if (!hz.active || hz.kind !== 'delayedZone') continue;
-            if (!this._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
-            ctx.save();
-            if (hz.hitPlayer) {
-                // Detonation flash.
-                ctx.globalAlpha = 0.55;
-                ctx.fillStyle = '#ff7a4a';
-                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
-            } else {
-                const t = Math.min(1, hz.age / hz.lifetime);
-                ctx.globalAlpha = 0.12 + 0.26 * t;
-                ctx.fillStyle = BOSS_ATTACK.telegraphColor;
-                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
-                ctx.globalAlpha = 0.35 + 0.55 * t;
-                ctx.strokeStyle = BOSS_ATTACK.telegraphColor;
-                ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r * (0.35 + 0.65 * t), 0, TWO_PI); ctx.stroke();
-            }
-            ctx.restore();
-        }
-
-        // Lingering pools: a telegraph that fills, then a persistent burning
-        // field that pulses and fades near the end of its life. Ground decal.
-        for (const hz of this.hazards) {
-            if (!hz.active || hz.kind !== 'lingering') continue;
-            if (!this._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
-            ctx.save();
-            if (hz.age < hz.warn) {
-                const t = hz.age / hz.warn;
-                ctx.globalAlpha = 0.12 + 0.26 * t;
-                ctx.fillStyle = BOSS_ATTACK.telegraphColor;
-                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
-            } else {
-                const left = 1 - Math.min(1, (hz.age - hz.warn) / Math.max(0.001, hz.lifetime - hz.warn));
-                const pulse = 0.5 + 0.5 * Math.sin(hz.age * 6);
-                ctx.globalCompositeOperation = 'lighter';
-                ctx.globalAlpha = (0.18 + 0.18 * pulse) * (0.4 + 0.6 * left);
-                ctx.fillStyle = hz.color || '#ff7a33';
-                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
-                ctx.globalAlpha = (0.5 + 0.3 * pulse) * (0.4 + 0.6 * left);
-                ctx.lineWidth = 4;
-                ctx.strokeStyle = hz.color || '#ff7a33';
-                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.stroke();
-            }
-            ctx.restore();
-            if (L && hz.age >= hz.warn) L.addLight(hz.x, hz.y, hz.r + 40, hz.color || LIGHT_COLORS.fire, 0.7, 2);
-        }
+        // Hazard ground decals (boss telegraphs, delayed zones, lingering
+        // pools) — below entities so the boss paints over them.
+        this.hazardSystem.drawGround(ctx, this, L);
 
         // Player light first (always kept, exempt from caps). The light TINT
         // follows the weapon aura so the glow radiating from the player changes
@@ -3185,7 +3280,11 @@ export class Game {
             const aura = this._auraSnapshot;
             const lightColor = aura ? aura.color : LIGHT_COLORS.player;
             const lightInten = Lc.playerIntensity + (aura ? Math.min(AURA.lightIntensityBonus, aura.intensity * 0.4) : 0);
-            L.addLight(this.player.x, this.player.y, Lc.playerRadius, lightColor, lightInten, 0);
+            // Crypts gloom pools (P1.2) SQUEEZE the hero's light — gloomT
+            // (0..1, eased by HazardSystem) scales the radius down by up to
+            // lightCut, so standing in living darkness visibly costs vision.
+            const gloomK = 1 - (BIOME_HAZARD.gloom.lightCut ?? 0.5) * (this.gloomT ?? 0);
+            L.addLight(this.player.x, this.player.y, Lc.playerRadius * gloomK, lightColor, lightInten, 0);
         }
 
         for (const g of this.gems) {
@@ -3247,61 +3346,9 @@ export class Game {
             ep.draw(ctx);
             if (L) L.addLight(ep.x, ep.y, 110, '#c97bff', 0.8, 0);
         }
-        // Boss shockwaves — bright expanding rings (above entities). Each
-        // carves a hazard-tinted light so the danger reads against the dark.
-        for (const hz of this.hazards) {
-            if (!hz.active || hz.kind !== 'shockwave') continue;
-            if (!this._inView(hz.x, hz.y, hz.rMax + CULL_MARGIN)) continue;
-            const fade = 1 - Math.min(1, hz.r / hz.rMax);
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = 0.35 + 0.45 * fade;
-            ctx.strokeStyle = '#ffd0a0';
-            ctx.lineWidth = 8;
-            ctx.beginPath();
-            ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI);
-            ctx.stroke();
-            ctx.globalAlpha = 0.2 + 0.3 * fade;
-            ctx.strokeStyle = LIGHT_COLORS.hazard;
-            ctx.lineWidth = 18;
-            ctx.beginPath();
-            ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI);
-            ctx.stroke();
-            ctx.restore();
-            if (L) L.addLight(hz.x, hz.y, Lc.hazardRadius, LIGHT_COLORS.hazard, 0.8, 0);
-        }
-
-        // Sweeping laser beams: a thin warning line during the telegraph, then a
-        // bright hot beam that rotates across its arc. Above entities, additive.
-        for (const hz of this.hazards) {
-            if (!hz.active || hz.kind !== 'beam') continue;
-            const hot = hz.age >= hz.warn;
-            const ex = hz.x + Math.cos(hz.curAngle) * hz.length;
-            const ey = hz.y + Math.sin(hz.curAngle) * hz.length;
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            if (!hot) {
-                // Telegraph: a thin, brightening warning line along the start angle.
-                const t = hz.age / hz.warn;
-                ctx.globalAlpha = 0.25 + 0.45 * t;
-                ctx.strokeStyle = BOSS_ATTACK.telegraphColor;
-                ctx.lineWidth = 2 + 3 * t;
-                ctx.beginPath(); ctx.moveTo(hz.x, hz.y); ctx.lineTo(ex, ey); ctx.stroke();
-            } else {
-                // Hot beam: a wide soft glow + a bright core.
-                ctx.globalAlpha = 0.4;
-                ctx.strokeStyle = hz.color || '#ff5a3c';
-                ctx.lineWidth = hz.band * 2;
-                ctx.lineCap = 'round';
-                ctx.beginPath(); ctx.moveTo(hz.x, hz.y); ctx.lineTo(ex, ey); ctx.stroke();
-                ctx.globalAlpha = 0.95;
-                ctx.strokeStyle = '#fff6e0';
-                ctx.lineWidth = Math.max(4, hz.band * 0.5);
-                ctx.beginPath(); ctx.moveTo(hz.x, hz.y); ctx.lineTo(ex, ey); ctx.stroke();
-            }
-            ctx.restore();
-            if (L && hot) L.addLight((hz.x + ex) / 2, (hz.y + ey) / 2, Lc.hazardRadius, hz.color || LIGHT_COLORS.hazard, 0.85, 0);
-        }
+        // Bright hazards (boss shockwave rings + sweeping laser beams) —
+        // above entities, additive, each carving its own light.
+        this.hazardSystem.drawAbove(ctx, this, L);
 
         this.weaponSystem.drawEffects(ctx);
         // Weapon effects (pulse/lightning) are bright emitters — carve light
@@ -3384,7 +3431,7 @@ export class Game {
             ctx.restore();
         }
 
-        this.ui.draw(ctx, this._buildUIState());
+        this.ui.draw(ctx, buildUIState(this));
 
         if (this.victory) this._drawVictory(ctx);
 
@@ -3431,207 +3478,6 @@ export class Game {
         ctx.fillStyle = this._hitVignetteGrad;
         ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         ctx.restore();
-    }
-
-    // ── Mines overhaul helpers (local "ember forge" primitives — deliberately
-    // NOT the MenuRenderer copies, which mutate menu-only caches) ──────────
-    _mEmber(ctx, x, y, r, color, alpha) {   // one additive cached-glow blit (caller owns composite + reset)
-        ctx.globalAlpha = Math.max(0, alpha);
-        ctx.drawImage(getGlowSprite(color), x - r, y - r, r * 2, r * 2);
-    }
-    _mSmokedFill(ctx, x, y, w, h, r = 16) {
-        const g = ctx.createLinearGradient(0, y, 0, y + h);
-        g.addColorStop(0, 'rgba(24,18,18,0.94)'); g.addColorStop(1, 'rgba(12,10,12,0.96)');
-        roundRectPath(ctx, x, y, w, h, r); ctx.fillStyle = g; ctx.fill();
-    }
-    _mCornerTicks(ctx, x, y, w, h) {
-        const s = 10, mm = 9;
-        ctx.strokeStyle = 'rgba(255,140,60,0.35)'; ctx.lineWidth = 2;
-        const cs = [[x + mm, y + mm, 1, 1], [x + w - mm, y + mm, -1, 1], [x + mm, y + h - mm, 1, -1], [x + w - mm, y + h - mm, -1, -1]];
-        for (const [cx, cy, dx, dy] of cs) { ctx.beginPath(); ctx.moveTo(cx + dx * s, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + dy * s); ctx.stroke(); }
-    }
-    _mPanel(ctx, x, y, w, h, opts = {}) {
-        const r = 16;
-        this._mSmokedFill(ctx, x, y, w, h, r);
-        ctx.save(); roundRectPath(ctx, x, y, w, h, r); ctx.clip();
-        const gg = ctx.createLinearGradient(0, y, 0, y + h * 0.4);
-        gg.addColorStop(0, 'rgba(255,255,255,0.05)'); gg.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = gg; ctx.fillRect(x, y, w, h * 0.4); ctx.restore();
-        roundRectPath(ctx, x + 1.5, y + 1.5, w - 3, h - 3, r - 1);
-        ctx.strokeStyle = 'rgba(255,140,60,0.10)'; ctx.lineWidth = 1.5; ctx.stroke();
-        roundRectPath(ctx, x, y, w, h, r);
-        ctx.strokeStyle = opts.stroke || 'rgba(255,180,120,0.10)'; ctx.lineWidth = 2; ctx.stroke();
-        if (opts.corners) this._mCornerTicks(ctx, x, y, w, h);
-    }
-    // Text with a cheap dark underlayer (legible without per-frame shadowBlur).
-    _mText(ctx, text, x, y, color) {
-        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(text, x + 1.5, y + 1.5);
-        ctx.fillStyle = color; ctx.fillText(text, x, y);
-    }
-
-    // Mines overlay: an "ember vault" — a smoked-glass frame around a glowing
-    // live-multiplier readout, a board of dark rune slabs that pop into gems
-    // (safe) or cracked molten tiles (mine), and a CASH OUT button. Bust shakes
-    // the vault + flashes the screen red. All juice keys off this._menuClock.
-    _drawMines(ctx) {
-        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT, m = this.mines;
-        const cx = W / 2, t = this._menuClock;
-        const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
-        const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-
-        // PASS 1 — forge scrim + a low hearth bloom (outside the shake).
-        ctx.save();
-        ctx.fillStyle = 'rgba(8,6,10,0.9)'; ctx.fillRect(0, 0, W, H);
-        ctx.globalCompositeOperation = 'lighter';
-        this._mEmber(ctx, cx, H * 1.04, 640, '#ff7a1e', 0.10);
-        this._mEmber(ctx, cx, H * 1.04, 300, '#ffd06a', 0.07);
-        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-        ctx.restore();
-
-        // PASS 2 — bust shake wrap (panel + board jitter; scrim + flash do not).
-        const dtStop = t - m.stopFxT;
-        let sx = 0, sy = 0;
-        if (m.busted && dtStop < 0.35) {
-            const mag = 14 * Math.max(0, 1 - dtStop / 0.35);
-            sx = (Math.random() * 2 - 1) * mag; sy = (Math.random() * 2 - 1) * mag;
-        }
-        ctx.save();
-        ctx.translate(sx, sy);
-
-        // PASS 3 — vault panel around the whole cluster.
-        const rects = this._minesTileRects();
-        const cb = this._minesCashRect();
-        const gx = rects[0].x, gw = (rects[24].x + rects[24].w) - rects[0].x;
-        const px = gx - 48, pw = gw + 96, py = 118, ph = (cb.y + cb.h + 46) - py;
-        this._mPanel(ctx, px, py, pw, ph, { corners: true, stroke: 'rgba(255,180,120,0.12)' });
-
-        // PASS 4 — kicker + big live multiplier (colour + glow escalate with mul).
-        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-        ctx.font = `700 24px ${FONT}`;
-        this._mText(ctx, 'EMBER VAULT', cx, py + 40, 'rgba(255,180,120,0.8)');
-        const mul = m.mul;
-        const tier = mul < 2 ? { c: '#ff8a3a', g: '#ff7a1e', a: 0.28 }
-            : mul < 4 ? { c: '#ffb257', g: '#ff8a3a', a: 0.34 }
-                : mul < 8 ? { c: '#ffd06a', g: '#ffb257', a: 0.40 }
-                    : { c: '#fff1c8', g: '#ffd06a', a: 0.5 };
-        const pop = 1 + 0.16 * (1 - easeOutCubic(clamp01((t - m.mulPopT) / 0.35)));
-        const my = py + 118;
-        ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        this._mEmber(ctx, cx, my, 92 * pop, tier.g, tier.a * (0.9 + 0.1 * Math.sin(t * 4)));
-        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
-        ctx.textBaseline = 'middle';
-        ctx.font = `800 ${Math.round(74 * pop)}px ${MONO}`;
-        this._mText(ctx, `${mul.toFixed(2)}×`, cx, my, tier.c);
-        ctx.textBaseline = 'alphabetic';
-        ctx.font = `600 24px ${FONT}`;
-        const potential = Math.floor(m.bet * m.mul);
-        this._mText(ctx, m.safeRevealed > 0 ? `BET ◎ ${m.bet}    ·    CASH ◎ ${potential}` : `BET ◎ ${m.bet}    ·    reveal a tile to begin`,
-            cx, my + 62, 'rgba(255,255,255,0.75)');
-
-        // PASS 5 — board tiles.
-        for (let i = 0; i < rects.length; i++) {
-            const r = rects[i];
-            const tcx = r.x + r.w / 2, tcy = r.y + r.h / 2;
-            const isRevealed = m.revealed.includes(i);
-            const isMine = m.mineSet.includes(i);
-            const showMine = isMine && (isRevealed || m.stopped);
-            if (showMine) {
-                // Molten cracked slab + bloom.
-                const gr = ctx.createRadialGradient(tcx, tcy, 6, tcx, tcy, r.w * 0.7);
-                gr.addColorStop(0, i === m.bustIdx ? '#ff8a4a' : '#c25436'); gr.addColorStop(1, '#3a1210');
-                roundRectPath(ctx, r.x, r.y, r.w, r.h, 16); ctx.fillStyle = gr; ctx.fill();
-                ctx.strokeStyle = 'rgba(255,120,70,0.6)'; ctx.lineWidth = 2; ctx.stroke();
-                ctx.strokeStyle = '#ffd06a'; ctx.lineWidth = 3; ctx.globalAlpha = 0.85;
-                for (let k = 0; k < 3; k++) {
-                    const a0 = k * 2.1 + 0.4;
-                    ctx.beginPath(); ctx.moveTo(tcx, tcy);
-                    ctx.lineTo(tcx + Math.cos(a0) * r.w * 0.4, tcy + Math.sin(a0) * r.w * 0.4); ctx.stroke();
-                }
-                ctx.globalAlpha = 1;
-                ctx.save(); ctx.globalCompositeOperation = 'lighter';
-                this._mEmber(ctx, tcx, tcy, 84, '#ff5a4a', 0.5); this._mEmber(ctx, tcx, tcy, 46, '#ffb257', 0.3);
-                ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
-                // Expanding shock ring from the tile that detonated.
-                if (i === m.bustIdx) {
-                    const sa = clamp01(dtStop / 0.5);
-                    if (sa < 1) {
-                        ctx.strokeStyle = `rgba(255,90,60,${1 - sa})`; ctx.lineWidth = Math.max(1, 8 * (1 - sa));
-                        ctx.beginPath(); ctx.arc(tcx, tcy, 40 + 190 * easeOutCubic(sa), 0, Math.PI * 2); ctx.stroke();
-                    }
-                }
-            } else if (isRevealed) {
-                // Safe gem — pops in with an overshoot + green halo + brief +mult float.
-                const age = t - (m.revealTimes[i] ?? t);
-                const s = easeOutBack(clamp01(age / 0.32));
-                ctx.save(); ctx.translate(tcx, tcy); ctx.scale(s, s);
-                ctx.save(); ctx.globalCompositeOperation = 'lighter';
-                this._mEmber(ctx, 0, 0, 70, '#74e890', 0.34); this._mEmber(ctx, 0, 0, 40, '#b6ffcf', 0.22);
-                ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
-                const gr = ctx.createRadialGradient(0, -6, 2, 0, 0, 44);
-                gr.addColorStop(0, '#b6ffcf'); gr.addColorStop(1, '#2f9a52');
-                const gsz = r.w * 0.34;
-                ctx.beginPath(); ctx.moveTo(0, -gsz); ctx.lineTo(gsz, 0); ctx.lineTo(0, gsz); ctx.lineTo(-gsz, 0); ctx.closePath();
-                ctx.fillStyle = gr; ctx.fill();
-                ctx.strokeStyle = 'rgba(150,255,190,0.75)'; ctx.lineWidth = 3; ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(0, -gsz); ctx.lineTo(gsz * 0.5, -gsz * 0.15); ctx.lineTo(0, 0); ctx.closePath();
-                ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
-                ctx.restore();
-                if (age < 0.7) {
-                    const dy = -30 - 24 * easeOutCubic(clamp01(age / 0.7));
-                    const fa = 1 - clamp01((age - 0.35) / 0.35);
-                    ctx.globalAlpha = fa; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    ctx.font = `800 26px ${MONO}`;
-                    this._mText(ctx, `+${(m.mul / (m.mulPrev || 1)).toFixed(2)}×`, tcx, tcy + dy, '#b6ffcf');
-                    ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
-                }
-            } else {
-                // Unrevealed dark rune slab.
-                const gr = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
-                gr.addColorStop(0, 'rgba(30,24,26,0.95)'); gr.addColorStop(1, 'rgba(16,13,16,0.97)');
-                roundRectPath(ctx, r.x, r.y, r.w, r.h, 16); ctx.fillStyle = gr; ctx.fill();
-                roundRectPath(ctx, r.x + 1.5, r.y + 1.5, r.w - 3, r.h - 3, 14.5);
-                ctx.strokeStyle = 'rgba(255,140,60,0.08)'; ctx.lineWidth = 1.5; ctx.stroke();
-                roundRectPath(ctx, r.x, r.y, r.w, r.h, 16);
-                ctx.strokeStyle = 'rgba(255,180,120,0.10)'; ctx.lineWidth = 2; ctx.stroke();
-                // Faint carved diamond rune.
-                ctx.globalAlpha = m.stopped ? 0.05 : 0.10; ctx.strokeStyle = '#ffb257'; ctx.lineWidth = 3;
-                const rr = r.w * 0.18;
-                ctx.beginPath(); ctx.moveTo(tcx, tcy - rr); ctx.lineTo(tcx + rr, tcy); ctx.lineTo(tcx, tcy + rr); ctx.lineTo(tcx - rr, tcy); ctx.closePath(); ctx.stroke();
-                ctx.globalAlpha = 1;
-            }
-        }
-
-        // PASS 6 — cash-out button / result.
-        ctx.textAlign = 'center';
-        if (!m.stopped) {
-            const can = m.safeRevealed > 0;
-            roundRectPath(ctx, cb.x, cb.y, cb.w, cb.h, 14);
-            if (can) { ctx.fillStyle = '#33a356'; ctx.fill(); ctx.strokeStyle = '#ffce7a'; }
-            else { this._mSmokedFill(ctx, cb.x, cb.y, cb.w, cb.h, 14); ctx.strokeStyle = 'rgba(255,255,255,0.18)'; }
-            ctx.lineWidth = 3; roundRectPath(ctx, cb.x, cb.y, cb.w, cb.h, 14); ctx.stroke();
-            ctx.textBaseline = 'middle'; ctx.font = `800 32px ${FONT}`;
-            this._mText(ctx, can ? `CASH OUT ◎ ${potential}` : 'REVEAL A TILE', cx, cb.y + cb.h / 2, '#fff');
-            ctx.textBaseline = 'alphabetic'; ctx.font = `600 22px ${FONT}`;
-            this._mText(ctx, 'Tap tiles to dig · cash out before a mine', cx, cb.y + cb.h + 34, 'rgba(255,255,255,0.55)');
-        } else {
-            ctx.textBaseline = 'alphabetic';
-            ctx.font = `800 46px ${FONT}`;
-            this._mText(ctx, m.busted ? 'FORGE COOLED' : 'BANKED!', cx, cb.y + 28, m.busted ? '#ff5a4a' : '#74e890');
-            ctx.font = `800 30px ${FONT}`;
-            this._mText(ctx, m.busted ? `Lost ◎ ${m.bet}`
-                : `Won ◎ ${m.result.payout}   (${m.result.net >= 0 ? '+' : ''}${m.result.net})`, cx, cb.y + 70, '#fff');
-            ctx.font = `600 22px ${FONT}`;
-            this._mText(ctx, 'Tap / Space to continue', cx, cb.y + 108, 'rgba(255,255,255,0.6)');
-        }
-
-        ctx.restore();   // end shake wrap
-
-        // PASS 7 — bust flash (screen-space, over everything).
-        if (m.busted && dtStop < 0.35) {
-            ctx.fillStyle = `rgba(255,60,40,${0.35 * (1 - dtStop / 0.35)})`;
-            ctx.fillRect(0, 0, W, H);
-        }
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     }
 
     // Layout for the victory overlay's three stacked buttons (internal coords).
@@ -3685,190 +3531,6 @@ export class Game {
         ctx.restore();
     }
 
-    _buildUIState() {
-        // Fields every screen needs. Press/feedback animation state is
-        // always included so flashes can play across transitions.
-        const base = {
-            screen: this.screen,
-            showDebug: this.showDebug,
-            saveData: this.saveSystem.data,
-            pressFx: this.pressFx,
-            feedback: this.feedback,
-        };
-
-        // Start/shop screen: only the shop data is meaningful. Skip every
-        // gameplay snapshot + the per-frame evolution scan entirely.
-        if (this.screen === 'start') {
-            base.resetConfirming = this.resetConfirming;
-            base.resetConfirmTimer = this.resetConfirmTimer;
-            base.stats = this.saveSystem.data.stats;
-            // Menu state consumed by MenuRenderer.
-            base.menuTab = this.menuTab;
-            base.caseAnim = this.caseAnim;
-            base.menuToast = this.menuToastTimer > 0 ? this.menuToast : null;
-            base.gamblePlays = this.saveSystem.gamblePlaysInfo();
-            // "Vigil Endures": pre-run difficulty + active Trial modifiers.
-            base.difficulty = this.saveSystem.getDifficulty();
-            base.selectedModifiers = [...this.selectedModifiers];
-            base.selectedPatron = this.selectedPatron;
-            // Daily Road: today's best (for the menu's "best today" readout). Gated
-            // on the record's day so a new UTC day shows 0 until a run is played
-            // (the record self-resets on the first daily of the new day).
-            const _dr = this.saveSystem.data.dailyRoad;
-            base.dailyRoadBest = (_dr && _dr.day === currentDayNumber()) ? (_dr.best ?? 0) : 0;
-            return base;
-        }
-
-        // Gameplay + game-over share the HUD.
-        base.time = this.time;
-        base.player = this.player;
-        base.camera = this.camera;
-        base.kills = this.kills;
-        base.combo = this.combo;
-        base.comboTimer = this.comboTimer;
-        base.comboWindow = COMBO.window;
-        base.objectivesDone = this._objDone ? this._objDone.size : 0;
-        base.objectivesTotal = OBJECTIVE_COUNT;
-        base.objectivesCompleted = this._objCompleted || [];
-        base.enemyCount = this.enemies.length;
-        base.projectileCount = this.projectiles.length;
-        base.gemCount = this.gems.length;
-        base.coinCount = this.coins.length;
-        base.effectCount = this.weaponSystem.effects.length;
-        // Perf-HUD counters (only computed when the debug panel is open, since
-        // activeCount scans the particle pool).
-        base.enemyProjectileCount = this.enemyProjectiles.length;
-        base.hazardCount = this.hazards.length;
-        base.pickupCount = this.gems.length + this.coins.length + this.chests.length + this.healthOrbs.length;
-        base.particleCount = this.showDebug ? this.particles.activeCount() : 0;
-        base.ownedWeapons = this.weaponSystem.snapshotForUI();
-        // Ability cooldowns for the HUD pips: one entry per owned ABILITY
-        // (def.ability) with its remaining/total cooldown + ready state. Total
-        // uses the level's base cooldown × the player's cooldown multiplier so
-        // the fill matches what the ability actually uses.
-        const cdMul = this.player.cooldownMul ?? 1;
-        const abilityCds = [];
-        for (const w of this.weaponSystem.owned) {
-            const def = WEAPONS[w.id];
-            if (!def || !def.ability) continue;
-            const lvl = def.perLevel[w.level];
-            const total = Math.max(0.01, (lvl?.cooldown ?? 1) * cdMul);
-            const remaining = Math.max(0, w.timer ?? 0);
-            abilityCds.push({
-                id: w.id,
-                name: def.name,
-                color: (WEAPON_AURA[w.id] && WEAPON_AURA[w.id].color) || '#cdd8e6',
-                remaining,
-                total,
-                ready: remaining <= 0.001,
-            });
-        }
-        base.abilityCooldowns = abilityCds;
-        base.ownedPassives = this.passiveSystem.snapshotForUI();
-        base.runCoins = this.player.coins ?? 0;
-        base.chestLuck = this.player.chestLuck ?? 0;
-        base.waveState = this.waveState;
-        // Pressure-wave tracking for the HUD (live counters + 0..1 pressure).
-        base.wavePressure = this.waveState?.pressure ?? 0;
-        base.waveKills = this.waveDirector.killsThisWave ?? 0;
-        base.waveSpawned = this.waveDirector.spawnedThisWave ?? 0;
-        base.waveTimeIn = this.waveDirector.timeInWave ?? 0;
-        base.waveAnnouncement = this.waveDirector.announcement;
-        base.activeBoss = this.activeBossRef ? {
-            name: this.activeBossRef.name,
-            epithet: this.activeBossRef.epithet ?? null,
-            tier: this.activeBossRef.tier ?? null,
-            hp: this.activeBossRef.hp,
-            maxHp: this.activeBossRef.maxHp,
-            phase: this.activeBossRef.phase ?? 1,
-            enraged: !!this.activeBossRef.phase2Entered,
-            x: this.activeBossRef.x,
-            y: this.activeBossRef.y,
-        } : null;
-        base.bossWarning = this.bossWarning
-            ? { name: this.bossWarning.name, epithet: this.bossWarning.epithet ?? null,
-                tier: this.bossWarning.tier ?? null, t: 1 - this.bossWarning.timer / this.bossWarning.total }
-            : null;
-        // Lieutenant mini-boss: a small HP bar + its own warning tell.
-        base.activeLieutenant = this.activeLieutenantRef ? {
-            name: this.activeLieutenantRef.name,
-            hp: this.activeLieutenantRef.hp,
-            maxHp: this.activeLieutenantRef.maxHp,
-        } : null;
-        base.lieutenantWarning = this.lieutenantWarning
-            ? { t: 1 - this.lieutenantWarning.timer / this.lieutenantWarning.total }
-            : null;
-        base.chestCount = this.chests.length;
-        base.chestReward = this.chestReward;
-        base.pendingChests = this.pendingChests;
-        base.altar = this.altar;
-        base.pendingAltars = this.pendingAltars;
-        base.nextBossTime = this.bossDirector.getNextSpawnTime();
-        // Boss scheduler state for the debug panel: live count + why a spawn
-        // is/ isn't happening + when the next one is eligible.
-        const bossAliveNow = this.enemies.some((e) => e.active && e.boss);
-        base.bossActiveCount = this.enemies.reduce((n, e) => n + (e.active && e.boss ? 1 : 0), 0);
-        base.bossStatus = this.bossDirector.getStatus(this.time, bossAliveNow);
-        // Player power multipliers (debug): show the run's effective scaling.
-        base.playerDamageMul = this.player.damageMul;
-        base.playerCooldownMul = this.player.cooldownMul;
-        base.playerSpeed = this.player.speed;
-        base.playerXpMul = this.player.xpMultiplier;
-        base.playerPickupRange = this.player.pickupRange;
-        base.healPerSecondCap = CAPS.healPerSecond;
-        // Enemy + boss time-scaling readouts for late-game balancing.
-        base.minute = this.time / 60;
-        base.enemyHpMul = this.waveState?.healthMul ?? 1;
-        base.enemySpeedMul = this.waveState?.speedMul ?? 1;
-        base.enemyDamageMul = this.waveState?.damageMul ?? 1;
-        // Composure (skill-adaptive relief): the meter, the endless surcharge it
-        // gates against, and the resulting incoming-damage cut currently in effect.
-        base.composure = this.player.composure ?? 1;
-        base.endlessSurcharge = this.player.endlessSurcharge ?? 0;
-        base.composureRelief = COMPOSURE.enabled
-            ? COMPOSURE.maxRelief * (this.player.composure ?? 1) * (this.player.endlessSurcharge ?? 0)
-            : 0;
-        base.hyperMul = this.waveState?.hyperMul ?? 1;
-        base.bossHpMul = Math.min(1 + (this.time / 60) * BOSS.hpPerMinute, BOSS.maxHpMul);
-        base.bossResist = Math.min((this.time / 60) * BOSS.resistPerMinute, BOSS.maxResist);
-        base.ownedWeaponCount = this.weaponSystem.owned.length;
-        // Debug-only; reduce (not filter) to avoid a per-frame array alloc.
-        base.evolvedWeaponCount = this.showDebug
-            ? this.weaponSystem.owned.reduce((n, w) => n + (WEAPONS[w.id]?.evolved ? 1 : 0), 0)
-            : 0;
-        base.auraStyle = this._auraSnapshot ? this._auraSnapshot.label : '';
-        base.auraIntensity = this._auraSnapshot ? this._auraSnapshot.intensity : 0;
-        base.auraRadius = this._auraSnapshot ? this._auraSnapshot.radius : 0;
-        // Only the debug panel shows this, and the scan walks every
-        // evolution every frame — so only pay for it when debug is on.
-        base.eligibleEvolutionCount = this.showDebug ? findEligibleEvolutions(this).length : 0;
-        base.spawnTimer = this.spawner.timer;
-        base.spawnInterval = this.spawner.nextInterval;
-        base.inContact = this.collisionSystem.inContact;
-        base.upgradeChoices = this.upgradeChoices;
-        base.upgradeCounts = this.upgradeSystem.appliedCounts;
-        base.pendingLevelUps = this.pendingLevelUps;
-        // Keystone breadcrumbs (only while the level-up overlay is up): which
-        // recipe-gated capstones are one piece short, so the screen can hint
-        // what to build toward. Cheap; computed only during a level-up.
-        if (this.upgradeChoices) {
-            const counts = this.upgradeSystem.appliedCounts;
-            base.keystoneHints = keystoneBreadcrumbs(this, (id) => (counts[`keystone:${id}`] ?? 0) >= 1, 2);
-        }
-        base.levelUpAge = this.levelUpAge;
-        base.gameOver = this.gameOver;
-        base.gameOverAge = this.gameOverAge;
-        base.bossesDefeated = this.bossesDefeated;
-        base.runSummary = this.runSummary;
-        base.newBest = this.newBest;
-        base.paused = this.paused;
-        base.shakeEnabled = this.shakeEnabled;
-        base.rerolls = this.rerolls;
-        base.banishes = this.banishes;
-        base.alters = this.alters;
-        return base;
-    }
-
     _drawGrid(ctx) {
         const W = INTERNAL_WIDTH;
         const H = INTERNAL_HEIGHT;
@@ -3901,6 +3563,57 @@ export class Game {
     _drawWorldBounds(ctx, debug) {
         const hw = WORLD_WIDTH / 2;
         const hh = WORLD_HEIGHT / 2;
+        // Palisade ring: a stockade wall strip drawn just OUTSIDE the playable
+        // rect on all four sides, so the world edge reads as a real barrier
+        // (the position clamp remains the actual wall) without eating any play
+        // space. Horizontal strips run along top/bottom; the same strip is
+        // rotated 90° for the sides. Corners overlap harmlessly.
+        const strip = getBorderStrip();
+        if (strip && !debug) {
+            const pat = getBorderPattern(ctx);
+            if (pat) {
+                const S = strip.height;
+                const spanW = WORLD_WIDTH + S * 2, spanH = WORLD_HEIGHT + S * 2;
+                ctx.save();
+                // Out-of-bounds wash: everything beyond the playable rect
+                // drops a step darker BEFORE the fence draws, so the palisade
+                // clearly divides in from out instead of blending into the
+                // same ground texture on both sides. M covers the farthest
+                // the camera can peek past the edge.
+                const M = 1600;
+                ctx.fillStyle = 'rgba(6,5,10,0.42)';
+                ctx.fillRect(-hw - M, -hh - M, WORLD_WIDTH + M * 2, M);
+                ctx.fillRect(-hw - M, hh, WORLD_WIDTH + M * 2, M);
+                ctx.fillRect(-hw - M, -hh, M, WORLD_HEIGHT);
+                ctx.fillRect(hw, -hh, M, WORLD_HEIGHT);
+                ctx.fillStyle = pat;
+                // Top edge — wall stands ON the north boundary, rising outward.
+                ctx.save(); ctx.translate(-hw - S, -hh - S);
+                ctx.fillRect(0, 0, spanW, S); ctx.restore();
+                // Bottom edge — fully outside, pointed tops toward the field.
+                ctx.save(); ctx.translate(-hw - S, hh);
+                ctx.fillRect(0, 0, spanW, S); ctx.restore();
+                // Right edge (rotated 90° cw: tips point outward/east).
+                ctx.save(); ctx.translate(hw + S, -hh - S); ctx.rotate(Math.PI / 2);
+                ctx.fillRect(0, 0, spanH, S); ctx.restore();
+                // Left edge (rotated 90° ccw: tips point outward/west).
+                ctx.save(); ctx.translate(-hw - S, hh + S); ctx.rotate(-Math.PI / 2);
+                ctx.fillRect(0, 0, spanH, S); ctx.restore();
+                // Contact shadow hugging the inside of the fence line —
+                // stepped translucent bands (cheap fills, no per-frame
+                // gradient) that ground the palisade and lift it off the
+                // identical ground texture inside.
+                ctx.fillStyle = 'rgba(0,0,0,0.10)';
+                for (const wd of [30, 18, 8]) {
+                    ctx.fillRect(-hw, -hh, WORLD_WIDTH, wd);
+                    ctx.fillRect(-hw, hh - wd, WORLD_WIDTH, wd);
+                    ctx.fillRect(-hw, -hh, wd, WORLD_HEIGHT);
+                    ctx.fillRect(hw - wd, -hh, wd, WORLD_HEIGHT);
+                }
+                ctx.restore();
+                return;
+            }
+        }
         ctx.save();
         ctx.strokeStyle = WORLD_BOUNDS_COLOR;
         if (debug) {

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>paw probe</title>
+<style>body{margin:0;background:#111}</style></head><body>
+<canvas id="c"></canvas>
+<script type="module">
+// Throwaway measurement page: detects the wand-hand PAW in every hero sheet
+// frame (cream-coloured cluster inside a per-frame search box, biased to the
+// box's rightmost blob so the belly/face don't win), draws crosshairs for
+// eyeball verification, and PUTs both the annotated PNG and a coords JSON.
+const DIRS = ['down','side','up'];
+const COLS = 7;
+const LABELS = ['idle0','idle1','walk0','walk1','walk2','cast','hurt'];
+const S = 182, Z = 3, PAD = 30;
+
+// Search boxes per dir per frame [x0,y0,x1,y1] in 182 draw space (unflipped;
+// side = facing right). null = don't detect (hand-pick later).
+const BOXES = {
+  down: {
+    idle0:[114,96,152,130], idle1:[114,96,152,130],
+    walk0:[104,80,172,132], walk1:[104,80,172,132], walk2:[104,80,172,132],
+    cast:[98,28,168,88],    hurt:[100,80,172,132],
+  },
+  side: {
+    idle0:[104,95,160,134], idle1:[104,95,160,134],
+    walk0:[98,80,172,132],  walk1:[98,80,172,132],  walk2:[98,80,172,132],
+    cast:[118,38,176,100],  hurt:[98,60,172,120],
+  },
+  up: {
+    idle0:null, idle1:null, walk0:null, walk1:null, walk2:null, cast:null, hurt:null,
+  },
+};
+
+// Hand-estimated fallbacks / no-cream frames (orange crosshair) — verified by
+// eye against the grid, then merged with green detections into the final table.
+const OVERRIDE = {
+  down: { idle0:[131,117], idle1:[131,117], walk1:[140,124], hurt:[150,100] },
+  side: { walk0:[128,122], walk2:[130,118] },
+  up:   { idle0:[126,108], idle1:[126,108], walk0:[126,106], walk1:[126,99],
+          walk2:[126,106], cast:[134,60],  hurt:[124,108] },
+};
+
+const cream = (r,g,b,a) => a > 200 && r > 195 && g > 165 && b > 110 && b < 205 && (r - b) > 35;
+
+function detect(id, box) {
+  const [x0,y0,x1,y1] = box;
+  let pts = [];
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const i = (y * S + x) * 4;
+    if (cream(id.data[i], id.data[i+1], id.data[i+2], id.data[i+3])) pts.push([x,y]);
+  }
+  // rightmost blob; if it's huge it's the belly — drop it and retry rightward
+  for (let tries = 0; tries < 3 && pts.length >= 4; tries++) {
+    let seed = pts[0];
+    for (const p of pts) if (p[0] > seed[0]) seed = p;
+    const blob = pts.filter(p => Math.hypot(p[0]-seed[0], p[1]-seed[1]) < 18);
+    if (blob.length > 230) { pts = pts.filter(p => !blob.includes(p)); continue; }
+    if (blob.length < 4) return null;
+    let sx = 0, sy = 0;
+    for (const p of blob) { sx += p[0]; sy += p[1]; }
+    return [Math.round(sx/blob.length), Math.round(sy/blob.length), blob.length];
+  }
+  return null;
+}
+
+const cv = document.getElementById('c');
+cv.width = PAD + COLS * (S*Z + 8); cv.height = PAD + DIRS.length * (S*Z + 26);
+const ctx = cv.getContext('2d');
+ctx.fillStyle = '#181818'; ctx.fillRect(0,0,cv.width,cv.height);
+ctx.imageSmoothingEnabled = false;
+function load(d){ return new Promise(r=>{ const im=new Image(); im.onload=()=>r(im); im.src='/src/assets/hero/monkey_'+d+'.png'; }); }
+const sheets = {};
+for (const d of DIRS) sheets[d] = await load(d);
+const scratch = document.createElement('canvas');
+scratch.width = S; scratch.height = S;
+const sx2 = scratch.getContext('2d', { willReadFrequently: true });
+sx2.imageSmoothingEnabled = false;
+
+const coords = {};
+ctx.font = '13px monospace';
+for (let r = 0; r < DIRS.length; r++) {
+  const d = DIRS[r], im = sheets[d], cw = im.width / COLS;
+  coords[d] = {};
+  for (let c = 0; c < COLS; c++) {
+    const ox = PAD + c * (S*Z + 8), oy = PAD + r * (S*Z + 26);
+    sx2.clearRect(0,0,S,S);
+    sx2.drawImage(im, c*cw, 0, cw, im.height, 0, 0, S, S);
+    const id = sx2.getImageData(0,0,S,S);
+    const box = BOXES[d][LABELS[c]];
+    const hit = box ? detect(id, box) : null;
+    const ov = OVERRIDE[d][LABELS[c]] || null;
+    coords[d][LABELS[c]] = hit ? [hit[0], hit[1]] : ov;
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.fillStyle = '#242424'; ctx.fillRect(0,0,S*Z,S*Z);
+    ctx.drawImage(scratch, 0, 0, S*Z, S*Z);
+    ctx.strokeStyle = 'rgba(0,255,255,0.15)';
+    for (let g = 0; g <= S; g += 10) {
+      ctx.beginPath(); ctx.moveTo(g*Z,0); ctx.lineTo(g*Z,S*Z); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,g*Z); ctx.lineTo(S*Z,g*Z); ctx.stroke();
+    }
+    if (box) { ctx.strokeStyle = 'rgba(255,255,0,0.5)'; ctx.strokeRect(box[0]*Z, box[1]*Z, (box[2]-box[0])*Z, (box[3]-box[1])*Z); }
+    if (hit) {
+      ctx.strokeStyle = '#00ff44'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(hit[0]*Z-14, hit[1]*Z); ctx.lineTo(hit[0]*Z+14, hit[1]*Z); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(hit[0]*Z, hit[1]*Z-14); ctx.lineTo(hit[0]*Z, hit[1]*Z+14); ctx.stroke();
+      ctx.fillStyle = '#0f6'; ctx.fillText(hit[0]+','+hit[1]+' n'+hit[2], 4, S*Z-6);
+    }
+    if (ov) {
+      ctx.strokeStyle = '#ff9500'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ov[0]*Z-10, ov[1]*Z-10); ctx.lineTo(ov[0]*Z+10, ov[1]*Z+10); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ov[0]*Z+10, ov[1]*Z-10); ctx.lineTo(ov[0]*Z-10, ov[1]*Z+10); ctx.stroke();
+      ctx.fillStyle = '#fa0'; ctx.fillText('ov ' + ov[0]+','+ov[1], 4, S*Z-22);
+    }
+    if (!hit && !ov) { ctx.fillStyle = '#f44'; ctx.fillText('MISS', 4, S*Z-6); }
+    ctx.fillStyle = '#9f9'; ctx.fillText(d + ' ' + LABELS[c], 4, 16);
+    ctx.restore();
+  }
+}
+await fetch('/__save/paw_coords.json', { method: 'PUT', body: JSON.stringify(coords, null, 1) });
+cv.toBlob(async (b) => {
+  await fetch('/__save/paw_probe2.png', { method: 'PUT', body: b });
+  document.title = 'SAVED';
+});
+</script></body></html>

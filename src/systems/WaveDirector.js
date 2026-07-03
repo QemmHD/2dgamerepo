@@ -125,9 +125,10 @@ export class WaveDirector {
             wave.eliteChance + minutesBeyond * ENDLESS_SCALING.eliteChancePerMinute
         );
         // TWILIGHT: a set time past the FINAL wave the horde "turns" — elite
-        // chance leaps past the normal cap toward an elite-army ceiling (the
-        // run-scale 0.85 clamp in Game still bounds the final value). The climax
-        // of a deep endless run.
+        // chance CLIMBS from the twilight floor past the normal cap toward an
+        // elite-army ceiling (the run-scale 0.85 clamp in Game still bounds the
+        // final value) instead of step-jumping into the apex boss window. The
+        // climax of a deep endless run.
         const twilight = isLast && minutesBeyond >= ENDLESS_SCALING.twilightMinutesBeyond;
         const tMin = twilight ? minutesBeyond - ENDLESS_SCALING.twilightMinutesBeyond : 0;
         if (twilight) {

@@ -34,6 +34,16 @@ export const WEAPON_SKINS = {
     lightningMark: { name: 'Stormcaller',  accent: '#ffe14a', glow: '#7fd0ff', emblem: 'crown', melee: true,  prop: 'rod'   },
     // Frostmote → frostweaver (blue/white ice shard) — melee-leaning.
     frostmote:     { name: 'Frostweaver',  accent: '#9fe8ff', glow: '#cdf3ff', emblem: 'shard', melee: true,  prop: 'shard' },
+    // ── Armory pt. 1 base weapons ──────────────────────────────────────
+    // Ashfang → fang-hurler (warm cinder orange, curling flame) — the wand IS
+    // the thrower, so no swing.
+    ashfang:       { name: 'Fangcaller',   accent: '#ff9a4a', glow: '#ffb060', emblem: 'flame', melee: false, prop: 'wand'  },
+    // Kindle Ray → channeler (radiant gold sigil, a steady staff).
+    kindleRay:     { name: 'Raykeeper',    accent: '#ffd98a', glow: '#ffe9b0', emblem: 'sigil', melee: false, prop: 'staff' },
+    // Cindermine → trapwright (deep ember orb on a planted totem).
+    emberMine:     { name: 'Trapwright',   accent: '#ff6a3c', glow: '#ff8a3c', emblem: 'orb',   melee: false, prop: 'totem' },
+    // Wakefire → wake-kindler (trailing flame, a light running wand).
+    wakefire:      { name: 'Wakekindler',  accent: '#ff8a3c', glow: '#ff6a2a', emblem: 'flame', melee: false, prop: 'wand'  },
 };
 
 // Held-prop themes for owned weapons that have no skin entry of their own (the
@@ -52,6 +62,13 @@ const EVOLVED_TO_BASE = {
     celestialBlades: 'orbitingBlade',
     divineNova: 'holyPulse',
     thunderCrown: 'lightningMark',
+    // Armory pt. 1 evolutions (incl. the two the roster was missing).
+    twinfangCyclone: 'ashfang',
+    dawnfireRay: 'kindleRay',
+    ashquake: 'emberMine',
+    wildfireWake: 'wakefire',
+    stormsurge: 'voltWand',
+    winterveil: 'frostmote',
 };
 
 // FUSED weapons get their own held-prop themes (shape from the dominant
@@ -66,6 +83,14 @@ const FUSED_PROPS = {
     glacialbeacon: { prop: 'glaive', accent: '#9fe8ff', glow: '#cdf3ff' },  // deep-freeze glaive ring
     judgmentpulse: { prop: 'sigil',  accent: '#ffe9a8', glow: '#ffd0a8' },  // armor-flaying holy pulse
     stormglaive:   { prop: 'glaive', accent: '#cfe0ff', glow: '#7fd0ff' },  // storm-branded sweeps
+    // Armory pt. 1 fusion fills (the 7 previously-missing pairs).
+    dawnlance:     { prop: 'staff',  accent: '#ffe9a8', glow: '#fff3c8' },  // radiant ricochet bolts
+    boltbrand:     { prop: 'rod',    accent: '#9a8cff', glow: '#7fd0ff' },  // arcane storm-brands
+    pyrewheel:     { prop: 'glaive', accent: '#ff9a5c', glow: '#ff7a3c' },  // blazing orbit
+    coilhalo:      { prop: 'glaive', accent: '#9fd8ff', glow: '#ffe14a' },  // charged orbit
+    pyrebeacon:    { prop: 'sigil',  accent: '#ffb060', glow: '#ff8a3c' },  // burning pulse
+    stormbeacon:   { prop: 'sigil',  accent: '#aee2ff', glow: '#7fd0ff' },  // shocking pulse
+    tempestcoil:   { prop: 'rod',    accent: '#7fd0ff', glow: '#ffe14a' },  // endless-arc zap
 };
 
 // Resolve a weapon id (base, evolved, or unknown) to a skin theme. Falls back to

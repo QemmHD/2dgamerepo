@@ -23,6 +23,13 @@ import {
 const GRID_CELL = 320;
 const MAX_OBSTACLES = 240;
 
+// Numeric grid key: cells pack as (gx+K)*2K + (gy+K). The world spans only a
+// few dozen 320px cells, so K = 4096 is far beyond any reachable index —
+// numeric keys avoid the per-lookup string allocation of the old 'gx,gy'
+// keys in _nearby, which runs multiple times per enemy per frame.
+const KEY_OFF = 4096;
+const cellKey = (gx, gy) => (gx + KEY_OFF) * (KEY_OFF * 2) + (gy + KEY_OFF);
+
 function mulberry32(seed) {
     let a = seed >>> 0;
     return function () {
@@ -67,9 +74,13 @@ function tintPalette(p, tint) {
 export class ObstacleSystem {
     constructor() {
         this.obstacles = [];
-        this.grid = new Map();     // 'gx,gy' → [obstacle, ...]
+        this.grid = new Map();     // cellKey(gx,gy) → [obstacle, ...]
         this.worldW = 0;
         this.worldH = 0;
+        // _nearby scratch: a reused result array + a monotonic query stamp
+        // for dedupe, so the hot query path allocates nothing per call.
+        this._scratch = [];
+        this._queryGen = 0;
     }
 
     // biomeId selects the per-biome prop set, building styles, and colour tint
@@ -121,6 +132,9 @@ export class ObstacleSystem {
                 const def = this._pickType(rng);
                 const ob = new Obstacle(def, x, y);
                 ob.palette = this._tintByType[def.type] || def.palette;
+                // Raw biome tint rides along for the AI-sprite path (sprites
+                // bake their own colours; the tint is applied as a wash).
+                ob.tint = tint;
 
                 // Don't let footprints overlap (keeps walkable gaps open).
                 if (this._tooClose(ob)) continue;
@@ -170,12 +184,12 @@ export class ObstacleSystem {
             const doorSide = Math.abs(x) > Math.abs(y)
                 ? (x > 0 ? 'left' : 'right')
                 : (y > 0 ? 'top' : 'bottom');
-            this._addBuilding(style, x, y, doorSide, tintPalette(style.palette, tint));
+            this._addBuilding(style, x, y, doorSide, tintPalette(style.palette, tint), tint);
             placed++;
         }
     }
 
-    _addBuilding(style, cx, cy, doorSide, palette) {
+    _addBuilding(style, cx, cy, doorSide, palette, tint = null) {
         const iHW = style.interiorW / 2, iHH = style.interiorH / 2;
         const T = style.wall, H = style.wallH, half = T / 2;
         const spanHW = iHW + T;       // horizontal walls cover the corners
@@ -186,10 +200,13 @@ export class ObstacleSystem {
             const def = {
                 type: 'buildingWall', shape: 'rect',
                 col: { hw, hh }, size: { w: hw * 2, h: H },
-                blocksLOS: true, palette,
+                blocksLOS: true, palette, styleType: style.type,
             };
             const ob = new Obstacle(def, x, y);
             ob.palette = palette;
+            // Raw biome tint for the wall-texture wash (the pattern PNGs are
+            // untinted; the tinted palette only covers coping/edges).
+            ob.tint = tint;
             this.obstacles.push(ob);
         };
         // Horizontal walls (top = back, bottom = front), each spanning full width.
@@ -221,10 +238,11 @@ export class ObstacleSystem {
         const floor = {
             type: 'buildingFloor', shape: 'rect', decorative: true,
             col: { hw: iHW, hh: iHH }, size: { w: iHW * 2, h: iHH * 2 },
-            blocksLOS: false, palette,
+            blocksLOS: false, palette, styleType: style.type,
         };
         const fob = new Obstacle(floor, cx, cy);
         fob.palette = palette;
+        fob.tint = tint;
         fob.baseY = cy - iHH;   // sort behind the player/walls (floor layer)
         this.obstacles.push(fob);
     }
@@ -266,7 +284,7 @@ export class ObstacleSystem {
             const gy0 = Math.floor(b.minY / GRID_CELL), gy1 = Math.floor(b.maxY / GRID_CELL);
             for (let gy = gy0; gy <= gy1; gy++) {
                 for (let gx = gx0; gx <= gx1; gx++) {
-                    const key = gx + ',' + gy;
+                    const key = cellKey(gx, gy);
                     let bucket = this.grid.get(key);
                     if (!bucket) { bucket = []; this.grid.set(key, bucket); }
                     bucket.push(ob);
@@ -276,17 +294,25 @@ export class ObstacleSystem {
     }
 
     // Gather unique obstacles whose footprint may overlap the bbox [minX..maxX].
+    // GC-clean hot path (hit multiple times per enemy per frame): returns a
+    // REUSED scratch array — valid only until the next _nearby call, which every
+    // caller respects by consuming it immediately. Dedupe across cells is a
+    // per-obstacle generation stamp instead of a fresh Set, so a query performs
+    // zero allocations.
     _nearby(minX, minY, maxX, maxY) {
         const gx0 = Math.floor(minX / GRID_CELL), gx1 = Math.floor(maxX / GRID_CELL);
         const gy0 = Math.floor(minY / GRID_CELL), gy1 = Math.floor(maxY / GRID_CELL);
-        const seen = new Set();
-        const out = [];
+        const gen = ++this._queryGen;
+        const out = this._scratch;
+        out.length = 0;
         for (let gy = gy0; gy <= gy1; gy++) {
             for (let gx = gx0; gx <= gx1; gx++) {
-                const bucket = this.grid.get(gx + ',' + gy);
+                const bucket = this.grid.get(cellKey(gx, gy));
                 if (!bucket) continue;
                 for (const ob of bucket) {
-                    if (!seen.has(ob)) { seen.add(ob); out.push(ob); }
+                    if (ob._queryGen === gen) continue;
+                    ob._queryGen = gen;
+                    out.push(ob);
                 }
             }
         }
