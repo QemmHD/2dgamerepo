@@ -918,9 +918,12 @@ export class Game {
         // Back at the menu, a Daily is over — clear the flag so the next launch
         // (button OR keyboard) is a normal run unless DAILY ROAD is chosen again.
         this.dailyMode = false;
-        // The guided menu tour fires on the first menu visit (right after the
-        // guided first run ends) and re-fires until finished or skipped.
-        if (!SKIP_ONBOARDING && !this.saveSystem.isTourDone()) this._armMenuTour();
+        // The guided menu tour fires on the first menu visit AFTER a recorded
+        // run (right when the guided first run ends) and re-fires until
+        // finished or skipped. The runs>=1 gate keeps a pause-quit of the very
+        // first run from touring before the run lesson is even complete.
+        if (!SKIP_ONBOARDING && !this.saveSystem.isTourDone()
+            && (this.saveSystem.data.stats?.runs ?? 0) >= 1) this._armMenuTour();
         this._updateJoystickEnabled();
     }
 
@@ -976,17 +979,23 @@ export class Game {
                 }
                 break;
             case 3: break;  // waits on the first level-up pick (selectUpgrade advances)
+            // Steps 4-7 hold a minimum 2.5s read time before their trigger can
+            // advance them — a trigger that's ALREADY true at step entry (e.g.
+            // coins seeded by the run-start-coins perk on a Replay-Tutorial run)
+            // would otherwise flash the pill for a single frame.
             case 4:    // coins — advance once one is picked up (or read + move on)
-                if ((this.player.coins ?? 0) > 0 || ob.timer > 10) this._advanceOnboarding();
+                if ((ob.timer > 2.5 && (this.player.coins ?? 0) > 0) || ob.timer > 10) this._advanceOnboarding();
                 break;
             case 5:    // combo — advance on a real chain (or read + move on)
-                if (this.combo >= 5 || ob.timer > 12) this._advanceOnboarding();
+                if ((ob.timer > 2.5 && this.combo >= 5) || ob.timer > 12) this._advanceOnboarding();
                 break;
-            case 6:    // shrines — advance when the altar opens (or read + move on)
-                if (this.altar || ob.timer > 18) this._advanceOnboarding();
+            case 6:    // shrines — the altar claim advances this (selectAltar path,
+                       // mirroring selectUpgrade — the overlay gate hides this.altar
+                       // from this tick), or read + move on.
+                if (ob.timer > 18) this._advanceOnboarding();
                 break;
             case 7:    // the boss — advance when the warning fires (or read + move on)
-                if (this.bossWarning || ob.timer > 20) this._advanceOnboarding();
+                if ((ob.timer > 2.5 && this.bossWarning) || ob.timer > 20) this._advanceOnboarding();
                 break;
             case 8:    // send-off — linger long enough to read, then done for good
                 if (ob.timer > 7) this._advanceOnboarding();
@@ -1650,6 +1659,10 @@ export class Game {
         if (!this.altar) return;
         const choice = this.altar.choices[idx];
         if (!choice) return;
+        // First shrine claimed — the shrine lesson is learned. (Event-driven,
+        // mirroring selectUpgrade: the overlay gate keeps _tickOnboarding from
+        // ever observing this.altar, so the tick can't do this itself.)
+        if (this.onboarding && this.onboarding.step === 6) this._advanceOnboarding();
         choice.apply(this);
         // Flavor-matched pick cues: fusion = forge slam, pact = dark bargain,
         // everything else keeps the standard upgrade chirp.

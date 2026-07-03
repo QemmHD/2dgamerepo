@@ -320,7 +320,12 @@ export class SaveSystem {
             // Guided menu tour: done once finished/skipped. A pre-tour save with
             // recorded runs and no explicit flag is treated as done, so shipping
             // the tour never force-tours a veteran (they can replay via Settings).
-            tourDone: dob ? dob.tourDone === true : stats.runs > 0,
+            // Note the undefined check INSIDE the dob branch: v1.2 saves already
+            // persist onboarding{tabsSeen} without tourDone — those veterans
+            // grandfather to done too, not just saves missing the key entirely.
+            tourDone: dob
+                ? (dob.tourDone === true || (dob.tourDone === undefined && stats.runs > 0))
+                : stats.runs > 0,
         };
 
         // Pact Mastery: { [characterId]: highestClearedTier (non-negative int) }.
