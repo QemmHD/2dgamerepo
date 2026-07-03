@@ -79,14 +79,17 @@ export function tabUnlocked(id, save) {
     const s = (save && save.stats) || {};
     switch (id) {
         case 'play':
-        case 'settings': return true;
+        case 'settings':
+        // The SHOP is part of the base menu from the first boot — new players
+        // arrive with a 2,000-coin stake, so the case shop is immediately
+        // relevant (and the guided tour walks them through it).
+        case 'shop': return true;
         // First coins banked — spendable balance counts too, so a payout that
         // bypasses the lifetime stat can never leave a coin-holder tab-less.
         case 'skills': return (s.totalCoinsEarned ?? 0) > 0 || (save?.totalCoins ?? 0) > 0;
         case 'loadout': return (s.casesOpened ?? 0) > 0;                  // first gear case opened
         case 'attune': return (save?.discoveredRelics?.length ?? 0) > 0;  // first relic claimed
         case 'character':
-        case 'shop':
         case 'battlepass':
         case 'stats': return (s.runs ?? 0) >= 1;                          // first run finished
         default: return true;
@@ -539,8 +542,95 @@ export class MenuRenderer {
             ctx.fillText(state.menuToast, INTERNAL_WIDTH / 2, INTERNAL_HEIGHT - sa.bottom - 46);
         }
 
+        // Guided menu tour: dims the menu, spotlights the current step's tab,
+        // and shows the lesson card (Next/Skip own input while it's up — Game
+        // gates every other menu action). Drawn above the toast, below nothing:
+        // the case overlay can't appear mid-tour because its actions are gated.
+        if (state.menuTour) this._drawTourOverlay(ctx, state);
+
         // Case-opening overlay sits above everything (and owns input while up).
         if (state.caseAnim) this._drawCaseOverlay(ctx, state.caseAnim);
+    }
+
+    // Rect of one tab chip in the CURRENT staged layout (same math as
+    // _drawTabBar: filtered tab list, shared row geometry). Null if hidden.
+    _tabRectFor(save, tabId) {
+        const tabs = MENU_TABS.filter((t) => tabUnlocked(t.id, save));
+        const i = tabs.findIndex((t) => t.id === tabId);
+        if (i < 0) return null;
+        const sa = this._sa();
+        const x0 = sa.left + 56;
+        const w = INTERNAL_WIDTH - sa.left - sa.right - 112;
+        const gap = 10;
+        const tabW = (w - gap * (tabs.length - 1)) / tabs.length;
+        return { x: x0 + i * (tabW + gap), y: sa.top + 104, w: tabW, h: 62, accent: tabs[i].accent };
+    }
+
+    // ── GUIDED MENU TOUR OVERLAY ─────────────────────────────────────────
+    // Four dim bands leave the spotlit tab at full brightness, an animated
+    // accent ring marks it, and the lesson card carries title + lines +
+    // progress + NEXT / SKIP TOUR (the only live hotspots while touring).
+    _drawTourOverlay(ctx, state) {
+        const tour = state.menuTour;
+        const save = state.saveData || {};
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
+        const t = this._t || 0;
+        const spot = this._tabRectFor(save, tour.tab);
+        const m = 6; // spotlight margin around the tab chip
+        ctx.save();
+        ctx.fillStyle = 'rgba(4,3,3,0.72)';
+        if (spot) {
+            const sx = spot.x - m, sy = spot.y - m, sw = spot.w + m * 2, sh = spot.h + m * 2;
+            ctx.fillRect(0, 0, W, sy);                                  // above
+            ctx.fillRect(0, sy, sx, sh);                                // left
+            ctx.fillRect(sx + sw, sy, W - sx - sw, sh);                 // right
+            ctx.fillRect(0, sy + sh, W, H - sy - sh);                   // below
+            // Breathing accent ring + a soft glow so the spotlit tab POPS.
+            const accent = spot.accent || '#ffce54';
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.30 + Math.sin(t * 3) * 0.12;
+            ctx.drawImage(getGlowSprite(accent), sx - 24, sy - 24, sw + 48, sh + 48);
+            ctx.restore();
+            roundRectPath(ctx, sx, sy, sw, sh, 14);
+            ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+        } else {
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        // Lesson card.
+        const lines = tour.lines || [];
+        const cw = 900;
+        const chh = 118 + lines.length * 30 + 86;
+        const cx = W / 2 - cw / 2;
+        const cy = Math.min(H - chh - 60, 320);
+        this._panel(ctx, cx, cy, cw, chh, null, 'rgba(255,180,120,0.22)', { corners: true });
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#ffd479';
+        this._fitFont(ctx, tour.title, cw - 80, 800, 34);
+        ctx.fillText(tour.title, W / 2, cy + 54);
+        ctx.fillStyle = 'rgba(255,244,224,0.92)'; ctx.font = `500 21px ${FONT}`;
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], W / 2, cy + 92 + i * 30);
+        }
+        // Progress dots + counter.
+        const total = tour.total || 1;
+        const dotsW = total * 18;
+        for (let i = 0; i < total; i++) {
+            ctx.beginPath();
+            ctx.arc(W / 2 - dotsW / 2 + i * 18 + 9, cy + chh - 96, i === tour.idx ? 6 : 4, 0, TAU);
+            ctx.fillStyle = i === tour.idx ? '#ffce54' : i < tour.idx ? 'rgba(255,206,84,0.55)' : 'rgba(255,255,255,0.22)';
+            ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 15px ${FONT}`;
+        ctx.fillText(`${tour.idx + 1} / ${total}`, W / 2, cy + chh - 72);
+        // Buttons: SKIP (subtle, left) + NEXT/FINISH (primary, right).
+        const last = tour.idx >= total - 1;
+        this._button(ctx, { x: W / 2 - 330, y: cy + chh - 62, w: 260, h: 50 }, 'SKIP TOUR',
+            { accent: 'rgba(60,52,48,0.9)', action: 'tourSkip', fontSize: 20 });
+        this._button(ctx, { x: W / 2 + 70, y: cy + chh - 62, w: 260, h: 50 }, last ? 'FINISH  ✓' : 'NEXT  ▸',
+            { primary: true, action: 'tourNext', fontSize: 22 });
+        ctx.restore();
     }
 
     _drawTabBar(ctx, state) {
@@ -2000,6 +2090,17 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 18px ${FONT}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillText('Themed music + sound effects. Adjust to taste; 0% mutes.', innerX, y + 20);
+
+        // Replay the guided tutorial: re-runs the menu tour right away and
+        // re-arms the in-run hint pills for the next vigil.
+        y += 44;
+        this._button(ctx, { x: innerX, y, w: 340, h: 52 }, 'REPLAY TUTORIAL',
+            { accent: 'rgba(46,74,96,0.9)', action: 'replayTutorial', fontSize: 22 });
+        ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 17px ${FONT}`;
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Guided tour of the menu + hint pills on your next run.', innerX + 364, y + 27);
+        ctx.textBaseline = 'alphabetic';
+        y += 30;
 
         // ── Cheats (testing) ──────────────────────────────────────────────
         // Dev-only (?dev=1): hotspots only register when drawn, so hiding the

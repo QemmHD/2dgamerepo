@@ -4,6 +4,7 @@
 // fresh snapshot object (one per frame — same shape/cost as before the move).
 
 import { BOSS, CAPS, COMBO, COMPOSURE, MAX_WEAPON_SLOTS } from '../config/GameConfig.js';
+import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { OBJECTIVE_COUNT } from '../content/objectives.js';
 import { WEAPONS, WEAPON_AURA } from '../content/weapons.js';
 import { currentDayNumber } from '../content/dailyChallenges.js';
@@ -29,6 +30,13 @@ export function buildUIState(game) {
         base.stats = game.saveSystem.data.stats;
         // Menu state consumed by MenuRenderer.
         base.menuTab = game.menuTab;
+        // Guided menu tour: the current step's card content + progress (null
+        // when not touring). MenuRenderer draws the overlay from this snapshot.
+        base.menuTour = game.menuTour ? {
+            idx: game.menuTour.idx,
+            total: TOUR_STEPS.length,
+            ...TOUR_STEPS[game.menuTour.idx],
+        } : null;
         base.caseAnim = game.minigame.caseAnim;
         base.menuToast = game.menuToastTimer > 0 ? game.menuToast : null;
         base.gamblePlays = game.saveSystem.gamblePlaysInfo();

@@ -15,7 +15,10 @@ const SAVE_KEY = 'monkey-survivor:save:v1';
 
 function defaultData() {
     return {
-        totalCoins: 0,
+        // New forges start with a 2,000-coin welcome stake so the tutorial can
+        // walk the player through actually SPENDING (skills / cases) instead of
+        // pointing at locked doors. Existing saves keep their real balance.
+        totalCoins: 2000,
         upgrades: {
             maxHp: 0,
             damage: 0,
@@ -107,8 +110,9 @@ function defaultData() {
         streak: { day: 0, count: 0 },
         // Onboarding/staged-menu progress: which menu tabs the player has
         // OPENED at least once (drives the one-time "NEW" badge on tabs that
-        // unlock by progression — see MenuRenderer tabUnlocked).
-        onboarding: { tabsSeen: [] },
+        // unlock by progression — see MenuRenderer tabUnlocked). tourDone
+        // latches once the guided menu tour has been finished or skipped.
+        onboarding: { tabsSeen: [], tourDone: false },
         // Pact Mastery: highest Pact tier (active-Trial count, 0..N) a run has
         // CLEARED (3-boss victory) per character id — the "can't-farm" ladder.
         pactMastery: {},
@@ -313,6 +317,10 @@ export class SaveSystem {
         const dob = data.onboarding && typeof data.onboarding === 'object' ? data.onboarding : null;
         const onboarding = {
             tabsSeen: dob ? validateIdList(dob.tabsSeen, []) : (stats.runs > 0 ? [...ALL_TABS] : []),
+            // Guided menu tour: done once finished/skipped. A pre-tour save with
+            // recorded runs and no explicit flag is treated as done, so shipping
+            // the tour never force-tours a veteran (they can replay via Settings).
+            tourDone: dob ? dob.tourDone === true : stats.runs > 0,
         };
 
         // Pact Mastery: { [characterId]: highestClearedTier (non-negative int) }.
@@ -724,11 +732,26 @@ export class SaveSystem {
     markTabSeen(id) {
         if (typeof id !== 'string' || !id) return;
         if (!this.data.onboarding || typeof this.data.onboarding !== 'object') {
-            this.data.onboarding = { tabsSeen: [] };
+            this.data.onboarding = { tabsSeen: [], tourDone: false };
         }
         const seen = this.data.onboarding.tabsSeen;
         if (seen.includes(id)) return;
         seen.push(id);
+        this.save();
+    }
+
+    // ── Guided menu tour ─────────────────────────────────────────────────
+    // Latched when the tour finishes or is skipped; cleared by the Settings
+    // "Replay Tutorial" button so the tour re-arms on the next menu visit.
+    isTourDone() {
+        return this.data.onboarding?.tourDone === true;
+    }
+
+    setTourDone(done) {
+        if (!this.data.onboarding || typeof this.data.onboarding !== 'object') {
+            this.data.onboarding = { tabsSeen: [], tourDone: false };
+        }
+        this.data.onboarding.tourDone = !!done;
         this.save();
     }
 
