@@ -1,141 +1,187 @@
-# EMBERWAKE — Master Roadmap (v2, 2026-07-04)
+# EMBERWAKE — Master Roadmap v3 (2026-07-04)
 
-*Supersedes the update-ordering in `MAJOR_UPDATE_PLAN.md` ("The Long Vigil", 2026-07-02)
-and revises the Kindled-first roadmap (2026-07-03). Re-planned because a material
-capability changed: the in-repo Blender pipeline (`tools/blender/`, PRs #123–#125) makes
-rigged, animated, pixel-styled character/creature/prop art cheap and repeatable — art
-cost was the deciding factor in the previous ranking. Grounded in a 3-lane audit
-(engineering backlog / strategic re-rank / fresh-eyes player critique) run 2026-07-04.*
+*The 20-update horizon. Supersedes v2 (same date) by expanding the four-major plan
+into five named eras / twenty updates. Grounded in a 5-lane code review (content,
+modes, world, platform, meta — 35 candidates) synthesized under dependency, perf,
+and identity constraints. Planning only — no update below is started until picked.*
 
----
-
-## 0. Where the game stands
-
-Systems are deep and healthy (weapons/evolutions/fusions, relics + Wick Roads + pacts +
-patrons, cases with honest pity, battle pass, achievements, dailies, gauntlet/nightmare,
-guided tutorial). The hero is now a rigged Blender model with bone-exact wand anchors.
-The weakest surfaces, verified by screenshots and code:
-
-- **Boss fights are illegible at the climax** — boss title renders behind the timer
-  plate, HP numbers wash into the wave label, and the hero's aura bloom can white-out
-  the face mid-fight.
-- **All 12 bosses are single-pattern for their whole HP bar** — the authored
-  `phase2Attacks` kits in `GameConfig.js` are dead data (never read).
-- **The first 60 seconds undersell the game** — slime-trickle from off-screen; the
-  opening screen is an empty field.
-- **The 6-hero roster is one body with tint washes** — a headline feature that reads
-  as palette swaps.
-- **Art reads as three generations** — fine-pixel Blender hero, coarser canonical
-  enemies, chunkier code-drawn bosses.
-
-Corrections vs. old assumptions: enemy-separation O(n²) is **already fixed** (spatial
-hash, `Game.js:~2180`); the remaining perf hotspot is `CollisionSystem.resolve`
-(O(projectiles × enemies)) plus projectile allocation churn.
+**Standing constraints for every update:** vanilla-JS canvas, no bundler, GitHub
+Pages static, no server (async/local/shareable-string only), backward-compatible
+saves, perf caps (180 enemies / ~220 projectiles), monkeys + wands + ember/forge,
+canonical enemy art style locked (the 5 approved sheets are the reference),
+Blender pipeline (`tools/blender/`) for character/creature/prop art.
 
 ---
 
-## 1. NOW — finish the Blender arc ("Reforged", in flight)
+## Era I — The Reforging
+*Finish the visual/feel overhaul and mint the game's shareable face.*
 
-The current milestone. Each PR ships independently (verify → PR → squash-merge).
+### 1. REFORGED *(L — in flight)*
+Complete the Blender arc + the quick-win feel fixes.
+- Blender PR2–6: wand armory models, 8 family cast anims, death/victory/dash/personality idles, five distinct hero bodies, polish + CI smoke render
+- Boss `phase2Attacks` wiring + boss-HUD readability pass
+- First-minute swarm redesign, banner discipline, salience pass, damage-number cap
+- **Hook:** five visibly distinct monkeys drawing bespoke forged wands.
 
-| PR | Scope | Notes |
-|----|-------|-------|
-| ~~PR1~~ | ~~Rigged monkey + core-four sheets + bone-exact HAND~~ | ✅ shipped #124/#125 |
-| PR2 | **Wand armory** — ~25 individual wand models, grip/tip anchors, prop cast strips | Structurally fixes the flamewand-behind, banana-hat, halo anchor nits; feeds Everforge mythics later |
-| PR3 | **8 per-family body cast animations** — manifest-driven sheets, per-family HAND arrays | The ult wind-up substrate for Kindled |
-| PR4 | **Animation suite** — death/ember-out, victory, dash, personality idles | Dash = Kindled's blink anim; death/victory = the run's two emotional peaks (currently reuse hurt/idle) |
-| PR5 | **Five distinct hero bodies** — parametric variants, per-hero sheets + readiness | Kills the palette-swap roster problem |
-| PR6 | **Polish + CI** — remaining nits (aura face-washout cap, fur-tint preview gap), headless Blender smoke render in CI | Protects the asset supply chain |
+### 2. EMBERGLASS — The Keeper's Lens *(S)* — deps: 1 (soft)
+Photo mode + THE one shared card-compositor module (offscreen 1200×630 canvas →
+clipboard/`navigator.share`), auto-minting a death/victory recap card every run.
+Built once here; reused by updates 3, 15, 14, 19, 20.
+- **Hook:** the auto-minted death card — "PYRA fell at 14:32 to Vinebacked Goliath."
 
-## 2. QUICK WINS — ship alongside/between Blender PRs (small, huge felt value)
+## Era II — The Waking Hand
+*The agency arc: the game learns to answer the player's intent.*
 
-1. **Boss phase-2 activation (~30 lines)** — read `phase2Attacks` at the existing 50%
-   latch with a phase-shift telegraph + music bump. Upgrades all 12 fights. (Bossforge
-   later adds the art; the behavior needn't wait.)
-2. **Climax readability pass** — fix the boss-HUD triple collision (title/HP/wave
-   label), cap aura/hit-flash bloom so the hero never whites out.
-3. **First-minute redesign** — visible on-screen mini-swarm in the first 5–10s;
-   tighten wave-1 cadence to deliver the swarm fantasy immediately.
-4. **Banner discipline** — kill-streak/vigil announcements out of screen center;
-   de-duplicate the double streak report.
-5. **Read-hierarchy pass** — threats vs pickups vs decor salience (decor blobs
-   currently read as enemies; gems outglow threats).
-6. **Damage-number spawn cap/merge** — AoE wipes can burst hundreds of fillText draws.
+### 3. KINDLED — The Waking Hand *(L)* — deps: 2
+Manual Kindle ults, aimed blink, Focus targeting, element combo table (authored
+with a reserved umbral row for update 8), Rites, Hero Attunement, daily Rite
+Trial + share card (via the Emberglass compositor), touch-first inputs.
+- **Hook:** releasing a screen-wide ember nova you aimed yourself.
 
-## 3. THE MAJORS — revised order
+### 4. BOSSFORGE — The Twelve Reforged *(L)* — deps: 1
+All 12 bosses re-modeled via Blender (multi-frame anims + telegraphs), full
+phase-2 kits, Boss Rush + Weekly Ember modes, projectile-collision grid +
+pooling — **the load-bearing perf gate for updates 11, 16, 17**.
+- **Hook:** every fight now telegraphs, turns, and hits back with a second act.
 
-### Update 1: KINDLED — The Waking Hand *(unchanged winner, now de-risked: ~22/30)*
-Active agency: Kindle-metered per-hero manual ults (Space), aimed blink (i-frames),
-Focus targeting, element combo table (Shatter/Thermal Shock/Detonate), Rites, Hero
-Attunement, daily Rite Trial + share card. Six PRs as specced (2026-07-03 plan) with
-revisions:
-- **Sequence after Blender PR2–PR4** — ults consume the per-family cast anims, blink
-  consumes the dash anim, ult VFX emit from wand tip anchors.
-- **Touch-first inputs are PR1 scope, not a follow-up** — right-side ult button +
-  aim gesture + tap-to-Focus, or the flagship ships desktop-only.
-- **Game.js extractions ride along** (BossDirector, RunResults, Onboarding seams) —
-  ults touch the update loop anyway.
-- **Weapon-icon HUD grid** (replaces left-edge text pills) rides with Kindled's HUD work.
+### 5. THE KINDLED TROOP *(M)* — deps: 1, 3
+Monkey companion familiars (rig parameter sweep), upgrade paths, element/build
+synergy with the combo table, AI budgeted inside the entity caps; perch/roster
+UI groundwork reused by update 20.
+- **Hook:** a little wand-bearing troopmate that fights, levels, and falls beside you.
 
-### Update 2: BOSSFORGE — The Twelve Reforged *(new entrant, ~21/30)*
-The purest payoff of the pipeline: all 12 bosses re-modeled through Blender
-(multi-frame idle/attack/hurt/death + telegraph poses — they are currently code-drawn
-2-frame sprites, now the weakest art in the game), full phase-2 kits with arena
-flourish, **Boss Rush + Weekly Ember modes** (Long Vigil P2.1), and the perf gate:
-shared broad-phase collision grid + projectile pooling (P2.7). Bosses are exempt from
-the canonical-enemy style lock, and `FRAMES_BY_TYPE` fallbacks make rollout zero-risk.
+### 6. UNDERTOW — The Quenched Forge *(L)* — deps: 4
+Descent push-your-luck floor mode, drowned enemy family (canonical style, 2×2
+grid recipe), Tidewarden boss on the Bossforge pipeline, quenching/steam theme.
+- **Hook:** choosing to descend one more flooded floor at 10% HP.
 
-### Update 3: THE KINDLED TROOP — companions *(biggest riser: 17 → ~20/30)*
-Summonable monkey familiars with upgrade paths and build synergy. Was the most
-art-expensive concept; now the cheapest — a size+palette parameter sweep of
-`monkey_rig.py`, with PR4's personality idles giving companions charm for free.
-Gated behind Bossforge's perf work (raises entity counts).
+## Era III — The World Alight
+*Content depth: events, the sixth element, a living world, roster growth, biome 5.*
 
-### Update 4: UNDERTOW — The Quenched Forge *(reframed, ~20/30)*
-Descent push-your-luck floor mode + a drowned enemy family + Tidewarden boss.
-Theme reframed from "water vs ember" to **quenching** — steam, black water, drowned
-wick-bearers — to defuse the element clash. Creature batch is routine once Bossforge
-proves the Blender creature workflow.
+### 7. THRESHOLDS — Rites of the Twelve *(M)* — deps: 4
+Boss arrivals become events: arena-raise (standing-stone ring via runtime
+ObstacleSystem insertion), per-boss signature weather, permanent kill monuments,
+12 procedural boss themes (BIOME_TUNE pattern) with phase-2 stingers synced via
+the musicDuck sidechain, pressure-reactive music layers.
+- **Hook:** banners ignite in a circle, sleet whites the horizon, Hoarfang's theme slams in.
 
-### Absorbed into layers (no longer standalone majors)
-- **Everburn (Living Seasons, 18/30)** → the live-ops wrapper shipped around any major:
-  server-free seasons, weekly edicts, share cards; seasonal cosmetics become palette
-  sweeps of the PR5 hero bodies.
-- **Everforge (Ascension, 18.5/30)** → follows Kindled naturally: prestige climb +
-  mythic wand tier as material/emissive variant renders of the PR2 wand models.
-- **The Warrens (new enemy families, 16/30)** → merged: drowned family → Undertow;
-  phase-2 adds → Bossforge.
+### 8. GLOAMCALL — The Sixth Patron *(L)* — deps: 3
+UMBRAL completes the element wheel: three base weapons on two new kinds ('well'
+vortex drag-and-crush, 'swarm' seeking gloam-motes), evolutions, umbral
+keystones/relics/pacts, slotting into KINDLED's reserved combo row. Plus
+Wickweld: ~10 fusion recipes closing every recipe-less base. All append-only data.
+- **Hook:** the Gloamwell — a wand that drags the entire horde into one point.
 
-## 4. CONTINUOUS LANES (amortized, never a "major")
+### 9. WAYLIGHT — The Living Road *(M)* — deps: 1, 5
+Seeded POI events + interactive set-pieces: caged-monkey rescues (join as
+temporary Troop familiars), waystone relights (permanent veil-punching lights),
+timed caravan loot, ruin bell horde-bait killboxes, brazier/steam-vent props —
+placed by the existing seeded `_placeStructures` pass.
+- **Hook:** ringing the chapel bell and watching 150 enemies wheel toward the killbox.
 
-- **Platform**: PWA manifest + cache-first service worker (installable, offline,
-  orientation lock); mobile/accessibility pass (P2.5 — ≥44px touch targets, 5+More
-  tabs, real volume sliders, case-flash behind reducedEffects, colorblind-safe rarity
-  cues, UI scale).
-- **Save integrity** (P2.4): read the version field (it's written, never read),
-  backup key on parse failure, export/import codes. Every update adds keys; risk
-  compounds.
-- **Perf budget**: collision grid + projectile pool (Bossforge), damage-number cap
-  (quick win), menu gradient caching. Protect the pooled/budgeted baseline.
-- **Art coherence**: normalize hero/bosses/props toward the canonical enemy pixel
-  grid + outline treatment (the 5 approved enemy sheets are the fixed reference —
-  everything else moves toward them, never the reverse).
-- **Tech health**: split MenuRenderer/UISystem per-tab; shared menu-action constants
-  (currently stringly-typed across two files); SaveSystem tests in CI; Blender smoke
-  render in CI.
-- **Art-chat queue** (higgsfield, separate session): Grand Signature VFX motifs,
-  combo burst decals, biome props — all non-blocking (procedural fallbacks ship first).
+### 10. THE SEVENTH AND EIGHTH WICKS *(M)* — deps: 1, 3
+Two new monkeys filling verified empty niches — a shock stormcaller and a frost
+warden — via the hero-body pipeline, plus Emberkin Chronicles: a 5-step signature
+quest chain per hero (all eight) unlocking lore pages, palette variants, titles.
+- **Hook:** kills leave neighbors crackling with stored storm-charge.
 
-## 5. PUNCH LIST (known small items)
+### 11. FORGEHEART — The Living Anvil *(L)* — deps: 4, 6, 7
+Biome 5, tier 5: the world-forge itself — slag rivers, ashfall weather, the one
+place environmental fire styling is canon (per CLAUDE.md). Three new bosses (the
+Smith, the Bellows, the Anvil) on the Bossforge pipeline with Thresholds arenas.
+- **Hook:** kiting 180 husks across a glowing slag river inside the forge's heart.
 
-banana hat 2px float · halo rests on crown · crown band 1px from eye whites ·
-aura pulse whites out face (cap intensity) · flamewand invisible from behind ·
-menu customizer fur-tint preview gap · `ASPECT_RATIO` dead export ·
-save `version` written-never-read · kill-streak double-report ·
-boss HUD layering collision · wave-1 off-screen spawn ring · endgame walls
-(twilight/hypergrowth) invisible to the player — surface in HUD/fiction.
+## Era IV — The Long Vigil
+*Veteran longevity: collection, defense, records, the ladder, the endgame loop.*
+
+### 12. CINDERS & SCRIPTURE — The Keeper's Codex *(M)* — deps: none hard
+Canonical sheets for the last 7 procedural creatures (approved 2×2 recipe),
+Codex tab (Bestiary / The Twelve / Relics / The Keepers) with kill-gated pages,
+ember-script lore vignettes at grave markers, Archive shelves with 25/50/75/100%
+rewards + the Curator's Lantern mythic aura.
+- **Hook:** the completed Bestiary — 20+ creature cards on parchment with kill tallies.
+
+### 13. THE LAST HEARTH *(M)* — deps: 5 (soft)
+Horde defense: guard a dying forge-hearth whose flame HP drives the light radius;
+siege/stoke phases pulse the WaveDirector; dual-target aggro; ember-ward
+placement; Troop familiars as hearth defenders; sieges-withstood records.
+- **Hook:** hearth at 3% flame, screen black except a candle-ring, "SIEGE X WITHSTOOD."
+
+### 14. THE LEDGER OF ASHES *(M)* — deps: 1
+The records update: 100-run career archive + graphs, live boss-split speedrun
+timing (gold/green/red deltas), streamer-clean capture toggles, **save hardening +
+export/import ships here**. The archive is the trace mint for update 19's ghosts.
+- **Hook:** a sub-18-minute Nightmare clear card with three green splits and one gold.
+
+### 15. ASHBOUND — The Ash Ranks *(M)* — deps: 4, 2
+The difficulty backbone: per-map Hades-Heat-style ladder prescribing stacking
+Torments for scaling payouts (riding `_applyRunScale`'s clamped scalars so the
+entity caps hold by construction). **Everburn seasons ship here**: seasonal
+ladder resets, weekly edicts, seasonal share cards.
+- **Hook:** the game-over card stamped with an Ash Rank IX seal.
+
+### 16. NIGHTFALL CYCLES — The Rekindling *(L)* — deps: 4, 15
+The endgame: NG+ Rekindled cycles (choice at 3rd-boss victory), compounding
+multipliers, cross-map boss-roster remix, one cycle-exclusive twilight elite per
+cycle. **Everforge ships here**: prestige currency + the mythic wand tier
+(material variants of the PR2 models) + a legendary Reliquary shelf.
+- **Hook:** "CYCLE III — THE WICK REKINDLES" over a re-ignited map.
+
+## Era V — The Shared Flame
+*Community and reach: determinism, authored challenges, ghosts, couch play, the capstone.*
+
+### 17. THE SEALED STORM — Forge Your Trial *(L)* — deps: 4, 15
+The determinism foundation: one seeded run-RNG (mulberry32) threaded through
+Spawner/WaveDirector/elites/upgrades/chests (~158 audited `Math.random` sites;
+VFX stays live), challenge codes on the game-over card, the Crucible ruleset
+composer (map + road + Torments + wave tweaks as named shareable codes).
+**The Game.js encounter-module split ships here** + a CI determinism assertion.
+- **Hook:** "THE BONE WALTZ — skeletons only, first boss at 90s" with a code daring your feed.
+
+### 18. FORGEGRIP — The Iron Hand *(M)* — deps: none
+Platform reach: gamepad support (poll-based, slotting into the Input composite),
+menu focus-ring walking the existing hotspot registry, rumble on telegraphs and
+NEW BEST. **PWA ships here** (manifest, offline shell, install prompt) + the
+accessibility preset bundle (big-text HUD, reduced effects, remaps).
+- **Hook:** EMBERWAKE on a TV with a controller — "browser game" stops being an excuse.
+
+### 19. EMBER RACE — Rival Wicks *(L)* — deps: 17, 14, 2
+Async racing: race codes lock map/road/seed through the Sealed Storm RNG;
+telemetry ghosts (position/level/kills sampled ~0.5s, delta-encoded base64,
+~2–6 KB, clipboard/URL share) render as translucent ember-spectres; pace-markers
+on Daily Road; race-result cards via the compositor.
+- **Hook:** crossing the third-boss kill 4 seconds ahead of your friend's glowing ghost.
+
+### 20. HEARTHHOLD — The Keeper's Camp *(L)* — deps: 4, 5, 2 (+enriched by 12/15/16)
+The capstone: the menu backdrop becomes YOUR camp — 15 earned boss trophies,
+Ash Rank seals, Cycle banners, patron banners, relic plinths, the Troop perch,
+a luxury coin-sink decor shop (pure vanity) — exportable as a visit card.
+- **Hook:** your start screen, nobody else's: trophies over the hearth, your familiar asleep on its perch.
 
 ---
 
-*Cadence for every item above: verify (headless EXC:0 + targeted checks) → branch
-commit + push → PR → squash-merge to main → reconcile branch. Deploys run from main.*
+## Sequencing spine (the four decisions that shape the order)
+
+1. **EMBERGLASS interleaves at #2** so the card compositor exists exactly once,
+   *before* KINDLED's Rite card — then updates 14/15/19/20 all reuse it.
+2. **The determinism chain is staged honestly**: ghosts don't need a seeded sim
+   but fair *races* do — so 17 ships the seeded RNG + string codec + the Game.js
+   split, 14 ships the archive traces earlier, and 19 consumes all three.
+3. **BOSSFORGE (4) is load-bearing**: its perf refactor gates 11/16/17; its
+   phase-2 kits are why 7/15/16 schedule after it.
+4. **Every absorbed lane ships inside a named update** — seasons→15,
+   prestige/mythics→16, PWA/mobile/a11y→18 (+touch in 3), save hardening→14,
+   code-health split→17, creature-sheet coherence→12 — nothing lives in a side-lane.
+
+## Punch list (unchanged from v2 — rides inside update 1)
+
+banana hat 2px float · halo rests on crown · crown band 1px from eyes · aura
+face-washout cap · flamewand invisible from behind · fur-tint preview gap ·
+`ASPECT_RATIO` dead export · save `version` written-never-read · kill-streak
+double-report · boss HUD layering · wave-1 off-screen ring · endgame walls
+surfaced in HUD/fiction.
+
+---
+
+*Cadence for every item: verify (headless EXC:0 + targeted checks) → branch
+commit + push → PR → squash-merge to main → reconcile. Deploys run from main.*
