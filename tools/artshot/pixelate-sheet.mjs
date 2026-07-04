@@ -11,11 +11,14 @@
 //
 // Usage:
 //   node tools/artshot/pixelate-sheet.mjs <in.png> <out.png>
-//        [--cell=256] [--logical=64] [--colors=16] [--alpha=96]
+//        [--cell=256] [--logical=64] [--colors=16] [--alpha=96] [--outline=0]
 //   --cell     the sheet's cell size (default 256; factor = cell/logical)
 //   --logical  pixels of detail per cell (default 64 — matches the LPC scale)
 //   --colors   palette size after median-cut quantization (default 16)
 //   --alpha    hard alpha threshold 0-255 (default 96; pixel art has no fringe)
+//   --outline  1 = stamp the canonical 1-logical-px dark contour (#0a0d14 at
+//              0.85, matching SPRITE_FX.outline) around the silhouette at the
+//              logical grid — for 3D renders, which arrive outline-less
 
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -30,6 +33,7 @@ const CELL = parseInt(opt.cell ?? '256', 10);
 const LOGICAL = parseInt(opt.logical ?? '64', 10);
 const COLORS = parseInt(opt.colors ?? '16', 10);
 const ALPHA = parseInt(opt.alpha ?? '96', 10);
+const OUTLINE = opt.outline === '1';
 
 // ---------- PNG codec (8-bit RGB/RGBA, non-interlaced) ----------
 function decodePng(buf) {
@@ -142,6 +146,29 @@ for (let i = 0; i < lw * lh; i++) {
     if (small[i * 4 + 3] !== 255) continue;
     const [r, g, b] = nearest(small[i * 4], small[i * 4 + 1], small[i * 4 + 2]);
     small[i * 4] = r; small[i * 4 + 1] = g; small[i * 4 + 2] = b;
+}
+
+// 2b) Optional canonical dark contour: every transparent logical pixel
+// 8-adjacent to an opaque one becomes the SPRITE_FX.outline colour (#0a0d14
+// at 0.85), giving 3D renders the same baked outline the procedural/AI
+// character art ships with. Done at the logical grid so the line is exactly
+// one logical pixel wide.
+if (OUTLINE) {
+    const OC = [10, 13, 20, 217];       // #0a0d14, alpha 0.85*255
+    const mark = [];
+    for (let y = 0; y < lh; y++) for (let x = 0; x < lw; x++) {
+        const i = (y * lw + x) * 4;
+        if (small[i + 3] !== 0) continue;               // only empty cells
+        let touch = false;
+        for (let dy = -1; dy <= 1 && !touch; dy++) for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= lw || ny >= lh) continue;
+            if (small[(ny * lw + nx) * 4 + 3] === 255) { touch = true; break; }
+        }
+        if (touch) mark.push(i);
+    }
+    for (const i of mark) { small[i] = OC[0]; small[i + 1] = OC[1]; small[i + 2] = OC[2]; small[i + 3] = OC[3]; }
 }
 
 // 3) Nearest-neighbour upscale back to the ORIGINAL dimensions.
