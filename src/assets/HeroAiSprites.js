@@ -64,7 +64,11 @@ function buildFrame(sheet, col, char, dir, pose, frameIdx) {
     const fur = char?.palette?.fur;
     if (fur && char.id !== 'monkey') {
         cx.globalCompositeOperation = 'source-atop';
-        cx.globalAlpha = 0.38;
+        // Hues near the base's warm brown (elf/orc greens) need a stronger
+        // wash to survive the warm in-game player-light halo — those heroes
+        // carry a per-character tintAlpha; the default 0.38 keeps the far
+        // hues (purple/red/navy) subtle.
+        cx.globalAlpha = char.tintAlpha || 0.38;
         cx.fillStyle = fur;
         cx.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
         cx.globalCompositeOperation = 'source-over';

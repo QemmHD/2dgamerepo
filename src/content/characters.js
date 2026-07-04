@@ -44,6 +44,7 @@ export const CHARACTERS = {
         palette: { fur: '#3f7d52', furDark: '#27543a', furLight: '#62a373', face: '#e9f0d8' },
         accent: '#7fe0a0',
         feature: 'ears',
+        tintAlpha: 0.58,   // green sits near the base brown — needs a stronger wash to read under the warm halo
         unlocked: true,
     },
     orc: {
@@ -56,6 +57,7 @@ export const CHARACTERS = {
         palette: { fur: '#5f7d3a', furDark: '#3c5224', furLight: '#82a352', face: '#cdd9a0' },
         accent: '#b6d05a',
         feature: 'tusks',
+        tintAlpha: 0.62,   // olive sits nearest the base brown — needs the strongest wash to read under the warm halo
         unlocked: true,
     },
     wizard: {

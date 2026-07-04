@@ -143,8 +143,11 @@ function buildProp(prop, accent, glow) {
         case 'sigil': {
             // Short haft topped with a holy ring sigil + inner cross.
             p.line(GRIP_X, GRIP_Y, 13, 8, wood, 2);
-            p.disc(18, 7, 4, accent); p.disc(18, 7, 2, aD);
-            p.rect(17, 4, 2, 7, gL); p.rect(15, 6, 7, 2, gL); // cross
+            // Accent rim around a dark field so the bright 1px cross reads at
+            // game scale (the old 2px near-white cross over the whole head
+            // blew out to a solid white square for pale accents).
+            p.disc(18, 7, 4, accent); p.disc(18, 7, 3, aD);
+            p.rect(18, 5, 1, 5, gL); p.rect(16, 7, 5, 1, gL); // cross
             p.dot(18, 7, '#ffffff');
             drawGrip(p, wood, woodD);
             tipX = 18, tipY = 7; break;
