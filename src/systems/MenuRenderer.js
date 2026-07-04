@@ -1808,7 +1808,12 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(192,139,255,0.12)';
         ctx.beginPath(); ctx.arc(0, 0, r * 0.92, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
+        // Clip to the panel so HAT_DROP-tall hats (party cone, antler tips,
+        // halo) can't draw across the panel border into the tab-bar chrome.
+        ctx.save();
+        ctx.beginPath(); ctx.rect(c.x, c.y, avW, c.h); ctx.clip();
         this._drawAvatar(ctx, acx, acy, r, avatarAp, charSprite, null, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
+        ctx.restore();
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#fff'; ctx.font = `800 30px ${FONT}`;
         ctx.fillText(ch.name, acx, acy + r + 30);

@@ -300,11 +300,30 @@ export function drawHeroFeatureOverlay(opts = {}, dir = 'down', bob = 0) {
     const p = pixelCanvas(MONKEY_L);
     const cx = CX;
     const headY = HEAD_Y + bob;
-    if (feature === 'ears') { // elf — tall pointed ears rising past the round ones
-        if (dir === 'side') { p.rect(cx - 9, headY - 9, 3, 10, fur); p.rect(cx - 8, headY - 7, 1, 6, face); }
-        else { p.sym(7, headY - 8, 3, 10, fur); if (dir === 'down') p.sym(8, headY - 6, 1, 6, face); }
+    if (feature === 'ears') { // elf — tapered points rooted inside the new wide dome
+        if (dir === 'side') {
+            // Single visible ear on the back-top of the head (facing +x),
+            // rooted inside the silhouette and tapering up-and-back to a tip.
+            p.rect(cx - 8, headY - 5, 3, 4, fur);       // base, inside the dome edge
+            p.rect(cx - 9, headY - 8, 2, 3, fur);       // mid taper
+            p.rect(cx - 10, headY - 11, 1, 3, fur);     // point
+            p.rect(cx - 7, headY - 4, 1, 3, face);      // inner wedge
+        } else {
+            // Mirrored pair: base overlaps the dome edge (x≈7..41 at ear
+            // height), tapering upward-outward to 1px tips at headY-12.
+            p.sym(8, headY - 6, 3, 4, fur);             // base
+            p.sym(7, headY - 9, 2, 3, fur);             // mid taper
+            p.sym(6, headY - 12, 1, 3, fur);            // point
+            if (dir === 'down') p.sym(9, headY - 5, 1, 3, face); // inner wedge
+        }
     } else if (feature === 'tusks' && dir !== 'up') {
-        p.rect(cx - 6, headY + 6, 2, 3, '#f3ead2'); p.rect(cx + 4, headY + 6, 2, 3, '#f3ead2');
+        if (dir === 'side') {
+            // Muzzle sits right of centre on the side sheet: one near-side
+            // tusk seated on the visible muzzle; the far tusk is occluded.
+            p.rect(cx + 5, headY + 6, 2, 3, '#f3ead2');
+        } else {
+            p.rect(cx - 6, headY + 6, 2, 3, '#f3ead2'); p.rect(cx + 4, headY + 6, 2, 3, '#f3ead2');
+        }
     } else if (feature === 'horns') {
         p.line(cx - 7, headY - 8, cx - 10, headY - 12, accent, 2); p.line(cx + 7, headY - 8, cx + 10, headY - 12, accent, 2);
     } else if (feature === 'hood') {
@@ -357,7 +376,9 @@ function pixelCloak(dir, color) {
         // turned the hero into a featureless wall), with a collar band, a
         // billow taper, fold shadows, and a wind-notched hem so it reads as
         // hanging cloth rather than a slab.
-        const topY = 24, hemY = 44;
+        // topY 19 puts the collar band at the base of the new (taller) Blender
+        // head instead of mid-back; hemY 42 lets the feet peek below the hem.
+        const topY = 19, hemY = 42;
         for (let y = topY; y <= hemY; y++) {
             const t = (y - topY) / (hemY - topY);
             // taper out to mid-billow then gently back in at the hem
@@ -382,7 +403,9 @@ function pixelCloak(dir, color) {
     } else {
         // Front ('down'): drawn BEHIND the body — only the shoulder line + hem
         // wings peek out. Add clasp studs at the shoulders so it reads "worn".
-        const topY = 24, hemY = 45, topHalf = 10, hemHalf = 17;
+        // topY 21 + topHalf 12: collar edge + clasps peek just outside the new
+        // wider Blender torso at shoulder height (they were fully hidden).
+        const topY = 21, hemY = 45, topHalf = 12, hemHalf = 17;
         for (let y = topY; y <= hemY; y++) {
             const t = (y - topY) / (hemY - topY);
             const half = Math.round(topHalf + t * (hemHalf - topHalf));
@@ -395,7 +418,7 @@ function pixelCloak(dir, color) {
         p.rect(cx - hemHalf, hemY - 1, 3, 1, dark);
         p.rect(cx + hemHalf - 2, hemY - 1, 3, 1, dark);
         // shoulder clasps (peek just outside the body silhouette)
-        p.dot(cx - 10, topY, light); p.dot(cx + 10, topY, light);
+        p.dot(cx - topHalf, topY, light); p.dot(cx + topHalf, topY, light);
     }
     outline(p, shade(color, 0.55, 'dark'));
     return p.finish();
@@ -419,16 +442,19 @@ function pixelHat(dir, shape, color) {
     p.ctx.translate(0, HAT_DROP);
     const cx = CX;
     if (shape === 'cap') {
-        p.ell(cx, 11, 9, 7, col);                   // crown dome
-        p.ell(cx - 3, 8, 4, 3, light);              // lit highlight
+        // Seated 3px higher than the original art so the brim lands at the
+        // hairline (like the tophat's y8 brim) instead of across the eyes of
+        // the rounder Blender head. HAT_DROP headroom absorbs the lift.
+        p.ell(cx, 8, 9, 7, col);                    // crown dome
+        p.ell(cx - 3, 5, 4, 3, light);              // lit highlight
         if (dir === 'up') {
-            p.rect(cx - 9, 12, 19, 1, dark);        // back seam, no front brim
+            p.rect(cx - 9, 9, 19, 1, dark);         // back seam, no front brim
         } else if (dir === 'side') {
-            p.rect(cx - 5, 13, 15, 2, dark);        // brim toward facing (+x)
+            p.rect(cx - 5, 10, 15, 2, dark);        // brim toward facing (+x)
         } else {
-            p.rect(cx - 10, 13, 21, 2, dark);       // full front brim
+            p.rect(cx - 10, 10, 21, 2, dark);       // full front brim
         }
-        p.disc(cx, 3, 2, light);                    // pom-pom
+        p.disc(cx, 0, 2, light);                    // pom-pom
     } else if (shape === 'candle') {
         p.rect(cx - 1, 2, 3, 8, '#ece4cf');         // wax stick
         p.rect(cx + 1, 3, 1, 6, '#c9bfa0');         // shaded side
