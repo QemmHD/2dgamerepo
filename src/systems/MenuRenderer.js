@@ -1399,9 +1399,12 @@ export class MenuRenderer {
                 const H = hold || { scale: 1.0, tilt: 0 };
                 const k = s / 91;
                 const pscale = k * 0.92 * (H.scale || 1);
+                // Anchors are the bone-exact down-facing grip offsets from the
+                // Blender grip-bone export (tools/blender anchors.json) — keep
+                // in sync with Player.js HAND.down idle[0]/cast[0].
                 const ang = (castPose ? -0.45 : -1.25) + (H.tilt || 0);
-                const hxp = cx + (castPose ? 49 : 34) * k;
-                const hyp = cy + (castPose ? -41 : 24) * k;
+                const hxp = cx + (castPose ? 50 : 31.5) * k;
+                const hyp = cy + (castPose ? 11 : 48.2) * k;
                 ctx.save();
                 ctx.translate(hxp, hyp);
                 ctx.rotate(ang);
