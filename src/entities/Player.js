@@ -19,29 +19,32 @@ import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawTrailPoint, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
 
 // The held wand sits in the sprite's OWN paw: these are the wand-hand PAW
-// positions measured per direction / pose / frame from the hero sheets
-// (tools/artshot/pawprobe.html), in draw px relative to the sprite centre
-// (unflipped; 'side' faces right — the x mirrors for 'left'). The frames bake
-// the walk bob + arm swing, so riding these anchors makes the body's real arm
-// carry the weapon through every animation — no synthetic arm is drawn.
+// positions per direction / pose / frame, exported BONE-EXACTLY from the
+// Blender grip-bone (the rig's GRIP empty at the right paw, projected through
+// the render camera — tools/blender pipeline, anchors.json), in draw px
+// relative to the sprite centre (unflipped; 'side' faces right — the x
+// mirrors for 'left'; in 'up' the right paw sits on screen-LEFT, hence the
+// negative x). The frames bake the walk bob + arm swing, so riding these
+// anchors makes the body's real arm carry the weapon through every
+// animation — no synthetic arm is drawn.
 const HAND = {
     down: {
-        idle: [[34, 24], [34, 24]],
-        walk: [[70, 25], [47, 29], [72, 17]],
-        cast: [[49, -41]],
-        hurt: [[57, 8]],
+        idle: [[31.5, 48.2], [31.5, 48.2]],
+        walk: [[32.4, 47.5], [31.5, 40.5], [30.3, 43.6]],
+        cast: [[50.0, 11.0]],
+        hurt: [[43.1, 44.7]],
     },
     side: {
-        idle: [[37, 36], [39, 37]],
-        walk: [[40, 33], [66, 27], [38, 26]],
-        cast: [[70, -35]],
-        hurt: [[42, -4]],
+        idle: [[9.1, 37.6], [9.1, 37.6]],
+        walk: [[-1.9, 39.0], [12.2, 29.3], [19.0, 31.2]],
+        cast: [[27.4, -7.2]],
+        hurt: [[7.7, 32.0]],
     },
     up: {
-        idle: [[35, 17], [35, 17]],
-        walk: [[35, 15], [35, 8], [35, 15]],
-        cast: [[46, -37]],
-        hurt: [[33, 17]],
+        idle: [[-31.5, 47.3], [-31.5, 47.3]],
+        walk: [[-32.4, 51.2], [-31.5, 38.3], [-30.3, 38.6]],
+        cast: [[-50.0, 2.5]],
+        hurt: [[-43.1, 44.3]],
     },
 };
 // Resting carry angle per direction (radians; wand grip in the hanging paw,
