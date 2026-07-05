@@ -55,6 +55,45 @@ and is binding on every turn in this repo:
    clarify, and asking at most one focused question when a decision is truly
    the user's to make.
 
+## 🔬 Deep-dive coding standard (user-mandated — depth before AND through every change)
+
+The investigative depth that goes into the planning specs must also govern the
+CODE that ships — so it's right the first time, not merely plausible. For any
+non-trivial change (a new system, wiring new content, a fix touching shared
+state, anything perf/save/art/mobile-sensitive) walk these before calling it
+done. Skipping steps to reach the edit faster is the failure mode this standard
+exists to prevent.
+
+1. **Understand before editing.** Read the real integration points and trace the
+   data + control flow end to end; find the single source of truth and *every*
+   consumer of what you're changing, citing `file:line`. Never pattern-match a
+   change from memory when the code is right there to read.
+2. **Map the blast radius.** Enumerate what reads/writes the state you touch —
+   the `FRAMES_BY_TYPE` fallback chain, the save schema, the entity caps
+   (180 enemies / ~220 projectiles), render order, the harness — and name what
+   could break plus how you keep it working.
+3. **Respect the invariants by construction, not by hope.** Procedural fallback
+   keeps working; save changes are additive (clamp+migrate, no version bump
+   unless a real migration needs it); perf caps hold by design; canonical enemy
+   art is locked; no server. State which invariants a change touches.
+4. **Weigh approaches, then choose.** When there's more than one obvious
+   implementation, compare 2+ briefly and pick with a reason — preferring reuse
+   of an existing seam over a new one, and the smallest change that *fully*
+   solves it. Write code that reads like its neighbours (idiom, naming, comment
+   density). Fix the root cause, not the symptom.
+5. **Verify by exercising real behaviour + adversarial self-review.** Beyond
+   `node --check` and `validate-assets`, drive the actual flow (headless
+   harness / screenshot) so the specific bug-class this change could introduce
+   is caught. Then read your own diff as an adversary: how could this be wrong —
+   edge cases, perf at the caps, save round-trip, mobile/touch, the fallback
+   path? Prefer a real workflow adversarial-verify pass for anything substantial.
+6. **Report faithfully with evidence** — what was verified and how, what wasn't,
+   residual risk. No reassurance in place of proof.
+
+When orchestrating with Workflow (the standing ultracode opt-in), the *understand*
+phase must be a genuine code-grounded deep dive and the *verify* phase must be
+adversarial — never thin either one to reach the implementation sooner.
+
 ## ✅ CANONICAL ENEMY ART STYLE (user-approved "perfect" — do not drift)
 
 The five animated creature sheets shipped in PR #103 are THE style reference
