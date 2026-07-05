@@ -13,6 +13,10 @@ Blender pipeline (`tools/blender/`) for character/creature/prop art.
 
 ---
 
+**Detailed implementation specs for updates #2–#17 live in [`docs/updates/`](updates/README.md)** — PR-by-PR plans, tunable numbers, and the binding cross-spec rulings.
+
+---
+
 ## Era I — The Reforging
 *Finish the visual/feel overhaul and mint the game's shareable face.*
 
