@@ -129,7 +129,19 @@ def project_frac(world_pt):
 def main():
     os.makedirs(FRAME_DIR, exist_ok=True)
 
-    rig = MR.build_rigged_monkey()
+    # Hero variant: HERO_NAME picks the output sheet/anchor prefix, HERO_PARAMS
+    # (optional JSON path) supplies a proportion/palette delta merged over
+    # DEFAULT_PARAMS. Unset => the canonical monkey (identical to before).
+    hero = os.environ.get('HERO_NAME', 'monkey')
+    delta = None
+    pj = os.environ.get('HERO_PARAMS')
+    if pj and os.path.exists(pj):
+        with open(pj) as f:
+            delta = json.load(f)
+        print(f'HERO {hero}: applying {len(delta)} param override(s) from {pj}',
+              flush=True)
+
+    rig = MR.build_rigged_monkey(params=delta)
     P = rig['params']
     arm_ob = rig['armature']
 
@@ -190,7 +202,7 @@ def main():
             cell = Image.new('RGBA', (CELL, CELL), (0, 0, 0, 0))
             cell.paste(fr, (0, dy[d]))    # paste clips; shifted rows are empty
             sheet.paste(cell, (i * CELL, 0))
-        sheet_paths[d] = os.path.join(RAW_DIR, f'monkey_{d}.png')
+        sheet_paths[d] = os.path.join(RAW_DIR, f'{hero}_{d}.png')
         sheet.save(sheet_paths[d])
         print(f'wrote {sheet_paths[d]}', flush=True)
 
@@ -212,9 +224,11 @@ def main():
         'spriteSize': int(MR.SPRITE_SIZE),
         'yDownPositive': True,
     }
-    with open(ANCHORS_PATH, 'w') as f:
+    anchors_path = ANCHORS_PATH if hero == 'monkey' \
+        else os.path.join(HERE, f'{hero}_anchors.json')
+    with open(anchors_path, 'w') as f:
         json.dump(anchors, f, indent=1)
-    print(f'wrote {ANCHORS_PATH}', flush=True)
+    print(f'wrote {anchors_path}', flush=True)
 
     # ── numeric validation (on the post-shift sheet cells) ───────────────
     print('\n===== VALIDATION =====')
