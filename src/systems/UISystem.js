@@ -1842,7 +1842,12 @@ export class UISystem {
     _drawGameOverOverlay(ctx, state) {
         const summary = state.runSummary;
         const sa = this.renderer.safeArea;
-        const age = state.gameOverAge ?? 1;
+        // Death BEAT: hold the frozen world — the hero collapsing in its death
+        // pose — fully visible for ~0.6s before the overlay animates in. This
+        // sits inside the window the dismiss-tap is already locked out for, so
+        // the collapse reads before "GAME OVER" takes the screen.
+        const DEATH_BEAT = 0.6;
+        const age = Math.max(0, (state.gameOverAge ?? (1 + DEATH_BEAT)) - DEATH_BEAT);
 
         ctx.save();
         // Backdrop fades in.
