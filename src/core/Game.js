@@ -91,6 +91,12 @@ const CULL_MARGIN = 160;
 // Second Wind only regenerates when no enemy is within this radius.
 const SECOND_WIND_RADIUS = 340;
 
+// Victory beat: hold the triumphant world — the hero cheering in its victory
+// pose — before the overlay dims in, and swallow input for the same window so
+// an early tap can't blind-hit a not-yet-visible button (mirrors the game-over
+// death beat + its dismiss lockout).
+const VICTORY_BEAT = 0.7;
+
 // Death-burst tint per enemy type (boss/elite handled separately).
 const DEATH_COLORS = {
     slime: '#7be08a',
@@ -256,6 +262,8 @@ export class Game {
                 return;
             }
             if (this.victory) {
+                // Ignore input during the victory beat (let the cheer land).
+                if ((this.victory.age || 0) < VICTORY_BEAT) { e.preventDefault(); return; }
                 if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this.victoryContinue(); }
                 else if (e.code === 'KeyB') { e.preventDefault(); this.victoryToMenu(true); }
                 else if (e.code === 'KeyM' || e.code === 'Escape') { e.preventDefault(); this.victoryToMenu(false); }
@@ -404,6 +412,9 @@ export class Game {
         // 3rd-boss victory overlay buttons.
         const tryVictoryAt = (clientX, clientY) => {
             if (!this.victory) return false;
+            // Swallow taps during the victory beat so an early tap can't hit a
+            // button that hasn't faded in yet.
+            if ((this.victory.age || 0) < VICTORY_BEAT) return true;
             const pos = this.renderer.clientToInternal(clientX, clientY);
             const r = this._victoryRects();
             if (inRect(pos, r.cont, 0)) { this._pressFeedback('vContinue'); this.victoryContinue(); return true; }
@@ -3666,7 +3677,9 @@ export class Game {
 
     _drawVictory(ctx) {
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
-        const t = Math.min(1, (this.victory.age || 0) / 0.35);
+        // Hold the victory beat: the hero cheers in the lit world before the
+        // overlay dims/fades in (same offset the input lockout uses).
+        const t = Math.min(1, Math.max(0, (this.victory.age || 0) - VICTORY_BEAT) / 0.35);
         ctx.save();
         // Dim the world.
         ctx.fillStyle = `rgba(8, 6, 16, ${0.78 * t})`;
