@@ -288,7 +288,19 @@ export function drawPixelHero(opts = {}, dir = 'down', pose = 'idle', frame = 0)
 // HQ body. `bob` matches the frame's HERO_BOB entry so features ride the head.
 // The ember brow mark is NOT drawn here — the AI base bakes it. Returns null
 // for feature-less heroes (the plain monkey).
-export function drawHeroFeatureOverlay(opts = {}, dir = 'down', bob = 0) {
+// Per-pose feature MOTION [sway, lift] in logical px, indexed by frame. Applied
+// to the MOVING parts of each overlay (scaled per element: bases stay rooted to
+// the head, tips travel the full amount) so ears/horns/hat/hood/tusks sway with
+// the walk stride, perk into a cast, and recoil on hurt instead of riding rigid.
+// Co-located with HERO_BOB so art + motion stay in one place.
+export const FEATURE_MOTION = {
+    idle: [[0, 0], [0.8, -0.6]],           // frame 1 = a tiny twitch on the blink
+    walk: [[-2, 0.4], [0.4, -2], [2, 0.4]], // pendulum sway + hop across the stride
+    cast: [[1.7, -2.4]],                   // features perk up + lean into the cast
+    hurt: [[-2.6, 1.8]],                   // recoil back + drop
+};
+
+export function drawHeroFeatureOverlay(opts = {}, dir = 'down', bob = 0, pose = 'idle', frameIdx = 0) {
     const feature = opts.feature || null;
     if (!feature) return null;
     if (feature === 'tusks' && dir === 'up') return null;   // invisible from behind
@@ -300,36 +312,54 @@ export function drawHeroFeatureOverlay(opts = {}, dir = 'down', bob = 0) {
     const p = pixelCanvas(MONKEY_L);
     const cx = CX;
     const headY = HEAD_Y + bob;
+    // This frame's motion; k scales it per element (0 = rooted base, 1 = free tip).
+    const mrow = FEATURE_MOTION[pose] || [[0, 0]];
+    const [sway, lift] = mrow[frameIdx % mrow.length] || [0, 0];
+    const R = (px, py, w, h, col, k = 1) =>
+        p.rect(px + Math.round(sway * k), py + Math.round(lift * k), w, h, col);
+    // Symmetric pair shifted by the SAME screen dx (both ears flop together in the
+    // lead direction rather than splaying apart/together).
+    const S = (px, py, w, h, col, k = 1) => {
+        const dx = Math.round(sway * k), dy = Math.round(lift * k);
+        p.rect(px + dx, py + dy, w, h, col);
+        p.rect(MONKEY_L - px - w + dx, py + dy, w, h, col);
+    };
     if (feature === 'ears') { // elf — tapered points rooted inside the new wide dome
         if (dir === 'side') {
-            // Single visible ear on the back-top of the head (facing +x),
-            // rooted inside the silhouette and tapering up-and-back to a tip.
-            p.rect(cx - 8, headY - 5, 3, 4, fur);       // base, inside the dome edge
-            p.rect(cx - 9, headY - 8, 2, 3, fur);       // mid taper
-            p.rect(cx - 10, headY - 11, 1, 3, fur);     // point
-            p.rect(cx - 7, headY - 4, 1, 3, face);      // inner wedge
+            R(cx - 8, headY - 5, 3, 4, fur, 0.2);       // base, inside the dome edge
+            R(cx - 9, headY - 8, 2, 3, fur, 0.6);       // mid taper
+            R(cx - 10, headY - 11, 1, 3, fur, 1.0);     // point (travels most)
+            R(cx - 7, headY - 4, 1, 3, face, 0.2);      // inner wedge
         } else {
-            // Mirrored pair: base overlaps the dome edge (x≈7..41 at ear
-            // height), tapering upward-outward to 1px tips at headY-12.
-            p.sym(8, headY - 6, 3, 4, fur);             // base
-            p.sym(7, headY - 9, 2, 3, fur);             // mid taper
-            p.sym(6, headY - 12, 1, 3, fur);            // point
-            if (dir === 'down') p.sym(9, headY - 5, 1, 3, face); // inner wedge
+            // Mirrored pair: base overlaps the dome edge, tapering up-outward to
+            // 1px tips at headY-12; tips flop with the frame's sway/lift.
+            S(8, headY - 6, 3, 4, fur, 0.2);            // base
+            S(7, headY - 9, 2, 3, fur, 0.6);            // mid taper
+            S(6, headY - 12, 1, 3, fur, 1.0);           // point
+            if (dir === 'down') S(9, headY - 5, 1, 3, face, 0.2); // inner wedge
         }
     } else if (feature === 'tusks' && dir !== 'up') {
+        // Low on the muzzle: a small counter-jiggle (k < 0) so they lag the head.
         if (dir === 'side') {
-            // Muzzle sits right of centre on the side sheet: one near-side
-            // tusk seated on the visible muzzle; the far tusk is occluded.
-            p.rect(cx + 5, headY + 6, 2, 3, '#f3ead2');
+            R(cx + 5, headY + 6, 2, 3, '#f3ead2', -0.3);
         } else {
-            p.rect(cx - 6, headY + 6, 2, 3, '#f3ead2'); p.rect(cx + 4, headY + 6, 2, 3, '#f3ead2');
+            R(cx - 6, headY + 6, 2, 3, '#f3ead2', -0.3); R(cx + 4, headY + 6, 2, 3, '#f3ead2', -0.3);
         }
     } else if (feature === 'horns') {
-        p.line(cx - 7, headY - 8, cx - 10, headY - 12, accent, 2); p.line(cx + 7, headY - 8, cx + 10, headY - 12, accent, 2);
+        // Bases rooted at the brow; tips sway/lift together.
+        const hx = Math.round(sway), hy = Math.round(lift);
+        p.line(cx - 7, headY - 8, cx - 10 + hx, headY - 12 + hy, accent, 2);
+        p.line(cx + 7, headY - 8, cx + 10 + hx, headY - 12 + hy, accent, 2);
     } else if (feature === 'hood') {
-        p.rect(cx - 11, headY - 9, 22, 6, furD); p.ell(cx, headY - 6, 11, 5, furD);
+        // Heavy cowl: only a light sway so it keeps framing the head.
+        const dx = Math.round(sway * 0.4), dy = Math.round(lift * 0.4);
+        p.rect(cx - 11 + dx, headY - 9 + dy, 22, 6, furD);
+        p.ell(cx + dx, headY - 6 + dy, 11, 5, furD);
     } else if (feature === 'hat') {
-        p.rect(cx - 9, headY - 10, 18, 3, accent); p.ell(cx, headY - 12, 7, 4, accent);
+        // Floppy wizard hat: brim rides the head, the cone tip swings the most.
+        const bx = Math.round(sway * 0.6), by = Math.round(lift * 0.6);
+        p.rect(cx - 9 + bx, headY - 10 + by, 18, 3, accent);
+        p.ell(cx + Math.round(sway), headY - 12 + Math.round(lift), 7, 4, accent);
     }
     outline(p, shade(fur, 0.62, 'dark'));
     return p.finish();
