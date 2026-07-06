@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>staff capture</title>
+<style>html,body{margin:0;background:#202028}</style></head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+import { getWeaponProp } from '../../src/assets/WeaponProps.js';
+const params = new URLSearchParams(location.search);
+const OUT = params.get('out') || 'proc_staff.png';
+const accent = '#' + (params.get('accent') || 'ff7a2f');
+const glow = '#' + (params.get('glow') || 'ffd166');
+const Z = parseInt(params.get('z') || '8', 10);
+const s = getWeaponProp('staff', accent, glow);
+// s.canvas is 84x48 upscaled (SCALE=3). Draw it 1:1 into a raw canvas then
+// upscale by Z nearest-neighbour for a clean zoom. Also emit the native px.
+const raw = document.createElement('canvas'); raw.width = s.w; raw.height = s.h;
+const rx = raw.getContext('2d'); rx.imageSmoothingEnabled = false;
+rx.drawImage(s.canvas, 0, 0);
+const c = document.getElementById('c');
+c.width = s.w * Z; c.height = s.h * Z;
+const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+x.drawImage(raw, 0, 0, s.w, s.h, 0, 0, s.w * Z, s.h * Z);
+// Also emit a native-resolution (84x48) PNG for exact pixel sampling.
+async function put(name, canvas){
+  await new Promise(r=>canvas.toBlob(async b=>{await fetch('/__save/'+name,{method:'PUT',body:b});r();},'image/png'));
+}
+(async ()=>{
+  await put(OUT, c);
+  await put(OUT.replace('.png','_native.png'), raw);
+  document.title = 'DONE ' + JSON.stringify({w:s.w,h:s.h,gripX:s.gripX,gripY:s.gripY,tipX:s.tipX,tipY:s.tipY});
+})();
+</script>
+</body></html>

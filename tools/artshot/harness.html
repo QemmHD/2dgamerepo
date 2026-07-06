@@ -69,6 +69,7 @@ import { loadHeroAiSprites } from '../../src/assets/HeroAiSprites.js';
 import { clearHeroFrameCache, clearDecorationCache } from '../../src/assets/ProceduralSprites.js';
 import { loadObstacleSprites } from '../../src/assets/ObstacleSprites.js';
 import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
+import { loadRenderedProps } from '../../src/assets/RenderedWeaponProps.js';
 import { Enemy } from '../../src/entities/Enemy.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 
@@ -104,7 +105,8 @@ async function boot() {
     await Promise.all([loadLpcSprites(), loadWorldTextures(), loadIconGlyphs(), loadMonsterSprites(), loadEnemyAiSprites(),
         loadHeroAiSprites().then((ok) => { if (ok) clearHeroFrameCache(); }),
         loadObstacleSprites(),
-        loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); })]);
+        loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); }),
+        loadRenderedProps()]);
 
     game = new Game({ renderer, input, loop });
     game.showDebug = false;          // no debug grid/HUD in the art frame

@@ -14,6 +14,7 @@ import { loadHeroAiSprites } from './assets/HeroAiSprites.js';
 import { clearHeroFrameCache, clearDecorationCache } from './assets/ProceduralSprites.js';
 import { loadObstacleSprites } from './assets/ObstacleSprites.js';
 import { loadDecorSprites } from './assets/DecorSprites.js';
+import { loadRenderedProps } from './assets/RenderedWeaponProps.js';
 import { WEAPON_AURA } from './content/weapons.js';
 import { WEAPON_FX_GLOWS } from './systems/WeaponSystem.js';
 import { COSMETICS } from './content/cosmetics.js';
@@ -136,7 +137,13 @@ async function boot() {
         // World art: AI obstacle/building sprites + tiny decor props (prewarm
         // cached the procedural decor first — drop those on success).
         loadObstacleSprites(),
-        loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); })]);
+        loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); }),
+        // Blender-rendered held-weapon prop layers (composited per weapon
+        // accent/glow above the procedural buildProp fallback). NEVER rejects —
+        // a missing/failed family stays on buildProp — so it's safe here and
+        // resolves before loop.start() so the first menu/first-fire frame sees
+        // the composited wand.
+        loadRenderedProps()]);
 
     splash.stop();
     game = new Game({ renderer, input, loop });
