@@ -1150,6 +1150,19 @@ function runBossAI(e, dt, player, out) {
     if (!e.phase2Entered && e.maxHp > 0 && e.hp / e.maxHp <= (def.phase2HpFraction ?? 0)) {
         e.phase2Entered = true;
         e.phase = 2;
+        // Commit to the signature kit: in phase 2 the boss draws only from
+        // def.phase2Attacks (its heaviest, most-telegraphed subset). Cache the
+        // filtered pool once, and seed those cooldowns short — staggered so they
+        // don't all land on one frame — so the enraged barrage opens promptly.
+        // Empty/unauthored kit → leave phase2Pool unset and keep the full pool.
+        const p2 = def.phase2Attacks;
+        if (Array.isArray(p2) && p2.length) {
+            const kit = (def.attacks || []).filter((a) => p2.includes(a.id));
+            if (kit.length) {
+                e.phase2Pool = kit;
+                for (let i = 0; i < p2.length; i++) e.attackTimers[p2[i]] = 0.4 + i * 0.6;
+            }
+        }
     }
 
     // A windup in progress: count it down and commit on expiry.
@@ -1166,9 +1179,13 @@ function runBossAI(e, dt, player, out) {
     const attacks = def.attacks;
     if (!attacks || !out) return;
 
+    // Phase 2 draws only from the signature kit built on phase-2 entry
+    // (def.phase2Attacks); phase 1 (or an unauthored kit) uses the full pool.
+    const pool = (e.phase === 2 && e.phase2Pool) ? e.phase2Pool : attacks;
+
     // Tick every attack's cooldown; start the first that comes ready. Phase 2
     // shortens the reset so specials fire more often.
-    for (const atk of attacks) {
+    for (const atk of pool) {
         if (e.attackTimers[atk.id] == null) e.attackTimers[atk.id] = atk.cooldown;
         e.attackTimers[atk.id] -= dt;
         if (e.attackTimers[atk.id] <= 0) {
