@@ -453,9 +453,12 @@ export class Player {
         if (this.facing === 'up') dir = 'up';
         else if (this.facing === 'left') { dir = 'side'; flip = true; }
         else if (this.facing === 'right') dir = 'side';
-        // Animation state precedence: hurt > cast > walk > idle.
+        // Animation state precedence: a run-end pose override (death on game
+        // over / victory on the win screen) wins over everything, then
+        // hurt > cast > walk > idle.
         let state = 'idle', idx = 0;
-        if (this.hitFlashTimer > 0) state = 'hurt';
+        if (this.poseOverride) state = this.poseOverride;
+        else if (this.hitFlashTimer > 0) state = 'hurt';
         else if (this.castTimer > 0) state = 'cast';
         else if (this.moving) { state = 'walk'; idx = Math.floor(this.bobTimer * 6) % 3; }
         else {
@@ -609,6 +612,9 @@ export class Player {
     // other owned weapons draw NOTHING here — their projectiles/rings ARE
     // their visual — so the hero always wields exactly one wand: yours.
     _drawHeldWeapons(ctx, bobY, alpha, layer = 'front') {
+        // On the run-end poses the hero drops/raises empty paws — a wand pinned
+        // to the hand would fight the collapse/cheer, so skip the held prop.
+        if (this._pose && (this._pose.state === 'death' || this._pose.state === 'victory')) return;
         // Orbit-kind primaries (e.g. the starter fused into Cinderhalo) are
         // held too — the hand keeps the run's chosen weapon even after fusion;
         // the spinning ring around the body stays their gameplay visual.
