@@ -696,6 +696,7 @@ export class Game {
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.gameOver = false;
+        if (this.player) this.player.poseOverride = null;   // clear run-end pose
         // bankedThisRun guards against double-banking run coins if game-over
         // somehow fires more than once for the same run.
         this.bankedThisRun = false;
@@ -1149,6 +1150,7 @@ export class Game {
 
     _showVictory() {
         this.victory = { age: 0 };
+        if (this.player) this.player.poseOverride = 'victory';   // hero cheers
         // Swell into the triumphant victory theme + a fanfare stinger.
         this.audio.playMusic('victory');
         this.audio.victoryFanfare();
@@ -2474,6 +2476,7 @@ export class Game {
     _enterGameOver() {
         if (this.gameOver) return;
         this.gameOver = true;
+        if (this.player) this.player.poseOverride = 'death';   // hero collapses
         this.audio.gameOver();
         this.audio.stopMusic();
         this.screen = 'gameOver';

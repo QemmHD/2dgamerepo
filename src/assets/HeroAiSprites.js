@@ -18,9 +18,9 @@ import { SPRITE_SIZE } from '../config/GameConfig.js';
 import { drawHeroFeatureOverlay, HERO_BOB } from './PixelArt.js';
 
 const DIRS = ['down', 'up', 'side'];
-const COLS = 7;
-// col index per pose/frame — matches tools/artshot/hero-pack.mjs output.
-const POSE_COLS = { idle: [0, 1], walk: [2, 3, 4], cast: [5], hurt: [6] };
+const COLS = 9;
+// col index per pose/frame — matches tools/blender/render_sheets.py POSE_COLS.
+const POSE_COLS = { idle: [0, 1], walk: [2, 3, 4], cast: [5], hurt: [6], death: [7], victory: [8] };
 
 // Heroes that ship a BESPOKE Blender body sheet set (distinct proportions +
 // baked palette) beside the shared monkey base. A hero not listed here — or one

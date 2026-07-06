@@ -66,9 +66,9 @@ BOB_DZ = 2.0 / math.cos(math.radians(PITCH_DEG))
 
 # Sheet column order (HeroAiSprites.js POSE_COLS) -> scene frame numbers.
 POSE_COLS = [('idle', 0), ('idle', 1), ('walk', 0), ('walk', 1), ('walk', 2),
-             ('cast', 0), ('hurt', 0)]
+             ('cast', 0), ('hurt', 0), ('death', 0), ('victory', 0)]
 POSE_FRAMES = {pf: i + 1 for i, pf in enumerate(POSE_COLS)}
-POSES = {'idle': 2, 'walk': 3, 'cast': 1, 'hurt': 1}
+POSES = {'idle': 2, 'walk': 3, 'cast': 1, 'hurt': 1, 'death': 1, 'victory': 1}
 
 DEFAULT_PARAMS = {
     # palette (characters.js monkey/Pyra — canonical, do not drift)
@@ -142,6 +142,20 @@ POSE_TUNE = {
     'hurt_arm_back_deg': 14.0,
     'hurt_eye_scale': 0.35,      # wince
     'hurt_tail1_deg': -10.0,     # tail flick, about world X
+    # DEATH — a grounded forward COLLAPSE: torso + head slump, arms hang, eyes
+    # shut. Legs are NOT rotated so the feet stay planted on the contract line.
+    'death_spine_deg': 17.0,     # forward slump (bounded so the side view stays in-cell)
+    'death_head_deg': 15.0,      # head lolls down
+    'death_arm_deg': 22.0,       # arms hang forward/down
+    'death_eye_scale': 0.10,     # eyes shut (KO)
+    'death_tail_deg': -18.0,     # tail droops, about world X
+    # VICTORY — both arms thrown UP in a cheer, chin up, proud back-lean, tail
+    # wag. Feet planted (no root lift) so the flat-frame feet check still holds.
+    'victory_head_deg': 10.0,    # chin up, about world X (negated in pose)
+    'victory_spine_deg': 5.0,    # slight proud back-lean, about world X
+    'victory_arm_dir': (0.3, -0.28, 0.92),  # right arm UP (less out — clears the cell edge; L mirrors x)
+    'victory_arm_stretch': 1.28,
+    'victory_tail_deg': 15.0,    # happy tail wag, about world Z
 }
 
 
@@ -541,6 +555,26 @@ def _apply_pose(arm_ob, pose, idx, T):
             _rot_world(arm_ob, n, (1, 0, 0), T['hurt_arm_back_deg'])
         _eye_scale(arm_ob, T['hurt_eye_scale'])
         _rot_world(arm_ob, 'tail.1', (1, 0, 0), T['hurt_tail1_deg'])
+
+    elif pose == 'death':
+        # Grounded forward collapse — legs untouched so the feet stay planted on
+        # the contract line; torso/head slump forward, arms hang, eyes shut.
+        _rot_world(arm_ob, 'spine', (1, 0, 0), T['death_spine_deg'])
+        _rot_world(arm_ob, 'head', (1, 0, 0), T['death_head_deg'])
+        for n in ('arm.L', 'arm.R'):
+            _rot_world(arm_ob, n, (1, 0, 0), T['death_arm_deg'])
+        _eye_scale(arm_ob, T['death_eye_scale'])
+        hide_glints = True
+        _rot_world(arm_ob, 'tail.1', (1, 0, 0), T['death_tail_deg'])
+
+    elif pose == 'victory':
+        # Both arms up in a cheer, chin up, proud back-lean, tail wag; feet planted.
+        _rot_world(arm_ob, 'head', (1, 0, 0), -T['victory_head_deg'])
+        _rot_world(arm_ob, 'spine', (1, 0, 0), -T['victory_spine_deg'])
+        dx, dy, dz = T['victory_arm_dir']
+        _aim(arm_ob, 'arm.R', (dx, dy, dz), T['victory_arm_stretch'])
+        _aim(arm_ob, 'arm.L', (-dx, dy, dz), T['victory_arm_stretch'])
+        _rot_world(arm_ob, 'tail.1', (0, 0, 1), T['victory_tail_deg'])
 
     return hide_glints
 
