@@ -141,6 +141,31 @@ status flashes). If an image is missing or still loading, `getEnemyAiFrames()`
 returns null and the creature falls back to its imported-LPC sprite, then its
 procedural drawer — so the swarm always renders.
 
+### Held-weapon prop layers — `src/assets/weapons/<family>/`
+
+The in-hand signature wands. Each **family** ships a three-layer tintable set
+(`base.png` neutral geometry + 1px `#14101c` contour, `accent_mask.png` and
+`glow_mask.png` 8-bit level maps) plus `anchors.json` (grip/tip in composited-
+canvas px). `WeaponProps.compositeRenderedProp` recolours the masks per weapon
+(accent / accent-dark / glow / glow-light / white hot-core) so one set serves
+every weapon in the family at its own colours, cached per `(prop,accent,glow)`.
+
+| File | Source | Author/Tool | Notes |
+|------|--------|-------------|-------|
+| `src/assets/weapons/staff/{base,accent_mask,glow_mask}.png` | Generated | Blender (bpy) + Cycles palette-lock | STAFF family — long shaft + forked ferrule + glowing orb. Flat-emission ID render (Standard view transform, film-transparent), PIL majority-vote downsample to 48×28, hard 0/255 alpha. |
+| `src/assets/weapons/wand/{base,accent_mask,glow_mask}.png` | Generated | Blender (bpy) + Cycles palette-lock | WAND family — short wood rod + brass rings, a curling ember flame licking up-and-forward (accent = flame body, glow = flame heart + white hot-core). |
+| `src/assets/weapons/rod/{base,accent_mask,glow_mask}.png` | Generated | Blender (bpy) + Cycles palette-lock | ROD family — metal rod + tuning-fork prongs; glow = forked lightning arc (bolts reach past the muzzle so the arc points at the target). |
+| `src/assets/weapons/glaive/{base,accent_mask,glow_mask}.png` | Generated | Blender (bpy) + Cycles palette-lock | GLAIVE family — polearm with a broad crescent blade (accent), glowing cutting edge (glow); tip anchor at the forward blade point. |
+| `src/assets/weapons/sigil/{base,accent_mask,glow_mask}.png` | Generated | Blender (bpy) + Cycles palette-lock | SIGIL family — holy ring + inner cross; ring centre punched transparent, thin glow cross bars over a white hot-core. |
+| `src/assets/weapons/shard/{base,accent_mask,glow_mask}.png` | Generated | Blender (bpy) + Cycles palette-lock | SHARD family — faceted ice-crystal diamond with lit/shadow facet planes, an ice sheen band, trapped-light core + tip glint. |
+| `src/assets/weapons/totem/{base,accent_mask,glow_mask}.png` | Generated | Blender (bpy) + Cycles palette-lock | TOTEM family — carved idol head with a recessed glowing mouth ember (mouth sits below the haft axis for a slight forward nod). |
+
+These load via `src/assets/RenderedWeaponProps.js` (preloaded at boot in the
+`main.js` Promise.all) and slot into `WeaponProps.getWeaponProp` as the preferred
+tier above the procedural `buildProp` fallback. A missing/failed family (or a
+headless/no-DOM env) drops to `null` and the weapon falls back to `buildProp`, so
+the hand prop always renders.
+
 ## AI-generated UI art (main menu)
 
 | File | Source | Tool / Model | Notes |

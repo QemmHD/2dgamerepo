@@ -1,0 +1,19 @@
+{
+  "logicalW": 48,
+  "logicalH": 28,
+  "scale": 1.75,
+  "w": 84,
+  "h": 49,
+  "gripX": 12.25,
+  "gripY": 24.5,
+  "tipX": 59.5,
+  "tipY": 24.5,
+  "gripLogical": [
+    7.0,
+    14.0
+  ],
+  "tipLogical": [
+    34.0,
+    14.0
+  ]
+}

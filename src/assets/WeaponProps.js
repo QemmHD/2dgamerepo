@@ -12,6 +12,7 @@
 // Everything is cached per (prop + accent + glow) — never redrawn per frame.
 
 import { shade } from './PixelArt.js';
+import { getRenderedFamily } from './RenderedWeaponProps.js';
 
 // Logical grid + nearest-neighbour upscale (keeps the pixels crisp), matching
 // the hero/boss pipeline. Props are smaller than a full SPRITE_SIZE sprite.
@@ -190,6 +191,85 @@ function buildProp(prop, accent, glow) {
     };
 }
 
+// Parse '#rrggbb' or 'rgb(r,g,b)' → [r,g,b]. shade() returns the rgb() form;
+// the accent/glow inputs are hex — this handles both.
+function toRgb(col) {
+    if (col[0] === '#') {
+        const h = col.slice(1);
+        return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    }
+    const m = col.match(/-?\d+/g);
+    return m ? [(+m[0]) | 0, (+m[1]) | 0, (+m[2]) | 0] : [204, 204, 204];
+}
+
+// Composite one rendered family (base + level-coded accent/glow masks) at the
+// given weapon accent/glow. Mirrors the frozen integrator recipe exactly:
+//   accentMask: ≥150 → accent, ≥50 → accent-dark (shade(accent,0.45,'dark'))
+//   glowMask:   ≥230 → white hot-core, ≥130 → glow-light (shade(glow,0.4,'light')),
+//               ≥40  → glow  (painted last so the glowing tip sits over all)
+// The per-weapon accent/glow tint MUST be applied here — a flat un-tinted base
+// would make every weapon in a family identical (non-negotiable colour invariant).
+// Anchors come from the family's anchors.json in COMPOSITED-canvas px, so the
+// descriptor shape is byte-identical to buildProp's return (:186-190).
+function compositeRenderedProp(R, accent, glow) {
+    const { base, accentMask, glowMask, anchors } = R;
+    const W = base.naturalWidth || base.width;
+    const H = base.naturalHeight || base.height;
+    if (!W || !H) throw new Error('rendered base not ready');
+
+    // Draw a layer image into a fresh W×H context and return its pixel buffer.
+    const read = (img) => {
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const x = c.getContext('2d');
+        x.imageSmoothingEnabled = false;
+        x.drawImage(img, 0, 0, W, H);
+        return x.getImageData(0, 0, W, H).data;
+    };
+    const baseData = read(base);
+    const am = read(accentMask);   // L → replicated in rgb; red channel = level
+    const gm = read(glowMask);
+
+    const aC = toRgb(accent), aD = toRgb(shade(accent, 0.45, 'dark'));
+    const gC = toRgb(glow), gL = toRgb(shade(glow, 0.4, 'light'));
+
+    // Logical (native-res) composited canvas we then nearest-upscale.
+    const lc = document.createElement('canvas');
+    lc.width = W; lc.height = H;
+    const lx = lc.getContext('2d');
+    lx.imageSmoothingEnabled = false;
+    const img = lx.createImageData(W, H);
+    const o = img.data;
+    for (let i = 0; i < W * H; i++) {
+        const d = i * 4;
+        o[d] = baseData[d]; o[d + 1] = baseData[d + 1]; o[d + 2] = baseData[d + 2]; o[d + 3] = baseData[d + 3];
+        const a = am[d];
+        if (a >= 150) { o[d] = aC[0]; o[d + 1] = aC[1]; o[d + 2] = aC[2]; o[d + 3] = 255; }
+        else if (a >= 50) { o[d] = aD[0]; o[d + 1] = aD[1]; o[d + 2] = aD[2]; o[d + 3] = 255; }
+        const g = gm[d];
+        if (g >= 230) { o[d] = 255; o[d + 1] = 255; o[d + 2] = 255; o[d + 3] = 255; }
+        else if (g >= 130) { o[d] = gL[0]; o[d + 1] = gL[1]; o[d + 2] = gL[2]; o[d + 3] = 255; }
+        else if (g >= 40) { o[d] = gC[0]; o[d + 1] = gC[1]; o[d + 2] = gC[2]; o[d + 3] = 255; }
+    }
+    lx.putImageData(img, 0, 0);
+
+    // Nearest-upscale to the composited-canvas size the anchors are authored in
+    // (w/h ≈ 84×49 — the same on-screen size buildProp's 84×48 produces).
+    const CW = Math.round(anchors.w) || W;
+    const CH = Math.round(anchors.h) || H;
+    const out = document.createElement('canvas');
+    out.width = CW; out.height = CH;
+    const ox = out.getContext('2d');
+    ox.imageSmoothingEnabled = false;
+    ox.drawImage(lc, 0, 0, W, H, 0, 0, CW, CH);
+
+    return {
+        canvas: out, w: CW, h: CH,
+        gripX: anchors.gripX, gripY: anchors.gripY,
+        tipX: anchors.tipX, tipY: anchors.tipY,
+    };
+}
+
 // Cached held-weapon prop descriptor for (prop, accent, glow). Returns null
 // when no prop key is given (the caller skips drawing a hand prop). On a
 // headless/no-canvas environment any throw is swallowed → null.
@@ -198,7 +278,16 @@ export function getWeaponProp(prop, accent = '#cccccc', glow = '#ffffff') {
     const key = `${prop}:${accent}:${glow}`;
     if (cache.has(key)) return cache.get(key);
     let desc = null;
-    try { desc = buildProp(prop, accent, glow); } catch (e) { desc = null; }
+    // Rendered (Blender-authored) tier first — composited per (accent,glow) —
+    // falling through to procedural buildProp on any failure / unrendered family
+    // / headless env. Both paths are try→null so the null-safe contract holds.
+    const R = getRenderedFamily(prop);
+    if (R) {
+        try { desc = compositeRenderedProp(R, accent, glow); } catch (e) { desc = null; }
+    }
+    if (!desc) {
+        try { desc = buildProp(prop, accent, glow); } catch (e) { desc = null; }
+    }
     cache.set(key, desc);
     return desc;
 }
