@@ -22,47 +22,68 @@ const COLS = 7;
 // col index per pose/frame — matches tools/artshot/hero-pack.mjs output.
 const POSE_COLS = { idle: [0, 1], walk: [2, 3, 4], cast: [5], hurt: [6] };
 
-const _sheets = { down: null, up: null, side: null };   // Image | null
+// Heroes that ship a BESPOKE Blender body sheet set (distinct proportions +
+// baked palette) beside the shared monkey base. A hero not listed here — or one
+// whose set fails to load — falls back to the monkey base + a palette tint, so
+// the roster never breaks.
+const BESPOKE = ['elf', 'orc', 'wizard', 'berserker', 'assassin'];
+
+const _heroSheets = {};   // heroId -> { down, up, side: Image }  (only if all 3 loaded)
 let _loadPromise = null;
-let _ready = false;
+let _ready = false;       // true once the monkey BASE is loaded (procedural gate)
 const _heroCache = new Map();   // hero id -> built dirs set
 
-function loadImage(dir) {
+function loadSheet(heroId, dir) {
     return new Promise((resolve) => {
         try {
             const im = new Image();
-            im.onload = () => { _sheets[dir] = im; resolve(true); };
-            im.onerror = () => { _sheets[dir] = null; resolve(false); };
-            im.src = new URL(`./hero/monkey_${dir}.png`, import.meta.url).href;
-        } catch (e) { _sheets[dir] = null; resolve(false); }
+            im.onload = () => resolve(im);
+            im.onerror = () => resolve(null);
+            im.src = new URL(`./hero/${heroId}_${dir}.png`, import.meta.url).href;
+        } catch (e) { resolve(null); }
     });
 }
 
-// Kick the sheet loads; resolves true when ALL three directions loaded.
+// Load one hero's 3-direction set; registers it only if ALL three loaded.
+async function loadHeroSet(heroId) {
+    const imgs = await Promise.all(DIRS.map((d) => loadSheet(heroId, d)));
+    if (imgs.every(Boolean)) {
+        _heroSheets[heroId] = { down: imgs[0], up: imgs[1], side: imgs[2] };
+        return true;
+    }
+    return false;
+}
+
+// Kick the sheet loads; resolves true once the monkey BASE is up (the gate for
+// the AI-body tier). Bespoke hero bodies are optional and loaded in parallel —
+// any that miss simply fall back to the monkey base + tint for that hero.
 export function loadHeroAiSprites() {
     if (_loadPromise) return _loadPromise;
-    _loadPromise = Promise.all(DIRS.map(loadImage)).then((r) => {
-        _ready = r.every(Boolean);
+    _loadPromise = (async () => {
+        const monkeyOk = await loadHeroSet('monkey');
+        _ready = monkeyOk;
+        await Promise.all(BESPOKE.map(loadHeroSet));
         return _ready;
-    });
+    })();
     return _loadPromise;
 }
 
 // Slice one frame col from a sheet into a SPRITE_SIZE canvas, tint it toward
 // the hero palette (mirrors the fur-cosmetic tint), and composite the hero's
 // feature overlay with the frame's HERO_BOB offset so features ride the head.
-function buildFrame(sheet, col, char, dir, pose, frameIdx) {
+function buildFrame(sheet, col, char, dir, pose, frameIdx, skipTint) {
     const cw = Math.floor(sheet.width / COLS);
     const cv = document.createElement('canvas');
     cv.width = SPRITE_SIZE; cv.height = SPRITE_SIZE;
     const cx = cv.getContext('2d');
     cx.imageSmoothingEnabled = false;    // crisp pixel upscale
     cx.drawImage(sheet, col * cw, 0, cw, sheet.height, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
-    // Palette tint: the base body is the monkey's warm brown; other heroes
-    // shift toward their own fur colour (same source-atop mechanism as the
-    // fur cosmetic, so hues compose predictably).
+    // Palette tint: when a hero is drawn on the shared MONKEY base its warm
+    // brown is washed toward that hero's fur colour. A hero with its OWN
+    // bespoke sheet already bakes its palette (skipTint) — re-tinting would
+    // muddy it — so the tint only runs on the base-fallback path.
     const fur = char?.palette?.fur;
-    if (fur && char.id !== 'monkey') {
+    if (!skipTint && fur && char.id !== 'monkey') {
         cx.globalCompositeOperation = 'source-atop';
         // Hues near the base's warm brown (elf/orc greens) need a stronger
         // wash to survive the warm in-game player-light halo — those heroes
@@ -92,12 +113,17 @@ export function getAiHeroFrames(id, char) {
     if (_heroCache.has(id)) return _heroCache.get(id);
     let set = null;
     try {
+        // Bespoke body if this hero shipped one (palette baked → skip tint);
+        // otherwise the shared monkey base recoloured by the palette tint.
+        const own = _heroSheets[id];
+        const sheets = own || _heroSheets.monkey;
+        const skipTint = !!own;
         const dirs = {};
         for (const dir of DIRS) {
-            const sheet = _sheets[dir];
+            const sheet = sheets[dir];
             const d = {};
             for (const pose in POSE_COLS) {
-                d[pose] = POSE_COLS[pose].map((col, i) => buildFrame(sheet, col, char, dir, pose, i));
+                d[pose] = POSE_COLS[pose].map((col, i) => buildFrame(sheet, col, char, dir, pose, i, skipTint));
             }
             dirs[dir] = d;
         }
