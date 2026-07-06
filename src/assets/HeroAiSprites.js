@@ -100,7 +100,7 @@ function buildFrame(sheet, col, char, dir, pose, frameIdx, skipTint) {
         const hb = HERO_BOB[pose] || [0];
         const bob = hb[frameIdx % hb.length] || 0;
         const ov = drawHeroFeatureOverlay(
-            { palette: char.palette, accent: char.accent, feature: char.feature }, dir, bob);
+            { palette: char.palette, accent: char.accent, feature: char.feature }, dir, bob, pose, frameIdx);
         if (ov) cx.drawImage(ov, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
     }
     return cv;
