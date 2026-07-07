@@ -272,7 +272,7 @@ export class UISystem {
     // controls. Returned as {id, rect} so Game can hit-test each.
     getPhotoToolbarRects() {
         const bw = 160, bh = 72, gap = 16;
-        const ids = ['snap', 'grid', 'hud', 'exit'];
+        const ids = ['snap', 'filter', 'grid', 'hud', 'exit'];
         const total = ids.length * bw + (ids.length - 1) * gap;
         let x = INTERNAL_WIDTH / 2 - total / 2;
         const y = INTERNAL_HEIGHT - bh - 90 - this.renderer.safeArea.bottom;
@@ -284,13 +284,21 @@ export class UISystem {
     }
 
     // Draw the Lens toolbar (called directly by Game.render in photo mode).
-    drawPhotoToolbar(ctx, pm, zoom, toast) {
+    drawPhotoToolbar(ctx, pm, zoom, toast, filterName) {
         const fade = Math.min(1, (pm.toolbarFade ?? 0) / 0.4);   // fade over the last 0.4s idle
         const rects = this.getPhotoToolbarRects();
-        const labelFor = { snap: 'SNAP', grid: pm.gridOn ? 'GRID ✓' : 'GRID',
+        const labelFor = { snap: 'SNAP', filter: 'FILTER', grid: pm.gridOn ? 'GRID ✓' : 'GRID',
             hud: pm.hudShown ? 'HUD ✓' : 'HUD', exit: 'EXIT', zoomOut: '−', zoomIn: '+' };
         ctx.save();
         ctx.globalAlpha = fade;
+        // Active filter name, captioned above the row.
+        if (filterName) {
+            ctx.fillStyle = '#ffd166';
+            ctx.font = `600 24px ${DISPLAY_FONT}`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(String(filterName).toUpperCase(), INTERNAL_WIDTH / 2, rects[0].rect.y - 22);
+        }
         for (const b of rects) {
             const r = b.rect;
             const primary = b.id === 'snap';
