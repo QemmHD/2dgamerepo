@@ -2,6 +2,10 @@ const GAME_KEYS = new Set([
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
     'KeyW', 'KeyA', 'KeyS', 'KeyD',
     'Space',
+    // KINDLED (update #3): Q holds to aim the Kindle ult (PR3), Tab cycles the
+    // Focus target (PR3). Registered now so the browser never steals them
+    // (Q-quickmark / Tab focus-shift) once those verbs go live.
+    'KeyQ', 'Tab',
 ]);
 
 export class KeyboardInput {

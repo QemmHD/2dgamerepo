@@ -3,7 +3,7 @@
 // mutates game state, only assembles the screen-appropriate fields into a
 // fresh snapshot object (one per frame — same shape/cost as before the move).
 
-import { BOSS, CAPS, COMBO, COMPOSURE, MAX_WEAPON_SLOTS } from '../config/GameConfig.js';
+import { BOSS, CAPS, COMBO, COMPOSURE, MAX_WEAPON_SLOTS, BLINK } from '../config/GameConfig.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { OBJECTIVE_COUNT } from '../content/objectives.js';
 import { WEAPONS, WEAPON_AURA } from '../content/weapons.js';
@@ -106,7 +106,32 @@ export function buildUIState(game) {
             ready: remaining <= 0.001,
         });
     }
+    // KINDLED: the universal aimed blink shares the ability-cooldown pip row as
+    // a synthetic entry (it isn't a WEAPONS ability, but reads identically —
+    // sweep + ready pulse). Cooldown state lives on KindleSystem.
+    if (game.kindleSystem) {
+        const bcd = Math.max(0, game.kindleSystem.blinkCooldown ?? 0);
+        abilityCds.push({
+            id: 'blink',
+            name: 'Blink',
+            color: '#8fd0ff',
+            remaining: bcd,
+            total: BLINK.cooldown,
+            ready: bcd <= 0.001,
+        });
+    }
     base.abilityCooldowns = abilityCds;
+    // KINDLED: the Kindle ult meter (fills from kills + boss damage; ult release
+    // lands in PR3 — until then it caps at max and pulses READY, harmless).
+    const _k = game.kindleSystem;
+    base.kindle = _k ? {
+        fill: _k.fill,
+        max: _k.max,
+        ready: _k.ready,
+        ultName: null,          // PR3: the hero's Grand Signature name
+        ultColor: '#ff8c4a',
+        aiming: false,          // PR3: Focus-Time aiming state
+    } : null;
     base.ownedPassives = game.passiveSystem.snapshotForUI();
     base.runCoins = game.player.coins ?? 0;
     base.chestLuck = game.player.chestLuck ?? 0;

@@ -175,8 +175,10 @@ export class Player {
         // e.g. reduced-effects mode). { color, intensity, radius, pulse }.
         this.weaponAura = null;
         this.auraPhase = 0;
-        // Transient Shadow Dash visual (set by the ability; ticked in update,
-        // drawn as an afterimage smear along the blink path). null when idle.
+        // Transient blink/dash smear (afterimage stretch along the travel
+        // path; ticked in update, null when idle). KINDLED's aimed blink
+        // (Game._tryBlink) revives this exact renderer — { fromX, fromY, toX,
+        // toY, age, dur } — at zero art cost; Shadow Dash no longer sets it.
         this.dashFx = null;
         // Shadow Dash (reworked): a timed movement-speed surge instead of an
         // instant blink. While speedBoostTimer > 0, move speed is multiplied by

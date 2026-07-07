@@ -910,6 +910,35 @@ export const ELEMENT = {
 // burst of detonateMul × current burnDps, then clears the burn.
 export const SHOCK_CFG = { detonateMul: 2.5 };
 
+// ── KINDLED (update #3) — the manual ult economy + the aimed-blink dodge ───
+// The Kindle meter fills from kills + boss damage and, at full, releases a
+// per-hero Grand Signature ult (ults land in PR3; PR1 only fills the bar and
+// caps it at READY). Everything here is tunable. Charged at exactly two hooks
+// (kill-merge + a per-frame boss-HP delta), never a per-frame scan.
+export const KINDLE = {
+    max: 100,                 // meter units; a full bar is one ult
+    perKill: 1.2,             // trash kill
+    perEliteKill: 6,          // elite kill bonus (on top of perKill)
+    perBossKill: 25,          // boss kill bonus (on top of perKill)
+    perBossHitPct: 0.02,      // meter per 1% of a boss's max HP dealt
+    startFill: 25,            // a run starts a quarter-lit so the first ult lands ~min 2
+    ultCost: 100,             // meter spent to release an ult (PR3)
+    focusTimeScale: 0.30,     // world dt multiplier while aiming (PR3)
+    playerAimSpeedMul: 0.60,  // player move-speed multiplier while aiming (PR3)
+    focusTimeMax: 2.5,        // s of held aim before auto-fire (PR3)
+    fizzleRefund: 100,        // cancel refunds the full bar (PR3)
+};
+
+// The universal aimed blink — the agency update's dodge verb, live from run 1
+// (Space on keyboard). 240px < AUTO_AIM_RANGE (620) so a blink never outruns
+// your own targeting. Revives the orphaned Player.dashFx smear at zero art cost.
+export const BLINK = {
+    distance: 240,            // px travelled by a clear blink
+    cooldown: 6.0,            // s between blinks (≈ one boss telegraph, not a kite loop)
+    iframes: 0.25,            // s of invincibility granted on blink
+    minGap: 24,               // px step-back increment when the path is wall-blocked
+};
+
 // ── Apex boss state machine ─────────────────────────────────────────────
 // Bosses with behavior:'apexBoss' run telegraphed special attacks and a
 // latched phase-2 enrage at phase2HpFraction. These shared constants tune
