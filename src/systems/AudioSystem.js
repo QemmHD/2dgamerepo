@@ -666,6 +666,8 @@ export class AudioSystem {
             this._duck(0.45, 0.08, 0.4);
         });
     }
+    // KINDLED — a soft blip when the Focus target lock changes (Tab / tap).
+    uiTick() { this._play('uiTick', 0.04, (t) => { this._voice(880, t, 0.05, 0.05, { type: 'triangle', slideTo: 1240, cutoff: 5200 }); }); }
     // KINDLED — Grand Signature ult release. One cue dispatched per aimKind
     // (ring/lane/self/line/cone) so each hero's ult reads distinct; reuses the
     // existing synth timbres. A big duck sells the signature moment.

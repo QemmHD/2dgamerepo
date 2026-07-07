@@ -145,10 +145,13 @@ export const SIGNATURES = {
         fire(game, angle) {
             const hits = [], killed = [], p = game.player;
             const mul = castMul(p);
-            // Sacrifice 15% current HP, floored so it never drops below 10% maxHp.
+            // Sacrifice 15% current HP, floored so it never drops below 10% maxHp
+            // — and NEVER heals: sac is already 0 when at/under the floor, so a
+            // plain subtract leaves HP untouched there (Math.max(floorHp,…) would
+            // have healed a below-floor Kael up to the floor).
             const floorHp = p.maxHp * 0.10;
             const sac = Math.min(p.hp * 0.15, Math.max(0, p.hp - floorHp));
-            p.hp = Math.max(floorHp, p.hp - sac);
+            p.hp = Math.max(0, p.hp - sac);
             const missing = Math.max(0, 1 - p.hp / p.maxHp);
             const R = 520 + 4 * (missing * 100), base = 200 * (1 + 1.5 * missing) * mul;
             for (const e of game.enemies) {
@@ -158,7 +161,10 @@ export const SIGNATURES = {
                 const [kx, ky] = knockFrom(e, p.x, p.y, 0.7);
                 strike(e, base, kx, ky, hits, killed, '#ff6a5a');
             }
-            p.lowHpDamageBonus = (p.lowHpDamageBonus || 0) + 0.25;   // 5s afterglow (Game decays)
+            // 5s low-HP afterglow — add the +0.25 ONCE, then only refresh the
+            // window on recast (Game decays exactly 0.25 on expiry, so an
+            // unconditional add would strand a permanent bonus on overlapping casts).
+            if (!(p._brinkAfterglow > 0)) p.lowHpDamageBonus = (p.lowHpDamageBonus || 0) + 0.25;
             p._brinkAfterglow = 5.0;
             flourish(game, p.x, p.y, this.color, R);
             return { hits, killed };
