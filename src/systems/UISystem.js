@@ -190,6 +190,17 @@ export class UISystem {
         };
     }
 
+    // EMBERGLASS: SHARE CARD button, bottom-right (below the minted-card
+    // thumbnail), clear of the centered RESTART / RETURN TO SHOP row.
+    getShareCardButtonRect() {
+        return {
+            x: INTERNAL_WIDTH - 300 - 70,
+            y: INTERNAL_HEIGHT - 180 - this.renderer.safeArea.bottom,
+            w: 300,
+            h: RESTART_BTN_H,
+        };
+    }
+
     getStartRunButtonRect() {
         return {
             x: INTERNAL_WIDTH / 2 - 240,
@@ -2037,15 +2048,59 @@ export class UISystem {
             'rgba(95, 199, 255, 0.10)',
             this._pressAmt(state, 'returnShop'), false);
 
+        // EMBERGLASS: the auto-minted recap card thumbnail + SHARE CARD button,
+        // bottom-right, on the same fade timeline as the buttons.
+        const card = state.mintedCard;
+        if (card && card.canvas) {
+            const shareBtn = this.getShareCardButtonRect();
+            const tw = 360, th = 189;
+            const tx = INTERNAL_WIDTH - tw - 40;
+            const ty = shareBtn.y - th - 18;
+            ctx.save();
+            ctx.fillStyle = 'rgba(8,5,6,0.6)';
+            ctx.fillRect(tx - 4, ty - 4, tw + 8, th + 8);
+            try { ctx.drawImage(card.canvas, tx, ty, tw, th); } catch (e) { /* card optional */ }
+            ctx.strokeStyle = '#ff9a4a';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(tx - 4, ty - 4, tw + 8, th + 8);
+            ctx.restore();
+            this._drawSummaryButton(ctx, shareBtn, 'SHARE CARD', '#ffce5c',
+                'rgba(255, 206, 92, 0.12)', this._pressAmt(state, 'shareCard'), false);
+        }
+
         ctx.fillStyle = 'rgba(255,255,255,0.65)';
         ctx.font = `22px ${FONT}`;
         ctx.textAlign = 'center';
         ctx.fillText(
-            'R / Enter restart   •   B / Esc shop',
+            card && card.canvas
+                ? 'R / Enter restart   •   B / Esc shop   •   S share'
+                : 'R / Enter restart   •   B / Esc shop',
             INTERNAL_WIDTH / 2,
             restartBtn.y + restartBtn.h + 36
         );
         ctx.globalAlpha = 1;
+
+        // EMBERGLASS: share-result toast (full alpha, above the summary).
+        const toast = state.shareToast;
+        if (toast && toast.text) {
+            const a = Math.min(1, (toast.timer ?? 0) / 0.4);
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.font = `600 30px ${FONT}`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const w = ctx.measureText(toast.text).width + 64;
+            const bh = 60;
+            const bx = INTERNAL_WIDTH / 2 - w / 2, by = restartBtn.y - bh - 20;
+            ctx.fillStyle = 'rgba(20, 12, 10, 0.92)';
+            ctx.fillRect(bx, by, w, bh);
+            ctx.strokeStyle = '#ff9a4a';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(bx, by, w, bh);
+            ctx.fillStyle = '#ffd166';
+            ctx.fillText(toast.text, INTERNAL_WIDTH / 2, by + bh / 2 + 1);
+            ctx.restore();
+        }
 
         ctx.restore();
     }

@@ -80,6 +80,8 @@ import { HazardSystem } from '../systems/HazardSystem.js';
 import { MinigameOverlay } from '../systems/MinigameOverlay.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
+import { getCardCompositor } from '../systems/CardCompositor.js';
+import { EMBERGLASS } from '../config/GameConfig.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
@@ -258,6 +260,9 @@ export class Game {
                 } else if (e.code === 'KeyB' || e.code === 'Escape') {
                     e.preventDefault();
                     this.returnToShop();
+                } else if (e.code === 'KeyS') {
+                    e.preventDefault();
+                    if (this.gameOverAge >= 0.7) this._shareMintedCard();
                 }
                 return;
             }
@@ -267,6 +272,7 @@ export class Game {
                 if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this.victoryContinue(); }
                 else if (e.code === 'KeyB') { e.preventDefault(); this.victoryToMenu(true); }
                 else if (e.code === 'KeyM' || e.code === 'Escape') { e.preventDefault(); this.victoryToMenu(false); }
+                else if (e.code === 'KeyS') { e.preventDefault(); this._shareMintedCard(); }
                 return;
             }
             // Debug-only time-jump (NOT a player feature): with the debug
@@ -420,6 +426,7 @@ export class Game {
             if (inRect(pos, r.cont, 0)) { this._pressFeedback('vContinue'); this.victoryContinue(); return true; }
             if (inRect(pos, r.biome, 0)) { this._pressFeedback('vBiome'); this.victoryToMenu(true); return true; }
             if (inRect(pos, r.menu, 0)) { this._pressFeedback('vMenu'); this.victoryToMenu(false); return true; }
+            if (r.share && this.mintedCard && inRect(pos, r.share, 0)) { this._shareMintedCard(); return true; }
             return true; // consume all taps while the overlay is up
         };
 
@@ -457,6 +464,8 @@ export class Game {
             if (inRect(pos, rRestart)) { this._pressFeedback('restart'); this.restart(); return true; }
             const rShop = this.ui.getReturnToShopButtonRect();
             if (rShop && inRect(pos, rShop)) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
+            const rShare = this.ui.getShareCardButtonRect();
+            if (rShare && this.mintedCard && inRect(pos, rShare)) { this._shareMintedCard(); return true; }
             return true;
         };
 
@@ -683,6 +692,12 @@ export class Game {
         this._victoryShown = false;
         this._runRecorded = false;
         this.runSummary = null;
+        // EMBERGLASS: clear the last run's killer attribution + minted share card
+        // so a fresh run never reuses a stale card/toast.
+        this.lastHitBy = null;
+        this.mintedCard = null;
+        this.shareToast = null;
+        this._pendingCardMint = null;
         // Gauntlet (endless) scoring — armed only after a 3rd-boss victory
         // continuation; banked on the next death.
         this._gauntletActive = false;
@@ -1161,6 +1176,10 @@ export class Game {
 
     _showVictory() {
         this.victory = { age: 0 };
+        // EMBERGLASS: queue the victory recap card from LIVE fields (runSummary
+        // doesn't exist yet — it's built later in victoryToMenu). Composed on the
+        // next render() before the overlay dims the world.
+        this._queueVictoryCard();
         if (this.player) this.player.poseOverride = 'victory';   // hero cheers
         // Swell into the triumphant victory theme + a fanfare stinger.
         this.audio.playMusic('victory');
@@ -2560,7 +2579,117 @@ export class Game {
             if (bonus > 0) { this.saveSystem.addBattlePassXp(bonus); this.bpResult.gained += bonus; }
         }
 
+        // EMBERGLASS: stamp who dealt the killing blow onto the run summary and
+        // queue the death recap card — it composes on the next render() once the
+        // world death frame is captured.
+        this.runSummary.killedBy = this.lastHitBy || null;
+        this._queueDeathCard();
+
         this._updateJoystickEnabled();
+    }
+
+    // ── EMBERGLASS: auto-minted death / victory share cards ─────────────────
+    _cardHeroName(id) {
+        return (CHARACTERS[id] && CHARACTERS[id].name) || 'The Keeper';
+    }
+    _cardMapName(id) {
+        try { const m = getMap(id); return (m && m.name) || ''; } catch (e) { return ''; }
+    }
+    _cardDifficulty() {
+        return this.difficulty === 'hard' ? 'NIGHTMARE'
+            : this.difficulty === 'easy' ? 'EMBER' : 'STANDARD';
+    }
+    // Build the pending 'death' card data (composed next render()).
+    _queueDeathCard() {
+        const s = this.runSummary || {};
+        const cid = this.saveSystem.getSelectedCharacter();
+        const kills = s.kills ?? 0;
+        const chips = [
+            `WAVE ${s.finalWave ?? 1}`,
+            `LV ${s.level ?? 1}`,
+            `${kills.toLocaleString()} KILLS`,
+            `${s.bossesDefeated ?? 0} ${(s.bossesDefeated === 1 ? 'BOSS' : 'BOSSES')}`,
+        ];
+        if (s.coinsEarned != null) chips.push(`${s.coinsEarned} COINS`);
+        const nb = this.newBest;
+        this._pendingCardMint = {
+            template: 'death',
+            data: {
+                name: this._cardHeroName(cid), characterId: cid,
+                time: s.time ?? this.time,
+                killer: this.lastHitBy || null,
+                chips,
+                newBest: !!(nb && (nb.time || nb.wave || nb.level || nb.kills)),
+                mapName: this._cardMapName(this._effectiveMapId()),
+                difficulty: this._cardDifficulty(),
+            },
+        };
+    }
+    // Build the pending 'victory' card data from LIVE fields (runSummary does
+    // not exist yet when the victory overlay appears).
+    _queueVictoryCard() {
+        const cid = this.saveSystem.getSelectedCharacter();
+        const kills = this.kills ?? 0;
+        this._pendingCardMint = {
+            template: 'victory',
+            data: {
+                name: this._cardHeroName(cid), characterId: cid,
+                time: this.time,
+                sub: 'Three apex Hollow have fallen',
+                chips: [
+                    `LV ${this.player?.level ?? 1}`,
+                    `${kills.toLocaleString()} KILLS`,
+                    `${this.bossesDefeated ?? 0} BOSSES`,
+                ],
+                mapName: this._cardMapName(this._effectiveMapId()),
+                difficulty: this._cardDifficulty(),
+            },
+        };
+    }
+    // Capture the world death/victory frame + compose the queued card. Called
+    // from render() BEFORE the HUD/overlay draws, so the card background is
+    // world-only. One drawImage + one compose, once per run.
+    _mintPendingCard() {
+        const pend = this._pendingCardMint;
+        if (!pend) return;
+        this._pendingCardMint = null;
+        try {
+            const comp = getCardCompositor();
+            comp.captureFromCanvas(this.renderer.canvas);
+            const canvas = comp.compose(pend.template, pend.data);
+            if (canvas) this.mintedCard = { canvas, template: pend.template };
+        } catch (e) { /* card is optional; never break the frame */ }
+    }
+    // Share the minted card via the compositor ladder. MUST run synchronously
+    // inside a user-gesture handler (tryRestartAt / tryVictoryAt / keydown) so
+    // the clipboard/share user-gesture holds.
+    _shareMintedCard() {
+        if (!this.mintedCard || !this.mintedCard.canvas) return;
+        this._pressFeedback(this.victory ? 'vShare' : 'shareCard');
+        try {
+            getCardCompositor().share({
+                title: 'EMBERWAKE',
+                text: this._shareCardText(),
+                filename: 'emberwake-card.png',
+            }).then((res) => this._afterShare(res)).catch(() => this._afterShare(null));
+        } catch (e) { this._afterShare(null); }
+    }
+    _shareCardText() {
+        const name = this._cardHeroName(this.saveSystem.getSelectedCharacter());
+        if (this.victory) return `${name} held the light in EMBERWAKE.`;
+        const k = this.runSummary && this.runSummary.killedBy;
+        if (k && k.label) {
+            const who = (k.boss || k.hazard) ? k.label : `a ${k.label}`;
+            return `${name} fell to ${who} in EMBERWAKE.`;
+        }
+        return 'A run in EMBERWAKE.';
+    }
+    _afterShare(res) {
+        const method = (res && res.method) || 'none';
+        const text = { clipboard: 'COPIED TO CLIPBOARD', share: 'SHARED',
+            download: 'SAVED AS PNG', none: 'SHARE FAILED — TRY AGAIN' }[method] || 'SAVED AS PNG';
+        this.shareToast = { text, timer: EMBERGLASS.toast.duration };
+        if (res && res.ok && method !== 'none') this.saveSystem.incrementStat('cardsShared', 1);
     }
 
     update(dt) {
@@ -2585,6 +2714,7 @@ export class Game {
         }
         if (this.screen === 'gameOver') {
             this.gameOverAge += dt;
+            if (this.shareToast) { this.shareToast.timer -= dt; if (this.shareToast.timer <= 0) this.shareToast = null; }
             this.camera.update(dt);
             return;
         }
@@ -2610,6 +2740,7 @@ export class Game {
         if (this.victory) {
             // 3rd-boss victory overlay: freeze the world behind it.
             this.victory.age += dt;
+            if (this.shareToast) { this.shareToast.timer -= dt; if (this.shareToast.timer <= 0) this.shareToast = null; }
             this.camera.update(dt);
             return;
         }
@@ -2938,6 +3069,7 @@ export class Game {
                 continue;
             }
             if (dealt > 0) {
+                if (ep.sourceLabel) this.lastHitBy = ep.sourceLabel;   // death-card attribution
                 this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
                 this._pushFeedback('hit', 0.32);
                 this.damageNumbers.push(new DamageNumber(
@@ -3148,6 +3280,7 @@ export class Game {
             }
         }
         if (collisionResult.playerHit) {
+            if (collisionResult.strongest) this.lastHitBy = collisionResult.strongest;   // death-card attribution
             this._playerHurtShake(collisionResult.playerDamageTaken);
             this._pushFeedback('hit', 0.32);
             this.damageNumbers.push(new DamageNumber(
@@ -3614,6 +3747,11 @@ export class Game {
             ctx.restore();
         }
 
+        // EMBERGLASS: mint the queued death/victory card from the world frame
+        // NOW — before the HUD (ui.draw) and any overlay draw — so the card's
+        // background is the clean world, not the HUD/overlay.
+        if (this._pendingCardMint) this._mintPendingCard();
+
         this.ui.draw(ctx, buildUIState(this));
 
         if (this.victory) this._drawVictory(ctx);
@@ -3672,6 +3810,8 @@ export class Game {
             cont:  { x: cx - w / 2, y: top, w, h },
             biome: { x: cx - w / 2, y: top + (h + gap), w, h },
             menu:  { x: cx - w / 2, y: top + (h + gap) * 2, w, h },
+            // EMBERGLASS: 4th SHARE button (only drawn/hit when a card was minted).
+            share: { x: cx - w / 2, y: top + (h + gap) * 3, w, h },
         };
     }
 
@@ -3713,6 +3853,35 @@ export class Game {
         btn(r.cont, 'CONTINUE', 'keep going — the gauntlet cycles harder', '#1d6b3a', '#7be08a');
         btn(r.biome, 'PLAY NEW BIOME', 'Hollow Reach — the frozen vigil', '#1d4a7a', '#7fd0ff');
         btn(r.menu, 'MAIN MENU', 'bank coins • upgrade • pick a map', '#5a3a1a', '#ffb24a');
+        // EMBERGLASS: share the auto-minted victory card (S / tap).
+        if (this.mintedCard) btn(r.share, 'SHARE CARD', 'copy your victory card to share', '#5a3a1a', '#ffd166');
+        ctx.restore();
+        // Toast (drawn at full alpha, outside the fade save block).
+        if (this.shareToast) this._drawShareToast(ctx);
+    }
+
+    // Small centered toast pill for share results (used by victory + game-over).
+    _drawShareToast(ctx) {
+        const st = this.shareToast;
+        if (!st) return;
+        const W = INTERNAL_WIDTH;
+        const a = Math.min(1, st.timer / 0.4);   // fade out over the last 0.4s
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.font = "600 30px 'Cinzel', serif";
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const tw = ctx.measureText(st.text).width + 64;
+        const bx = W / 2 - tw / 2, by = 130, bh = 60;
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 12); }
+        else { ctx.beginPath(); ctx.rect(bx, by, tw, bh); }
+        ctx.fillStyle = 'rgba(20, 12, 10, 0.92)';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ff9a4a';
+        ctx.stroke();
+        ctx.fillStyle = '#ffd166';
+        ctx.fillText(st.text, W / 2, by + bh / 2 + 1);
         ctx.restore();
     }
 

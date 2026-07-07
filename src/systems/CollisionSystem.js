@@ -159,6 +159,18 @@ export class CollisionSystem {
             this.contactFlash = Math.max(0, this.contactFlash - dt);
         }
 
-        return { killed, hits, playerHit, playerDamageTaken };
+        // Killer attribution (EMBERGLASS death card): only meaningful when the
+        // player actually took contact damage this frame; the strongest toucher
+        // is the one to name.
+        let strongestHit = null;
+        if (playerHit && strongestEnemy) {
+            strongestHit = {
+                label: strongestEnemy.def?.label ?? strongestEnemy.name,
+                epithet: strongestEnemy.epithet ?? null,
+                boss: !!strongestEnemy.boss,
+            };
+        }
+
+        return { killed, hits, playerHit, playerDamageTaken, strongest: strongestHit };
     }
 }

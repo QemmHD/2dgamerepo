@@ -51,6 +51,9 @@ function defaultData() {
             gauntletRuns: 0,         // endless continuations played
             hardWins: 0,             // 3rd-boss victories on Hard difficulty
             dupeCoins: 0,            // lifetime coins refunded from case duplicates
+            // EMBERGLASS (roadmap #2) additions (numeric → auto-validated).
+            cardsShared: 0,          // lifetime death/victory recap cards shared
+            photosTaken: 0,          // lifetime Keeper's Lens snaps saved
         },
         settings: {
             screenShake: true,
