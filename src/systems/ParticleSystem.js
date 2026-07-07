@@ -382,14 +382,15 @@ export class ParticleSystem {
     // Screen-space additive sparks, above the veil so they never dim.
     drawScreenAdditive(ctx, camera) {
         if (!this.enabled) return;
-        const ox = INTERNAL_W / 2 - camera.x + (camera.shakeOffsetX || 0);
-        const oy = INTERNAL_H / 2 - camera.y + (camera.shakeOffsetY || 0);
+        // Center-relative mapping so photo-mode zoom composes: screen =
+        // (world − cam)·zoom + centre + shake (shake unscaled, matching the veil).
+        const z = camera.zoom || 1;
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         for (const p of this.pool) {
             if (!p.active || p.layer !== SCREEN_ADD) continue;
-            const sx = p.x + ox;
-            const sy = p.y + oy;
+            const sx = (p.x - camera.x) * z + INTERNAL_W / 2 + (camera.shakeOffsetX || 0);
+            const sy = (p.y - camera.y) * z + INTERNAL_H / 2 + (camera.shakeOffsetY || 0);
             if (sx < -64 || sx > INTERNAL_W + 64 || sy < -64 || sy > INTERNAL_H + 64) continue;
             this._blitAt(ctx, p, sx, sy);
         }

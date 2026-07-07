@@ -20,6 +20,7 @@ import {
 } from '../render/DrawUtils.js';
 import { getChestSprite, getCoinSprite, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { MenuRenderer } from './MenuRenderer.js';
+import { DISPLAY_FONT } from '../assets/MenuFont.js';
 
 const DEBUG_BUTTON_SIZE = 96;
 const DEBUG_BUTTON_MARGIN = 20;
@@ -261,6 +262,76 @@ export class UISystem {
     }
     getShakeToggleRect() {
         return { x: INTERNAL_WIDTH / 2 - 240, y: INTERNAL_HEIGHT / 2 + 162, w: 480, h: 64 };
+    }
+    // EMBERGLASS: enter the Keeper's Lens from the pause overlay.
+    getPauseLensRect() {
+        return { x: INTERNAL_WIDTH / 2 - 240, y: INTERNAL_HEIGHT / 2 + 242, w: 480, h: 64 };
+    }
+
+    // EMBERGLASS photo-mode toolbar: bottom-center pill row + top-right zoom
+    // controls. Returned as {id, rect} so Game can hit-test each.
+    getPhotoToolbarRects() {
+        const bw = 160, bh = 72, gap = 16;
+        const ids = ['snap', 'grid', 'hud', 'exit'];
+        const total = ids.length * bw + (ids.length - 1) * gap;
+        let x = INTERNAL_WIDTH / 2 - total / 2;
+        const y = INTERNAL_HEIGHT - bh - 90 - this.renderer.safeArea.bottom;
+        const rects = ids.map((id) => { const r = { id, rect: { x, y, w: bw, h: bh } }; x += bw + gap; return r; });
+        const zy = 40 + this.renderer.safeArea.top, zs = 60;
+        rects.push({ id: 'zoomOut', rect: { x: INTERNAL_WIDTH - 300, y: zy, w: zs, h: zs } });
+        rects.push({ id: 'zoomIn', rect: { x: INTERNAL_WIDTH - 90, y: zy, w: zs, h: zs } });
+        return rects;
+    }
+
+    // Draw the Lens toolbar (called directly by Game.render in photo mode).
+    drawPhotoToolbar(ctx, pm, zoom, toast) {
+        const fade = Math.min(1, (pm.toolbarFade ?? 0) / 0.4);   // fade over the last 0.4s idle
+        const rects = this.getPhotoToolbarRects();
+        const labelFor = { snap: 'SNAP', grid: pm.gridOn ? 'GRID ✓' : 'GRID',
+            hud: pm.hudShown ? 'HUD ✓' : 'HUD', exit: 'EXIT', zoomOut: '−', zoomIn: '+' };
+        ctx.save();
+        ctx.globalAlpha = fade;
+        for (const b of rects) {
+            const r = b.rect;
+            const primary = b.id === 'snap';
+            ctx.fillStyle = primary ? 'rgba(255, 154, 74, 0.24)' : 'rgba(14, 9, 10, 0.82)';
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 12); ctx.fill(); }
+            else ctx.fillRect(r.x, r.y, r.w, r.h);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = primary ? '#ffce5c' : 'rgba(255, 154, 74, 0.6)';
+            if (ctx.roundRect) ctx.stroke(); else ctx.strokeRect(r.x, r.y, r.w, r.h);
+            ctx.fillStyle = primary ? '#ffe08a' : '#efe0c4';
+            ctx.font = `600 ${b.id === 'zoomOut' || b.id === 'zoomIn' ? 34 : 26}px ${DISPLAY_FONT}`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(labelFor[b.id] || b.id, r.x + r.w / 2, r.y + r.h / 2 + 1);
+        }
+        // Zoom readout between the −/+ buttons.
+        ctx.fillStyle = '#ffd166';
+        ctx.font = `600 30px ${DISPLAY_FONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${(zoom || 1).toFixed(2)}×`, INTERNAL_WIDTH - 195, 40 + this.renderer.safeArea.top + 30);
+        ctx.restore();
+        // Toast (full alpha, above the toolbar row).
+        if (toast && toast.text) {
+            const a = Math.min(1, (toast.timer ?? 0) / 0.4);
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.font = `600 30px ${DISPLAY_FONT}`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const w = ctx.measureText(toast.text).width + 64;
+            const bx = INTERNAL_WIDTH / 2 - w / 2, by = rects[0].rect.y - 78, th = 60;
+            ctx.fillStyle = 'rgba(20, 12, 10, 0.92)';
+            ctx.fillRect(bx, by, w, th);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ff9a4a';
+            ctx.strokeRect(bx, by, w, th);
+            ctx.fillStyle = '#ffd166';
+            ctx.fillText(toast.text, INTERNAL_WIDTH / 2, by + th / 2 + 1);
+            ctx.restore();
+        }
     }
 
     // Level-up reroll button (below the cards) + a per-card banish button.
@@ -1355,6 +1426,21 @@ export class UISystem {
         ctx.font = `bold 18px ${FONT}`;
         ctx.textAlign = 'center';
         ctx.fillText(on ? 'ON' : 'OFF', px + pillW / 2, py - 0 + pillH / 2);
+
+        // EMBERGLASS: LENS (photo mode) button.
+        const lens = this.getPauseLensRect();
+        ctx.fillStyle = 'rgba(255, 154, 74, 0.10)';
+        ctx.strokeStyle = 'rgba(255, 154, 74, 0.6)';
+        ctx.lineWidth = 2;
+        roundRectPath(ctx, lens.x, lens.y, lens.w, lens.h, 14);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#ffce5c';
+        ctx.font = `600 26px ${DISPLAY_FONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('◉  LENS — PHOTO MODE', lens.x + lens.w / 2, lens.y + lens.h / 2 + 1);
+        ctx.textBaseline = 'alphabetic';
 
         ctx.fillStyle = 'rgba(255,255,255,0.6)';
         ctx.font = `22px ${FONT}`;

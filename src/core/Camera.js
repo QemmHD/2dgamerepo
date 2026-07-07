@@ -19,6 +19,7 @@ export class Camera {
         this.y = 0;
         this.target = null;
         this.smoothing = 1;
+        this.zoom = 1;          // EMBERGLASS photo mode: 0.75–2.0; 1 in normal play
 
         this.trauma = 0;
         this.shakeOffsetX = 0;
@@ -86,16 +87,19 @@ export class Camera {
             ctx.rotate(this.shakeAngle);
             ctx.translate(-cx, -cy);
         }
-        ctx.translate(
-            cx - this.x + this.shakeOffsetX,
-            cy - this.y + this.shakeOffsetY
-        );
+        // world → screen: (world − cam)·zoom + centre + shake. At zoom 1 this is
+        // identical to the old single translate; shake offset stays unscaled so
+        // it matches the veil/particle screen mappers below.
+        ctx.translate(cx + this.shakeOffsetX, cy + this.shakeOffsetY);
+        if (this.zoom !== 1) ctx.scale(this.zoom, this.zoom);
+        ctx.translate(-this.x, -this.y);
     }
 
     screenToWorld(sx, sy) {
+        const z = this.zoom || 1;
         return {
-            x: sx + this.x - INTERNAL_WIDTH / 2,
-            y: sy + this.y - INTERNAL_HEIGHT / 2,
+            x: (sx - INTERNAL_WIDTH / 2) / z + this.x,
+            y: (sy - INTERNAL_HEIGHT / 2) / z + this.y,
         };
     }
 }
