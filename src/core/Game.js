@@ -82,6 +82,7 @@ import { buildUIState } from '../systems/UIStateBuilder.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { getCardCompositor } from '../systems/CardCompositor.js';
 import { EMBERGLASS } from '../config/GameConfig.js';
+import { PHOTO_FILTERS, photoFilterIndexById } from '../content/photoFilters.js';
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
@@ -239,6 +240,7 @@ export class Game {
                 else if (e.code === 'Space') this._snapPhoto();
                 else if (e.code === 'KeyG') this.photoMode.gridOn = !this.photoMode.gridOn;
                 else if (e.code === 'KeyH') this.photoMode.hudShown = !this.photoMode.hudShown;
+                else if (e.code === 'KeyF') this._cyclePhotoFilter();
                 else if (e.code === 'KeyQ') this._photoZoomBy(1 / EMBERGLASS.photo.zoomStep);
                 else if (e.code === 'KeyE') this._photoZoomBy(EMBERGLASS.photo.zoomStep);
                 if (this.photoMode) this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
@@ -2754,6 +2756,7 @@ export class Game {
         this.photoMode = {
             gridOn: false,
             hudShown: false,
+            filterIdx: 0,
             toolbarFade: EMBERGLASS.photo.toolbarFade,
             returnTo: returnTo || (this.paused ? 'paused' : this.screen === 'gameOver' ? 'gameOver' : 'gameplay'),
         };
@@ -2774,6 +2777,7 @@ export class Game {
         this._suppressToolbar = false;
         this._dragPhotoPrev = null;
         this.camera.zoom = 1;
+        this._applyPhotoDarkness();   // photoMode is null now → restores biome base darkness
         // Re-attach to the player (snaps position + zeroes trauma/offsets).
         if (this.player) this.camera.follow(this.player);
         this._updateJoystickEnabled();   // restore joystick for the underlying screen
@@ -2804,7 +2808,29 @@ export class Game {
         if (this.shareToast) { this.shareToast.timer -= dt; if (this.shareToast.timer <= 0) this.shareToast = null; }
         this.camera.update(dt);
     }
-    _photoFilterName() { return "KEEPER'S EYE"; }   // PR3 expands the filter table
+    _photoFilterName() {
+        const f = this.photoMode && PHOTO_FILTERS[this.photoMode.filterIdx];
+        return f ? f.name : "KEEPER'S EYE";
+    }
+    _cyclePhotoFilter() {
+        if (!this.photoMode) return;
+        this.photoMode.filterIdx = (this.photoMode.filterIdx + 1) % PHOTO_FILTERS.length;
+        this._applyPhotoDarkness();
+        this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
+    }
+    // GLOAM re-levers the darkness veil (same lever biomes use); others restore
+    // the biome's base darkness. Takes effect on the next frame's veil.
+    _applyPhotoDarkness() {
+        if (!this.lighting || !this.lighting.setQuality) return;
+        const f = this.photoMode ? PHOTO_FILTERS[this.photoMode.filterIdx] : null;
+        const mul = (this.photoMode && f && f.darkMul) ? f.darkMul : 1;
+        this.lighting.setQuality({ strength: GFX.darkness.strength * (this.mapDarkness ?? 1) * mul });
+    }
+    // The active filter's screen-space pass (drawn after the veil composite).
+    _drawPhotoFilter(ctx) {
+        const f = this.photoMode && PHOTO_FILTERS[this.photoMode.filterIdx];
+        if (f && f.draw) { try { f.draw(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT); } catch (e) { /* filter optional */ } }
+    }
     // SNAP: render one toolbar-free frame synchronously (so the shot excludes the
     // toolbar), capture it, compose the 'photo' card, and run the share ladder —
     // all inside the tap gesture so clipboard/share holds.
@@ -2841,6 +2867,7 @@ export class Game {
                 if (hit(b.rect)) {
                     this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
                     if (b.id === 'snap') this._snapPhoto();
+                    else if (b.id === 'filter') this._cyclePhotoFilter();
                     else if (b.id === 'grid') this.photoMode.gridOn = !this.photoMode.gridOn;
                     else if (b.id === 'hud') this.photoMode.hudShown = !this.photoMode.hudShown;
                     else if (b.id === 'zoomIn') this._photoZoomBy(EMBERGLASS.photo.zoomStep);
@@ -3943,10 +3970,11 @@ export class Game {
         // _suppressToolbar flag). Optionally re-show the gameplay HUD for an
         // annotated shot.
         if (this.photoMode) {
+            this._drawPhotoFilter(ctx);   // grades the world; part of a SNAP
             if (this.photoMode.hudShown) this.ui.draw(ctx, buildUIState(this));
             if (!this._suppressToolbar) {
                 if (this.photoMode.gridOn) this._drawPhotoGrid(ctx);
-                this.ui.drawPhotoToolbar(ctx, this.photoMode, this.camera.zoom, this.shareToast);
+                this.ui.drawPhotoToolbar(ctx, this.photoMode, this.camera.zoom, this.shareToast, this._photoFilterName());
             }
             return;
         }

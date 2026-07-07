@@ -72,6 +72,7 @@ import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
 import { loadRenderedProps } from '../../src/assets/RenderedWeaponProps.js';
 import { Enemy } from '../../src/entities/Enemy.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
+import { photoFilterIndexById } from '../../src/content/photoFilters.js';
 
 const ERR = [];
 window.__ERR = ERR;
@@ -91,6 +92,7 @@ const SHOWCASE = params.get('showcase');
 // ?photozoom=<z> sets the zoom (0.75–2.0) for veil-alignment screenshots.
 const PHOTO = params.get('photo') === '1';
 const PHOTOZOOM = parseFloat(params.get('photozoom') || '1');
+const PHOTOFILTER = params.get('filter');   // filter id (e.g. 'gloam'); default none
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -179,6 +181,7 @@ async function boot() {
             try {
                 game._enterPhotoMode('gameplay');
                 game.camera.zoom = PHOTOZOOM;
+                if (PHOTOFILTER) { game.photoMode.filterIdx = photoFilterIndexById(PHOTOFILTER); game._applyPhotoDarkness(); }
                 for (let i = 0; i < 4; i++) game.update(DT);   // let toolbar-fade settle deterministically
             } catch (e) { ERR.push('photo: ' + String(e && e.stack || e)); }
         }
