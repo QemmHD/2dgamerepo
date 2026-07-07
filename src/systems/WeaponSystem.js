@@ -26,7 +26,7 @@ const TARGET_MARGIN = 60;
 // Chaos pass: auto-aim only engages enemies within this radius (was the whole
 // screen). Shots no longer reach across the arena, so enemies close right up on
 // the player before dying — far more frantic. Radius weapons are unaffected.
-const AUTO_AIM_RANGE = 620;
+export const AUTO_AIM_RANGE = 620;
 import { WEAPONS } from '../content/weapons.js';
 
 function weaponMaxLevel(def) {
@@ -126,7 +126,7 @@ export class WeaponSystem {
         return w.level >= weaponMaxLevel(def);
     }
 
-    update(dt, player, enemies, projectiles, obstacleSystem = null, particles = null, audio = null) {
+    update(dt, player, enemies, projectiles, obstacleSystem = null, particles = null, audio = null, focus = null) {
         const hits = [];
         const killed = [];
         // los(ex, ey) → can the player "see" that point? Walls block melee
@@ -163,6 +163,10 @@ export class WeaponSystem {
             particles,
             inView,
             audio,
+            // KINDLED Focus targeting: the locked enemy (or null). The shared
+            // nearestEnemy helper prefers it when it's alive + passes inView, so
+            // single-target weapons concentrate fire; radius/orbit are untouched.
+            focus,
         };
         for (const w of this.owned) {
             const def = WEAPONS[w.id];

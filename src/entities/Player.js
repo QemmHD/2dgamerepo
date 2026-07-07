@@ -266,7 +266,12 @@ export class Player {
         }
         // Biome terrain (P1.2) folds in the same transient way as the dash
         // surge: never mutates base speed, reverses the moment the stamp stops.
-        const spd = this.speed * (this.speedBoostTimer > 0 ? this.speedBoostMul : 1) * this.terrainSlowMul;
+        // KINDLED Focus-Time: while aiming an ult the hero moves at ×0.60 (aimMoveMul,
+        // set by Game each frame) — folded into speed like the other transient
+        // move-multipliers so ONLY travel distance shrinks; every timer in this
+        // method (cast/composure/bob/swing) still runs on the real dt passed in.
+        const spd = this.speed * (this.speedBoostTimer > 0 ? this.speedBoostMul : 1)
+            * this.terrainSlowMul * (this.aimMoveMul ?? 1);
         if (this.iceSlipT > 0) {
             // Ice slick: heading changes only BLEND in, so the hero skids —
             // momentum carries across the patch and steering goes mushy.

@@ -933,7 +933,7 @@ function arcaneBoltUpdate(dt, owned, ctx) {
     owned.timer -= dt;
     if (owned.timer > 0) return;
 
-    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView);
+    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView, ctx.focus);
     if (!target) {
         if (owned.timer < 0) owned.timer = 0;
         return;
@@ -1157,7 +1157,12 @@ export function shockStrike(target, baseDamage, cfg, ctx) {
 // Nearest active enemy to the player. When an `inView` predicate is supplied,
 // only on-screen enemies are considered — auto-aim weapons should never fire
 // at a foe the player can't see off the edge of the screen.
-function nearestEnemy(player, enemies, inView = null) {
+function nearestEnemy(player, enemies, inView = null, focus = null) {
+    // KINDLED Focus targeting: a locked target wins when it's alive AND would
+    // pass the same on-screen/in-range gate a normal shot uses — so a focused
+    // enemy concentrates single-target fire, and an out-of-range/dead focus
+    // transparently falls back to the nearest scan.
+    if (focus && focus.active && (!inView || inView(focus.x, focus.y))) return focus;
     let best = null;
     let bestSq = Infinity;
     for (const e of enemies) {
@@ -1183,7 +1188,7 @@ function arcaneStormUpdate(dt, owned, ctx) {
     owned.timer -= dt;
     if (owned.timer > 0) return;
 
-    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView);
+    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView, ctx.focus);
     if (!target) {
         if (owned.timer < 0) owned.timer = 0;
         return;
@@ -1221,7 +1226,7 @@ function emberWispUpdate(dt, owned, ctx) {
     owned.timer -= dt;
     if (owned.timer > 0) return;
 
-    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView);
+    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView, ctx.focus);
     if (!target) {
         if (owned.timer < 0) owned.timer = 0;
         return;
@@ -1255,7 +1260,7 @@ function infernoStormUpdate(dt, owned, ctx) {
     owned.timer -= dt;
     if (owned.timer > 0) return;
 
-    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView);
+    const target = nearestEnemy(ctx.player, ctx.enemies, ctx.inView, ctx.focus);
     if (!target) {
         if (owned.timer < 0) owned.timer = 0;
         return;
@@ -1654,7 +1659,7 @@ function ashfangUpdate(dt, owned, ctx) {
 
     owned.timer -= dt;
     if (owned.timer > 0) return;
-    const target = nearestEnemy(p, ctx.enemies, ctx.inView);
+    const target = nearestEnemy(p, ctx.enemies, ctx.inView, ctx.focus);
     if (!target) {
         if (owned.timer < 0) owned.timer = 0;
         return;
@@ -1698,7 +1703,7 @@ function kindleRayUpdate(dt, owned, ctx) {
             && (!ctx.inView || ctx.inView(x, y))
             && (!ctx.los || ctx.los(x, y));
     };
-    const target = nearestEnemy(p, ctx.enemies, canHit);
+    const target = nearestEnemy(p, ctx.enemies, canHit, ctx.focus);
     if (!target) {
         st.on = false;
         // Stay primed: the first tick lands the instant a target appears.

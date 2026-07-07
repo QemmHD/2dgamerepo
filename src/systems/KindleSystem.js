@@ -21,8 +21,18 @@ export class KindleSystem {
         // Aimed-blink cooldown (independent of the meter — blink is free from
         // run 1). Drains in update() at wall-clock rate.
         this.blinkCooldown = 0;
-        // PR3 will populate: this.aiming = null; this.ultActive = null;
+        // Focus-Time aiming state (null | { t, angle, kind, ultName }); the ult
+        // is spent up-front when aiming BEGINS so a cancel can refund cleanly,
+        // and Game drives the hold/release lifecycle. ultActive reserved.
+        this.aiming = null;
+        this.ultActive = null;
     }
+
+    // Spend the full bar to commit an ult (called when aiming BEGINS). ultCost
+    // === max, so a ready bar zeroes; the ult's own kills recharge it via onKills.
+    spendUlt() { this.fill = Math.max(0, this.fill - KINDLE.ultCost); }
+    // Cancel refunds the committed bar (overlay/pause opened, or a deadzone tap).
+    refundAim() { this._add(KINDLE.fizzleRefund); }
 
     // Per-frame tick. PR1 only drains the blink cooldown; it always uses real
     // dt so a dodge recharges at wall-clock rate even once Focus Time (PR3)

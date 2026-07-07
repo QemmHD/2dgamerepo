@@ -399,6 +399,12 @@ export class UISystem {
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar && !gameState.paused) {
             this._drawAbilityCooldowns(ctx, gameState);
             this._drawKindleMeter(ctx, gameState);
+            // KINDLED: the Focus reticle over the locked enemy, the world-space
+            // ult aim arrow + ground template while aiming, and the slow-mo
+            // vignette. Kept in the live-play gate (no overlay/pause).
+            this._drawFocusReticle(ctx, gameState);
+            this._drawKindleAim(ctx, gameState);
+            this._drawFocusVignette(ctx, gameState);
         }
         this._drawHpBar(ctx, gameState);
         this._drawXPBar(ctx, gameState);
@@ -1154,12 +1160,127 @@ export class UISystem {
         ctx.lineWidth = 2;
         ctx.strokeStyle = k.ready ? 'rgba(255, 210, 150, 0.85)' : 'rgba(255, 180, 120, 0.45)';
         ctx.stroke();
-        // Label above the bar.
-        ctx.fillStyle = k.ready ? '#ffe6b8' : 'rgba(255, 255, 255, 0.72)';
+        // Label above the bar — the hero's ult name when ready, an AIMING
+        // countdown while held, else just KINDLE.
+        ctx.fillStyle = k.ready || k.aiming ? '#ffe6b8' : 'rgba(255, 255, 255, 0.72)';
         ctx.font = `700 13px ${FONT}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(k.ready ? 'KINDLE — READY' : 'KINDLE', x + 2, y - 3);
+        const label = k.aiming
+            ? `${(k.ultName || 'ULT').toUpperCase()} — AIMING`
+            : (k.ready ? `${(k.ultName || 'KINDLE').toUpperCase()} — READY` : 'KINDLE');
+        ctx.fillText(label, x + 2, y - 3);
+        ctx.restore();
+    }
+
+    // World→screen for the HUD's world-space draws (identity/screen-space ctx at
+    // ui.draw time — same mapping the boss arrow uses).
+    _worldToScreen(state, wx, wy) {
+        const cam = state.camera || { x: 0, y: 0 };
+        return [(wx - cam.x) + INTERNAL_WIDTH / 2, (wy - cam.y) + INTERNAL_HEIGHT / 2];
+    }
+
+    // KINDLED — the Focus reticle: a cached-glow ring over the locked enemy.
+    _drawFocusReticle(ctx, state) {
+        const ft = state.focusTarget;
+        if (!ft) return;
+        const [sx, sy] = this._worldToScreen(state, ft.x, ft.y);
+        const r = (ft.radius || 20) + 12;
+        const now = performanceNowSafe();
+        const spin = now * 0.004;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = getGlowSprite('#ff8a4a');
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(g, sx - r, sy - r, r * 2, r * 2);
+        ctx.globalAlpha = 0.95;
+        ctx.strokeStyle = '#ffd0a0';
+        ctx.lineWidth = 2.5;
+        // Four reticle ticks (rotating) — flat strokes, no gradient.
+        for (let i = 0; i < 4; i++) {
+            const a = spin + i * Math.PI / 2;
+            ctx.beginPath();
+            ctx.moveTo(sx + Math.cos(a) * (r - 6), sy + Math.sin(a) * (r - 6));
+            ctx.lineTo(sx + Math.cos(a) * (r + 4), sy + Math.sin(a) * (r + 4));
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+    }
+
+    // KINDLED — while aiming an ult: a world-space aim arrow from the player + the
+    // ult's ground template (ring / lane / cone / line / self) along the angle.
+    _drawKindleAim(ctx, state) {
+        const k = state.kindle;
+        if (!k || !k.aiming || !state.player) return;
+        const a = k.aiming;
+        const [px, py] = this._worldToScreen(state, state.player.x, state.player.y);
+        const col = k.ultColor || '#ff8c4a';
+        const range = k.range || 620;
+        const ux = Math.cos(a.angle), uy = Math.sin(a.angle);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = col;
+        ctx.fillStyle = col;
+        // Ground template.
+        ctx.globalAlpha = 0.22;
+        ctx.lineWidth = 3;
+        if (a.kind === 'ring' || a.kind === 'self') {
+            const R = a.kind === 'self' ? Math.min(range, 420) : range;
+            const cx = a.kind === 'self' ? px : px + ux * Math.min(range * 0.5, 480);
+            const cy = a.kind === 'self' ? py : py + uy * Math.min(range * 0.5, 480);
+            ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+        } else if (a.kind === 'lane' || a.kind === 'line') {
+            const halfW = a.kind === 'lane' ? 170 : 60;
+            ctx.save();
+            ctx.translate(px, py); ctx.rotate(a.angle);
+            ctx.fillRect(0, -halfW, range, halfW * 2);
+            ctx.globalAlpha = 0.5; ctx.strokeRect(0, -halfW, range, halfW * 2);
+            ctx.restore();
+        } else if (a.kind === 'cone') {
+            const half = (70 * Math.PI / 180) / 2;
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.arc(px, py, range, a.angle - half, a.angle + half);
+            ctx.closePath();
+            ctx.fill();
+            ctx.globalAlpha = 0.5; ctx.stroke();
+        }
+        // Aim arrow.
+        ctx.globalAlpha = 0.95;
+        ctx.lineWidth = 4;
+        const al = 90;
+        ctx.beginPath();
+        ctx.moveTo(px + ux * 30, py + uy * 30);
+        ctx.lineTo(px + ux * al, py + uy * al);
+        ctx.stroke();
+        const hx = px + ux * al, hy = py + uy * al, pa = Math.PI * 0.82;
+        ctx.beginPath();
+        ctx.moveTo(hx, hy);
+        ctx.lineTo(hx + Math.cos(a.angle + pa) * 18, hy + Math.sin(a.angle + pa) * 18);
+        ctx.lineTo(hx + Math.cos(a.angle - pa) * 18, hy + Math.sin(a.angle - pa) * 18);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // KINDLED — a cool amber Focus-Time vignette that ramps in over the hold so
+    // the world visibly "slows". (Full-screen gradient is an accepted HUD pattern
+    // here, like the low-HP/hit vignettes.)
+    _drawFocusVignette(ctx, state) {
+        const k = state.kindle;
+        if (!k || !k.aiming) return;
+        const t = clamp01((k.aiming.tHeld || 0) / (k.aiming.tMax || 2.5));
+        const strength = 0.22 + 0.18 * t;
+        const g = ctx.createRadialGradient(
+            INTERNAL_WIDTH / 2, INTERNAL_HEIGHT / 2, INTERNAL_HEIGHT * 0.28,
+            INTERNAL_WIDTH / 2, INTERNAL_HEIGHT / 2, INTERNAL_HEIGHT * 0.72);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(1, `rgba(24, 12, 30, ${strength})`);
+        ctx.save();
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         ctx.restore();
     }
 

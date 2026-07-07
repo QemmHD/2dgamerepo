@@ -63,6 +63,29 @@ export class HazardSystem {
         for (const hz of game.hazards) {
             if (!hz.active) continue;
             hz.age += dt;
+            // KINDLED — Gruk's thorn ring (Unbroken Bulwark): the FIRST hazard
+            // that damages ENEMIES, not the player. A continuous 0.4s-tick DoT
+            // over its lifetime; corpses route into game._hazardKilled so they
+            // pay loot + charge Kindle like any kill. No LOS gate — a player-cast
+            // ring should not be shielded from enemies by walls.
+            if (hz.kind === 'thornRing') {
+                if (hz.age >= hz.lifetime) { hz.active = false; continue; }
+                hz.tickTimer -= dt;
+                if (hz.tickTimer <= 0) {
+                    hz.tickTimer = 0.4;
+                    const amt = hz.dps * 0.4;
+                    let nb = 6;   // cap floating numbers so a full ring can't flood
+                    for (const e of game.enemies) {
+                        if (!e.active) continue;
+                        const dx = e.x - hz.x, dy = e.y - hz.y;
+                        if (dx * dx + dy * dy > hz.r * hz.r) continue;
+                        e.takeDamage(amt);
+                        if (nb > 0) { game.damageNumbers.push(new DamageNumber(e.x, e.y - e.radius, amt, hz.rim || '#c8e06a')); nb--; }
+                        if (!e.active) game._hazardKilled.push(e);
+                    }
+                }
+                continue;
+            }
             // ── P1.2 biome patches: one shared branch for all four kinds.
             // Telegraph first (no effect during warn), then stamp terrain
             // effects / tick damage only while the player's CENTER is inside
@@ -352,6 +375,27 @@ export class HazardSystem {
             }
             ctx.restore();
             if (L && hz.age >= hz.warn) L.addLight(hz.x, hz.y, hz.r + 40, hz.color || LIGHT_COLORS.fire, 0.7, 2);
+        }
+
+        // KINDLED — Gruk's thorn ring: a flat thorn-green field + a bright rim
+        // that pulses and fades near the end of life (iOS-safe: no gradients).
+        for (const hz of game.hazards) {
+            if (!hz.active || hz.kind !== 'thornRing') continue;
+            if (!game._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
+            const left = 1 - Math.min(1, hz.age / Math.max(0.001, hz.lifetime));
+            const pulse = 0.5 + 0.5 * Math.sin(hz.age * 5);
+            const rim = hz.rim || '#c8e06a';
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.12 * (0.4 + 0.6 * left);
+            ctx.fillStyle = rim;
+            ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.fill();
+            ctx.globalAlpha = (0.45 + 0.3 * pulse) * (0.4 + 0.6 * left);
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = rim;
+            ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI); ctx.stroke();
+            ctx.restore();
+            if (L) L.addLight(hz.x, hz.y, hz.r + 30, rim, 0.3, 2);
         }
 
         // ── P1.2 biome signature patches — procedural ground decals. ──────
