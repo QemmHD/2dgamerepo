@@ -398,6 +398,7 @@ export class UISystem {
         this._drawLoadoutChips(ctx, gameState);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar && !gameState.paused) {
             this._drawAbilityCooldowns(ctx, gameState);
+            this._drawKindleMeter(ctx, gameState);
         }
         this._drawHpBar(ctx, gameState);
         this._drawXPBar(ctx, gameState);
@@ -1116,6 +1117,49 @@ export class UISystem {
             ctx.fillText(nm, cx, cy + R + 5);
             cx -= (R * 2 + gap);
         }
+        ctx.restore();
+    }
+
+    // KINDLED — the Kindle ult meter: a flat wand-shaped bar sitting just above
+    // the ability-cooldown pip cluster (bottom-right). Fills 0→max; when full it
+    // pulses READY. No per-frame gradient (cached-glow / flat-fill discipline).
+    _drawKindleMeter(ctx, state) {
+        const k = state.kindle;
+        if (!k) return;
+        const sa = this.renderer.safeArea;
+        const w = 300, h = 16;
+        const x = INTERNAL_WIDTH - sa.right - 56 - w;
+        // Above the pip discs (pips: cy = H - sa.bottom - 104, R = 30).
+        const y = INTERNAL_HEIGHT - sa.bottom - 104 - 30 - 42;
+        const frac = clamp01(k.fill / (k.max || 1));
+        const now = performanceNowSafe();
+        const col = k.ready ? '#ffd27a' : (k.ultColor || '#ff8c4a');
+        ctx.save();
+        // Track.
+        roundRectPath(ctx, x, y, w, h, 8);
+        ctx.fillStyle = 'rgba(12, 16, 24, 0.82)';
+        ctx.fill();
+        // Fill (flat ember; pulse alpha while READY).
+        if (frac > 0) {
+            ctx.save();
+            roundRectPath(ctx, x, y, w, h, 8);
+            ctx.clip();
+            ctx.fillStyle = col;
+            ctx.globalAlpha = k.ready ? (0.72 + 0.28 * (0.5 + 0.5 * Math.sin(now * 0.008))) : 1;
+            ctx.fillRect(x, y, Math.max(2, w * frac), h);
+            ctx.restore();
+        }
+        // Rim.
+        roundRectPath(ctx, x, y, w, h, 8);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = k.ready ? 'rgba(255, 210, 150, 0.85)' : 'rgba(255, 180, 120, 0.45)';
+        ctx.stroke();
+        // Label above the bar.
+        ctx.fillStyle = k.ready ? '#ffe6b8' : 'rgba(255, 255, 255, 0.72)';
+        ctx.font = `700 13px ${FONT}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(k.ready ? 'KINDLE — READY' : 'KINDLE', x + 2, y - 3);
         ctx.restore();
     }
 

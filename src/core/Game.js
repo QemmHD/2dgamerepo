@@ -27,6 +27,8 @@ import {
     LIEUTENANT,
     BIOME_HAZARD,
     SKIP_ONBOARDING,
+    KINDLE,
+    BLINK,
 } from '../config/GameConfig.js';
 import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
 import { Easing } from './Easing.js';
@@ -42,6 +44,7 @@ import { EnemyProjectile } from '../entities/EnemyProjectile.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 import { Spawner } from '../systems/Spawner.js';
 import { WeaponSystem } from '../systems/WeaponSystem.js';
+import { KindleSystem } from '../systems/KindleSystem.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
@@ -311,6 +314,9 @@ export class Game {
                 if (e.code === 'Digit8' || e.code === 'Numpad8') { e.preventDefault(); this._debugJumpToMinute(10); return; }
                 if (e.code === 'Digit9' || e.code === 'Numpad9') { e.preventDefault(); this._debugJumpToMinute(20); return; }
                 if (e.code === 'Digit0' || e.code === 'Numpad0') { e.preventDefault(); this._debugJumpToMinute(30); return; }
+                // KINDLED: grant +50 Kindle so the meter / (PR3) ult path can be
+                // tested without grinding kills.
+                if (e.code === 'KeyK') { e.preventDefault(); this.kindleSystem.debugGrant(50); return; }
             }
             // Pause toggle — gameplay only, never while a level-up/chest
             // overlay is up (those already freeze the world).
@@ -321,6 +327,14 @@ export class Game {
                 return;
             }
             if (this.paused) return; // swallow other keys while paused
+            // KINDLED — aimed blink (Space): the universal dodge verb, live from
+            // run 1. Blocked behind the same pick-one overlays as pause (those
+            // freeze the world); reaches here only in live gameplay.
+            if (e.code === 'Space' && !this.chestReward && !this.upgradeChoices && !this.altar) {
+                e.preventDefault();
+                this._tryBlink();
+                return;
+            }
             if (this.chestReward) {
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault();
@@ -683,6 +697,10 @@ export class Game {
         // The run begins with the weapon chosen in the loadout (defaults to the
         // Cinderbolt). Other weapons still appear as level-up choices.
         this.weaponSystem = new WeaponSystem(resolveStartingWeapon(this.saveSystem.data));
+        // KINDLED (update #3): the Kindle ult meter + aimed-blink cooldown.
+        // Built here (same lifecycle as weaponSystem) so every run/restart
+        // resets the meter to startFill and the blink cooldown to 0.
+        this.kindleSystem = new KindleSystem();
         this.collisionSystem = new CollisionSystem();
         this.upgradeSystem = new UpgradeSystem();
         this.passiveSystem = new PassiveSystem();
@@ -1962,6 +1980,58 @@ export class Game {
         if (d > max && d > 0) { ent.x = a.x + (dx / d) * max; ent.y = a.y + (dy / d) * max; }
     }
 
+    // KINDLED — the aimed blink (Space / touch button). A short instant dash in
+    // the direction the player is MOVING (else facing), gated by the blink
+    // cooldown only (free from run 1, independent of the Kindle meter). Placement
+    // is wall- and arena-safe: the destination steps back in minGap increments
+    // while the straight path is obstacle-blocked, then slides out of any wall it
+    // lands in (resolveCircle) and is clamped inside a sealed boss ring
+    // (_confineToArena) — so a blink can never tunnel through geometry or escape
+    // an arena. On success it revives Player.dashFx (the orphaned afterimage
+    // smear) and grants i-frames.
+    _tryBlink() {
+        const k = this.kindleSystem;
+        if (!k || !k.blinkReady()) return;
+        const p = this.player;
+        if (!p || p.hp <= 0) return;
+
+        // Aim: current movement vector, else the facing direction (a dodge goes
+        // where you're heading, NOT toward the target — deliberately not aimAngle).
+        const mv = this.input.getMovement();
+        let ang;
+        if (mv && (mv.x !== 0 || mv.y !== 0)) {
+            ang = Math.atan2(mv.y, mv.x);
+        } else {
+            const f = p.facing;
+            ang = f === 'up' ? -Math.PI / 2 : f === 'left' ? Math.PI
+                : f === 'right' ? 0 : Math.PI / 2;
+        }
+        const dx = Math.cos(ang), dy = Math.sin(ang);
+        const fromX = p.x, fromY = p.y;
+
+        // Longest clear distance ≤ BLINK.distance: shrink in minGap steps while
+        // the segment to the destination is wall-blocked.
+        let dist = BLINK.distance;
+        let tx = fromX + dx * dist, ty = fromY + dy * dist;
+        while (dist > 0 && this.obstacleSystem.segmentBlocked(fromX, fromY, tx, ty)) {
+            dist -= BLINK.minGap;
+            tx = fromX + dx * dist; ty = fromY + dy * dist;
+        }
+        if (dist <= 0) return;   // fully walled in — no blink, no cooldown burned
+
+        // Commit: land, slide out of any obstacle overlap, keep inside the arena.
+        p.x = tx; p.y = ty;
+        const r = this.obstacleSystem.resolveCircle(p.x, p.y, p.radius);
+        p.x = r.x; p.y = r.y;
+        if (this.arena) this._confineToArena(p, p.radius);
+
+        // Feel: i-frames, the revived dashFx smear along the travel path, the cue.
+        p.invincibleTimer = Math.max(p.invincibleTimer, BLINK.iframes);
+        p.dashFx = { fromX, fromY, toX: p.x, toY: p.y, age: 0, dur: 0.28 };
+        this.audio.dash();
+        k.startBlinkCooldown();
+    }
+
     // Fold the run-scale layer (difficulty × active modifiers) into a freshly-
     // built wave state. getState() returns a new object literal each call, so
     // mutating it here can't compound across frames. eliteChance + cap stay
@@ -2966,8 +3036,16 @@ export class Game {
 
         this.time += dt;
 
+        // KINDLED: snapshot the (cached) active boss's HP so we can charge the
+        // Kindle meter by the fraction of its MAX HP dealt this frame — across
+        // ALL damage sources (weapons, burn DoT, projectile collisions). One
+        // read of the frame-stable ref; no per-frame enemy scan.
+        const _kBoss = this.activeBossRef;
+        const _kBossHp0 = (_kBoss && _kBoss.maxHp > 0) ? _kBoss.hp : null;
+
         this._updateComboAndObjectives(dt);
         this._updateDirectors(dt);
+        this.kindleSystem.update(dt);   // tick the blink cooldown (real dt)
         const weaponResult = this._updatePlayerAndWeapons(dt);
         const statusResult = this._updateEnemies(dt);
         this._updateProjectiles(dt);
@@ -2980,6 +3058,10 @@ export class Game {
         this.hazardSystem.update(dt, this);
         this._updatePickups(dt);
         this._resolveCombat(dt, weaponResult, statusResult);
+        // Charge the meter from boss damage dealt this frame (skip on heal/no-op).
+        if (_kBossHp0 != null && _kBoss.hp < _kBossHp0) {
+            this.kindleSystem.onBossDamage((_kBossHp0 - _kBoss.hp) / _kBoss.maxHp);
+        }
         this._updateWorldFx(dt);
         this._updateRewardOverlays(dt);
         this._updateEnemyScanAndCleanup(dt);
@@ -3367,6 +3449,9 @@ export class Game {
 
         if (allKilled.length > 0) {
             this.kills += allKilled.length;
+            // KINDLED charge hook 1: feed the Kindle meter from this frame's
+            // kills (reads e.elite/e.boss per corpse — no scan of the live field).
+            this.kindleSystem.onKills(allKilled);
             this._addCombo(allKilled.length);
             this.audio.kill();
             // Blooddrinker lifesteal-on-kill (capped by the sustained-heal budget).
