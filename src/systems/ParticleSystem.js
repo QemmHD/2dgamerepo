@@ -417,11 +417,17 @@ export class ParticleSystem {
     }
 
     _view(camera, margin) {
+        // Photo-mode zoom<1 widens the visible world; grow the half-extents by
+        // 1/zoom so world particles aren't culled short of the frame edges (at
+        // zoom 1 this is byte-identical to the plain screen half-extent).
+        const z = camera.zoom || 1;
+        const hw = z < 1 ? INTERNAL_W / (2 * z) : INTERNAL_W / 2;
+        const hh = z < 1 ? INTERNAL_H / (2 * z) : INTERNAL_H / 2;
         return {
-            left: camera.x - INTERNAL_W / 2 - margin,
-            right: camera.x + INTERNAL_W / 2 + margin,
-            top: camera.y - INTERNAL_H / 2 - margin,
-            bottom: camera.y + INTERNAL_H / 2 + margin,
+            left: camera.x - hw - margin,
+            right: camera.x + hw + margin,
+            top: camera.y - hh - margin,
+            bottom: camera.y + hh + margin,
         };
     }
 }

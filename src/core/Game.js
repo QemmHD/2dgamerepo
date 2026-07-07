@@ -1721,7 +1721,8 @@ export class Game {
     _updateJoystickEnabled() {
         if (!this.input.touch) return;
         const blocked = this.screen !== 'gameplay' || this.paused ||
-            !!this.upgradeChoices || !!this.chestReward || !!this.altar || !!this.victory;
+            !!this.upgradeChoices || !!this.chestReward || !!this.altar || !!this.victory ||
+            !!this.photoMode;   // the Lens owns touches itself (drag-pan)
         this.input.touch.setEnabled(!blocked);
     }
 
@@ -2762,6 +2763,9 @@ export class Game {
         this.camera.shakeOffsetX = 0; this.camera.shakeOffsetY = 0; this.camera.shakeAngle = 0;
         this.camera.zoom = 1;
         this._dragPhotoPrev = null;
+        // The Lens drives its own drag-pan; disable the joystick so it can't
+        // double-count as a second pan (photoMode is in the blocked set).
+        this._updateJoystickEnabled();
         if (this.audio && this.audio.click) this.audio.click();
     }
     _exitPhotoMode() {
@@ -2772,6 +2776,7 @@ export class Game {
         this.camera.zoom = 1;
         // Re-attach to the player (snaps position + zeroes trauma/offsets).
         if (this.player) this.camera.follow(this.player);
+        this._updateJoystickEnabled();   // restore joystick for the underlying screen
         if (this.audio && this.audio.click) this.audio.click();
     }
     _photoZoomBy(factor) {
@@ -2828,10 +2833,12 @@ export class Game {
     _tryPhotoAt(clientX, clientY, phase) {
         if (!this.photoMode) return false;
         const pos = this.renderer.clientToInternal(clientX, clientY);
+        // Local hit-test (the constructor's inRect closure is out of scope here).
+        const hit = (r) => pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h;
         if (phase === 'down') {
             const rects = this.ui.getPhotoToolbarRects();
             for (const b of rects) {
-                if (inRect(pos, b.rect, 0)) {
+                if (hit(b.rect)) {
                     this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
                     if (b.id === 'snap') this._snapPhoto();
                     else if (b.id === 'grid') this.photoMode.gridOn = !this.photoMode.gridOn;
