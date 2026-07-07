@@ -36,6 +36,11 @@ export class CollisionSystem {
     resolve(dt, player, enemies, projectiles) {
         const killed = [];
         const hits = [];
+        // Shared combo context — hits/killed are stable array refs and player
+        // never changes across this call, and applyCombo only pushes to the
+        // arrays (never persists ctx), so one hoisted object is byte-identical
+        // to a fresh literal per hit and avoids per-projectile-hit GC churn.
+        const comboCtx = { hits, killed, player };
 
         for (const p of projectiles) {
             if (!p.active) continue;
@@ -65,7 +70,7 @@ export class CollisionSystem {
                 // kill, never the combo's. This one hit choke point covers every
                 // projectile weapon.
                 else if (p.element === 'fire' || p.element === 'frost') {
-                    applyCombo(e, p.element, p.damage, { hits, killed, player });
+                    applyCombo(e, p.element, p.damage, comboCtx);
                 }
 
                 // Ricochet-on-kill (Arcane Bolt signature): a lethal hit with
