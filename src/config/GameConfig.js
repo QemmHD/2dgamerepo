@@ -132,6 +132,7 @@ export const AURA = {
 // ── Enemies ────────────────────────────────────────────────────────────
 export const ENEMY = {
     slime: {
+        label: 'Gel Slime',
         hp: 34,
         speed: 138,        // chaos pass: trash closes faster so it actually pressures
         radius: 55,
@@ -139,6 +140,7 @@ export const ENEMY = {
         xpValue: 1,
     },
     bat: {
+        label: 'Cave Bat',
         hp: 20,
         speed: 250,
         radius: 45,
@@ -146,6 +148,7 @@ export const ENEMY = {
         xpValue: 1,
     },
     brute: {
+        label: 'Hollow Brute',
         hp: 95,
         speed: 120,        // sped up — a big enemy that was too easy to out-walk
         radius: 70,
@@ -154,6 +157,7 @@ export const ENEMY = {
         visualScale: 1.4,  // real LPC orc body — scaled up to fill the big hitbox
     },
     crawler: {
+        label: 'Ashen Crawler',
         hp: 26,
         speed: 205,
         radius: 40,
@@ -163,6 +167,7 @@ export const ENEMY = {
     // Ranged threat: a slow drifter that keeps its distance and lobs a
     // telegraphed bolt the player must sidestep.
     spitter: {
+        label: 'Bile Spitter',
         hp: 30,
         speed: 95,
         radius: 44,
@@ -179,6 +184,7 @@ export const ENEMY = {
     // Burst threat: stalks slowly, then winds up and dashes through the
     // player's last position — punishes standing still.
     charger: {
+        label: 'Cinder Charger',
         hp: 58,
         speed: 74,
         radius: 50,
@@ -194,6 +200,7 @@ export const ENEMY = {
     // Swarm threat: tiny, very fast, very fragile — comes in numbers and
     // punishes a stationary player but dies to a stiff breeze.
     mite: {
+        label: 'Ember Mite',
         hp: 10,
         speed: 310,
         radius: 28,
@@ -204,6 +211,7 @@ export const ENEMY = {
     // Anchor threat: huge, slow, and very tanky with heavy contact damage —
     // a wall you must kite around while it lumbers after you.
     juggernaut: {
+        label: 'Slag Juggernaut',
         hp: 245,
         speed: 72,         // sped up — the anchor still lumbers but no longer a stationary wall
         radius: 92,
@@ -215,6 +223,7 @@ export const ENEMY = {
     // you can react. Dies to a sneeze, but a pack of them forces constant
     // movement — the fast/fragile extreme.
     speedDemon: {
+        label: 'Wisp Stalker',
         hp: 9,
         speed: 330,         // a touch under the player's base speed so it's
                             // outrunnable early and only catches you as it scales
@@ -229,6 +238,7 @@ export const ENEMY = {
     // demands sustained fire to drop, not the juggernaut's modest pool. Slow
     // enough to kite, tanky enough to matter.
     dreadhulk: {
+        label: 'Dread Hulk',
         hp: 460,
         speed: 64,
         radius: 102,
@@ -243,6 +253,7 @@ export const ENEMY = {
     // Brawler: a mid-weight bruiser with real pace — bridges the gap between
     // fast trash and the slow heavies, so the front line has teeth.
     brawler: {
+        label: 'Ashen Brawler',
         hp: 150,
         speed: 132,
         radius: 62,
@@ -253,16 +264,19 @@ export const ENEMY = {
     // ── Imported LPC humanoid models (real spritesheets, directional walk). ──
     // Skeleton: a brisk humanoid raider — the headline LPC model.
     skeleton: {
+        label: 'Bone Raider',
         hp: 80, speed: 150, radius: 44, contactDamage: 14, xpValue: 3,
         visualScale: 1.0, tint: '#e8eef0',
     },
     // Zombie: a slow, tanky shambler.
     zombie: {
+        label: 'Rotwalker',
         hp: 130, speed: 90, radius: 48, contactDamage: 16, xpValue: 3,
         visualScale: 1.05, tint: '#8fbf6a',
     },
     // Ember Skeleton: a faster, fire-scorched skeleton for the hotter biomes.
     emberskeleton: {
+        label: 'Ember Skeleton',
         hp: 90, speed: 165, radius: 44, contactDamage: 16, xpValue: 3,
         visualScale: 1.0, tint: '#ff7a3c',
     },
@@ -270,6 +284,7 @@ export const ENEMY = {
     // nearby Hollow — kill it first or the front line never thins. Heal rate +
     // radius are capped so clusters can't become unkillable.
     healer: {
+        label: 'Grave Cantor',
         hp: 78,
         speed: 122,
         radius: 46,
@@ -287,6 +302,7 @@ export const ENEMY = {
     // bubble onto nearby Hollow. The shield is a flat multiplier with a short
     // refresh, so popping the Shielder instantly drops its protection.
     shielder: {
+        label: 'Bulwark Warden',
         hp: 130,
         speed: 96,
         radius: 56,
@@ -308,6 +324,7 @@ export const ENEMY = {
     // behavior; the split resolves at the death site (Game._splitOnDeath),
     // children are plain types so a split can never recurse.
     splitter: {
+        label: 'Cleaving Ooze',
         hp: 74,
         speed: 112,
         radius: 62,
@@ -323,6 +340,7 @@ export const ENEMY = {
     // dodge is telegraphed exactly like a boss zone. Dies in its own blast
     // — self-detonation never routes through the kill/reward path.
     bomber: {
+        label: 'Cinder Bomber',
         hp: 24,
         speed: 262,
         radius: 34,
@@ -342,6 +360,7 @@ export const ENEMY = {
     // Game._spawnBossSupport — the same alive-cap gate boss summons use —
     // so summon pressure can never blow past the wave cap / maxEnemyCap.
     summoner: {
+        label: 'Hollow Summoner',
         hp: 66,
         speed: 98,
         radius: 46,
@@ -360,6 +379,7 @@ export const ENEMY = {
     // FLANKING the player — punishes tunnel-visioning one approach lane.
     // The windup arc is the pre-blink tell; arrival sparkles mark both ends.
     teleporter: {
+        label: 'Blink Wraith',
         hp: 38,
         speed: 205,
         radius: 44,
@@ -1466,6 +1486,15 @@ export const LIGHT_COLORS = {
 export const UI = {
     enemyHealthBar: { width: 60, height: 6, marginAboveRadius: 14 },
     playerHealthBar: { width: 80, height: 8, marginAboveSpriteHalf: 16 },
+};
+
+// ── EMBERGLASS (roadmap #2): share-card compositor + Keeper's Lens photo mode.
+// All values tunable; the 1200×630 card size is a fixed OG-image contract five
+// later updates rely on (see docs/CARDS.md).
+export const EMBERGLASS = {
+    card: { w: 1200, h: 630, frame: 8, thumbW: 360, thumbH: 189 },
+    photo: { panSpeed: 900, zoomMin: 0.75, zoomMax: 2.0, zoomStep: 1.12, toolbarFade: 2.5, worldMargin: 200 },
+    toast: { duration: 1.6 },
 };
 
 export const DEBUG_DEFAULT_ON = true;

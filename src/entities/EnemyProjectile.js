@@ -10,10 +10,11 @@ import { getGlowSprite } from '../assets/ProceduralSprites.js';
 const WORLD_MARGIN = 120;
 
 export class EnemyProjectile {
-    // opts (all optional): { homing, turnRate, maxSpeed, color, radius, lifetime }
+    // opts (all optional): { homing, turnRate, maxSpeed, color, radius, lifetime, sourceLabel }
     // Plain straight bolts pass no opts and behave exactly as before. Homing
     // bolts steer toward the player each frame (capped turn rate) — used by the
     // boss "seeker" moves so the player has to juke, not just sidestep.
+    // sourceLabel = { label, epithet, boss } for death-card killer attribution.
     constructor(x, y, vx, vy, damage, opts = {}) {
         this.x = x;
         this.y = y;
@@ -28,6 +29,7 @@ export class EnemyProjectile {
         this.homing = !!opts.homing;
         this.turnRate = opts.turnRate ?? 0;     // radians/sec the heading can turn
         this.maxSpeed = opts.maxSpeed ?? 0;     // homing speed clamp
+        this.sourceLabel = opts.sourceLabel ?? null;   // killer attribution (cards)
         this.sprite = getGlowSprite(opts.color ?? ENEMY_PROJECTILE.color);
         // Fading motion trail (matches the player-bolt look) so hostile bolts
         // read as fast-moving energy. Sampled sparsely + capped; additive.

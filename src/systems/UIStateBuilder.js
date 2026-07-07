@@ -216,6 +216,11 @@ export function buildUIState(game) {
     // Battle-pass XP from this run (set in _enterGameOver) — the game-over
     // summary draws it, so the meta reward is VISIBLE, not silently banked.
     base.bpResult = game.bpResult;
+    // EMBERGLASS: the minted share card (a live canvas handle, by reference) +
+    // the transient share toast. Null-guarded on consumption; carried like
+    // base.player/base.camera above (no serialization, no per-frame alloc).
+    base.mintedCard = game.mintedCard;
+    base.shareToast = game.shareToast;
     base.paused = game.paused;
     base.shakeEnabled = game.shakeEnabled;
     base.rerolls = game.rerolls;

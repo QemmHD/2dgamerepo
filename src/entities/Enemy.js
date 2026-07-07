@@ -422,7 +422,9 @@ export class Enemy {
                 if (this.windupTimer <= 0 && enemyProjectiles) {
                     const ps = this.def.projectileSpeed;
                     enemyProjectiles.push(
-                        new EnemyProjectile(this.x, this.y, nx * ps, ny * ps, this.projectileDamage)
+                        new EnemyProjectile(this.x, this.y, nx * ps, ny * ps, this.projectileDamage, {
+                            sourceLabel: { label: this.def.label ?? this.name, epithet: this.epithet, boss: this.boss },
+                        })
                     );
                 }
             } else if (this.attackTimer <= 0 && len <= this.def.fireRange) {
@@ -1243,6 +1245,9 @@ function runBossAI(e, dt, player, out) {
 // EnemyProjectiles into the existing enemy-bolt loop (no new damage path).
 export function commitBossAttack(e, atk, player, out) {
     if (!atk || !out) return;
+    // Killer attribution for the EMBERGLASS death card — every bolt this boss
+    // fires carries "fell to <boss>, <epithet>".
+    const src = { label: e.def?.label ?? e.name, epithet: e.epithet, boss: e.boss };
     if (atk.kind === 'shockwave' && out.hazards) {
         out.hazards.push({
             kind: 'shockwave',
@@ -1271,7 +1276,8 @@ export function commitBossAttack(e, atk, player, out) {
                 e.x, e.y,
                 Math.cos(a) * atk.projectileSpeed,
                 Math.sin(a) * atk.projectileSpeed,
-                atk.projectileDamage
+                atk.projectileDamage,
+                { sourceLabel: src }
             ));
         }
     } else if (atk.kind === 'charge') {
@@ -1309,7 +1315,8 @@ export function commitBossAttack(e, atk, player, out) {
             const off = (i - (count - 1) / 2) * spacing;
             const ox = e.x + px * off, oy = e.y + py * off;
             out.enemyProjectiles.push(new EnemyProjectile(
-                ox, oy, Math.cos(ang) * spd, Math.sin(ang) * spd, atk.projectileDamage ?? 16));
+                ox, oy, Math.cos(ang) * spd, Math.sin(ang) * spd, atk.projectileDamage ?? 16,
+                { sourceLabel: src }));
         }
     } else if (atk.kind === 'seekers' && out.enemyProjectiles) {
         // A handful of slow HOMING orbs fanned out — they curve after the
@@ -1322,7 +1329,7 @@ export function commitBossAttack(e, atk, player, out) {
             out.enemyProjectiles.push(new EnemyProjectile(
                 e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd, atk.projectileDamage ?? 26, {
                     homing: true, turnRate: atk.turnRate ?? 3.6, maxSpeed: atk.maxSpeed ?? 600,
-                    color: atk.color, lifetime: 5.0,
+                    color: atk.color, lifetime: 5.0, sourceLabel: src,
                 }));
         }
     } else if (atk.kind === 'zones' && out.hazards) {
@@ -1370,7 +1377,7 @@ export function commitBossAttack(e, atk, player, out) {
             const a = base + (count > 1 ? (i / (count - 1) - 0.5) * spread : 0);
             out.enemyProjectiles.push(new EnemyProjectile(
                 e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd, atk.projectileDamage ?? 18,
-                atk.color ? { color: atk.color } : undefined));
+                { ...(atk.color ? { color: atk.color } : {}), sourceLabel: src }));
         }
     } else if (atk.kind === 'cross' && out.enemyProjectiles) {
         // SIGNATURE — rotating lattice: bolts along N evenly-spaced axes, the
@@ -1385,7 +1392,7 @@ export function commitBossAttack(e, atk, player, out) {
                 const s = spd * (0.55 + 0.45 * (j / perArm)); // staggered speeds → a line of bolts
                 out.enemyProjectiles.push(new EnemyProjectile(
                     e.x, e.y, Math.cos(a) * s, Math.sin(a) * s, atk.projectileDamage ?? 14,
-                    atk.color ? { color: atk.color } : undefined));
+                    { ...(atk.color ? { color: atk.color } : {}), sourceLabel: src }));
             }
         }
     } else if (atk.kind === 'spiralArms' && out.enemyProjectiles) {
@@ -1398,7 +1405,7 @@ export function commitBossAttack(e, atk, player, out) {
             const a = e.spiralPhase + (k / arms) * TWO_PI;
             out.enemyProjectiles.push(new EnemyProjectile(
                 e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd, atk.projectileDamage ?? 13,
-                atk.color ? { color: atk.color } : undefined));
+                { ...(atk.color ? { color: atk.color } : {}), sourceLabel: src }));
         }
     } else if (atk.kind === 'rain' && out.hazards) {
         // SIGNATURE — targeted bombardment: a cluster of delayed circles that

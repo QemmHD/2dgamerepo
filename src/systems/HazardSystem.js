@@ -27,6 +27,26 @@ const CULL_MARGIN = 160;
 
 const Lc = GFX.lighting;
 
+// EMBERGLASS death-card killer attribution: a phrase per hazard kind so a
+// hazard death reads "fell to the black ice" / "to a searing beam". Shaped as
+// { hazard: true } so the card template prefixes "to" without an "a/an".
+const HAZARD_LABELS = {
+    brambles: 'the thornwood',
+    quicksand: 'the sinking sands',
+    gloom: 'the gloom',
+    iceSlick: 'the black ice',
+    delayedZone: 'a detonation',
+    beam: 'a searing beam',
+    lingering: 'a burning pool',
+    shockwave: 'a shockwave',
+};
+function stampHazardKiller(game, hz) {
+    game.lastHitBy = {
+        label: HAZARD_LABELS[hz.kind] || 'the hazards',
+        epithet: null, boss: false, hazard: true,
+    };
+}
+
 export class HazardSystem {
     // Boss area hazards (expanding shockwaves) + their telegraph decals.
     // Runs BEFORE the Second Wind regen check so HP/i-frames stay
@@ -64,6 +84,7 @@ export class HazardSystem {
                         hz.tickTimer = 0.4;
                         const dealt = pl.takeDamage(hz.tickDamage);
                         if (dealt > 0) {
+                            stampHazardKiller(game, hz);
                             game._playerHurtShake(dealt);
                             game.damageNumbers.push(new DamageNumber(
                                 pl.x, pl.y - pl.radius, dealt, hz.rim));
@@ -93,6 +114,7 @@ export class HazardSystem {
                     if (d <= hz.r && game.obstacleSystem.hasLineOfSight(hz.x, hz.y, game.player.x, game.player.y)) {
                         const dealt = game.player.takeDamage(hz.damage);
                         if (dealt > 0) {
+                            stampHazardKiller(game, hz);
                             game._playerHurtShake(dealt);
                             game._pushFeedback('hit', 0.32);
                             game.damageNumbers.push(new DamageNumber(
@@ -123,6 +145,7 @@ export class HazardSystem {
                         game.obstacleSystem.hasLineOfSight(hz.x, hz.y, game.player.x, game.player.y)) {
                         const dealt = game.player.takeDamage(hz.damage);
                         if (dealt > 0) {
+                            stampHazardKiller(game, hz);
                             game._playerHurtShake(dealt);
                             game._pushFeedback('hit', 0.3);
                             game.damageNumbers.push(new DamageNumber(
@@ -145,6 +168,7 @@ export class HazardSystem {
                             game.obstacleSystem.hasLineOfSight(hz.x, hz.y, game.player.x, game.player.y)) {
                             const dealt = game.player.takeDamage(hz.tickDamage);
                             if (dealt > 0) {
+                                stampHazardKiller(game, hz);
                                 game._playerHurtShake(dealt);
                                 game.damageNumbers.push(new DamageNumber(
                                     game.player.x, game.player.y - game.player.radius, dealt, hz.color || '#ff7a33'));
@@ -167,6 +191,7 @@ export class HazardSystem {
                     const dealt = game.player.takeDamage(hz.damage);
                     if (dealt > 0) {
                         hz.hitPlayer = true;
+                        stampHazardKiller(game, hz);
                         game._playerHurtShake(dealt);
                         game._pushFeedback('hit', 0.32);
                         game.damageNumbers.push(new DamageNumber(
