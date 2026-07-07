@@ -43,8 +43,9 @@ import { HealthOrb } from '../entities/HealthOrb.js';
 import { EnemyProjectile } from '../entities/EnemyProjectile.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 import { Spawner } from '../systems/Spawner.js';
-import { WeaponSystem } from '../systems/WeaponSystem.js';
+import { WeaponSystem, AUTO_AIM_RANGE } from '../systems/WeaponSystem.js';
 import { KindleSystem } from '../systems/KindleSystem.js';
+import { signatureFor } from '../content/signatures.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
@@ -333,6 +334,14 @@ export class Game {
             if (e.code === 'Space' && !this.chestReward && !this.upgradeChoices && !this.altar) {
                 e.preventDefault();
                 this._tryBlink();
+                return;
+            }
+            // KINDLED Focus targeting: Tab cycles the lock (nearest → elite →
+            // boss → clear). Edge-only (e.repeat guard) — a held Tab fires the DOM
+            // keydown continuously and would spin through every stage in a frame.
+            if (e.code === 'Tab' && !this.chestReward && !this.upgradeChoices && !this.altar) {
+                e.preventDefault();
+                if (!e.repeat) this._cycleFocusTarget();
                 return;
             }
             if (this.chestReward) {
@@ -663,6 +672,10 @@ export class Game {
         // loot (affix death, chest/coin roll, gem, kill credit). A plain
         // bomber's self-boom stays deliberately reward-free.
         this._selfDetonated = [];
+        // KINDLED: corpses killed by a Game-owned hazard that damages ENEMIES
+        // (Gruk's thornRing) — drained into the _resolveCombat merge so they pay
+        // loot + charge Kindle like any other kill.
+        this._hazardKilled = [];
         // Expanding shockwave ring VFX (pure cosmetic; pooled). Spawned on
         // kills, boss deaths, and level-ups; updated + drawn in the world layer.
         this.rings = [];
@@ -701,6 +714,18 @@ export class Game {
         // Built here (same lifecycle as weaponSystem) so every run/restart
         // resets the meter to startFill and the blink cooldown to 0.
         this.kindleSystem = new KindleSystem();
+        // The run's hero id — keys the Grand Signature ult (signatures.js) and,
+        // later (PR5), a session-local Rite-Trial override without touching the
+        // saved pick.
+        this._heroId = this.saveSystem.getSelectedCharacter();
+        // Focus targeting (PR3): the locked enemy ref (or null) + an out-of-range
+        // grace timer, both run-scoped so a restart clears the lock.
+        this.focusTarget = null;
+        this._focusOutOfRangeT = 0;
+        // The ult's {hits,killed} this frame (fed into _resolveCombat like
+        // _selfDetonated) + Sylphine's 2×-coin window timer.
+        this._ultResult = null;
+        this._coinWindfallTimer = 0;
         this.collisionSystem = new CollisionSystem();
         this.upgradeSystem = new UpgradeSystem();
         this.passiveSystem = new PassiveSystem();
@@ -2032,6 +2057,94 @@ export class Game {
         k.startBlinkCooldown();
     }
 
+    // KINDLED — the Focus-Time aim state machine (keyboard). HOLD KeyQ (with a
+    // ready meter) to enter slow-mo aiming; the ult FIRES on release, or when the
+    // 2.5s hold cap elapses. Runs on REAL dt from the live gameplay step (past
+    // every overlay guard), so it never ticks under a pick-one overlay. Returns
+    // the fired ult's { hits, killed } this frame (merged by _resolveCombat), else
+    // null. Touch aiming lands in PR4.
+    _updateKindleAim(dt) {
+        const k = this.kindleSystem;
+        const kb = this.input && this.input.keyboard;
+        const qHeld = !!(kb && kb.isDown && kb.isDown('KeyQ'));
+        if (k.aiming) {
+            k.aiming.t += dt;                       // wall-clock hold time
+            k.aiming.angle = this._ultAimAngle();   // re-aim each frame
+            if (!qHeld || k.aiming.t >= KINDLE.focusTimeMax) return this._releaseUlt(k.aiming.angle);
+            return null;                            // still aiming
+        }
+        // Begin aiming on a fresh hold with a ready meter — spend up-front so a
+        // cancel (overlay/pause) can refund the whole bar cleanly.
+        if (qHeld && k.ready) {
+            const sig = signatureFor(this._heroId);
+            k.spendUlt();
+            k.aiming = { t: 0, angle: this._ultAimAngle(), kind: sig.aimKind, ultName: sig.name };
+        }
+        return null;
+    }
+
+    // The angle an ult fires along: the current movement vector, else the last
+    // auto-aim angle (which already honours the Focus target). Deliberately NOT
+    // the facing map the blink uses — an ult points where you're steering it.
+    _ultAimAngle() {
+        const mv = this.input.getMovement();
+        if (mv && (mv.x !== 0 || mv.y !== 0)) return Math.atan2(mv.y, mv.x);
+        return this.player.aimAngle ?? 0;
+    }
+
+    // Release the aimed ult: clear aim, fire the hero's Grand Signature along the
+    // angle, cue + shake. Returns its { hits, killed } (already spent; recharges
+    // from its own kills via the _resolveCombat merge).
+    _releaseUlt(angle) {
+        const k = this.kindleSystem;
+        k.aiming = null;
+        const sig = signatureFor(this._heroId);
+        const res = (sig.fire(this, angle)) || { hits: [], killed: [] };
+        this.audio.ult(sig.aimKind);
+        this._shake(SCREEN_SHAKE.intensity * 0.8, 0.35);
+        this._pushFeedback('levelup', 0.4);
+        return res;
+    }
+
+    // Per-frame Kindle timers (real dt): Kael's low-HP afterglow + Sylphine's
+    // 2×-coin window. Both run on the wall clock so Focus Time never stretches them.
+    _updateKindleTimers(dt) {
+        const p = this.player;
+        if (p._brinkAfterglow > 0) {
+            p._brinkAfterglow -= dt;
+            if (p._brinkAfterglow <= 0) { p.lowHpDamageBonus = Math.max(0, (p.lowHpDamageBonus || 0) - 0.25); p._brinkAfterglow = 0; }
+        }
+        if (this._coinWindfallTimer > 0) this._coinWindfallTimer = Math.max(0, this._coinWindfallTimer - dt);
+    }
+
+    // KINDLED Focus targeting — Tab cycles the lock: nearest → nearest ELITE →
+    // BOSS → clear. A 4-state machine over the live field; auto-clears elsewhere
+    // (dead / out of range 2s) in _updatePlayerAndWeapons.
+    _cycleFocusTarget() {
+        const p = this.player;
+        const inRange = (e) => {
+            const dx = e.x - p.x, dy = e.y - p.y;
+            return e.active && dx * dx + dy * dy <= AUTO_AIM_RANGE * AUTO_AIM_RANGE;
+        };
+        const nearest = (pred) => {
+            let best = null, bestD = Infinity;
+            for (const e of this.enemies) {
+                if (!inRange(e) || !pred(e)) continue;
+                const dx = e.x - p.x, dy = e.y - p.y, d = dx * dx + dy * dy;
+                if (d < bestD) { bestD = d; best = e; }
+            }
+            return best;
+        };
+        const cur = this.focusTarget;
+        // Stage by what's currently locked.
+        if (!cur || !cur.active) this.focusTarget = nearest(() => true);
+        else if (!cur.elite && !cur.boss) this.focusTarget = nearest((e) => e.elite && !e.boss) || nearest((e) => e.boss) || null;
+        else if (cur.elite && !cur.boss) this.focusTarget = nearest((e) => e.boss) || null;
+        else this.focusTarget = null;   // was boss → clear
+        this._focusOutOfRangeT = 0;
+        if (this.focusTarget) this.audio.uiTick?.();
+    }
+
     // Fold the run-scale layer (difficulty × active modifiers) into a freshly-
     // built wave state. getState() returns a new object literal each call, so
     // mutating it here can't compound across frames. eliteChance + cap stay
@@ -2454,6 +2567,9 @@ export class Game {
     }
 
     _dropCoin(x, y, value = 1) {
+        // KINDLED — Sylphine's Zephyr Windfall: a 4s window where kills pay 2×
+        // coins (the single coin-drop choke, so bursts inherit it for free).
+        if (this._coinWindfallTimer > 0) value *= 2;
         if (this.obstacleSystem.isBlocked(x, y, 18)) { const s = this._clearSpot(x, y, 18); x = s.x; y = s.y; }
         this.coins.push(new Coin(x, y, value));
     }
@@ -2967,6 +3083,16 @@ export class Game {
         // animate even while gameplay is frozen behind an overlay.
         this._updateFeedback(dt);
 
+        // KINDLED: an overlay/pause/run-end opening mid-aim CANCELS the ult and
+        // refunds the committed bar (the aim can't tick while the world is frozen,
+        // and the spec fizzles-with-refund on interruption).
+        if (this.kindleSystem && this.kindleSystem.aiming &&
+            (this.upgradeChoices || this.chestReward || this.altar || this.paused || this.victory || this.gameOver)) {
+            this.kindleSystem.refundAim();
+            this.kindleSystem.aiming = null;
+            if (this.player) this.player.aimMoveMul = 1;
+        }
+
         // Death is authoritative and checked FIRST: if the player is dead,
         // enter game-over even when an overlay is open, so a queued-overlay
         // chain (chest reward → next overlay) can never strand a dead player
@@ -3036,6 +3162,17 @@ export class Game {
 
         this.time += dt;
 
+        // KINDLED Focus Time: the KeyQ-hold aim tick may FIRE the ult this frame
+        // (returns its {hits,killed}, else null). Runs on REAL dt — the meter,
+        // the 2.5s auto-fire cap, and the aim angle are all wall-clock. While
+        // aiming, the WORLD (enemies/projectiles/spawner/hazards) crawls at
+        // focusTimeScale; player MOVE slows to playerAimSpeedMul (below); every
+        // clock/economy/cooldown call stays on real dt.
+        const kindleResult = this._updateKindleAim(dt);
+        const _aiming = !!this.kindleSystem.aiming;
+        const worldDt = _aiming ? dt * KINDLE.focusTimeScale : dt;
+        this._updateKindleTimers(dt);
+
         // KINDLED: snapshot the (cached) active boss's HP so we can charge the
         // Kindle meter by the fraction of its MAX HP dealt this frame — across
         // ALL damage sources (weapons, burn DoT, projectile collisions). One
@@ -3046,18 +3183,18 @@ export class Game {
         this._updateComboAndObjectives(dt);
         this._updateDirectors(dt);
         this.kindleSystem.update(dt);   // tick the blink cooldown (real dt)
-        const weaponResult = this._updatePlayerAndWeapons(dt);
-        const statusResult = this._updateEnemies(dt);
-        this._updateProjectiles(dt);
+        const weaponResult = this._updatePlayerAndWeapons(dt, worldDt, _aiming);
+        const statusResult = this._updateEnemies(worldDt);
+        this._updateProjectiles(worldDt);
         // Boss area hazards (shockwaves, delayed zones, beams, lingering
         // pools) — simmed by the HazardSystem. Runs BEFORE the Second Wind
         // regen check so HP/i-frames stay consistent within the frame.
         // updateBiome first spawns this map's signature ground patches
         // (P1.2) into the same pool, so a fresh patch telegraphs this frame.
-        this.hazardSystem.updateBiome(dt, this);
-        this.hazardSystem.update(dt, this);
+        this.hazardSystem.updateBiome(worldDt, this);
+        this.hazardSystem.update(worldDt, this);
         this._updatePickups(dt);
-        this._resolveCombat(dt, weaponResult, statusResult);
+        this._resolveCombat(dt, weaponResult, statusResult, kindleResult);
         // Charge the meter from boss damage dealt this frame (skip on heal/no-op).
         if (_kBossHp0 != null && _kBoss.hp < _kBossHp0) {
             this.kindleSystem.onBossDamage((_kBossHp0 - _kBoss.hp) / _kBoss.maxHp);
@@ -3173,7 +3310,25 @@ export class Game {
 
     // Player movement/caps/aura, the trash-spawner gate, and weapon fire.
     // Returns the weapon system's { killed, hits } for _resolveCombat.
-    _updatePlayerAndWeapons(dt) {
+    _updatePlayerAndWeapons(dt, worldDt = dt, aiming = false) {
+        // KINDLED Focus-Time: while aiming an ult the hero moves at ×0.60. Folded
+        // into Player speed (aimMoveMul) — only travel shrinks; player.update
+        // keeps REAL dt so cast/composure/anim timers stay wall-clock.
+        this.player.aimMoveMul = aiming ? KINDLE.playerAimSpeedMul : 1;
+        // KINDLED Focus targeting — auto-clear the lock when the target dies or
+        // drifts out of range for 2s (enemies aren't pooled, so a dead ref would
+        // otherwise linger and the wand would aim at a corpse).
+        if (this.focusTarget) {
+            const ft = this.focusTarget;
+            if (!ft.active) { this.focusTarget = null; this._focusOutOfRangeT = 0; }
+            else {
+                const dx = ft.x - this.player.x, dy = ft.y - this.player.y;
+                if (dx * dx + dy * dy > AUTO_AIM_RANGE * AUTO_AIM_RANGE) {
+                    this._focusOutOfRangeT += dt;
+                    if (this._focusOutOfRangeT >= 2) { this.focusTarget = null; this._focusOutOfRangeT = 0; }
+                } else this._focusOutOfRangeT = 0;
+            }
+        }
         this.player.update(dt, this.input);
         // First-run onboarding hints advance off live play (movement, gems,
         // level) — ticked right after the player moves so step 0's distance
@@ -3200,7 +3355,8 @@ export class Game {
         // boss is dead.
         const bossOnField = !!this.bossWarning || this.enemies.some((e) => e.active && e.boss);
         if (!bossOnField) {
-            this.spawner.update(dt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
+            // Spawner slows with the world during Focus Time (worldDt).
+            this.spawner.update(worldDt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
         }
         // Fire burn scales with run progress (boss clears + minutes) so the
         // FIRE line keeps biting through scaled late-game enemy HP. Read by the
@@ -3210,8 +3366,12 @@ export class Game {
             fc.burnScaleMax ?? 3.0,
             1 + this.bossesDefeated * (fc.burnPerBoss ?? 0) + (this.time / 60) * (fc.burnPerMinute ?? 0)
         );
+        // Weapons keep REAL dt (the hero auto-fires at normal cadence during a
+        // hold; the bolts then crawl because _updateProjectiles is worldDt-scaled
+        // — that IS the bullet-time look). Focus target threaded so single-target
+        // weapons concentrate fire on the lock.
         const weaponResult = this.weaponSystem.update(
-            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio
+            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio, this.focusTarget
         );
 
         // Held weapon: aim the signature wand (owned[0], the menu-chosen
@@ -3220,8 +3380,16 @@ export class Game {
         // stale angle. Snapshot the owned visuals for Player.draw, and hold the
         // cast pose whenever the primary weapon fires this frame.
         this.player.loadout = this.weaponSystem.getOwnedVisuals();
+        // KINDLED Focus targeting: a locked target in range wins the wand aim, so
+        // a held ult released with no movement fires at the focus. Falls back to
+        // the nearest-enemy scan otherwise.
         let aimBest = null, aimD = Infinity;
-        for (const e of this.enemies) {
+        const ft = this.focusTarget;
+        if (ft && ft.active) {
+            const fdx = ft.x - this.player.x, fdy = ft.y - this.player.y;
+            if (fdx * fdx + fdy * fdy <= AUTO_AIM_RANGE * AUTO_AIM_RANGE) { aimBest = ft; aimD = fdx * fdx + fdy * fdy; }
+        }
+        if (!aimBest) for (const e of this.enemies) {
             if (!e.active) continue;
             const dx = e.x - this.player.x, dy = e.y - this.player.y;
             const d2 = dx * dx + dy * dy;
@@ -3431,7 +3599,7 @@ export class Game {
 
     // Contact/projectile collisions + the merged kill/hit reward pipeline
     // (gems, coins, chests, boss/lieutenant/elite setpieces, hit feedback).
-    _resolveCombat(dt, weaponResult, statusResult) {
+    _resolveCombat(dt, weaponResult, statusResult, kindleResult = null) {
         const collisionResult = this.collisionSystem.resolve(
             dt, this.player, this.enemies, this.projectiles
         );
@@ -3443,9 +3611,11 @@ export class Game {
         // numbers are already pushed, tinted, inside _tickStatuses — so only
         // its killed list is merged here.)
         const allKilled = collisionResult.killed
-            .concat(weaponResult.killed, statusResult.killed, this._selfDetonated);
+            .concat(weaponResult.killed, statusResult.killed, this._selfDetonated, this._hazardKilled,
+                kindleResult ? kindleResult.killed : []);
         this._selfDetonated.length = 0;
-        const allHits = collisionResult.hits.concat(weaponResult.hits);
+        this._hazardKilled.length = 0;
+        const allHits = collisionResult.hits.concat(weaponResult.hits, kindleResult ? kindleResult.hits : []);
 
         if (allKilled.length > 0) {
             this.kills += allKilled.length;

@@ -3,7 +3,8 @@
 // mutates game state, only assembles the screen-appropriate fields into a
 // fresh snapshot object (one per frame — same shape/cost as before the move).
 
-import { BOSS, CAPS, COMBO, COMPOSURE, MAX_WEAPON_SLOTS, BLINK } from '../config/GameConfig.js';
+import { BOSS, CAPS, COMBO, COMPOSURE, MAX_WEAPON_SLOTS, BLINK, KINDLE } from '../config/GameConfig.js';
+import { signatureFor } from '../content/signatures.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { OBJECTIVE_COUNT } from '../content/objectives.js';
 import { WEAPONS, WEAPON_AURA } from '../content/weapons.js';
@@ -122,17 +123,28 @@ export function buildUIState(game) {
         });
     }
     base.abilityCooldowns = abilityCds;
-    // KINDLED: the Kindle ult meter (fills from kills + boss damage; ult release
-    // lands in PR3 — until then it caps at max and pulses READY, harmless).
+    // KINDLED: the Kindle ult meter + live Focus-Time aim state. ultName/color
+    // come from the run hero's Grand Signature; aiming carries the angle, aim
+    // kind (ring/lane/cone/…), and hold progress so the HUD can draw the ground
+    // template + a slow-mo vignette.
     const _k = game.kindleSystem;
+    const _sig = _k ? signatureFor(game._heroId) : null;
     base.kindle = _k ? {
         fill: _k.fill,
         max: _k.max,
         ready: _k.ready,
-        ultName: null,          // PR3: the hero's Grand Signature name
-        ultColor: '#ff8c4a',
-        aiming: false,          // PR3: Focus-Time aiming state
+        ultName: _sig ? _sig.name : null,
+        ultColor: _sig ? _sig.color : '#ff8c4a',
+        range: _sig ? _sig.range : 620,
+        aiming: _k.aiming
+            ? { angle: _k.aiming.angle, kind: _k.aiming.kind, tHeld: _k.aiming.t, tMax: KINDLE.focusTimeMax }
+            : null,
     } : null;
+    // Focus target snapshot (world pos + hp + kind) for the reticle + HP accent.
+    const _ft = game.focusTarget;
+    base.focusTarget = (_ft && _ft.active)
+        ? { x: _ft.x, y: _ft.y, hp: _ft.hp, maxHp: _ft.maxHp, radius: _ft.radius ?? 20, elite: !!_ft.elite, boss: !!_ft.boss }
+        : null;
     base.ownedPassives = game.passiveSystem.snapshotForUI();
     base.runCoins = game.player.coins ?? 0;
     base.chestLuck = game.player.chestLuck ?? 0;

@@ -666,6 +666,35 @@ export class AudioSystem {
             this._duck(0.45, 0.08, 0.4);
         });
     }
+    // KINDLED — Grand Signature ult release. One cue dispatched per aimKind
+    // (ring/lane/self/line/cone) so each hero's ult reads distinct; reuses the
+    // existing synth timbres. A big duck sells the signature moment.
+    ult(kind) {
+        this._play('ult', 0.05, (t) => {
+            this._duck(0.6, 0.12, 0.6);
+            if (kind === 'lane') {
+                this._noise(t, 0.5, 0.13, 300, this.sfxBus, 5200); // forward gale
+                this._voice(220, t, 0.4, 0.1, { type: 'sawtooth', slideTo: 880, cutoff: 4200, detune: 8 });
+                this._sub(70, t, { dur: 0.4, gain: 0.12 });
+            } else if (kind === 'line') {
+                this._voice(300, t, 0.28, 0.12, { type: 'sawtooth', slideTo: 1500, cutoff: 5200 }); // piercing lance
+                this._bell(t, 1046, 0.09);
+                this._sub(90, t, { dur: 0.35, gain: 0.12 });
+            } else if (kind === 'cone') {
+                this._noise(t, 0.18, 0.14, 400, this.sfxBus, 6200); // execute snap
+                this._metal(180, t, { dur: 0.5, gain: 0.09, ratios: [1, 2.4, 3.7, 5.1], cutoff: 4200 });
+                this._sub(80, t, { dur: 0.4, gain: 0.12, slideTo: 44 });
+            } else if (kind === 'self') {
+                this._metal(160, t, { dur: 0.7, gain: 0.09, ratios: [1, 2.0, 3.0, 4.1], cutoff: 3200 }); // warding bloom
+                this._voice(196, t, 0.5, 0.09, { type: 'sine', slideTo: 262, cutoff: 2600, detune: 6 });
+                this._sub(60, t, { dur: 0.6, gain: 0.14 });
+            } else { // ring (default) — radial boom
+                this._sub(58, t, { dur: 0.7, gain: 0.16, slideTo: 40 });
+                this._noise(t, 0.45, 0.12, 260, this.sfxBus, 3200);
+                this._metal(130, t + 0.02, { dur: 0.8, gain: 0.07, ratios: [1, 1.98, 2.94, 4.2], cutoff: 3000 });
+            }
+        });
+    }
     bossSpawn() {
         this._play('boss', 0.2, (t) => {
             this._sub(90, t, { dur: 0.7, gain: 0.18, slideTo: 44 });
