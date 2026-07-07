@@ -8,6 +8,7 @@
 
 import { CONTACT_FLASH_DURATION, KNOCKBACK } from '../config/GameConfig.js';
 import { circleOverlap } from '../core/MathUtils.js';
+import { applyCombo } from '../content/elements.js';
 
 // How much each non-strongest overlapping enemy adds to a contact hit, and
 // the ceiling as a multiple of the single strongest enemy's damage. The cap
@@ -55,6 +56,17 @@ export class CollisionSystem {
                 if (p.burnDps > 0) e.applyBurn(p.burnDps, p.burnDuration);
                 const lethal = !e.active;
                 if (lethal) killed.push(e);
+                // KINDLED combos: a FIRE bolt on a chilled/frozen target
+                // SHATTERs; a FROST bolt on a shocked target goes BRITTLE. (Shock
+                // detonation stays exclusively in shockStrike.) Only a SURVIVOR of
+                // the bolt combos, so a lethal SHATTER's own kill-push (inside
+                // applyCombo) is the single kill credit and can't double the
+                // bolt's — and ricochet-on-kill below stays keyed to the BOLT's
+                // kill, never the combo's. This one hit choke point covers every
+                // projectile weapon.
+                else if (p.element === 'fire' || p.element === 'frost') {
+                    applyCombo(e, p.element, p.damage, { hits, killed, player });
+                }
 
                 // Ricochet-on-kill (Arcane Bolt signature): a lethal hit with
                 // ricochet budget redirects the bolt toward the nearest

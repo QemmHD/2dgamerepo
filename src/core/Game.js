@@ -3554,7 +3554,9 @@ export class Game {
         let numberBudget = 14;
         for (const hit of allHits) {
             if (numberBudget > 0) {
-                this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, '#ffffff'));
+                // KINDLED combo bursts (SHATTER) tint their number via hit.color;
+                // everything else stays the white default.
+                this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, hit.color || '#ffffff'));
                 numberBudget--;
             }
             if (sparkBudget > 0) {

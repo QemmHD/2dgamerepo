@@ -24,6 +24,7 @@
 
 import { TWO_PI, circleOverlap, distanceSq } from '../core/MathUtils.js';
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KNOCKBACK, SHOCK_CFG, AURA } from '../config/GameConfig.js';
+import { applyCombo } from './elements.js';
 import { Projectile } from '../entities/Projectile.js';
 import { getEmberWispSprite } from '../assets/ProceduralSprites.js';
 
@@ -1004,6 +1005,7 @@ function orbitingBladeUpdate(dt, owned, ctx) {
             if (cfg.chillMul) {
                 const chill = Math.max(0.30, cfg.chillMul - (ctx.player.chillStrength || 0));
                 e.applyChill(chill, cfg.chillDuration);
+                applyCombo(e, 'frost', damage, ctx);   // BRITTLE if already shocked
             }
             const freezeChance = (cfg.freezeChance || 0) + (ctx.player.freezeChanceBonus || 0);
             if (freezeChance > 0 && Math.random() < freezeChance) {
@@ -1145,21 +1147,11 @@ export function shockStrike(target, baseDamage, cfg, ctx) {
     ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: dmg });
     if (!target.active) { ctx.killed.push(target); }
     if (cfg.maxShockStacks) target.applyShock(cfg.maxShockStacks + (overcharge ? 2 : 0), cfg.shockDuration);
-    if (target.active && target.burnTimer > 0) {
-        // Conflagration keystone: the burn detonation erupts far brighter and
-        // relights a fresh fire (same single target — no area query added).
-        const conflag = player?.ks_conflagration;
-        const detMul = SHOCK_CFG.detonateMul * (conflag ? 2.2 : 1);
-        const burnDps = target.burnDps;
-        const burst = burnDps * detMul;
-        target.takeDamage(burst);
-        ctx.hits.push({ x: target.x, y: target.y - target.radius, amount: burst });
-        target.burnTimer = 0;
-        target.burnDps = 0;
-        target.burnTickAccum = 0;
-        if (conflag && target.active) target.applyBurn(burnDps, 2.0); // relight
-        if (!target.active) ctx.killed.push(target);
-    }
+    // DETONATE — shock on a burning target consumes the remaining burn for a
+    // burst. Migrated behind the combo table (content/elements.js); behavior is
+    // byte-identical, INCLUDING the Conflagration keystone (2.2× + relight),
+    // which the DETONATE resolver reads off ctx.player.
+    applyCombo(target, 'shock', dmg, ctx);
 }
 
 // Nearest active enemy to the player. When an `inView` predicate is supplied,
@@ -1600,6 +1592,7 @@ function frostmoteUpdate(dt, owned, ctx) {
             const fc = cfg.freezeChance + (p.freezeChanceBonus ?? 0);
             if (Math.random() < fc) e.applyFreeze(cfg.freezeDuration ?? 0.5);
         }
+        applyCombo(e, 'frost', damage, ctx);   // BRITTLE if already shocked
         ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: damage });
         if (!e.active) ctx.killed.push(e);
     }
@@ -1740,6 +1733,7 @@ function kindleRayUpdate(dt, owned, ctx) {
         if (!e.active) ctx.killed.push(e);
         // Dawnfire Ray: each tick also stamps a burn (absent on the base ray).
         if (cfg.burnDps) e.applyBurn(cfg.burnDps * burnScale, cfg.burnDuration ?? 2.0);
+        applyCombo(e, 'fire', dmg, ctx);   // SHATTER if already chilled/frozen
     }
 }
 
@@ -1781,6 +1775,7 @@ function emberMineUpdate(dt, owned, ctx) {
             ctx.hits.push({ x: e.x, y: e.y - e.radius, amount: dmg });
             if (!e.active) ctx.killed.push(e);
             if (cfg.burnDps) e.applyBurn(cfg.burnDps * burnScale, cfg.burnDuration ?? 2.5);
+            applyCombo(e, 'fire', dmg, ctx);   // SHATTER if already chilled/frozen
         }
         ctx.effects.push({
             kind: 'blast', x: m.x, y: m.y, radius: cfg.blastRadius,
@@ -1838,6 +1833,7 @@ function wakefireUpdate(dt, owned, ctx) {
             if (!e.active) ctx.killed.push(e);
             // Wildfire Wake: the patches also stamp a burn (absent on base).
             if (cfg.burnDps) e.applyBurn(cfg.burnDps * burnScale, cfg.burnDuration ?? 2.0);
+            applyCombo(e, 'fire', dmg, ctx);   // SHATTER if already chilled/frozen
             break;
         }
     }

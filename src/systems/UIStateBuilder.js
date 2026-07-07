@@ -9,6 +9,7 @@ import { OBJECTIVE_COUNT } from '../content/objectives.js';
 import { WEAPONS, WEAPON_AURA } from '../content/weapons.js';
 import { currentDayNumber } from '../content/dailyChallenges.js';
 import { keystoneBreadcrumbs } from '../content/keystones.js';
+import { comboDraftHints } from '../content/elements.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 
 export function buildUIState(game) {
@@ -224,6 +225,15 @@ export function buildUIState(game) {
     if (game.upgradeChoices) {
         const counts = game.upgradeSystem.appliedCounts;
         base.keystoneHints = keystoneBreadcrumbs(game, (id) => (counts[`keystone:${id}`] ?? 0) >= 1, 2);
+        // KINDLED: element-combo breadcrumb — which cross-element reaction a pick
+        // would unlock (offered NEW element × an owned element). Choice ids are
+        // `weapon:<id>:<new|upgrade>`, so the element resolves from WEAPONS[<id>].
+        const ownedEls = game.weaponSystem.owned.map((w) => WEAPONS[w.id]?.element).filter(Boolean);
+        const offeredEls = game.upgradeChoices
+            .filter((c) => c && (c.kind === 'weapon-new' || c.kind === 'weapon-upgrade'))
+            .map((c) => WEAPONS[c.id?.split(':')[1]]?.element)
+            .filter(Boolean);
+        base.comboHints = comboDraftHints(ownedEls, offeredEls, 2);
     }
     base.levelUpAge = game.levelUpAge;
     // First-run onboarding: the tutorial banner snapshot (lesson n/total +

@@ -266,6 +266,10 @@ export class Enemy {
         this.freezeTimer = 0;
         this.shockTimer = 0;
         this.shockStacks = 0;
+        // KINDLED combo latch: SHATTER/BRITTLE can proc at most once per this
+        // many seconds per enemy (applyCombo in content/elements.js), so pulse/
+        // orbit weapons can't machine-gun a reaction. Decayed in update().
+        this._comboCd = 0;
 
         // Shielder support: a transient damage-soak granted by a nearby Shielder
         // (Game refreshes shieldTimer while in range). shieldMul < 1 reduces
@@ -624,6 +628,7 @@ export class Enemy {
             this.shockTimer -= dt;
             if (this.shockTimer <= 0) { this.shockTimer = 0; this.shockStacks = 0; }
         }
+        if (this._comboCd > 0) this._comboCd -= dt;   // KINDLED SHATTER/BRITTLE latch
         if (this.burnTimer > 0) {
             this.burnTimer -= dt;
             this.burnTickAccum += dt;
