@@ -37,6 +37,7 @@ export class TouchButtons {
         this.kindleHeld = false;
         this.kindleAngle = null;          // drag aim (null → auto-aim)
         this._kindleCancel = false;       // consumable: last release was a cancel
+        this._kindleTap = false;          // consumable: a quick tap → fire (auto-aim)
         // FOCUS: a consumable {x,y} (internal coords) of the last right-half tap.
         this.focusTap = null;
 
@@ -53,7 +54,11 @@ export class TouchButtons {
         this._onStart = (e) => this._handleStart(e);
         this._onMove = (e) => this._handleMove(e);
         this._onEnd = (e) => this._handleEnd(e);
-        this._onCancel = () => this._reset();
+        // touchcancel is SUBSET-aware (mirrors touchend): only the cancelled
+        // finger's role is dropped, so an unrelated palm/system cancel can't
+        // disturb a still-held KINDLE aim. A cancelled kindle aim FIZZLES with a
+        // refund (never fires) — see _handleCancel.
+        this._onCancel = (e) => this._handleCancel(e);
         target.addEventListener('touchstart', this._onStart, opts);
         target.addEventListener('touchmove', this._onMove, opts);
         target.addEventListener('touchend', this._onEnd, opts);
@@ -73,9 +78,30 @@ export class TouchButtons {
     reset() { this._reset(); }
 
     _reset() {
-        this.kindleHeld = false; this.kindleAngle = null; this._kindleCancel = false;
+        // If a KINDLE aim touch was live, ARM the cancel so Game._updateKindleAim
+        // fizzles-with-refund on the next frame instead of the release path FIRING
+        // the (already-spent) ult — the aiming state lives in Game, not here, so a
+        // blanket reset that only cleared kindleHeld would otherwise discharge it.
+        // A stale arm with no active aim is harmlessly drained in the non-aiming
+        // branch. Also drop the quick-tap latch.
+        this._kindleCancel = (this._kindleId !== null);
+        this._kindleTap = false;
+        this.kindleHeld = false; this.kindleAngle = null;
         this.blinkTap = false; this.focusTap = null;
         this._blinkId = null; this._kindleId = null; this._focusId = null; this._focusPos = null;
+    }
+
+    // touchcancel handler — clears ONLY the cancelled finger's role (unlike the
+    // authoritative blanket _reset), preserving multi-touch independence. A
+    // cancelled KINDLE aim arms the fizzle-refund; a cancelled BLINK/FOCUS drops
+    // its pending action; an untracked cancelled touch is a no-op.
+    _handleCancel(e) {
+        for (const t of e.changedTouches) {
+            if (t.identifier === this._blinkId) { this._blinkId = null; this.blinkTap = false; }
+            else if (t.identifier === this._kindleId) {
+                this._kindleCancel = true; this.kindleHeld = false; this._kindleId = null;
+            } else if (t.identifier === this._focusId) { this._focusId = null; this._focusPos = null; }
+        }
     }
 
     // Button layout, derived from the safe area each call. blink bottom-right,
@@ -104,8 +130,12 @@ export class TouchButtons {
                 e.preventDefault(); this._kindleId = t.identifier; this._kindleStart = nowMs();
                 this.kindleHeld = true; this.kindleAngle = null; continue;
             }
-            // Right half, not on a button → a potential Focus tap.
-            if (this._focusId === null && pos.x > INTERNAL_WIDTH / 2) {
+            // Right half, not on a button → a potential Focus tap. The button
+            // exclusion is GEOMETRIC (not just structural) so a SECOND finger on an
+            // already-held BLINK/KINDLE disc — which fails that button's null-gate —
+            // can't fall through and leak into a spurious Focus command.
+            if (this._focusId === null && pos.x > INTERNAL_WIDTH / 2 &&
+                !this._hit(pos, L.blink) && !this._hit(pos, L.kindle)) {
                 this._focusId = t.identifier; this._focusStart = nowMs(); this._focusPos = pos;
             }
         }
@@ -132,8 +162,12 @@ export class TouchButtons {
                 e.preventDefault();
                 const held = nowMs() - this._kindleStart;
                 // A slow release with no drag past the deadzone cancels (refund);
-                // a quick tap always fires (auto-aim); a drag fires along it.
+                // a quick tap fires (auto-aim); a drag fires along it. The quick tap
+                // ALSO latches _kindleTap so a tap too short to be observed as a
+                // hold (both events inside one long frame under load) still fires —
+                // mirroring BLINK's latch, which KINDLE otherwise lacked.
                 if (held >= QUICK_TAP_MS && this.kindleAngle === null) this._kindleCancel = true;
+                else if (this.kindleAngle === null) this._kindleTap = true;
                 this.kindleHeld = false; this._kindleId = null;
             } else if (t.identifier === this._focusId) {
                 const held = nowMs() - this._focusStart;
@@ -147,6 +181,7 @@ export class TouchButtons {
     // ── Consumable getters (Game reads once per frame) ─────────────────────
     consumeBlinkTap() { const v = this.blinkTap; this.blinkTap = false; return v; }
     consumeKindleCancel() { const v = this._kindleCancel; this._kindleCancel = false; return v; }
+    consumeKindleTap() { const v = this._kindleTap; this._kindleTap = false; return v; }
     consumeFocusTap() { const v = this.focusTap; this.focusTap = null; return v; }
 
     // The meter fill fraction the KINDLE-button rim draws (0..1); Game passes the

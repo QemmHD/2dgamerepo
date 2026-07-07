@@ -392,6 +392,11 @@ export class Game {
             ) {
                 this._pressFeedback('dbg');
                 this.showDebug = !this.showDebug;
+                // The DBG toggle doesn't run _updateJoystickEnabled (unlike pause),
+                // so drop any touch-button tap this same press latched — otherwise
+                // TouchButtons' right-half claim would leak a Focus lock/clear
+                // alongside the debug toggle (DEV_MODE only).
+                if (this.input.buttons) this.input.buttons.reset();
                 return true;
             }
             return false;
@@ -646,6 +651,11 @@ export class Game {
             // player closed the game right after their first run) → resume it.
             this._armMenuTour();
         }
+        // Gate the touch controls to the boot screen: on a MENU boot this disables
+        // (and clears) the touch buttons + joystick, so a menu tap can't latch a
+        // blink/focus that then fires on the first gameplay frame. A gameplay boot
+        // (brand-new save → _startRun above) already re-enabled them.
+        this._updateJoystickEnabled();
     }
 
     // The effective map id for THIS run: the Daily Road override (unlock-bypassed,
@@ -2076,6 +2086,9 @@ export class Game {
         if (k.aiming) {
             k.aiming.t += dt;                       // wall-clock hold time
             k.aiming.angle = this._ultAimAngle();   // re-aim each frame (folds touch drag)
+            // A quick-tap latch set on THIS same release is redundant while a hold
+            // aim is already resolving — drain it so it can't double-fire next frame.
+            if (btn) btn.consumeKindleTap();
             // Touch deadzone cancel: a slow release near the button centre fizzles
             // and refunds the whole bar (checked BEFORE the release-to-fire path,
             // since touchend clears kindleHeld and sets the cancel flag together).
@@ -2088,12 +2101,21 @@ export class Game {
         // after an overlay ate the aim). Drain it now so it can't bleed into and
         // instantly cancel the NEXT aim (whether that aim starts on touch or KeyQ).
         if (btn) btn.consumeKindleCancel();
+        // Quick-tap fire-latch: a KINDLE tap too short to be seen as a hold (both
+        // touch events land inside one long frame under load) still fires the ult
+        // along auto-aim, mirroring BLINK's latch. Drains harmlessly if not ready.
+        if (btn && btn.consumeKindleTap() && k.ready) {
+            k.spendUlt();
+            return this._releaseUlt(this._ultAimAngle());
+        }
         // Begin aiming on a fresh hold with a ready meter — spend up-front so a
         // cancel (overlay/pause/deadzone) can refund the whole bar cleanly.
+        // fromTouch records who owns the aim so a stale touch drag angle can't
+        // hijack a later keyboard aim (see _ultAimAngle).
         if (held && k.ready) {
             const sig = signatureFor(this._heroId);
             k.spendUlt();
-            k.aiming = { t: 0, angle: this._ultAimAngle(), kind: sig.aimKind, ultName: sig.name };
+            k.aiming = { t: 0, angle: this._ultAimAngle(), kind: sig.aimKind, ultName: sig.name, fromTouch: touchHeld };
         }
         return null;
     }
@@ -2105,7 +2127,13 @@ export class Game {
     // points where you're steering/aiming it.
     _ultAimAngle() {
         const btn = this.input && this.input.buttons;
-        if (btn && btn.kindleAngle != null) return btn.kindleAngle;
+        // A touch DRAG aim wins ONLY while the aim is touch-driven — the KINDLE
+        // button is currently held, or the active aim was touch-initiated (so a
+        // just-released drag still fires along it). This gate stops a stale
+        // kindleAngle from an earlier touch drag hijacking a later KEYBOARD (KeyQ)
+        // aim on a hybrid keyboard+touch device.
+        const touchAim = !!(btn && (btn.kindleHeld || this.kindleSystem.aiming?.fromTouch));
+        if (touchAim && btn.kindleAngle != null) return btn.kindleAngle;
         const mv = this.input.getMovement();
         if (mv && (mv.x !== 0 || mv.y !== 0)) return Math.atan2(mv.y, mv.x);
         return this.player.aimAngle ?? 0;
