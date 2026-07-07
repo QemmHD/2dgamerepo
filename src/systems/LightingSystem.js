@@ -116,20 +116,25 @@ export class LightingSystem {
         if (priority === 2 && this._count >= this.quality.maxLights) return;
 
         const cam = this.camera;
-        const sx = wx - cam.x + INTERNAL_WIDTH / 2 + (cam.shakeOffsetX || 0);
-        const sy = wy - cam.y + INTERNAL_HEIGHT / 2 + (cam.shakeOffsetY || 0);
+        // Photo-mode zoom: the veil buffer is fixed screen-space + composited
+        // without setTransform, so holes must be carved at zoomed screen
+        // positions (radius scales too) or the light drifts off the world.
+        const z = cam.zoom || 1;
+        const sx = (wx - cam.x) * z + INTERNAL_WIDTH / 2 + (cam.shakeOffsetX || 0);
+        const sy = (wy - cam.y) * z + INTERNAL_HEIGHT / 2 + (cam.shakeOffsetY || 0);
+        const r = radius * z;
         // Cull lights whose footprint is fully off the buffer.
-        if (sx + radius < 0 || sx - radius > INTERNAL_WIDTH ||
-            sy + radius < 0 || sy - radius > INTERNAL_HEIGHT) return;
+        if (sx + r < 0 || sx - r > INTERNAL_WIDTH ||
+            sy + r < 0 || sy - r > INTERNAL_HEIGHT) return;
 
         const lctx = this.lctx;
         lctx.globalAlpha = Math.min(1, intensity);
-        lctx.drawImage(this.mask, sx - radius, sy - radius, radius * 2, radius * 2);
+        lctx.drawImage(this.mask, sx - r, sy - r, r * 2, r * 2);
 
         this._count++;
         if (priority === 1) this._pickupCount++;
         if (this.quality.colorTint && color) {
-            this.tints.push(sx, sy, radius, color, intensity);
+            this.tints.push(sx, sy, r, color, intensity);
         }
     }
 

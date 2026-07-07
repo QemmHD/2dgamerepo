@@ -87,6 +87,10 @@ const TAB = params.get('tab') || 'play';
 // player and shoot after a short settle, so a verification frame shows the exact
 // sprites regardless of when they'd naturally spawn.
 const SHOWCASE = params.get('showcase');
+// EMBERGLASS Keeper's Lens: ?photo=1 enters photo mode after the sim settles,
+// ?photozoom=<z> sets the zoom (0.75–2.0) for veil-alignment screenshots.
+const PHOTO = params.get('photo') === '1';
+const PHOTOZOOM = parseFloat(params.get('photozoom') || '1');
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -170,6 +174,13 @@ async function boot() {
                 }
                 for (let i = 0; i < 30; i++) game.update(DT);
             } catch (e) { ERR.push('tp: ' + String(e && e.stack || e)); }
+        }
+        if (PHOTO) {
+            try {
+                game._enterPhotoMode('gameplay');
+                game.camera.zoom = PHOTOZOOM;
+                for (let i = 0; i < 4; i++) game.update(DT);   // let toolbar-fade settle deterministically
+            } catch (e) { ERR.push('photo: ' + String(e && e.stack || e)); }
         }
         game.render();
     }

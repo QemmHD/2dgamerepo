@@ -230,6 +230,26 @@ export class Game {
                 this.showDebug = !this.showDebug;
                 return;
             }
+            // EMBERGLASS: the Keeper's Lens. While open, its own keys drive the
+            // free-cam + toolbar (movement keys pan via getMovement); Space snaps,
+            // G grid, H HUD, Q/E zoom, C/Esc exit.
+            if (this.photoMode) {
+                e.preventDefault();
+                if (e.code === 'KeyC' || e.code === 'Escape') this._exitPhotoMode();
+                else if (e.code === 'Space') this._snapPhoto();
+                else if (e.code === 'KeyG') this.photoMode.gridOn = !this.photoMode.gridOn;
+                else if (e.code === 'KeyH') this.photoMode.hudShown = !this.photoMode.hudShown;
+                else if (e.code === 'KeyQ') this._photoZoomBy(1 / EMBERGLASS.photo.zoomStep);
+                else if (e.code === 'KeyE') this._photoZoomBy(EMBERGLASS.photo.zoomStep);
+                if (this.photoMode) this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
+                return;
+            }
+            // KeyC enters photo mode from live gameplay/pause or to inspect a death.
+            if (e.code === 'KeyC' && (this.screen === 'gameplay' || this.screen === 'gameOver')) {
+                e.preventDefault();
+                this._enterPhotoMode(this.screen === 'gameOver' ? 'gameOver' : (this.paused ? 'paused' : 'gameplay'));
+                return;
+            }
             if (this.screen === 'start') {
                 if (this.minigame.mines) {
                     if (e.code === 'Space' || e.code === 'Enter') {
@@ -441,6 +461,7 @@ export class Game {
             if (inRect(pos, this.ui.getPauseRestartRect(), 0)) { this._pressFeedback('restart'); this.restart(); return true; }
             if (inRect(pos, this.ui.getPauseShopRect(), 0)) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
             if (inRect(pos, this.ui.getShakeToggleRect(), 0)) { this._pressFeedback('shake'); this.toggleScreenShake(); return true; }
+            if (inRect(pos, this.ui.getPauseLensRect(), 0)) { this._pressFeedback('lens'); this._enterPhotoMode('paused'); return true; }
             return true; // consume all taps while paused
         };
 
@@ -496,6 +517,12 @@ export class Game {
         };
 
         this.renderer.canvas.addEventListener('touchstart', (e) => {
+            // EMBERGLASS Lens owns all touches while open (drag pans / toolbar).
+            if (this.photoMode) {
+                e.preventDefault();
+                for (const t of e.changedTouches) { this._tryPhotoAt(t.clientX, t.clientY, 'down'); break; }
+                return;
+            }
             // Any tap dismisses the chest overlay — checked first so a stray
             // tap on the DBG/joystick zone can't slip through.
             if (this.chestReward) {
@@ -523,6 +550,7 @@ export class Game {
         }, { passive: false });
 
         this.renderer.canvas.addEventListener('mousedown', (e) => {
+            if (this.photoMode) { this._tryPhotoAt(e.clientX, e.clientY, 'down'); return; }
             if (this.chestReward) {
                 this._dismissChestReward();
                 return;
@@ -545,6 +573,27 @@ export class Game {
                 }
             }
         });
+
+        // EMBERGLASS Lens: drag-to-pan (mouse + one finger) and wheel zoom. All
+        // gated to photo mode so they never interfere with normal play.
+        this.renderer.canvas.addEventListener('mousemove', (e) => {
+            if (this.photoMode && this._dragPhotoPrev) this._tryPhotoAt(e.clientX, e.clientY, 'move');
+        });
+        window.addEventListener('mouseup', () => { if (this.photoMode) this._tryPhotoAt(0, 0, 'up'); });
+        this.renderer.canvas.addEventListener('touchmove', (e) => {
+            if (!this.photoMode) return;
+            e.preventDefault();
+            const t = e.changedTouches[0];
+            if (t) this._tryPhotoAt(t.clientX, t.clientY, 'move');
+        }, { passive: false });
+        this.renderer.canvas.addEventListener('touchend', (e) => {
+            if (this.photoMode) { e.preventDefault(); this._tryPhotoAt(0, 0, 'up'); }
+        }, { passive: false });
+        this.renderer.canvas.addEventListener('wheel', (e) => {
+            if (!this.photoMode) return;
+            e.preventDefault();
+            this._photoZoomBy(e.deltaY < 0 ? EMBERGLASS.photo.zoomStep : 1 / EMBERGLASS.photo.zoomStep);
+        }, { passive: false });
 
         // Auto-pause when the tab/window loses focus so a backgrounded run
         // can't take unfair damage (the loop keeps stepping otherwise).
@@ -698,6 +747,10 @@ export class Game {
         this.mintedCard = null;
         this.shareToast = null;
         this._pendingCardMint = null;
+        this.photoMode = null;
+        this._suppressToolbar = false;
+        this._dragPhotoPrev = null;
+        if (this.camera) this.camera.zoom = 1;
         // Gauntlet (endless) scoring — armed only after a 3rd-boss victory
         // continuation; banked on the next death.
         this._gauntletActive = false;
@@ -1668,7 +1721,8 @@ export class Game {
     _updateJoystickEnabled() {
         if (!this.input.touch) return;
         const blocked = this.screen !== 'gameplay' || this.paused ||
-            !!this.upgradeChoices || !!this.chestReward || !!this.altar || !!this.victory;
+            !!this.upgradeChoices || !!this.chestReward || !!this.altar || !!this.victory ||
+            !!this.photoMode;   // the Lens owns touches itself (drag-pan)
         this.input.touch.setEnabled(!blocked);
     }
 
@@ -2694,6 +2748,123 @@ export class Game {
         if (res && res.ok && method !== 'none') this.saveSystem.incrementStat('cardsShared', 1);
     }
 
+    // ── EMBERGLASS: the Keeper's Lens (photo mode) ──────────────────────────
+    _enterPhotoMode(returnTo) {
+        if (this.photoMode) return;
+        this.photoMode = {
+            gridOn: false,
+            hudShown: false,
+            toolbarFade: EMBERGLASS.photo.toolbarFade,
+            returnTo: returnTo || (this.paused ? 'paused' : this.screen === 'gameOver' ? 'gameOver' : 'gameplay'),
+        };
+        // Detach the camera + zero shake so the free-cam holds perfectly still.
+        this.camera.target = null;
+        this.camera.trauma = 0;
+        this.camera.shakeOffsetX = 0; this.camera.shakeOffsetY = 0; this.camera.shakeAngle = 0;
+        this.camera.zoom = 1;
+        this._dragPhotoPrev = null;
+        // The Lens drives its own drag-pan; disable the joystick so it can't
+        // double-count as a second pan (photoMode is in the blocked set).
+        this._updateJoystickEnabled();
+        if (this.audio && this.audio.click) this.audio.click();
+    }
+    _exitPhotoMode() {
+        if (!this.photoMode) return;
+        this.photoMode = null;
+        this._suppressToolbar = false;
+        this._dragPhotoPrev = null;
+        this.camera.zoom = 1;
+        // Re-attach to the player (snaps position + zeroes trauma/offsets).
+        if (this.player) this.camera.follow(this.player);
+        this._updateJoystickEnabled();   // restore joystick for the underlying screen
+        if (this.audio && this.audio.click) this.audio.click();
+    }
+    _photoZoomBy(factor) {
+        if (!this.photoMode) return;
+        const p = EMBERGLASS.photo;
+        this.camera.zoom = Math.max(p.zoomMin, Math.min(p.zoomMax, this.camera.zoom * factor));
+        this.photoMode.toolbarFade = p.toolbarFade;
+    }
+    _updatePhotoMode(dt) {
+        const pm = this.photoMode; if (!pm) return;
+        const p = EMBERGLASS.photo;
+        // Keyboard / joystick pan (÷zoom keeps apparent speed constant).
+        const mv = this.input.getMovement();
+        if (mv && (mv.x || mv.y)) {
+            const spd = (p.panSpeed / (this.camera.zoom || 1)) * dt;
+            this.camera.x += mv.x * spd;
+            this.camera.y += mv.y * spd;
+            pm.toolbarFade = p.toolbarFade;
+        }
+        // Clamp to the world bounds (minus a margin) so the void wall never shows.
+        const mx = WORLD_WIDTH / 2 - p.worldMargin, my = WORLD_HEIGHT / 2 - p.worldMargin;
+        this.camera.x = Math.max(-mx, Math.min(mx, this.camera.x));
+        this.camera.y = Math.max(-my, Math.min(my, this.camera.y));
+        pm.toolbarFade = Math.max(0, pm.toolbarFade - dt);
+        if (this.shareToast) { this.shareToast.timer -= dt; if (this.shareToast.timer <= 0) this.shareToast = null; }
+        this.camera.update(dt);
+    }
+    _photoFilterName() { return "KEEPER'S EYE"; }   // PR3 expands the filter table
+    // SNAP: render one toolbar-free frame synchronously (so the shot excludes the
+    // toolbar), capture it, compose the 'photo' card, and run the share ladder —
+    // all inside the tap gesture so clipboard/share holds.
+    _snapPhoto() {
+        if (!this.photoMode) return;
+        this._suppressToolbar = true;
+        try { this.render(); } catch (e) { /* toolbar-free frame */ }
+        this._suppressToolbar = false;
+        try {
+            const comp = getCardCompositor();
+            comp.captureFromCanvas(this.renderer.canvas);
+            const canvas = comp.compose('photo', { filterName: this._photoFilterName() });
+            if (canvas) this.mintedCard = { canvas, template: 'photo' };
+            this.saveSystem.incrementStat('photosTaken', 1);
+            comp.share({ title: 'EMBERWAKE', text: 'A shot from EMBERWAKE.', filename: 'emberwake-photo.png' })
+                .then((res) => {
+                    const m = (res && res.method) || 'none';
+                    this.shareToast = { text: { clipboard: 'PHOTO COPIED', share: 'PHOTO SHARED',
+                        download: 'PHOTO SAVED', none: 'SAVE FAILED' }[m] || 'PHOTO SAVED', timer: EMBERGLASS.toast.duration };
+                })
+                .catch(() => { this.shareToast = { text: 'PHOTO SAVED', timer: EMBERGLASS.toast.duration }; });
+        } catch (e) { /* snap is best-effort */ }
+        if (this.photoMode) this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
+    }
+    // Pointer/tap dispatch while the Lens is open (drag pans; toolbar buttons act).
+    _tryPhotoAt(clientX, clientY, phase) {
+        if (!this.photoMode) return false;
+        const pos = this.renderer.clientToInternal(clientX, clientY);
+        // Local hit-test (the constructor's inRect closure is out of scope here).
+        const hit = (r) => pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h;
+        if (phase === 'down') {
+            const rects = this.ui.getPhotoToolbarRects();
+            for (const b of rects) {
+                if (hit(b.rect)) {
+                    this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
+                    if (b.id === 'snap') this._snapPhoto();
+                    else if (b.id === 'grid') this.photoMode.gridOn = !this.photoMode.gridOn;
+                    else if (b.id === 'hud') this.photoMode.hudShown = !this.photoMode.hudShown;
+                    else if (b.id === 'zoomIn') this._photoZoomBy(EMBERGLASS.photo.zoomStep);
+                    else if (b.id === 'zoomOut') this._photoZoomBy(1 / EMBERGLASS.photo.zoomStep);
+                    else if (b.id === 'exit') this._exitPhotoMode();
+                    return true;
+                }
+            }
+            this._dragPhotoPrev = pos;   // start a pan drag
+            this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
+            return true;
+        }
+        if (phase === 'move' && this._dragPhotoPrev) {
+            const z = this.camera.zoom || 1;
+            this.camera.x -= (pos.x - this._dragPhotoPrev.x) / z;
+            this.camera.y -= (pos.y - this._dragPhotoPrev.y) / z;
+            this._dragPhotoPrev = pos;
+            this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
+            return true;
+        }
+        if (phase === 'up') { this._dragPhotoPrev = null; return true; }
+        return true;   // consume all pointer events while the Lens is up
+    }
+
     update(dt) {
         // Feedback flashes + press states tick on every screen so they
         // animate even while gameplay is frozen behind an overlay.
@@ -2706,6 +2877,11 @@ export class Game {
         if (this.screen === 'gameplay' && !this.gameOver && this.player.isDead()) {
             this._enterGameOver();
         }
+
+        // EMBERGLASS: the Keeper's Lens freezes the world regardless of the
+        // underlying screen (gameplay / paused / game-over) — only the detached
+        // free-cam ticks. Strictly cheaper than gameplay, so never a perf risk.
+        if (this.photoMode) { this._updatePhotoMode(dt); return; }
 
         // Meta-screen states never tick gameplay; the start screen still
         // ticks the reset-confirm timeout so the "tap again to confirm"
@@ -3529,11 +3705,19 @@ export class Game {
         ctx.save();
         this.camera.apply(ctx);
 
+        // Photo-mode zoom widens the visible view; feed the wider extent to the
+        // view-extent consumers + cull so nothing pops at the frame edge when
+        // zoomed out (zoom>1 just over-draws a touch at the old margin — fine).
+        const _zoom = this.camera.zoom || 1;
+        const viewW = INTERNAL_WIDTH / _zoom;
+        const viewH = INTERNAL_HEIGHT / _zoom;
+        const cullMargin = CULL_MARGIN + (_zoom < 1 ? (1 / _zoom - 1) * INTERNAL_WIDTH / 2 : 0);
+
         // Ground → grid(debug) → decorations (which register candle lights)
         // → low fog (below entities) → bounds.
-        this.mapRenderer.drawBackground(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        this.mapRenderer.drawBackground(ctx, this.camera, viewW, viewH);
         if (this.showDebug) this._drawGrid(ctx);
-        this.mapRenderer.drawDecorations(ctx, this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT, L);
+        this.mapRenderer.drawDecorations(ctx, this.camera, viewW, viewH, L);
         if (this.particlesEnabled && !this.reducedEffects) this.particles.drawWorldFog(ctx, this.camera);
         this._drawWorldBounds(ctx, this.showDebug);
 
@@ -3542,7 +3726,7 @@ export class Game {
         // player above the building would push the floor into the in-front pass
         // and paint it over enemies inside). One flat ground pass here.
         this.obstacleSystem.forVisible(
-            this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
+            this.camera, viewW, viewH,
             (ob) => ob.draw(ctx), (ob) => !!ob.def.decorative
         );
 
@@ -3552,7 +3736,7 @@ export class Game {
         // (Decorative floors are excluded — drawn in the ground pass above.)
         const playerBaseY = this.player.y + this.player.radius;
         this.obstacleSystem.forVisible(
-            this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
+            this.camera, viewW, viewH,
             (ob) => ob.draw(ctx), (ob) => !ob.def.decorative && ob.baseY <= playerBaseY
         );
 
@@ -3560,7 +3744,7 @@ export class Game {
         // sprite-half + shake margin) are worth a draw call (enemies spawn
         // ~1100-1350px out, cap up to 145). Lights are registered in the
         // SAME culled loops so light cost scales with visible emitters too.
-        const cull = (e) => this._inView(e.x, e.y, CULL_MARGIN);
+        const cull = (e) => this._inView(e.x, e.y, cullMargin);
         const Lc = GFX.lighting;
 
         // Boss arena boundary ring — a glowing wall the player + boss are sealed
@@ -3648,7 +3832,7 @@ export class Game {
         // Obstacles whose feet sit below the player draw on top of them, so the
         // player is occluded when standing behind a wall/building.
         this.obstacleSystem.forVisible(
-            this.camera, INTERNAL_WIDTH, INTERNAL_HEIGHT,
+            this.camera, viewW, viewH,
             (ob) => ob.draw(ctx), (ob) => !ob.def.decorative && ob.baseY > playerBaseY
         );
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
@@ -3754,11 +3938,39 @@ export class Game {
         // background is the clean world, not the HUD/overlay.
         if (this._pendingCardMint) this._mintPendingCard();
 
+        // EMBERGLASS photo mode: HUD off. Draw the rule-of-thirds grid + the
+        // minimal Lens toolbar instead (both excluded from a SNAP via the
+        // _suppressToolbar flag). Optionally re-show the gameplay HUD for an
+        // annotated shot.
+        if (this.photoMode) {
+            if (this.photoMode.hudShown) this.ui.draw(ctx, buildUIState(this));
+            if (!this._suppressToolbar) {
+                if (this.photoMode.gridOn) this._drawPhotoGrid(ctx);
+                this.ui.drawPhotoToolbar(ctx, this.photoMode, this.camera.zoom, this.shareToast);
+            }
+            return;
+        }
+
         this.ui.draw(ctx, buildUIState(this));
 
         if (this.victory) this._drawVictory(ctx);
 
         if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
+    }
+
+    // Rule-of-thirds framing guide for the Lens (low-alpha screen-space lines).
+    _drawPhotoGrid(ctx) {
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(W / 3, 0); ctx.lineTo(W / 3, H);
+        ctx.moveTo(2 * W / 3, 0); ctx.lineTo(2 * W / 3, H);
+        ctx.moveTo(0, H / 3); ctx.lineTo(W, H / 3);
+        ctx.moveTo(0, 2 * H / 3); ctx.lineTo(W, 2 * H / 3);
+        ctx.stroke();
+        ctx.restore();
     }
 
     // Expanding shockwave rings — additive stroked circles that grow via an

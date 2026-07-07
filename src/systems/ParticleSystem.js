@@ -382,14 +382,15 @@ export class ParticleSystem {
     // Screen-space additive sparks, above the veil so they never dim.
     drawScreenAdditive(ctx, camera) {
         if (!this.enabled) return;
-        const ox = INTERNAL_W / 2 - camera.x + (camera.shakeOffsetX || 0);
-        const oy = INTERNAL_H / 2 - camera.y + (camera.shakeOffsetY || 0);
+        // Center-relative mapping so photo-mode zoom composes: screen =
+        // (world − cam)·zoom + centre + shake (shake unscaled, matching the veil).
+        const z = camera.zoom || 1;
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         for (const p of this.pool) {
             if (!p.active || p.layer !== SCREEN_ADD) continue;
-            const sx = p.x + ox;
-            const sy = p.y + oy;
+            const sx = (p.x - camera.x) * z + INTERNAL_W / 2 + (camera.shakeOffsetX || 0);
+            const sy = (p.y - camera.y) * z + INTERNAL_H / 2 + (camera.shakeOffsetY || 0);
             if (sx < -64 || sx > INTERNAL_W + 64 || sy < -64 || sy > INTERNAL_H + 64) continue;
             this._blitAt(ctx, p, sx, sy);
         }
@@ -416,11 +417,17 @@ export class ParticleSystem {
     }
 
     _view(camera, margin) {
+        // Photo-mode zoom<1 widens the visible world; grow the half-extents by
+        // 1/zoom so world particles aren't culled short of the frame edges (at
+        // zoom 1 this is byte-identical to the plain screen half-extent).
+        const z = camera.zoom || 1;
+        const hw = z < 1 ? INTERNAL_W / (2 * z) : INTERNAL_W / 2;
+        const hh = z < 1 ? INTERNAL_H / (2 * z) : INTERNAL_H / 2;
         return {
-            left: camera.x - INTERNAL_W / 2 - margin,
-            right: camera.x + INTERNAL_W / 2 + margin,
-            top: camera.y - INTERNAL_H / 2 - margin,
-            bottom: camera.y + INTERNAL_H / 2 + margin,
+            left: camera.x - hw - margin,
+            right: camera.x + hw + margin,
+            top: camera.y - hh - margin,
+            bottom: camera.y + hh + margin,
         };
     }
 }
