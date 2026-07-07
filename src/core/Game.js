@@ -1212,6 +1212,7 @@ export class Game {
     // on the run is scored as a Gauntlet (endless) — banked on the next death.
     victoryContinue() {
         this.victory = null;
+        this.shareToast = null;   // don't carry a victory share toast into the gauntlet
         this._gauntletActive = true;
         this.audio.click();
         this.audio.playMusic('gameplay');   // back to the driving theme (biome latched)
@@ -2511,6 +2512,7 @@ export class Game {
         this.audio.stopMusic();
         this.screen = 'gameOver';
         this.gameOverAge = 0;
+        this.shareToast = null;   // a fresh death screen starts with no stale toast
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.chestReward = null;
