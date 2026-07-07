@@ -1709,6 +1709,20 @@ export class UISystem {
             ctx.globalAlpha = 1;
         }
 
+        // KINDLED element-combo breadcrumb — which cross-element reaction a pick
+        // this level would unlock (sits just under the keystone line).
+        const combos = state.comboHints;
+        if (Array.isArray(combos) && combos.length) {
+            ctx.globalAlpha = bg;
+            ctx.fillStyle = '#8fe0ff'; // frost-cyan combo tint
+            ctx.font = `700 24px ${FONT}`;
+            const ctxt = combos
+                .map((h) => `${h.offered.toUpperCase()}+${h.owned.toUpperCase()} → ${h.reaction}`)
+                .join('     ◆     ');
+            ctx.fillText(`◆ COMBO READY ◆   ${ctxt}`, INTERNAL_WIDTH / 2, 174);
+            ctx.globalAlpha = 1;
+        }
+
         ctx.globalAlpha = bg;
         ctx.font = `34px ${FONT}`;
         // Weapon/ability slot meter (P0.3): the ~5-slot loadout cap is a real
