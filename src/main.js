@@ -4,6 +4,7 @@ import { Game } from './core/Game.js';
 import { Input } from './core/Input.js';
 import { KeyboardInput } from './core/KeyboardInput.js';
 import { TouchJoystick } from './core/TouchJoystick.js';
+import { TouchButtons } from './core/TouchButtons.js';
 import { prewarmSprites, getGlowSprite } from './assets/ProceduralSprites.js';
 import { loadLpcSprites } from './assets/LpcSprites.js';
 import { loadWorldTextures } from './assets/WorldTextures.js';
@@ -90,7 +91,11 @@ async function boot() {
     const splash = startSplash(canvas);
     const keyboard = new KeyboardInput();
     const touch = new TouchJoystick(renderer);
-    const input = new Input({ keyboard, touch });
+    // KINDLED touch verbs (blink + Kindle ult + Focus taps): the bottom-RIGHT
+    // action surface, sibling to the left-half steer joystick. Own listeners,
+    // own touch ids, so move + aim + blink work simultaneously (multi-touch).
+    const buttons = new TouchButtons(renderer);
+    const input = new Input({ keyboard, touch, buttons });
 
     // Orientation lock must be requested from a user gesture; try once on the
     // first interaction (succeeds on Android / installed PWA, harmless no-op
@@ -105,7 +110,7 @@ async function boot() {
 
     // Drop an in-progress joystick drag if the screen rotation flips, so a
     // stale touch origin can't produce a bogus steer across the convention.
-    renderer.onOrientationChange = () => touch.reset();
+    renderer.onOrientationChange = () => { touch.reset(); buttons.reset(); };
 
     let game;
     const loop = new GameLoop({

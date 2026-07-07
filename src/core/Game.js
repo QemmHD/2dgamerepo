@@ -1764,11 +1764,14 @@ export class Game {
     // start while the player is reading a card / chest reward / shop /
     // GAME OVER.
     _updateJoystickEnabled() {
-        if (!this.input.touch) return;
         const blocked = this.screen !== 'gameplay' || this.paused ||
             !!this.upgradeChoices || !!this.chestReward || !!this.altar || !!this.victory ||
             !!this.photoMode;   // the Lens owns touches itself (drag-pan)
-        this.input.touch.setEnabled(!blocked);
+        if (this.input.touch) this.input.touch.setEnabled(!blocked);
+        // KINDLED touch action buttons share the joystick's block set — disabling
+        // is authoritative (clears any latched tap), so a blink/ult/focus queued
+        // as an overlay opens can't fire when play resumes.
+        if (this.input.buttons) this.input.buttons.setEnabled(!blocked);
     }
 
     _presentLevelUp() {
@@ -2057,25 +2060,37 @@ export class Game {
         k.startBlinkCooldown();
     }
 
-    // KINDLED — the Focus-Time aim state machine (keyboard). HOLD KeyQ (with a
-    // ready meter) to enter slow-mo aiming; the ult FIRES on release, or when the
-    // 2.5s hold cap elapses. Runs on REAL dt from the live gameplay step (past
-    // every overlay guard), so it never ticks under a pick-one overlay. Returns
-    // the fired ult's { hits, killed } this frame (merged by _resolveCombat), else
-    // null. Touch aiming lands in PR4.
+    // KINDLED — the Focus-Time aim state machine (keyboard KeyQ + touch KINDLE
+    // button, folded to one path). HOLD (with a ready meter) to enter slow-mo
+    // aiming; the ult FIRES on release, or when the 2.5s hold cap elapses. Runs
+    // on REAL dt from the live gameplay step (past every overlay guard), so it
+    // never ticks under a pick-one overlay. Returns the fired ult's
+    // { hits, killed } this frame (merged by _resolveCombat), else null.
     _updateKindleAim(dt) {
         const k = this.kindleSystem;
         const kb = this.input && this.input.keyboard;
+        const btn = this.input && this.input.buttons;
         const qHeld = !!(kb && kb.isDown && kb.isDown('KeyQ'));
+        const touchHeld = !!(btn && btn.kindleHeld);
+        const held = qHeld || touchHeld;
         if (k.aiming) {
             k.aiming.t += dt;                       // wall-clock hold time
-            k.aiming.angle = this._ultAimAngle();   // re-aim each frame
-            if (!qHeld || k.aiming.t >= KINDLE.focusTimeMax) return this._releaseUlt(k.aiming.angle);
+            k.aiming.angle = this._ultAimAngle();   // re-aim each frame (folds touch drag)
+            // Touch deadzone cancel: a slow release near the button centre fizzles
+            // and refunds the whole bar (checked BEFORE the release-to-fire path,
+            // since touchend clears kindleHeld and sets the cancel flag together).
+            if (btn && btn.consumeKindleCancel()) { k.refundAim(); k.aiming = null; return null; }
+            if (!held || k.aiming.t >= KINDLE.focusTimeMax) return this._releaseUlt(k.aiming.angle);
             return null;                            // still aiming
         }
+        // Not aiming: any latched deadzone-cancel is STALE (there's no aim to
+        // fizzle — e.g. the button was held with an unready meter, or released
+        // after an overlay ate the aim). Drain it now so it can't bleed into and
+        // instantly cancel the NEXT aim (whether that aim starts on touch or KeyQ).
+        if (btn) btn.consumeKindleCancel();
         // Begin aiming on a fresh hold with a ready meter — spend up-front so a
-        // cancel (overlay/pause) can refund the whole bar cleanly.
-        if (qHeld && k.ready) {
+        // cancel (overlay/pause/deadzone) can refund the whole bar cleanly.
+        if (held && k.ready) {
             const sig = signatureFor(this._heroId);
             k.spendUlt();
             k.aiming = { t: 0, angle: this._ultAimAngle(), kind: sig.aimKind, ultName: sig.name };
@@ -2083,10 +2098,14 @@ export class Game {
         return null;
     }
 
-    // The angle an ult fires along: the current movement vector, else the last
-    // auto-aim angle (which already honours the Focus target). Deliberately NOT
-    // the facing map the blink uses — an ult points where you're steering it.
+    // The angle an ult fires along: an explicit touch DRAG aim wins (the player
+    // is pointing the ult by dragging off the KINDLE button); else the current
+    // movement vector; else the last auto-aim angle (which already honours the
+    // Focus target). Deliberately NOT the facing map the blink uses — an ult
+    // points where you're steering/aiming it.
     _ultAimAngle() {
+        const btn = this.input && this.input.buttons;
+        if (btn && btn.kindleAngle != null) return btn.kindleAngle;
         const mv = this.input.getMovement();
         if (mv && (mv.x !== 0 || mv.y !== 0)) return Math.atan2(mv.y, mv.x);
         return this.player.aimAngle ?? 0;
@@ -2141,6 +2160,43 @@ export class Game {
         else if (!cur.elite && !cur.boss) this.focusTarget = nearest((e) => e.elite && !e.boss) || nearest((e) => e.boss) || null;
         else if (cur.elite && !cur.boss) this.focusTarget = nearest((e) => e.boss) || null;
         else this.focusTarget = null;   // was boss → clear
+        this._focusOutOfRangeT = 0;
+        if (this.focusTarget) this.audio.uiTick?.();
+    }
+
+    // KINDLED touch verbs (PR4): drain the two DISCRETE taps the bottom-right
+    // button surface latched this frame — BLINK (dodge) and FOCUS (target). The
+    // Kindle HOLD/aim is folded into _updateKindleAim; this handles only the
+    // taps. Called from the live gameplay step (past every overlay guard), so a
+    // tap can't fire under a frozen overlay. No-op when no touch buttons exist
+    // (desktop / the art harnesses build Input without them).
+    _updateTouchButtons() {
+        const btn = this.input && this.input.buttons;
+        if (!btn) return;
+        if (btn.consumeBlinkTap()) this._tryBlink();
+        const ft = btn.consumeFocusTap();
+        if (ft) this._focusTapAt(ft.x, ft.y);
+    }
+
+    // Touch Focus targeting: LOCK the enemy nearest the tapped screen point
+    // (within a forgiving pick radius), toggling the lock OFF if that enemy is
+    // already locked; a tap on empty ground CLEARS the lock. The keyboard path
+    // (_cycleFocusTarget) keeps the nearest→elite→boss→clear cycle model — touch
+    // gets direct point-and-lock, which reads more naturally on a screen. Screen
+    // → world is the inverse of UISystem._worldToScreen (camera is world-centre).
+    _focusTapAt(screenX, screenY) {
+        const cam = this.camera || { x: 0, y: 0 };
+        const wx = screenX - INTERNAL_WIDTH / 2 + cam.x;
+        const wy = screenY - INTERNAL_HEIGHT / 2 + cam.y;
+        const PICK = 120;   // tap forgiveness (world px), plus each enemy's own radius
+        let best = null, bestD = Infinity;
+        for (const e of this.enemies) {
+            if (!e.active) continue;
+            const dx = e.x - wx, dy = e.y - wy, d = dx * dx + dy * dy;
+            const reach = PICK + (e.radius || 20);
+            if (d <= reach * reach && d < bestD) { bestD = d; best = e; }
+        }
+        this.focusTarget = best ? (this.focusTarget === best ? null : best) : null;
         this._focusOutOfRangeT = 0;
         if (this.focusTarget) this.audio.uiTick?.();
     }
@@ -3172,6 +3228,10 @@ export class Game {
         const _aiming = !!this.kindleSystem.aiming;
         const worldDt = _aiming ? dt * KINDLE.focusTimeScale : dt;
         this._updateKindleTimers(dt);
+        // KINDLED touch verbs — drain the latched BLINK + FOCUS taps early (before
+        // enemies/collision), so a blink's landing position is authoritative this
+        // frame, matching the keyboard Space/Tab path. No-op sans touch buttons.
+        this._updateTouchButtons();
 
         // KINDLED: snapshot the (cached) active boss's HP so we can charge the
         // Kindle meter by the fraction of its MAX HP dealt this frame — across
@@ -4241,6 +4301,20 @@ export class Game {
         if (this.victory) this._drawVictory(ctx);
 
         if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
+        // KINDLED touch action buttons (blink + Kindle ult). Gated on `supported`
+        // so non-touch (desktop/headless) skips the snapshot build + draw entirely
+        // — the desktop view is byte-for-byte untouched. Fed the live meter/cooldown
+        // the buttons don't own.
+        if (this.screen === 'gameplay' && this.input.buttons && this.input.buttons.supported) {
+            const k = this.kindleSystem, sig = signatureFor(this._heroId);
+            this.input.buttons.draw(ctx, {
+                fill: k ? k.fill / k.max : 0,
+                ready: !!(k && k.ready),
+                ultColor: sig ? sig.color : '#ff8c4a',
+                aiming: !!(k && k.aiming),
+                blinkFrac: k ? (k.blinkCooldown / BLINK.cooldown) : 0,
+            });
+        }
     }
 
     // Rule-of-thirds framing guide for the Lens (low-alpha screen-space lines).
