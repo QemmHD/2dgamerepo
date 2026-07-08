@@ -1358,7 +1358,10 @@ export class Game {
     _checkPactMastery() {
         const tier = (this.activeModifiers ?? []).length;
         if (tier <= 0) return;
-        const char = this.saveSystem.getSelectedCharacter();
+        // KINDLED PR5 — credit the hero actually PLAYED (a Rite Trial forces a
+        // session-local hero override), not the saved menu pick, so a trial clear
+        // advances the trial hero's ladder + pays its bounty (not the menu hero's).
+        const char = this._effectiveCharacterId();
         const steps = this.saveSystem.recordPactClear(char, tier);
         if (steps > 0) {
             const bounty = steps * 80;
@@ -3161,7 +3164,10 @@ export class Game {
             const comp = getCardCompositor();
             comp.captureFromCanvas(this.renderer.canvas);
             const canvas = comp.compose(pend.template, pend.data);
-            if (canvas) this.mintedCard = { canvas, template: pend.template };
+            // Stash the card's hero id so the share CAPTION always names the hero the
+            // card ART shows — for a Rite Trial that's the trial hero (_effective-
+            // CharacterId), which differs from the saved menu pick.
+            if (canvas) this.mintedCard = { canvas, template: pend.template, heroId: pend.data && pend.data.characterId };
         } catch (e) { /* card is optional; never break the frame */ }
     }
     // Share the minted card via the compositor ladder. MUST run synchronously
@@ -3179,7 +3185,9 @@ export class Game {
         } catch (e) { this._afterShare(null); }
     }
     _shareCardText() {
-        const name = this._cardHeroName(this.saveSystem.getSelectedCharacter());
+        // Name the hero the minted card ART shows (the trial hero for a Rite Trial),
+        // falling back to the saved pick for any card minted without a stashed id.
+        const name = this._cardHeroName((this.mintedCard && this.mintedCard.heroId) || this.saveSystem.getSelectedCharacter());
         if (this.victory) return `${name} held the light in EMBERWAKE.`;
         const k = this.runSummary && this.runSummary.killedBy;
         if (k && k.label) {
