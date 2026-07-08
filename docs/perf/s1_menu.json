@@ -1,0 +1,137 @@
+{
+  "out": "s1_menu",
+  "screen": "menu",
+  "measureSeconds": 1,
+  "warmupFrames": 120,
+  "windowFrames": 240,
+  "map": null,
+  "gfxTier": 0,
+  "stress": {
+    "dense": 0,
+    "pickups": 0,
+    "dmgnum": 0,
+    "boss": 0
+  },
+  "viewport": {
+    "w": 1600,
+    "h": 708,
+    "dpr": 1
+  },
+  "counts": {
+    "enemies": 0,
+    "projectiles": 0,
+    "enemyProjectiles": 0,
+    "particles": 0,
+    "lights": 0,
+    "gems": 0,
+    "damageNumbers": 0
+  },
+  "frameMs": {
+    "avg": 74.2713,
+    "p50": 0.7,
+    "p95": 1.4,
+    "max": 3087
+  },
+  "updateMs": 0.0013,
+  "renderMs": 74.27,
+  "fpsAvg": 13.5,
+  "fpsMedian": 1428.6,
+  "fpsMin": 0.3,
+  "buckets": {
+    "update": 0.0001,
+    "render": 156.136,
+    "map": 0,
+    "decor": 0,
+    "obstacles": 0,
+    "entities": 0,
+    "projectiles": 0,
+    "particles": 0,
+    "lighting": 0,
+    "ui": 0,
+    "collision": 0,
+    "weapons": 0,
+    "spawner": 0
+  },
+  "bucketStats": {
+    "update": {
+      "avg": 0.0013,
+      "p50": 0,
+      "p95": 0,
+      "max": 0.1
+    },
+    "render": {
+      "avg": 74.2675,
+      "p50": 0.7,
+      "p95": 1.4,
+      "max": 3087
+    },
+    "map": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "decor": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "obstacles": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "entities": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "projectiles": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "particles": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "lighting": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "ui": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "collision": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "weapons": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "spawner": {
+      "avg": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    }
+  },
+  "exc": 0,
+  "firstExc": null
+}

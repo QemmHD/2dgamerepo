@@ -1,0 +1,137 @@
+{
+  "out": "s7_tier1",
+  "screen": "run",
+  "measureSeconds": 1,
+  "warmupFrames": 120,
+  "windowFrames": 240,
+  "map": null,
+  "gfxTier": 1,
+  "stress": {
+    "dense": 80,
+    "pickups": 0,
+    "dmgnum": 0,
+    "boss": 0
+  },
+  "viewport": {
+    "w": 1600,
+    "h": 708,
+    "dpr": 1
+  },
+  "counts": {
+    "enemies": 76,
+    "projectiles": 0,
+    "enemyProjectiles": 5,
+    "particles": 70,
+    "lights": 82,
+    "gems": 0,
+    "damageNumbers": 2
+  },
+  "frameMs": {
+    "avg": 196.5512,
+    "p50": 29.5,
+    "p95": 549.8,
+    "max": 590.9
+  },
+  "updateMs": 0.5346,
+  "renderMs": 196.0167,
+  "fpsAvg": 5.1,
+  "fpsMedian": 33.9,
+  "fpsMin": 1.7,
+  "buckets": {
+    "update": 0.6198,
+    "render": 235.4728,
+    "map": 0.0091,
+    "decor": 0.1624,
+    "obstacles": 0.1429,
+    "entities": 0.6072,
+    "projectiles": 0.0548,
+    "particles": 0.1281,
+    "lighting": 233.5183,
+    "ui": 0.6593,
+    "collision": 0.0056,
+    "weapons": 0.0371,
+    "spawner": 0.0532
+  },
+  "bucketStats": {
+    "update": {
+      "avg": 0.5325,
+      "p50": 0.5,
+      "p95": 0.9,
+      "max": 3.6
+    },
+    "render": {
+      "avg": 196.0163,
+      "p50": 28.9,
+      "p95": 549.4,
+      "max": 590.4
+    },
+    "map": {
+      "avg": 0.0142,
+      "p50": 0,
+      "p95": 0.1,
+      "max": 0.1
+    },
+    "decor": {
+      "avg": 0.1383,
+      "p50": 0.1,
+      "p95": 0.2,
+      "max": 0.3
+    },
+    "obstacles": {
+      "avg": 0.1796,
+      "p50": 0.1,
+      "p95": 0.3,
+      "max": 5.5
+    },
+    "entities": {
+      "avg": 0.5742,
+      "p50": 0.6,
+      "p95": 0.7,
+      "max": 2.2
+    },
+    "projectiles": {
+      "avg": 0.0292,
+      "p50": 0,
+      "p95": 0.1,
+      "max": 0.2
+    },
+    "particles": {
+      "avg": 0.0904,
+      "p50": 0.1,
+      "p95": 0.2,
+      "max": 0.7
+    },
+    "lighting": {
+      "avg": 194.2925,
+      "p50": 27.1,
+      "p95": 547.7,
+      "max": 588.6
+    },
+    "ui": {
+      "avg": 0.5187,
+      "p50": 0.5,
+      "p95": 0.7,
+      "max": 4.9
+    },
+    "collision": {
+      "avg": 0.0183,
+      "p50": 0,
+      "p95": 0.1,
+      "max": 0.2
+    },
+    "weapons": {
+      "avg": 0.0396,
+      "p50": 0,
+      "p95": 0.1,
+      "max": 0.4
+    },
+    "spawner": {
+      "avg": 0.0287,
+      "p50": 0,
+      "p95": 0.1,
+      "max": 0.3
+    }
+  },
+  "exc": 0,
+  "firstExc": null
+}

@@ -107,8 +107,150 @@ const PICKUPS = parseInt(params.get('pickups') || '0', 10);  // gems + coins + o
 const DMGNUM = parseInt(params.get('dmgnum') || '0', 10);    // floating damage numbers
 const QABOSS = params.get('boss') === '1';                   // spawn a boss + warning
 const MAP = params.get('map');                               // force selected map (weather)
+// ── Real-GameLoop MEASUREMENT mode (ENGINE_PROFILER_REPORT data collection) ──
+// The screenshot path above steps game.update/game.render DIRECTLY, bypassing
+// GameLoop — so the FrameProfiler (which GameLoop._tick drives) reads 0.00. This
+// mode instead mirrors _tick's exact begin/end/frame bracketing around real
+// performance.now() timing (Chrome MUST run WITHOUT --virtual-time-budget so the
+// clock is real wall-time, not virtual), giving honest per-bucket ms + a frame
+// budget. It ramps the sim to a target game-time (update-only, cheap), applies
+// the same stress knobs, warms the EMA, then times a fixed window and PUTs a
+// JSON summary to serve.py's /__save/<out>.json (the driver just polls the file).
+const MEASURE = params.has('measure') ? parseFloat(params.get('measure')) : null; // ramp game-seconds
+const WARMUP = parseInt(params.get('warmup') || '120', 10);   // untimed frames: EMA settle + JIT
+const WINDOW = parseInt(params.get('window') || '300', 10);   // timed frames (the measured window)
+const OUT = (params.get('out') || 'measure').replace(/[^A-Za-z0-9._-]/g, '');
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
+
+// Ring placement helper for measurement stress (mirrors the QA scenario block).
+function _ring(px, py, i, n, r) { const a = -Math.PI / 2 + i * (2 * Math.PI / n); return [px + Math.cos(a) * r, py + Math.sin(a) * r]; }
+
+// Real-GameLoop measurement: mirrors GameLoop._tick's profiler bracketing around
+// real-clock timing, then PUTs a JSON summary. Returns nothing; sets window.__done.
+async function runMeasurement(game) {
+    const prof = game.profiler;
+    const dismiss = () => {
+        if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);
+        if (game.chestReward && game._dismissChestReward) game._dismissChestReward();
+        if (game.altar && game.selectAltar) game.selectAltar(0);
+    };
+    if (SCREEN === 'menu') {
+        game.screen = 'start';
+        game.menuTab = TAB;
+        for (let i = 0; i < 90; i++) { try { game.update(DT); } catch (e) { ERR.push('m-menu ' + i + ': ' + String(e && e.stack || e)); break; } }
+    } else {
+        if (MAP) { try { game.saveSystem.setSelectedMap(MAP); } catch (e) { ERR.push('map: ' + String(e)); } }
+        game._startRun();
+        game.player.damageTakenMul = 0;   // godmode: survive the swarm; player still DEALS damage (real combat FX)
+        // Ramp untimed to the target game-time (update-only — render isn't needed
+        // to build the sim state, and skipping it makes a 90s ramp cheap).
+        const rampFrames = Math.max(0, Math.round((MEASURE || 0) / DT));
+        for (let i = 0; i < rampFrames; i++) {
+            try { game.update(DT); dismiss(); if (game.victory) break; }
+            catch (e) { ERR.push('m-ramp ' + i + ': ' + String(e && e.stack || e)); break; }
+        }
+        // One-shot dense enemies + boss on top of the ramped swarm.
+        try {
+            const px = game.player.x, py = game.player.y;
+            if (DENSE) {
+                const types = ['slime', 'bat', 'crawler', 'spitter', 'mite', 'brute'];
+                for (let i = 0; i < DENSE; i++) { const [x, y] = _ring(px, py, i, DENSE, 140 + (i % 5) * 60); game.enemies.push(new Enemy(types[i % types.length], x, y)); }
+            }
+            if (QABOSS) { const bd = game.bossDirector; const id = (bd && bd.bosses && bd.bosses[0]) || 'emberwarden'; game._spawnBoss(id); game._startBossWarning(id); }
+            for (let i = 0; i < 12; i++) { game.update(DT); dismiss(); }
+        } catch (e) { ERR.push('m-stress ' + String(e && e.stack || e)); }
+        if (GFXTIER != null && GFXTIER >= 0) { try { game._gfxLevel = GFXTIER; game._applyGfxLevel(); } catch (e) { ERR.push('gfxtier: ' + String(e && e.stack || e)); } }
+    }
+    // Per-frame top-ups hold a steady stress count through the whole window (pickups
+    // get vacuumed / damage numbers decay, so a one-shot burst would drain away).
+    const px0 = game.player ? game.player.x : 0, py0 = game.player ? game.player.y : 0;
+    const topUp = () => {
+        if (PICKUPS && game.gems) {
+            const tiers = ['small', 'medium', 'large'];
+            for (let i = game.gems.length; i < PICKUPS; i++) { const [x, y] = _ring(px0, py0, i, PICKUPS, 220 + (i % 6) * 40); game.gems.push(new XPGem(x, y, tiers[i % 3])); }
+        }
+        if (DMGNUM && game.damageNumbers) {
+            const cols = ['#ffffff', '#ffd166', '#ff6a5a', '#7be0ff', '#b48cff'];
+            for (let i = game.damageNumbers.length; i < DMGNUM; i++) { const [x, y] = _ring(px0, py0, i, DMGNUM, 60 + (i % 8) * 30); game.damageNumbers.push(new DamageNumber(x, y, 10 + (i * 7) % 90, cols[i % cols.length])); }
+        }
+    };
+    // Enable the profiler + warm up (EMA converge + JIT). Stepped WITH render so
+    // the render buckets fill; timed identically to the window but not recorded.
+    if (prof) prof.enabled = true;
+    for (let i = 0; i < WARMUP; i++) {
+        try {
+            topUp();
+            if (prof) prof.begin('update'); game.update(DT); if (prof) prof.end('update'); dismiss();
+            if (prof) prof.begin('render'); game.render(); if (prof) prof.end('render');
+            if (prof) prof.frame();
+        } catch (e) { ERR.push('m-warm ' + i + ': ' + String(e && e.stack || e)); break; }
+    }
+    // Timed window — the honest measurement. Per-frame per-bucket samples are
+    // collected (read prof._acc BEFORE frame() zeroes it) so we can report a
+    // ROBUST median per bucket — the EMA alone is recency/outlier-skewed, and in
+    // software raster periodic GC spikes land in whichever bucket owns the widest
+    // time window (usually lighting), inflating its mean. Median cuts through that.
+    let sumU = 0, sumR = 0, sumF = 0, maxF = 0;
+    const totals = [];
+    const samples = {};
+    if (prof) for (const b of prof.buckets) samples[b] = [];
+    for (let i = 0; i < WINDOW; i++) {
+        try {
+            topUp();
+            const t0 = performance.now();
+            if (prof) prof.begin('update'); game.update(DT); if (prof) prof.end('update');
+            const t1 = performance.now();
+            dismiss();
+            if (prof) prof.begin('render'); game.render(); if (prof) prof.end('render');
+            const t2 = performance.now();
+            if (prof) { for (const b of prof.buckets) samples[b].push(prof._acc[b]); prof.frame(); }
+            const u = t1 - t0, r = t2 - t1, f = u + r;
+            sumU += u; sumR += r; sumF += f; if (f > maxF) maxF = f; totals.push(f);
+        } catch (e) { ERR.push('m-win ' + i + ': ' + String(e && e.stack || e)); break; }
+    }
+    const n = totals.length || 1;
+    totals.sort((a, b) => a - b);
+    const pct = (p) => totals[Math.min(n - 1, Math.floor(p * n))] || 0;
+    const buckets = {};
+    if (prof) for (const b of Object.keys(prof.ema)) buckets[b] = +prof.ema[b].toFixed(4);
+    // Robust per-bucket stats (median/avg/p95/max) from the per-frame samples.
+    const bucketStats = {};
+    if (prof) for (const b of prof.buckets) {
+        const a = samples[b].slice().sort((x, y) => x - y); const m = a.length || 1;
+        const sum = a.reduce((p, c) => p + c, 0);
+        bucketStats[b] = { avg: +(sum / m).toFixed(4), p50: +(a[Math.floor(m * 0.5)] || 0).toFixed(4), p95: +(a[Math.floor(m * 0.95)] || 0).toFixed(4), max: +(a[m - 1] || 0).toFixed(4) };
+    }
+    const result = {
+        out: OUT, screen: SCREEN, measureSeconds: MEASURE, warmupFrames: WARMUP, windowFrames: n,
+        map: MAP || null, gfxTier: (game._gfxLevel != null ? game._gfxLevel : null),
+        stress: { dense: DENSE, pickups: PICKUPS, dmgnum: DMGNUM, boss: QABOSS ? 1 : 0 },
+        viewport: { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio },
+        counts: {
+            enemies: game.enemies ? game.enemies.length : -1,
+            projectiles: game.projectiles ? game.projectiles.length : -1,
+            enemyProjectiles: game.enemyProjectiles ? game.enemyProjectiles.length : -1,
+            particles: (game.particles && game.particles.activeCount) ? game.particles.activeCount() : -1,
+            lights: (game.lighting && game.lighting._count != null) ? game.lighting._count : -1,
+            gems: game.gems ? game.gems.length : -1,
+            damageNumbers: game.damageNumbers ? game.damageNumbers.length : -1,
+        },
+        frameMs: { avg: +(sumF / n).toFixed(4), p50: +pct(0.5).toFixed(4), p95: +pct(0.95).toFixed(4), max: +maxF.toFixed(4) },
+        updateMs: +(sumU / n).toFixed(4),
+        renderMs: +(sumR / n).toFixed(4),
+        fpsAvg: +(1000 / (sumF / n)).toFixed(1),
+        fpsMedian: +(1000 / (pct(0.5) || 1)).toFixed(1),
+        fpsMin: +(1000 / maxF).toFixed(1),
+        buckets,          // EMA snapshot (matches the in-game debug HUD readout)
+        bucketStats,      // robust per-frame median/avg/p95/max per bucket
+        exc: ERR.length, firstExc: ERR[0] || null,
+    };
+    window.__measureResult = result;
+    try { await fetch('/__save/' + OUT + '.json', { method: 'PUT', body: JSON.stringify(result, null, 2) }); }
+    catch (e) { ERR.push('put: ' + String(e && e.stack || e)); }
+    document.title = 'DONE MEASURE EXC:' + ERR.length + ' fpsAvg:' + result.fpsAvg + ' fpsMin:' + result.fpsMin;
+    window.__done = true;
+}
 
 async function boot() {
     const canvas = document.getElementById('game');
@@ -130,6 +272,10 @@ async function boot() {
 
     game = new Game({ renderer, input, loop });
     game.showDebug = false;          // no debug grid/HUD in the art frame
+
+    // Real-GameLoop timing measurement (ENGINE_PROFILER_REPORT) — self-contained,
+    // PUTs its JSON summary and returns before the screenshot path below.
+    if (MEASURE != null) { await runMeasurement(game); return; }
 
     if (SCREEN === 'menu') {
         game.screen = 'start';

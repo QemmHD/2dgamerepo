@@ -1,0 +1,1509 @@
+{
+  "s1_menu": {
+    "out": "s1_menu",
+    "screen": "menu",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 0,
+    "stress": {
+      "dense": 0,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 0,
+      "projectiles": 0,
+      "enemyProjectiles": 0,
+      "particles": 0,
+      "lights": 0,
+      "gems": 0,
+      "damageNumbers": 0
+    },
+    "frameMs": {
+      "avg": 74.2713,
+      "p50": 0.7,
+      "p95": 1.4,
+      "max": 3087
+    },
+    "updateMs": 0.0013,
+    "renderMs": 74.27,
+    "fpsAvg": 13.5,
+    "fpsMedian": 1428.6,
+    "fpsMin": 0.3,
+    "buckets": {
+      "update": 0.0001,
+      "render": 156.136,
+      "map": 0,
+      "decor": 0,
+      "obstacles": 0,
+      "entities": 0,
+      "projectiles": 0,
+      "particles": 0,
+      "lighting": 0,
+      "ui": 0,
+      "collision": 0,
+      "weapons": 0,
+      "spawner": 0
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.0013,
+        "p50": 0,
+        "p95": 0,
+        "max": 0.1
+      },
+      "render": {
+        "avg": 74.2675,
+        "p50": 0.7,
+        "p95": 1.4,
+        "max": 3087
+      },
+      "map": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "decor": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "obstacles": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "entities": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "projectiles": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "particles": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "lighting": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "ui": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "collision": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "weapons": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "spawner": {
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s2_normal60": {
+    "out": "s2_normal60",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 0,
+    "stress": {
+      "dense": 0,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 6,
+      "projectiles": 1,
+      "enemyProjectiles": 0,
+      "particles": 31,
+      "lights": 7,
+      "gems": 1,
+      "damageNumbers": 0
+    },
+    "frameMs": {
+      "avg": 121.4354,
+      "p50": 17.3,
+      "p95": 345.2,
+      "max": 354.3
+    },
+    "updateMs": 0.1771,
+    "renderMs": 121.2583,
+    "fpsAvg": 8.2,
+    "fpsMedian": 57.8,
+    "fpsMin": 2.8,
+    "buckets": {
+      "update": 0.1987,
+      "render": 130.2718,
+      "map": 0.0226,
+      "decor": 0.1757,
+      "obstacles": 0.2078,
+      "entities": 0.1505,
+      "projectiles": 0,
+      "particles": 0.0858,
+      "lighting": 128.9241,
+      "ui": 0.5888,
+      "collision": 0.0035,
+      "weapons": 0.0481,
+      "spawner": 0.0172
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.1767,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 1
+      },
+      "render": {
+        "avg": 121.2567,
+        "p50": 17.2,
+        "p95": 345.1,
+        "max": 354.2
+      },
+      "map": {
+        "avg": 0.0192,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.1
+      },
+      "decor": {
+        "avg": 0.1754,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.8
+      },
+      "obstacles": {
+        "avg": 0.1846,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.7
+      },
+      "entities": {
+        "avg": 0.1267,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.8
+      },
+      "projectiles": {
+        "avg": 0.0092,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.4
+      },
+      "particles": {
+        "avg": 0.0988,
+        "p50": 0.1,
+        "p95": 0.3,
+        "max": 0.6
+      },
+      "lighting": {
+        "avg": 119.8529,
+        "p50": 15.8,
+        "p95": 343.7,
+        "max": 352.8
+      },
+      "ui": {
+        "avg": 0.575,
+        "p50": 0.6,
+        "p95": 0.7,
+        "max": 5.1
+      },
+      "collision": {
+        "avg": 0.0167,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.6
+      },
+      "weapons": {
+        "avg": 0.0325,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.5
+      },
+      "spawner": {
+        "avg": 0.0271,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s3_dense90": {
+    "out": "s3_dense90",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 0,
+    "stress": {
+      "dense": 120,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 113,
+      "projectiles": 0,
+      "enemyProjectiles": 5,
+      "particles": 34,
+      "lights": 101,
+      "gems": 0,
+      "damageNumbers": 1
+    },
+    "frameMs": {
+      "avg": 230.8867,
+      "p50": 36.5,
+      "p95": 642.2,
+      "max": 672.2
+    },
+    "updateMs": 0.7875,
+    "renderMs": 230.0992,
+    "fpsAvg": 4.3,
+    "fpsMedian": 27.4,
+    "fpsMin": 1.5,
+    "buckets": {
+      "update": 0.7208,
+      "render": 198.4831,
+      "map": 0.0164,
+      "decor": 0.1442,
+      "obstacles": 0.1571,
+      "entities": 0.6313,
+      "projectiles": 0.0535,
+      "particles": 0.0327,
+      "lighting": 196.8047,
+      "ui": 0.4838,
+      "collision": 0.0023,
+      "weapons": 0.0606,
+      "spawner": 0.0403
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.7842,
+        "p50": 0.7,
+        "p95": 1.3,
+        "max": 3.9
+      },
+      "render": {
+        "avg": 230.0946,
+        "p50": 35.5,
+        "p95": 641.4,
+        "max": 671.4
+      },
+      "map": {
+        "avg": 0.0171,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "decor": {
+        "avg": 0.1704,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.3
+      },
+      "obstacles": {
+        "avg": 0.1683,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.4
+      },
+      "entities": {
+        "avg": 28.1258,
+        "p50": 0.7,
+        "p95": 387.5,
+        "max": 595.6
+      },
+      "projectiles": {
+        "avg": 0.0525,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "particles": {
+        "avg": 0.115,
+        "p50": 0.1,
+        "p95": 0.3,
+        "max": 1
+      },
+      "lighting": {
+        "avg": 200.6679,
+        "p50": 32.7,
+        "p95": 639.2,
+        "max": 669.2
+      },
+      "ui": {
+        "avg": 0.5983,
+        "p50": 0.5,
+        "p95": 0.8,
+        "max": 4.2
+      },
+      "collision": {
+        "avg": 0.0217,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "weapons": {
+        "avg": 0.0492,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 2.4
+      },
+      "spawner": {
+        "avg": 0.0292,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s4_pickups": {
+    "out": "s4_pickups",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 0,
+    "stress": {
+      "dense": 0,
+      "pickups": 120,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 6,
+      "projectiles": 1,
+      "enemyProjectiles": 0,
+      "particles": 38,
+      "lights": 44,
+      "gems": 121,
+      "damageNumbers": 2
+    },
+    "frameMs": {
+      "avg": 153.0546,
+      "p50": 28,
+      "p95": 422.6,
+      "max": 461.1
+    },
+    "updateMs": 0.2092,
+    "renderMs": 152.8454,
+    "fpsAvg": 6.5,
+    "fpsMedian": 35.7,
+    "fpsMin": 2.2,
+    "buckets": {
+      "update": 0.1851,
+      "render": 174.6472,
+      "map": 0.0019,
+      "decor": 0.1962,
+      "obstacles": 0.1866,
+      "entities": 0.5895,
+      "projectiles": 0.0078,
+      "particles": 0.0768,
+      "lighting": 172.9243,
+      "ui": 0.4906,
+      "collision": 0.0204,
+      "weapons": 0.0413,
+      "spawner": 0.0214
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.2079,
+        "p50": 0.2,
+        "p95": 0.6,
+        "max": 3.6
+      },
+      "render": {
+        "avg": 152.8429,
+        "p50": 27.8,
+        "p95": 422.5,
+        "max": 460.9
+      },
+      "map": {
+        "avg": 0.0146,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.1
+      },
+      "decor": {
+        "avg": 0.1904,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 3.4
+      },
+      "obstacles": {
+        "avg": 0.1833,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.7
+      },
+      "entities": {
+        "avg": 0.5754,
+        "p50": 0.6,
+        "p95": 0.7,
+        "max": 1.4
+      },
+      "projectiles": {
+        "avg": 0.015,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 1.3
+      },
+      "particles": {
+        "avg": 0.0979,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 2
+      },
+      "lighting": {
+        "avg": 151.0212,
+        "p50": 26,
+        "p95": 421,
+        "max": 459.2
+      },
+      "ui": {
+        "avg": 0.54,
+        "p50": 0.5,
+        "p95": 0.7,
+        "max": 1.7
+      },
+      "collision": {
+        "avg": 0.0154,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.7
+      },
+      "weapons": {
+        "avg": 0.0325,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.6
+      },
+      "spawner": {
+        "avg": 0.0263,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s5_dmgnum": {
+    "out": "s5_dmgnum",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 0,
+    "stress": {
+      "dense": 0,
+      "pickups": 0,
+      "dmgnum": 120,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 6,
+      "projectiles": 1,
+      "enemyProjectiles": 0,
+      "particles": 43,
+      "lights": 5,
+      "gems": 1,
+      "damageNumbers": 2
+    },
+    "frameMs": {
+      "avg": 137.2104,
+      "p50": 17.8,
+      "p95": 396.9,
+      "max": 471.5
+    },
+    "updateMs": 0.1692,
+    "renderMs": 137.0413,
+    "fpsAvg": 7.3,
+    "fpsMedian": 56.2,
+    "fpsMin": 2.1,
+    "buckets": {
+      "update": 0.1837,
+      "render": 152.8948,
+      "map": 0.0118,
+      "decor": 0.1644,
+      "obstacles": 0.1645,
+      "entities": 0.1432,
+      "projectiles": 0.0144,
+      "particles": 0.0889,
+      "lighting": 151.2005,
+      "ui": 0.4684,
+      "collision": 0.019,
+      "weapons": 0.0347,
+      "spawner": 0.0098
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.1675,
+        "p50": 0.1,
+        "p95": 0.4,
+        "max": 0.9
+      },
+      "render": {
+        "avg": 137.0408,
+        "p50": 17.6,
+        "p95": 396.7,
+        "max": 471.2
+      },
+      "map": {
+        "avg": 0.0133,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "decor": {
+        "avg": 0.1725,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.6
+      },
+      "obstacles": {
+        "avg": 0.1746,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 1
+      },
+      "entities": {
+        "avg": 0.0992,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.8
+      },
+      "projectiles": {
+        "avg": 0.0125,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.4
+      },
+      "particles": {
+        "avg": 0.0779,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.6
+      },
+      "lighting": {
+        "avg": 135.2304,
+        "p50": 15.8,
+        "p95": 394.8,
+        "max": 469.4
+      },
+      "ui": {
+        "avg": 0.515,
+        "p50": 0.5,
+        "p95": 0.8,
+        "max": 4.5
+      },
+      "collision": {
+        "avg": 0.0175,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.6
+      },
+      "weapons": {
+        "avg": 0.0333,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.5
+      },
+      "spawner": {
+        "avg": 0.0229,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.3
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s6_boss": {
+    "out": "s6_boss",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 0,
+    "stress": {
+      "dense": 0,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 1
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 7,
+      "projectiles": 1,
+      "enemyProjectiles": 0,
+      "particles": 35,
+      "lights": 7,
+      "gems": 0,
+      "damageNumbers": 1
+    },
+    "frameMs": {
+      "avg": 132.2021,
+      "p50": 17.2,
+      "p95": 375.5,
+      "max": 391.9
+    },
+    "updateMs": 0.1733,
+    "renderMs": 132.0287,
+    "fpsAvg": 7.6,
+    "fpsMedian": 58.1,
+    "fpsMin": 2.6,
+    "buckets": {
+      "update": 0.2349,
+      "render": 152.3537,
+      "map": 0.0114,
+      "decor": 0.1635,
+      "obstacles": 0.1733,
+      "entities": 0.1365,
+      "projectiles": 0.0228,
+      "particles": 0.1115,
+      "lighting": 150.0883,
+      "ui": 0.5347,
+      "collision": 0.0563,
+      "weapons": 0.0417,
+      "spawner": 0.0189
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.1725,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 1
+      },
+      "render": {
+        "avg": 132.0267,
+        "p50": 17.1,
+        "p95": 375.3,
+        "max": 391.8
+      },
+      "map": {
+        "avg": 0.0125,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.1
+      },
+      "decor": {
+        "avg": 0.1854,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.8
+      },
+      "obstacles": {
+        "avg": 0.185,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.8
+      },
+      "entities": {
+        "avg": 0.1225,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 1.4
+      },
+      "projectiles": {
+        "avg": 0.0062,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.3
+      },
+      "particles": {
+        "avg": 0.0804,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.7
+      },
+      "lighting": {
+        "avg": 130.6762,
+        "p50": 15.8,
+        "p95": 374.1,
+        "max": 390.5
+      },
+      "ui": {
+        "avg": 0.5717,
+        "p50": 0.5,
+        "p95": 0.7,
+        "max": 3.7
+      },
+      "collision": {
+        "avg": 0.0133,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.5
+      },
+      "weapons": {
+        "avg": 0.0454,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.5
+      },
+      "spawner": {
+        "avg": 0.0246,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.4
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s7_tier0": {
+    "out": "s7_tier0",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 0,
+    "stress": {
+      "dense": 80,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 27,
+      "projectiles": 0,
+      "enemyProjectiles": 4,
+      "particles": 217,
+      "lights": 46,
+      "gems": 0,
+      "damageNumbers": 21
+    },
+    "frameMs": {
+      "avg": 207.2713,
+      "p50": 30.5,
+      "p95": 582.1,
+      "max": 732.3
+    },
+    "updateMs": 0.5692,
+    "renderMs": 206.7021,
+    "fpsAvg": 4.8,
+    "fpsMedian": 32.8,
+    "fpsMin": 1.4,
+    "buckets": {
+      "update": 0.6056,
+      "render": 278.0463,
+      "map": 0.008,
+      "decor": 0.1589,
+      "obstacles": 0.1771,
+      "entities": 0.5289,
+      "projectiles": 0.0632,
+      "particles": 0.3537,
+      "lighting": 275.2349,
+      "ui": 1.1178,
+      "collision": 0.0366,
+      "weapons": 0.1526,
+      "spawner": 0.0274
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.5667,
+        "p50": 0.5,
+        "p95": 1,
+        "max": 3.8
+      },
+      "render": {
+        "avg": 206.6917,
+        "p50": 29.9,
+        "p95": 582.1,
+        "max": 732.2
+      },
+      "map": {
+        "avg": 0.0204,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.1
+      },
+      "decor": {
+        "avg": 0.1654,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.5
+      },
+      "obstacles": {
+        "avg": 0.1775,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.5
+      },
+      "entities": {
+        "avg": 0.6429,
+        "p50": 0.6,
+        "p95": 0.8,
+        "max": 6.5
+      },
+      "projectiles": {
+        "avg": 0.045,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "particles": {
+        "avg": 0.1321,
+        "p50": 0.1,
+        "p95": 0.3,
+        "max": 0.7
+      },
+      "lighting": {
+        "avg": 204.6242,
+        "p50": 28,
+        "p95": 580.1,
+        "max": 729.5
+      },
+      "ui": {
+        "avg": 0.6554,
+        "p50": 0.6,
+        "p95": 0.8,
+        "max": 13.9
+      },
+      "collision": {
+        "avg": 0.0242,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.5
+      },
+      "weapons": {
+        "avg": 0.0508,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 1.2
+      },
+      "spawner": {
+        "avg": 0.0367,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s7_tier1": {
+    "out": "s7_tier1",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 1,
+    "stress": {
+      "dense": 80,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 76,
+      "projectiles": 0,
+      "enemyProjectiles": 5,
+      "particles": 70,
+      "lights": 82,
+      "gems": 0,
+      "damageNumbers": 2
+    },
+    "frameMs": {
+      "avg": 196.5512,
+      "p50": 29.5,
+      "p95": 549.8,
+      "max": 590.9
+    },
+    "updateMs": 0.5346,
+    "renderMs": 196.0167,
+    "fpsAvg": 5.1,
+    "fpsMedian": 33.9,
+    "fpsMin": 1.7,
+    "buckets": {
+      "update": 0.6198,
+      "render": 235.4728,
+      "map": 0.0091,
+      "decor": 0.1624,
+      "obstacles": 0.1429,
+      "entities": 0.6072,
+      "projectiles": 0.0548,
+      "particles": 0.1281,
+      "lighting": 233.5183,
+      "ui": 0.6593,
+      "collision": 0.0056,
+      "weapons": 0.0371,
+      "spawner": 0.0532
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.5325,
+        "p50": 0.5,
+        "p95": 0.9,
+        "max": 3.6
+      },
+      "render": {
+        "avg": 196.0163,
+        "p50": 28.9,
+        "p95": 549.4,
+        "max": 590.4
+      },
+      "map": {
+        "avg": 0.0142,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.1
+      },
+      "decor": {
+        "avg": 0.1383,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.3
+      },
+      "obstacles": {
+        "avg": 0.1796,
+        "p50": 0.1,
+        "p95": 0.3,
+        "max": 5.5
+      },
+      "entities": {
+        "avg": 0.5742,
+        "p50": 0.6,
+        "p95": 0.7,
+        "max": 2.2
+      },
+      "projectiles": {
+        "avg": 0.0292,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "particles": {
+        "avg": 0.0904,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.7
+      },
+      "lighting": {
+        "avg": 194.2925,
+        "p50": 27.1,
+        "p95": 547.7,
+        "max": 588.6
+      },
+      "ui": {
+        "avg": 0.5187,
+        "p50": 0.5,
+        "p95": 0.7,
+        "max": 4.9
+      },
+      "collision": {
+        "avg": 0.0183,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "weapons": {
+        "avg": 0.0396,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.4
+      },
+      "spawner": {
+        "avg": 0.0287,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.3
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s7_tier2": {
+    "out": "s7_tier2",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 2,
+    "stress": {
+      "dense": 80,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 73,
+      "projectiles": 0,
+      "enemyProjectiles": 3,
+      "particles": 36,
+      "lights": 59,
+      "gems": 0,
+      "damageNumbers": 1
+    },
+    "frameMs": {
+      "avg": 169.3933,
+      "p50": 26.4,
+      "p95": 469.3,
+      "max": 483.5
+    },
+    "updateMs": 0.5408,
+    "renderMs": 168.8525,
+    "fpsAvg": 5.9,
+    "fpsMedian": 37.9,
+    "fpsMin": 2.1,
+    "buckets": {
+      "update": 0.428,
+      "render": 189.5177,
+      "map": 0.017,
+      "decor": 0.1,
+      "obstacles": 0.1674,
+      "entities": 0.548,
+      "projectiles": 0.0263,
+      "particles": 0.1132,
+      "lighting": 187.9176,
+      "ui": 0.4973,
+      "collision": 0.0147,
+      "weapons": 0.0377,
+      "spawner": 0.0406
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.5388,
+        "p50": 0.5,
+        "p95": 0.9,
+        "max": 2.9
+      },
+      "render": {
+        "avg": 168.8513,
+        "p50": 25.9,
+        "p95": 468.6,
+        "max": 483
+      },
+      "map": {
+        "avg": 0.0138,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "decor": {
+        "avg": 0.1271,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.5
+      },
+      "obstacles": {
+        "avg": 0.1596,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.6
+      },
+      "entities": {
+        "avg": 0.5325,
+        "p50": 0.5,
+        "p95": 0.7,
+        "max": 1.6
+      },
+      "projectiles": {
+        "avg": 0.0396,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "particles": {
+        "avg": 0.1242,
+        "p50": 0.1,
+        "p95": 0.3,
+        "max": 0.4
+      },
+      "lighting": {
+        "avg": 167.1088,
+        "p50": 24.3,
+        "p95": 466.9,
+        "max": 481.3
+      },
+      "ui": {
+        "avg": 0.54,
+        "p50": 0.5,
+        "p95": 0.7,
+        "max": 5.1
+      },
+      "collision": {
+        "avg": 0.0187,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "weapons": {
+        "avg": 0.04,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.6
+      },
+      "spawner": {
+        "avg": 0.0312,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.4
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s7_tier3": {
+    "out": "s7_tier3",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 3,
+    "stress": {
+      "dense": 80,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 1600,
+      "h": 708,
+      "dpr": 1
+    },
+    "counts": {
+      "enemies": 74,
+      "projectiles": 0,
+      "enemyProjectiles": 6,
+      "particles": 53,
+      "lights": 62,
+      "gems": 0,
+      "damageNumbers": 3
+    },
+    "frameMs": {
+      "avg": 108.0387,
+      "p50": 26.3,
+      "p95": 279.2,
+      "max": 303.5
+    },
+    "updateMs": 0.5804,
+    "renderMs": 107.4583,
+    "fpsAvg": 9.3,
+    "fpsMedian": 38,
+    "fpsMin": 3.3,
+    "buckets": {
+      "update": 0.4559,
+      "render": 120.8673,
+      "map": 0.0198,
+      "decor": 0.1317,
+      "obstacles": 0.1817,
+      "entities": 0.6535,
+      "projectiles": 0.0564,
+      "particles": 0.0589,
+      "lighting": 118.9711,
+      "ui": 0.6479,
+      "collision": 0.0303,
+      "weapons": 0.054,
+      "spawner": 0.0242
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.5792,
+        "p50": 0.4,
+        "p95": 0.8,
+        "max": 25.8
+      },
+      "render": {
+        "avg": 107.4546,
+        "p50": 25.9,
+        "p95": 278.3,
+        "max": 303.1
+      },
+      "map": {
+        "avg": 0.0146,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.1
+      },
+      "decor": {
+        "avg": 0.1662,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 6.8
+      },
+      "obstacles": {
+        "avg": 0.18,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.5
+      },
+      "entities": {
+        "avg": 0.6233,
+        "p50": 0.6,
+        "p95": 0.8,
+        "max": 3.5
+      },
+      "projectiles": {
+        "avg": 0.0321,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "particles": {
+        "avg": 0.085,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.5
+      },
+      "lighting": {
+        "avg": 105.5837,
+        "p50": 24.1,
+        "p95": 276.4,
+        "max": 301.3
+      },
+      "ui": {
+        "avg": 0.6275,
+        "p50": 0.6,
+        "p95": 0.8,
+        "max": 3.7
+      },
+      "collision": {
+        "avg": 0.0204,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "weapons": {
+        "avg": 0.0396,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      },
+      "spawner": {
+        "avg": 0.0292,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.2
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  },
+  "s8_mobile": {
+    "out": "s8_mobile",
+    "screen": "run",
+    "measureSeconds": 1,
+    "warmupFrames": 120,
+    "windowFrames": 240,
+    "map": null,
+    "gfxTier": 0,
+    "stress": {
+      "dense": 0,
+      "pickups": 0,
+      "dmgnum": 0,
+      "boss": 0
+    },
+    "viewport": {
+      "w": 500,
+      "h": 740,
+      "dpr": 3
+    },
+    "counts": {
+      "enemies": 7,
+      "projectiles": 0,
+      "enemyProjectiles": 0,
+      "particles": 42,
+      "lights": 8,
+      "gems": 1,
+      "damageNumbers": 2
+    },
+    "frameMs": {
+      "avg": 81.0925,
+      "p50": 17.4,
+      "p95": 221.7,
+      "max": 234.5
+    },
+    "updateMs": 0.1887,
+    "renderMs": 80.9038,
+    "fpsAvg": 12.3,
+    "fpsMedian": 57.5,
+    "fpsMin": 4.3,
+    "buckets": {
+      "update": 0.2318,
+      "render": 91.0086,
+      "map": 0.0175,
+      "decor": 0.2076,
+      "obstacles": 0.1462,
+      "entities": 0.1655,
+      "projectiles": 0.0249,
+      "particles": 0.0816,
+      "lighting": 89.594,
+      "ui": 0.5439,
+      "collision": 0.0235,
+      "weapons": 0.0175,
+      "spawner": 0.0309
+    },
+    "bucketStats": {
+      "update": {
+        "avg": 0.1871,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 1.1
+      },
+      "render": {
+        "avg": 80.9017,
+        "p50": 17.3,
+        "p95": 221.5,
+        "max": 233.5
+      },
+      "map": {
+        "avg": 0.0167,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.1
+      },
+      "decor": {
+        "avg": 0.19,
+        "p50": 0.2,
+        "p95": 0.3,
+        "max": 0.9
+      },
+      "obstacles": {
+        "avg": 0.1913,
+        "p50": 0.2,
+        "p95": 0.4,
+        "max": 0.9
+      },
+      "entities": {
+        "avg": 0.1279,
+        "p50": 0.1,
+        "p95": 0.3,
+        "max": 0.7
+      },
+      "projectiles": {
+        "avg": 0.0079,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.4
+      },
+      "particles": {
+        "avg": 0.0992,
+        "p50": 0.1,
+        "p95": 0.2,
+        "max": 0.7
+      },
+      "lighting": {
+        "avg": 79.4662,
+        "p50": 15.9,
+        "p95": 220,
+        "max": 231
+      },
+      "ui": {
+        "avg": 0.57,
+        "p50": 0.6,
+        "p95": 0.8,
+        "max": 1.9
+      },
+      "collision": {
+        "avg": 0.0208,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.7
+      },
+      "weapons": {
+        "avg": 0.0358,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.5
+      },
+      "spawner": {
+        "avg": 0.0242,
+        "p50": 0,
+        "p95": 0.1,
+        "max": 0.4
+      }
+    },
+    "exc": 0,
+    "firstExc": null
+  }
+}
