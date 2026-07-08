@@ -1540,6 +1540,12 @@ export const UI = {
     playerHealthBar: { width: 80, height: 8, marginAboveSpriteHalf: 16 },
 };
 
+// Victory beat: hold the triumphant world — the hero cheering in its victory
+// pose — before the overlay dims in, and swallow input for the same window so an
+// early tap can't blind-hit a not-yet-visible button (mirrors the game-over death
+// beat + its dismiss lockout). Shared by the render pipeline + the input handlers.
+export const VICTORY_BEAT = 0.7;
+
 // ── EMBERGLASS (roadmap #2): share-card compositor + Keeper's Lens photo mode.
 // All values tunable; the 1200×630 card size is a fixed OG-image contract five
 // later updates rely on (see docs/CARDS.md).
