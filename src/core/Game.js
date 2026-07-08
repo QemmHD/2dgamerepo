@@ -51,6 +51,7 @@ import { accrueRites } from '../content/rites.js';
 import { getRiteTrialSetup, riteTrialScore } from '../content/riteTrial.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
 import { ProjectilePool } from '../systems/ProjectilePool.js';
+import { FrameSpatialIndex } from '../systems/FrameSpatialIndex.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
@@ -700,6 +701,9 @@ export class Game {
         // projectile (the array above is fresh, so releaseAll can't double-list).
         if (this.projectilePool) this.projectilePool.releaseAll();
         else this.projectilePool = new ProjectilePool();
+        // Shared per-frame enemy spatial index (rebuilt each frame, so no per-run
+        // reset needed — the first rebuild clears any stale state).
+        if (!this.spatialIndex) this.spatialIndex = new FrameSpatialIndex();
         this.enemyProjectiles = [];
         // Damaging area hazards (boss shockwaves) + their telegraph decals.
         // Game-owned pool; cleared here so a restart never inherits one.
@@ -3771,6 +3775,11 @@ export class Game {
         // is merged into allKilled below.
         const statusResult = this._tickStatuses(dt);
         this._tickSupportEnemies(dt);
+        // Rebuild the shared per-frame enemy index now that positions are final
+        // (post movement + separation) and stay stable through _resolveCombat.
+        // Collision queries it this frame; next frame's pre-move auto-aim reads
+        // the same snapshot (enemies don't move between frames).
+        this.spatialIndex.rebuild(this.enemies, this.camera.x, this.camera.y);
         // (Phase-2 boss enrage one-shots moved into the consolidated enemy
         // scan below — one pass instead of five over the full array.)
         return statusResult;
@@ -3879,7 +3888,7 @@ export class Game {
     // (gems, coins, chests, boss/lieutenant/elite setpieces, hit feedback).
     _resolveCombat(dt, weaponResult, statusResult, kindleResult = null) {
         const collisionResult = this.collisionSystem.resolve(
-            dt, this.player, this.enemies, this.projectiles
+            dt, this.player, this.enemies, this.projectiles, this.spatialIndex
         );
 
         // Merge weapon-system hits/kills (orbit blades, pulse, lightning),
