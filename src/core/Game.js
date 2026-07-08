@@ -50,6 +50,7 @@ import { attuneEffects, applyHeroAttunement } from '../content/heroAttunement.js
 import { accrueRites } from '../content/rites.js';
 import { getRiteTrialSetup, riteTrialScore } from '../content/riteTrial.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
+import { ProjectilePool } from '../systems/ProjectilePool.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
@@ -694,6 +695,11 @@ export class Game {
 
         this.enemies = [];
         this.projectiles = [];
+        // Player-bolt pool: built ONCE, then RESET (not re-allocated) on every
+        // run so bolts are reused across runs and a restart inherits no live
+        // projectile (the array above is fresh, so releaseAll can't double-list).
+        if (this.projectilePool) this.projectilePool.releaseAll();
+        else this.projectilePool = new ProjectilePool();
         this.enemyProjectiles = [];
         // Damaging area hazards (boss shockwaves) + their telegraph decals.
         // Game-owned pool; cleared here so a restart never inherits one.
@@ -3643,7 +3649,7 @@ export class Game {
         // — that IS the bullet-time look). Focus target threaded so single-target
         // weapons concentrate fire on the lock.
         const weaponResult = this.weaponSystem.update(
-            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio, this.focusTarget
+            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio, this.focusTarget, this.projectilePool
         );
 
         // Held weapon: aim the signature wand (owned[0], the menu-chosen
@@ -4162,6 +4168,9 @@ export class Game {
         this.audio.setIntensity(lowHp ? Math.min(intensity, 0.25) : intensity);
 
         compactInPlace(this.enemies);
+        // Return dead bolts to the pool in the SAME pass that compacts them out
+        // of the live array, so each instance is released exactly once.
+        for (const p of this.projectiles) if (!p.active) this.projectilePool.release(p);
         compactInPlace(this.projectiles);
         // New enemy shots this frame → one soft incoming-fire pip, gated to
         // on-screen shooters (the cue's own min-gap keeps volleys as a chorus).

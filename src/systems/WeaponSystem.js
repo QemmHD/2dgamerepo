@@ -10,6 +10,7 @@
 
 import { MAX_WEAPON_LEVEL, MAX_WEAPON_SLOTS, INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
 import { compactInPlace, TWO_PI } from '../core/MathUtils.js';
+import { Projectile } from '../entities/Projectile.js';   // defensive fallback when no pool is supplied
 import { resolveWeaponProp } from '../content/weaponSkins.js';
 import { getGlowSprite } from '../assets/ProceduralSprites.js';
 
@@ -126,7 +127,7 @@ export class WeaponSystem {
         return w.level >= weaponMaxLevel(def);
     }
 
-    update(dt, player, enemies, projectiles, obstacleSystem = null, particles = null, audio = null, focus = null) {
+    update(dt, player, enemies, projectiles, obstacleSystem = null, particles = null, audio = null, focus = null, projectilePool = null) {
         const hits = [];
         const killed = [];
         // los(ex, ey) → can the player "see" that point? Walls block melee
@@ -151,10 +152,23 @@ export class WeaponSystem {
             const dx = x - player.x, dy = y - player.y;
             return dx * dx + dy * dy <= rangeSq && Math.abs(dx) <= halfW && Math.abs(dy) <= halfH;
         };
+        // Spawn a player bolt through the pool (no `new Projectile()` in combat)
+        // and enlist it in the live array. Behaviors call this instead of
+        // pushing a freshly-constructed Projectile. Falls back to a direct
+        // construction only if no pool was supplied (defensive; Game always
+        // passes one).
+        const spawnProjectile = (x, y, vx, vy, popts) => {
+            const p = projectilePool
+                ? projectilePool.acquire(x, y, vx, vy, popts)
+                : new Projectile(x, y, vx, vy, popts);
+            projectiles.push(p);
+            return p;
+        };
         const ctx = {
             player,
             enemies,
             projectiles,
+            spawnProjectile,
             effects: this.effects,
             hits,
             killed,
