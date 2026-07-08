@@ -10,6 +10,8 @@ import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST }
 import { CHARACTER_IDS, DEFAULT_CHARACTER } from '../content/characters.js';
 import { MAPS, DEFAULT_MAP, isMapUnlocked } from '../content/maps.js';
 import { getAttunable, attuneCost } from '../content/relics.js';
+import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
+import { riteIdsFor, ritesCompletedCount } from '../content/rites.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 
@@ -54,6 +56,11 @@ function defaultData() {
             // EMBERGLASS (roadmap #2) additions (numeric → auto-validated).
             cardsShared: 0,          // lifetime death/victory recap cards shared
             photosTaken: 0,          // lifetime Keeper's Lens snaps saved
+            // KINDLED (roadmap #3) additions (numeric → auto-validated).
+            ultsReleased: 0,         // lifetime Grand Signatures released
+            comboProcs: 0,           // lifetime element-combo procs
+            blinks: 0,               // lifetime aimed blinks
+            riteTrialBest: 0,        // lifetime best Rite-Trial score
         },
         settings: {
             screenShake: true,
@@ -126,7 +133,14 @@ function defaultData() {
         // permanent, always-on bonus applied ONCE at run start (see relics.js
         // ATTUNABLE / applyAttunements). Only DEFENSIVE/UTILITY relics are attunable.
         relicAttunement: {},
-        version: 7,
+        // KINDLED (roadmap #3): the meta layer. heroAttunement { [charId]: level 0..5 }
+        // is the per-hero coin sink (rungs 3/4/5 rite-gated). rites { [charId]:
+        // { [riteId]: progress } } accumulates the mastery quests across runs. riteTrial
+        // mirrors dailyRoad's best-of-day for the daily hero-locked Trial.
+        heroAttunement: {},
+        rites: {},
+        riteTrial: { day: 0, best: 0, prevBest: 0 },
+        version: 8,
     };
 }
 
@@ -360,7 +374,46 @@ export class SaveSystem {
             }
         }
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, version: 7 };
+        // KINDLED (roadmap #3) — Hero Attunement: { [charId]: level 1..5 }. Keep only
+        // KNOWN hero ids (CHARACTER_IDS — append-only, so update #10's heroes widen the
+        // set by data) with a positive integer level, clamped to HERO_ATTUNE_MAX.
+        // Unknown id / non-numeric / ≤0 → dropped; over-cap → clamped (tamper-safe).
+        const dha = data.heroAttunement && typeof data.heroAttunement === 'object' ? data.heroAttunement : {};
+        const heroAttunement = {};
+        for (const k of Object.keys(dha)) {
+            const v = dha[k];
+            if (CHARACTER_IDS.includes(k) && Number.isFinite(v) && v > 0) {
+                heroAttunement[k] = Math.min(HERO_ATTUNE_MAX, Math.floor(v));
+            }
+        }
+
+        // KINDLED — Rites: nested { [charId]: { [riteId]: progress ≥ 0 } }. Both levels
+        // are gated: outer key must be a known hero, inner key a known rite of THAT
+        // hero (riteIdsFor); values are floored non-negatives. Empty inner maps are
+        // dropped. A tampered/foreign key can never inflate a rite or gate an attune.
+        const dr = data.rites && typeof data.rites === 'object' ? data.rites : {};
+        const rites = {};
+        for (const cid of Object.keys(dr)) {
+            if (!CHARACTER_IDS.includes(cid)) continue;
+            const inner = dr[cid] && typeof dr[cid] === 'object' ? dr[cid] : {};
+            const known = riteIdsFor(cid);
+            const clean = {};
+            for (const rid of Object.keys(inner)) {
+                const v = inner[rid];
+                if (known.includes(rid) && Number.isFinite(v) && v > 0) clean[rid] = Math.floor(v);
+            }
+            if (Object.keys(clean).length) rites[cid] = clean;
+        }
+
+        // KINDLED — Rite Trial best-of-day, mirroring dailyRoad (drop caseDay).
+        const rtd = data.riteTrial && typeof data.riteTrial === 'object' ? data.riteTrial : {};
+        const riteTrial = {
+            day: Number.isInteger(rtd.day) && rtd.day > 0 ? rtd.day : 0,
+            best: Number.isFinite(rtd.best) && rtd.best > 0 ? Math.floor(rtd.best) : 0,
+            prevBest: Number.isFinite(rtd.prevBest) && rtd.prevBest > 0 ? Math.floor(rtd.prevBest) : 0,
+        };
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, version: 8 };
     }
 
     save() {
@@ -428,6 +481,71 @@ export class SaveSystem {
         levels[id] = cur + 1;
         this.save();
         return true;
+    }
+
+    // ── Hero Attunement (per-hero coin sink, KINDLED #3) ─────────────────
+    // Live map { [charId]: level 0..5 }. Always an object (lazy self-heal).
+    getHeroAttunements() {
+        if (!this.data.heroAttunement || typeof this.data.heroAttunement !== 'object') {
+            this.data.heroAttunement = {};
+        }
+        return this.data.heroAttunement;
+    }
+
+    getHeroAttunement(charId) {
+        return this.getHeroAttunements()[charId] ?? 0;
+    }
+
+    // Buy the NEXT attunement level for a hero, spending coins. Rungs 3/4/5 are
+    // rite-gated (heroAttuneRiteGate) — coins alone can't buy mastery. Returns true
+    // only on success (known hero, below max, rite-gate met, coins on hand). Cost +
+    // gate live in heroAttunement.js so save + shop agree.
+    attuneHero(charId) {
+        if (!CHARACTER_IDS.includes(charId)) return false;
+        const levels = this.getHeroAttunements();
+        const cur = levels[charId] ?? 0;
+        if (cur >= HERO_ATTUNE_MAX) return false;
+        const next = cur + 1;
+        if (ritesCompletedCount(this.data, charId) < heroAttuneRiteGate(next)) return false;  // rite-gated rung
+        const cost = heroAttuneCost(cur);
+        if (!this.spendCoins(cost)) return false;   // spendCoins saves on success
+        levels[charId] = next;
+        this.save();
+        return true;
+    }
+
+    // ── Rites (per-hero mastery progress, KINDLED #3) ────────────────────
+    // Live nested map { [charId]: { [riteId]: progress } }. Always an object.
+    getRites() {
+        if (!this.data.rites || typeof this.data.rites !== 'object') this.data.rites = {};
+        return this.data.rites;
+    }
+
+    // Persist a hero's rite-progress map (already validated/accrued by the caller —
+    // accrueRites in rites.js). Sparse: a hero with no progress is simply absent.
+    setHeroRites(charId, map) {
+        if (!CHARACTER_IDS.includes(charId) || !map || typeof map !== 'object') return;
+        this.getRites()[charId] = map;
+        this.save();
+    }
+
+    // ── Rite Trial best-of-day (mirrors recordDailyRoadScore) ────────────
+    // On a new UTC day, reset best (carrying yesterday's into prevBest only when the
+    // stored record is EXACTLY day-1, so a stale record can't masquerade as yesterday).
+    // Also lifts the lifetime stats.riteTrialBest. Returns { best, firstToday }.
+    recordRiteTrial(day, score) {
+        if (!Number.isInteger(day) || day <= 0) return { best: false, firstToday: false };
+        const old = this.data.riteTrial;
+        const firstToday = !old || typeof old !== 'object' || old.day !== day;
+        if (firstToday) {
+            this.data.riteTrial = { day, best: 0, prevBest: (old && old.day === day - 1) ? (old.best ?? 0) : 0 };
+        }
+        const v = Math.max(0, Math.floor(score || 0));
+        let best = false;
+        if (v > this.data.riteTrial.best) { this.data.riteTrial.best = v; best = true; }
+        if (this.data.stats && v > (this.data.stats.riteTrialBest ?? 0)) this.data.stats.riteTrialBest = v;
+        this.save();
+        return { best, firstToday };
     }
 
     getUpgradeLevel(id) {

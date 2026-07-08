@@ -57,6 +57,12 @@ export function buildUIState(game) {
         base.dailyRoadPrevBest = _dr
             ? (_dr.day === _today ? (_dr.prevBest ?? 0) : (_dr.day === _today - 1 ? (_dr.best ?? 0) : 0))
             : 0;
+        // KINDLED PR5 — Rite Trial best-of-day (identical day-gated shape to dailyRoad).
+        const _rt = game.saveSystem.data.riteTrial;
+        base.riteTrialBest = (_rt && _rt.day === _today) ? (_rt.best ?? 0) : 0;
+        base.riteTrialPrevBest = _rt
+            ? (_rt.day === _today ? (_rt.prevBest ?? 0) : (_rt.day === _today - 1 ? (_rt.best ?? 0) : 0))
+            : 0;
         // Day streak for the PLAY tab — alive if the last played day is
         // today or yesterday (a yesterday-streak still extends by playing).
         const _st = game.saveSystem.data.streak;

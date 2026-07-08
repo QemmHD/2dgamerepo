@@ -14,7 +14,7 @@
 import { KINDLE, BLINK } from '../config/GameConfig.js';
 
 export class KindleSystem {
-    constructor() {
+    constructor(attune = null) {
         // Meter: a run starts a quarter-lit so the first ult lands ~minute 2.
         this.max = KINDLE.max;
         this.fill = Math.min(KINDLE.max, KINDLE.startFill);
@@ -26,13 +26,21 @@ export class KindleSystem {
         // and Game drives the hold/release lifecycle. ultActive reserved.
         this.aiming = null;
         this.ultActive = null;
+        // KINDLED PR5 — Hero Attunement instance modifiers (default = no bonus). This
+        // system holds no player/save reference, so Game passes the resolved effects
+        // in at construction (fresh per run). Kindle-gain / blink-CD / ult-cost live
+        // here; ult + focused DAMAGE live on player fields (see applyHeroAttunement).
+        this.kindleGainMul = (attune && attune.kindleGainMul) || 1;
+        this.blinkCdReduce = (attune && attune.blinkCdReduce) || 0;
+        this.ultCost = (attune && attune.ultCost) || KINDLE.ultCost;
     }
 
-    // Spend the full bar to commit an ult (called when aiming BEGINS). ultCost
-    // === max, so a ready bar zeroes; the ult's own kills recharge it via onKills.
-    spendUlt() { this.fill = Math.max(0, this.fill - KINDLE.ultCost); }
-    // Cancel refunds the committed bar (overlay/pause opened, or a deadzone tap).
-    refundAim() { this._add(KINDLE.fizzleRefund); }
+    // Spend the committed bar to fire an ult (called when aiming BEGINS). ultCost is
+    // the per-hero cost (100, or 85 at Attunement Lv5); the ult's kills recharge it.
+    spendUlt() { this.fill = Math.max(0, this.fill - this.ultCost); }
+    // Cancel refunds EXACTLY what was committed (this.ultCost), so an Lv5-reduced-cost
+    // ult can't over-refund a full bar on a deadzone/overlay cancel.
+    refundAim() { this._add(this.ultCost); }
 
     // Per-frame tick. PR1 only drains the blink cooldown; it always uses real
     // dt so a dodge recharges at wall-clock rate even once Focus Time (PR3)
@@ -42,13 +50,15 @@ export class KindleSystem {
         if (this.blinkCooldown > 0) this.blinkCooldown = Math.max(0, this.blinkCooldown - dt);
     }
 
-    // True once the bar is full — the ult is releasable (PR3). PR1 uses this
-    // only to pulse the HUD meter.
-    get ready() { return this.fill >= KINDLE.ultCost; }
+    // True once the bar can pay an ult (>= the per-hero ult cost). Used to gate the
+    // aim-begin and to pulse the HUD meter.
+    get ready() { return this.fill >= this.ultCost; }
 
     // ── Blink cooldown gate ────────────────────────────────────────────────
     blinkReady() { return this.blinkCooldown <= 0; }
-    startBlinkCooldown() { this.blinkCooldown = BLINK.cooldown; }
+    // Attunement Lv2 trims blinkCdReduce (0.5s) off the base cooldown, floored so a
+    // blink can never be effectively free.
+    startBlinkCooldown() { this.blinkCooldown = Math.max(0.5, BLINK.cooldown - this.blinkCdReduce); }
 
     // ── Charge hooks (2 total) ─────────────────────────────────────────────
     // Hook 1: called once per _resolveCombat kill merge with the merged corpse
@@ -61,14 +71,14 @@ export class KindleSystem {
             if (e.boss) gain += KINDLE.perBossKill;
             else if (e.elite) gain += KINDLE.perEliteKill;
         }
-        this._add(gain);
+        this._add(gain * this.kindleGainMul);   // Attunement Lv1 lifts kindleGainMul
     }
 
     // Hook 2: fraction (0..1) of a boss's MAX HP dealt this frame. Bosses aren't
     // kill-farms, so damage charges the bar slowly (perBossHitPct per 1%).
     onBossDamage(frac) {
         if (!(frac > 0)) return;
-        this._add(frac * 100 * KINDLE.perBossHitPct);
+        this._add(frac * 100 * KINDLE.perBossHitPct * this.kindleGainMul);
     }
 
     _add(amount) {

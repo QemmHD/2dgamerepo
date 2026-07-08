@@ -64,6 +64,11 @@ export function applyCombo(target, incomingElement, hitDamage, ctx) {
     if (!row) return false;
     assertNotReserved(row, incomingElement);
     if (!target || !target.active) return false;
+    // KINDLED PR5 — count every combo proc on the player (run-scoped: player is
+    // rebuilt per run), for the score formula + Orin's Rite of Cataclysm. ctx.player
+    // is present in all three caller ctx shapes. Single source: every proc `return
+    // proc()`.
+    const proc = () => { if (ctx.player) ctx.player._comboProcs = (ctx.player._comboProcs || 0) + 1; return true; };
 
     // DETONATE — shock → burning. Byte-identical to the old shockStrike block,
     // including the Conflagration keystone (2.2× + relight). NOT latched.
@@ -79,7 +84,7 @@ export function applyCombo(target, incomingElement, hitDamage, ctx) {
         target.burnTickAccum = 0;
         if (conflag && target.active) target.applyBurn(burnDps, 2.0); // relight
         if (!target.active) ctx.killed.push(target);
-        return true;
+        return proc();
     }
 
     // The new combos share the per-enemy latch.
@@ -100,7 +105,7 @@ export function applyCombo(target, incomingElement, hitDamage, ctx) {
             target._comboCd = COMBO_CFG.latch;
             ctx.particles?.frostShards?.(target.x, target.y);
             if (!target.active) ctx.killed.push(target);
-            return true;
+            return proc();
         }
     }
 
@@ -112,7 +117,7 @@ export function applyCombo(target, incomingElement, hitDamage, ctx) {
         if (Math.random() < COMBO_CFG.brittleFreezeChance) target.applyFreeze(COMBO_CFG.brittleFreeze);
         target._comboCd = COMBO_CFG.latch;
         ctx.particles?.frostShards?.(target.x, target.y);
-        return true;
+        return proc();
     }
 
     return false;

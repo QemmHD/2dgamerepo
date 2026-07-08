@@ -14,14 +14,28 @@ import { powerRoll } from './weapons.js';
 import { applyCombo } from './elements.js';
 import { KNOCKBACK } from '../config/GameConfig.js';
 
-// Shared: the damage-scaling roll (once per cast — one cast, one roll).
-function castMul(p) { return (p.damageMul ?? 1) * powerRoll(p); }
+// Shared: the damage-scaling roll (once per cast — one cast, one roll). Folds the
+// player's ult-damage multiplier (Hero Attunement Lv3) so meta mastery scales ults.
+function castMul(p) { return (p.damageMul ?? 1) * (p.ultDamageMul ?? 1) * powerRoll(p); }
+
+// Focused-target bonus (Hero Attunement Lv4): the FOCUSED enemy takes a small extra
+// multiple from your Grand Signature. Set per-cast by Game._releaseUlt (setUltFocus)
+// right before fire() — synchronous, and an ult never nests inside another — so it
+// rides strike() without touching any per-hero fire() loop. null target = no bonus.
+let _focusTarget = null, _focusMul = 1;
+export function setUltFocus(game) {
+    const boost = game && game.player && game.player.focusDamageMul > 1;
+    _focusTarget = boost ? game.focusTarget : null;
+    _focusMul = boost ? game.player.focusDamageMul : 1;
+}
 // A combo ctx sharing the ult's own hits/killed arrays.
 function comboCtx(game, hits, killed) {
     return { hits, killed, player: game.player, particles: game.particles };
 }
-// Push a damage hit + route the kill.
+// Push a damage hit + route the kill. Applies the focused-target bonus (Lv4) to the
+// one locked enemy.
 function strike(e, dmg, kx, ky, hits, killed, color) {
+    if (_focusTarget && e === _focusTarget) dmg *= _focusMul;
     e.takeDamage(dmg, kx || 0, ky || 0);
     hits.push({ x: e.x, y: e.y - e.radius, amount: dmg, color });
     if (!e.active) killed.push(e);

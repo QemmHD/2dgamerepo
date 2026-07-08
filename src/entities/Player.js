@@ -142,6 +142,14 @@ export class Player {
         this._healWindow = 1;
         this._healedThisSec = 0;
         this.thornsReflect = 0;
+        // KINDLED PR5 — per-run rite metrics accumulated on the player (rebuilt each
+        // run, so they self-reset): total sustained HP healed + element-combo procs.
+        this.healedThisRun = 0;
+        this._comboProcs = 0;
+        // KINDLED PR5 — Hero Attunement damage multipliers (Lv3 ult, Lv4 vs focused),
+        // stamped by applyHeroAttunement at run start; read in signatures.js castMul.
+        this.ultDamageMul = 1;
+        this.focusDamageMul = 1;
 
         // Elemental passive modifiers (read by weapons / the burn DoT pass).
         // Neutral defaults so apply() can never produce NaN before a passive
@@ -344,6 +352,7 @@ export class Player {
         if (heal <= 0) return 0;
         this.hp += heal;
         this._healedThisSec += heal;
+        this.healedThisRun += heal;   // KINDLED PR5 — Pyra's Rite of the Wellspring metric
         return heal;
     }
 
