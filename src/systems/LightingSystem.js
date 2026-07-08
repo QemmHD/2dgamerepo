@@ -53,6 +53,7 @@ export class LightingSystem {
         this.quality = {
             strength: Math.min(STRENGTH_CAP, GFX.darkness.strength),
             maxLights: GFX.lighting.maxLights,
+            pickupCap: GFX.lighting.pickupLightCap,   // governor may reduce (roadmap #5 tiers)
             colorTint: GFX.lighting.colorTint,
             tintIntensity: GFX.lighting.tintIntensity,
         };
@@ -63,6 +64,7 @@ export class LightingSystem {
     setQuality(q) {
         if (q.strength != null) this.quality.strength = Math.min(STRENGTH_CAP, q.strength);
         if (q.maxLights != null) this.quality.maxLights = q.maxLights;
+        if (q.pickupCap != null) this.quality.pickupCap = q.pickupCap;
         if (q.colorTint != null) this.quality.colorTint = q.colorTint;
         if (q.tintIntensity != null) this.quality.tintIntensity = q.tintIntensity;
     }
@@ -112,7 +114,7 @@ export class LightingSystem {
     // (#rrggbb) and feeds the additive tint pass.
     addLight(wx, wy, radius, color, intensity = 1, priority = 0) {
         if (!this.ok) return;
-        if (priority === 1 && this._pickupCount >= GFX.lighting.pickupLightCap) return;
+        if (priority === 1 && this._pickupCount >= this.quality.pickupCap) return;
         if (priority === 2 && this._count >= this.quality.maxLights) return;
 
         const cam = this.camera;

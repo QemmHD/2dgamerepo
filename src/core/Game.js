@@ -113,10 +113,13 @@ export class Game {
         this.audio = new AudioSystem();
         this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
         this.audio.playMusic('menu');
-        // Adaptive graphics governor state. level 0 = full quality.
+        // Adaptive graphics governor state. level 0 = full quality (roadmap #5).
         this._gfxLevel = 0;
         this._gfxLowTimer = 0;
         this._gfxHighTimer = 0;
+        // T3 governor drop for damage numbers (ANDed with the user setting at the
+        // render gate). Defaults off — matches tier 0.
+        this._gfxDropDamageNumbers = false;
         // Per-map Emberlight veil multiplier (day≈0.5 … night=1.0). Set at run
         // start from the selected biome; folded into the governor's full-quality
         // strength so FPS recovery can't reset day/night feel. 1 = neutral.
@@ -765,7 +768,12 @@ export class Game {
         this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
         this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
         this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
-        this.mapRenderer.lowQuality = this.reducedEffects;
+        // Re-sync every adaptive-quality knob to the persisted governor tier +
+        // the reducedEffects setting (roadmap #5). The tier survives across runs
+        // with _gfxLevel, so a restart on a slow device keeps its reductions
+        // (shadows/weather/lights/particles/DPR/damage-numbers) consistent rather
+        // than snapping back to full for a frame until the governor re-fires.
+        this._applyGfxLevel();
         // Reduced-effects silences the weapon-skin overlay's additive glow too
         // (mirrors the weaponAura gate). Read here so a mid-session toggle wins.
         this.player.skinOverlayEnabled = !this.reducedEffects;

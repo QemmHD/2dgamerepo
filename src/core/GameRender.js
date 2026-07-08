@@ -319,7 +319,9 @@ export const GameRenderMethods = {
 
         // Damage numbers also draw above the veil (world-positioned via a
         // re-applied camera transform) so combat math stays fully legible.
-        if (this.damageNumbersEnabled) {
+        // The T3 governor drop (_gfxDropDamageNumbers) is ANDed here so it never
+        // overrides a player who kept them on at a higher tier's expense.
+        if (this.damageNumbersEnabled && !this._gfxDropDamageNumbers) {
             ctx.save();
             this.camera.apply(ctx);
             for (const d of this.damageNumbers) if (cull(d)) d.draw(ctx);
@@ -618,44 +620,33 @@ export const GameRenderMethods = {
         }
     },
 
+    // Apply the current tier's quality knobs (roadmap #5). Data-driven from
+    // GFX.tierDefs so the ladder is one tunable table: tier 0 is full; each
+    // higher tier sheds cost in least-visible-loss order — T1 thins particles +
+    // pickup lights + drops decoration shadows; T2 kills the lighting colour
+    // tint + fewer max lights + half weather; T3 lowers the DPR cap, turns
+    // damage numbers off, and drops particles to minimal. Sprites are
+    // supersampled, so even the T3 sub-CSS backing stays acceptably crisp.
+    // NOTE: darkness `strength` is deliberately NOT set here — it's owned by the
+    // biome/photo darkness system; the governor only touches the fill levers.
     _applyGfxLevel() {
-        const lvl = this._gfxLevel;
-        // The dominant cost on a struggling machine is full-screen fill
-        // (darkness veil + additive light glows) at the backing-store
-        // resolution, so each step sheds lights AND backing pixels. The DPR
-        // ladder 2 → 2 → 1 → 0.7 is the real lever on high-res/4K PCs (level 3
-        // renders below CSS size and upscales). Sprites are supersampled, so
-        // even level 3 stays acceptably crisp.
-        if (lvl === 0) {
-            this.lighting.setQuality({
-                maxLights: GFX.lighting.maxLights,
-                colorTint: GFX.lighting.colorTint,
-                strength: GFX.darkness.strength * (this.mapDarkness ?? 1),
-            });
-            this.particles.setQuality({ max: GFX.particles.max, fog: GFX.particles.fog });
-            this.renderer.setDprCap?.(RENDER.maxDpr);
-        } else if (lvl === 1) {
-            this.lighting.setQuality({ maxLights: 64, colorTint: false });
-            this.particles.setQuality({ max: 140, fog: GFX.particles.fog });
-            this.renderer.setDprCap?.(RENDER.maxDpr);
-        } else if (lvl === 2) {
-            this.lighting.setQuality({ maxLights: 44, colorTint: false });
-            this.particles.setQuality({ max: 90, fog: false });
-            // Drop to true 1080p-equivalent backing (dpr 1) — big fill cut on
-            // any retina/high-DPI display.
-            this.renderer.setDprCap?.(1);
-        } else {
-            // Last resort for a fill-rate-bound display (e.g. 4K at 100% OS
-            // scaling, where dpr is already 1): render BELOW CSS size and let
-            // the browser upscale. Combined with the leanest light/particle
-            // budget this reliably pulls a stuck machine back to playable.
-            this.lighting.setQuality({ maxLights: 30, colorTint: false });
-            this.particles.setQuality({ max: 70, fog: false });
-            this.renderer.setDprCap?.(RENDER.minDpr);
-        }
-        // Cosmetic-but-not-free extras (decoration contact shadows) shed once
-        // the governor is actively reducing quality.
-        this.mapRenderer.lowQuality = this.reducedEffects || this._gfxLevel >= 2;
+        const t = GFX.tierDefs[this._gfxLevel] || GFX.tierDefs[0];
+        this.lighting.setQuality({
+            maxLights: t.maxLights,
+            pickupCap: t.pickupCap,
+            colorTint: t.colorTint,
+        });
+        this.particles.setQuality({ max: t.particleCap, fog: t.fog });
+        this.renderer.setDprCap?.(t.dpr === 'min' ? RENDER.minDpr : RENDER.maxDpr);
+        // Decoration contact shadows: shed when the tier says so OR the player
+        // chose reduced effects. Weather thins via weatherScale (never fully off
+        // from the governor — the user's reducedEffects gate at the call site
+        // handles that).
+        this.mapRenderer.lowQuality = this.reducedEffects || !t.shadows;
+        this.mapRenderer.weatherScale = t.weatherScale;
+        // Damage numbers: the governor's T3 drop is ANDed with the user setting
+        // at the render gate, so it never overrides a user who turned them off.
+        this._gfxDropDamageNumbers = !t.damageNumbers;
     },
 
     // True when (x, y) is within the camera view plus `margin`. Used to

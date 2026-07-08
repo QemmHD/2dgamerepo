@@ -58,7 +58,12 @@ export class MapRenderer {
         this.chunkCache = new Map();
         // Set by Game from reducedEffects / the FPS governor: when true, the
         // cosmetic decoration contact shadows are skipped to shed fill cost.
+        // (Weather is NOT gated by this — the governor thins it via weatherScale
+        // instead, so it dims gradually rather than vanishing; roadmap #5 tiers.)
         this.lowQuality = false;
+        // Weather mote-count multiplier (1 = full). The tier-2 governor step
+        // halves it to shed the per-mote fill without killing the atmosphere.
+        this.weatherScale = 1;
         // Active biome theme ({ bg, grade, gradeAlpha }); null = default dusk.
         // Set by Game at run start from the selected map.
         this.theme = null;
@@ -250,10 +255,10 @@ export class MapRenderer {
     }
 
     drawWeather(ctx, screenW, screenH, time) {
-        if (this.lowQuality || !this.theme) return;
+        if (!this.theme || this.weatherScale <= 0) return;
         const kind = this.theme.weather;
         if (kind !== 'embers' && kind !== 'snow') return;
-        const N = 56;
+        const N = Math.round(56 * this.weatherScale);
         const span = screenH + 80;
         ctx.save();
         if (kind === 'embers') {

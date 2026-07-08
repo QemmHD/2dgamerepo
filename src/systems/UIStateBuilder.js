@@ -92,6 +92,7 @@ export function buildUIState(game) {
     base.hazardCount = game.hazards.length;
     base.pickupCount = game.gems.length + game.coins.length + game.chests.length + game.healthOrbs.length;
     base.particleCount = game.showDebug ? game.particles.activeCount() : 0;
+    base.gfxTier = game._gfxLevel;   // adaptive quality tier (roadmap #5), debug HUD
     base.ownedWeapons = game.weaponSystem.snapshotForUI();
     // Ability cooldowns for the HUD pips: one entry per owned ABILITY
     // (def.ability) with its remaining/total cooldown + ready state. Total
