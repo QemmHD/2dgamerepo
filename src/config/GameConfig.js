@@ -1499,6 +1499,21 @@ export const GFX = {
         upFps: 58,
         sustainSeconds: 1.0,
     },
+    // Adaptive quality tiers (roadmap #5). Tier 0 = full; each higher tier sheds
+    // more cost, ordered least-visible-loss first. The governor steps between
+    // tiers with hysteresis (down after `sustainSeconds` below `downFps`; up only
+    // after 2× that above `upFps`) so it stays STABLE, not constantly flipping.
+    // dpr: 'max' = RENDER.maxDpr, 'min' = RENDER.minDpr (render below CSS + upscale).
+    tierDefs: [
+        // T0 — full
+        { particleCap: 220, pickupCap: 40, maxLights: 96, colorTint: true,  shadows: true,  weatherScale: 1,   fog: true,  damageNumbers: true,  dpr: 'max' },
+        // T1 — reduce particle cap, reduce pickup lights, skip decoration shadows
+        { particleCap: 150, pickupCap: 20, maxLights: 96, colorTint: true,  shadows: false, weatherScale: 1,   fog: true,  damageNumbers: true,  dpr: 'max' },
+        // T2 — disable lighting color tint, reduce max lights, reduce weather count
+        { particleCap: 150, pickupCap: 20, maxLights: 56, colorTint: false, shadows: false, weatherScale: 0.5, fog: true,  damageNumbers: true,  dpr: 'max' },
+        // T3 — lower DPR cap, damage numbers off, particles minimal
+        { particleCap: 70,  pickupCap: 20, maxLights: 56, colorTint: false, shadows: false, weatherScale: 0.5, fog: false, damageNumbers: false, dpr: 'min' },
+    ],
 };
 
 // Light colors per emitter kind. Hex #rrggbb so the buffer can derive rgba.
