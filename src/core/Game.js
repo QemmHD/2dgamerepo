@@ -695,9 +695,11 @@ export class Game {
 
         this.enemies = [];
         this.projectiles = [];
-        // Reclaim every pooled bolt so a restart never inherits live projectiles
-        // (the array above is fresh, so no instance is double-listed).
-        this.projectilePool?.releaseAll();
+        // Player-bolt pool: built ONCE, then RESET (not re-allocated) on every
+        // run so bolts are reused across runs and a restart inherits no live
+        // projectile (the array above is fresh, so releaseAll can't double-list).
+        if (this.projectilePool) this.projectilePool.releaseAll();
+        else this.projectilePool = new ProjectilePool();
         this.enemyProjectiles = [];
         // Damaging area hazards (boss shockwaves) + their telegraph decals.
         // Game-owned pool; cleared here so a restart never inherits one.
@@ -756,10 +758,6 @@ export class Game {
         // The run begins with the weapon chosen in the loadout (defaults to the
         // Cinderbolt). Other weapons still appear as level-up choices.
         this.weaponSystem = new WeaponSystem(resolveStartingWeapon(this.saveSystem.data));
-        // Player-bolt object pool (BOSSFORGE): weapons acquire from here via
-        // ctx.spawnProjectile so combat never allocates a Projectile. Released
-        // back on death (compaction) + fully reclaimed on each run start.
-        this.projectilePool = new ProjectilePool();
         // KINDLED (update #3): the run's hero id keys the Grand Signature ult
         // (signatures.js). A Rite-Trial run overrides it session-locally, never
         // touching the saved pick (_effectiveCharacterId).
