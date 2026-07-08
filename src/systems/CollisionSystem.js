@@ -77,7 +77,7 @@ export class CollisionSystem {
         return true;
     }
 
-    resolve(dt, player, enemies, projectiles) {
+    resolve(dt, player, enemies, projectiles, spatialIndex = null) {
         const killed = [];
         const hits = [];
         // Shared combo context — hits/killed are stable array refs and player
@@ -95,9 +95,23 @@ export class CollisionSystem {
         // among several it overlaps at once — it always hits the same COUNT
         // (min(pierce+1, overlaps)) for identical total damage, and the old
         // array order was itself arbitrary, so neither order is more correct.
-        const useGrid = this._buildEnemyGrid(enemies);
-        const cell = this._gridCell;
-        const grid = this._grid;
+        // Prefer the shared per-frame index (built once by Game after enemy
+        // movement, over the identical enemy set + positions this resolve sees)
+        // so we don't build a second grid; fall back to a private build when no
+        // index is supplied (tests) or it's below the broadphase threshold.
+        let useGrid, cell, grid, maxEnemyR;
+        if (spatialIndex && PROJECTILE_BROADPHASE.enabled && spatialIndex.count >= PROJECTILE_BROADPHASE.minEnemies) {
+            useGrid = true;
+            grid = spatialIndex.enemyGrid;
+            cell = spatialIndex.cell;
+            maxEnemyR = spatialIndex.maxRadius;
+            if (!this._cand) this._cand = [];
+        } else {
+            useGrid = this._buildEnemyGrid(enemies);
+            cell = this._gridCell;
+            grid = this._grid;
+            maxEnemyR = this._maxEnemyR;
+        }
 
         for (const p of projectiles) {
             if (!p.active) continue;
@@ -112,7 +126,7 @@ export class CollisionSystem {
             if (useGrid) {
                 candidates = this._cand;
                 candidates.length = 0;
-                const R = p.radius + this._maxEnemyR;
+                const R = p.radius + maxEnemyR;
                 const gx0 = Math.floor((p.x - R) / cell);
                 const gx1 = Math.floor((p.x + R) / cell);
                 const gy0 = Math.floor((p.y - R) / cell);
