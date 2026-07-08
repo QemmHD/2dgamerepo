@@ -530,7 +530,13 @@ export const ENEMY = {
             // SIGNATURE — Ice Lance: a precise sleet spear at your lead point.
             { id: 'iceLance', kind: 'aimed', cooldown: 5.5, windup: 0.5, count: 4, spread: 0.20, projectileSpeed: 580, projectileDamage: 19, color: '#aef0ff' },
         ],
-        phase2Attacks: ['iceSlam', 'glacialCharge'],
+        // Parity fix (BOSSFORGE): every apex boss's enraged pool is
+        // opener/AoE + gap-close + its SIGNATURE. Rimewarden alone shipped a
+        // 2-move pool that dropped iceLance (its signature) and ALL ranged
+        // pressure, so it got *simpler* at 50% — the one boss whose second act
+        // was weaker than its first. Restore the signature so the enrage keeps
+        // its identity, matching bramblewrath/stormwing/gloomMaw.
+        phase2Attacks: ['iceSlam', 'glacialCharge', 'iceLance'],
     },
     hoarfang: {
         hp: 1650, speed: 330, radius: 84, contactDamage: 26, xpValue: 42, boss: true,
@@ -619,7 +625,7 @@ export const ENEMY = {
             { id: 'spawnShades', kind: 'summon', cooldown: 12.0, windup: 0.6, summonCount: 4, summonTypes: { mite: 3, bat: 2 } },
             // SIGNATURE — Void Mire: pools of collapsing dark that LINGER for
             // seconds, eating away safe ground — route around them.
-            { id: 'voidMire', kind: 'lingering', cooldown: 9.5, windup: 0.7, count: 4, zoneRadius: 145, spread: 380, tickDamage: 11, duration: 4.5, color: '#b35bff' },
+            { id: 'voidMire', kind: 'lingering', cooldown: 9.5, windup: 0.7, count: 4, zoneRadius: 145, spread: 380, tickDamage: 11, duration: 4.5, warn: 0.7, color: '#b35bff' },
         ],
         phase2Attacks: ['voidBurst', 'collapse', 'voidMire'],
     },
@@ -658,7 +664,7 @@ export const ENEMY = {
             { id: 'spiralFlame', kind: 'fan', cooldown: 5.0, windup: 0.4, count: 18, spread: 6.2832, projectileSpeed: 440, projectileDamage: 14, spiral: true, spin: 0.55 },
             // SIGNATURE — Lava Field: molten pools that LINGER and burn, turning
             // the floor into shrinking safe ground.
-            { id: 'lavaField', kind: 'lingering', cooldown: 9.0, windup: 0.65, count: 4, zoneRadius: 140, spread: 360, tickDamage: 12, duration: 4.0, color: '#ff7a33' },
+            { id: 'lavaField', kind: 'lingering', cooldown: 9.0, windup: 0.65, count: 4, zoneRadius: 140, spread: 360, tickDamage: 12, duration: 4.0, warn: 0.7, color: '#ff7a33' },
         ],
         phase2Attacks: ['magmaVolley', 'fireLunge', 'lavaField'],
     },
