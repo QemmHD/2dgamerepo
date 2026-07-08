@@ -1292,6 +1292,23 @@ export const ENEMY_SEPARATION = {
     minCountToRun: 6,       // skip the whole pass when few enemies are alive
 };
 
+// Projectile↔enemy broadphase (BOSSFORGE): a per-frame uniform spatial hash of
+// enemies so each projectile tests only enemies in the cells it overlaps
+// instead of the whole roster. The primary collision loop was
+// O(projectiles × enemies) — ~220 × 180 ≈ 39,600 overlap tests/frame worst
+// case; denser boss fights (and Boss Rush) push toward that ceiling. Enemies
+// are inserted at their CENTER cell (each in exactly one bucket), and each
+// projectile queries the cell range spanned by its radius + the frame's
+// LARGEST enemy radius, which provably misses no overlap (floor is monotonic).
+// `enabled:false` or fewer than `minEnemies` alive falls back to the flat scan,
+// so correctness never depends on the grid existing. Mirrors ENEMY_SEPARATION's
+// GC-clean numeric-key hash.
+export const PROJECTILE_BROADPHASE = {
+    enabled: true,
+    cellSize: 128,      // ~ a big projectile + a mid enemy; queries stay ≈3×3
+    minEnemies: 12,     // below this the flat scan is cheaper; grid stays off
+};
+
 // ── XP / progression / gems ────────────────────────────────────────────
 // Leveling curve. Lowered + flattened so early level-ups come fast (hooks the
 // player) and the ramp stays gentle. L1→2 needs `base`; each later level adds
