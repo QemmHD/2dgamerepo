@@ -69,7 +69,9 @@ export const GameRenderMethods = {
         // damage numbers layered on top so feedback never dims.
         const lightingOn = GFX.darkness.enabled && this.lighting.ok;
         const L = lightingOn ? this.lighting : null;
+        this.profiler.begin('lighting');
         if (L) L.beginFrame(this.camera);
+        this.profiler.end('lighting');
 
         ctx.save();
         this.camera.apply(ctx);
@@ -84,30 +86,40 @@ export const GameRenderMethods = {
 
         // Ground → grid(debug) → decorations (which register candle lights)
         // → low fog (below entities) → bounds.
+        this.profiler.begin('map');
         this.mapRenderer.drawBackground(ctx, this.camera, viewW, viewH);
+        this.profiler.end('map');
         if (this.showDebug) this._drawGrid(ctx);
+        this.profiler.begin('decor');
         this.mapRenderer.drawDecorations(ctx, this.camera, viewW, viewH, L);
+        this.profiler.end('decor');
+        this.profiler.begin('particles');
         if (this.particlesEnabled && !this.reducedEffects) this.particles.drawWorldFog(ctx, this.camera);
+        this.profiler.end('particles');
         this._drawWorldBounds(ctx, this.showDebug);
 
         // Decorative floors (building interiors) are GROUND — always drawn
         // behind every entity/wall, never y-sorted against the player (else a
         // player above the building would push the floor into the in-front pass
         // and paint it over enemies inside). One flat ground pass here.
+        this.profiler.begin('obstacles');
         this.obstacleSystem.forVisible(
             this.camera, viewW, viewH,
             (ob) => ob.draw(ctx), (ob) => !!ob.def.decorative
         );
+        this.profiler.end('obstacles');
 
         // Obstacles are painter's-ordered against the player: those whose feet
         // line sits ABOVE the player draw now (behind entities); those below
         // the player draw after the player so they correctly occlude them.
         // (Decorative floors are excluded — drawn in the ground pass above.)
         const playerBaseY = this.player.y + this.player.radius;
+        this.profiler.begin('obstacles');
         this.obstacleSystem.forVisible(
             this.camera, viewW, viewH,
             (ob) => ob.draw(ctx), (ob) => !ob.def.decorative && ob.baseY <= playerBaseY
         );
+        this.profiler.end('obstacles');
 
         // Off-screen culling: only entities within the camera view (plus a
         // sprite-half + shake margin) are worth a draw call (enemies spawn
@@ -158,6 +170,7 @@ export const GameRenderMethods = {
             L.addLight(this.player.x, this.player.y, Lc.playerRadius * gloomK, lightColor, lightInten, 0);
         }
 
+        this.profiler.begin('entities');
         for (const g of this.gems) {
             if (!cull(g)) continue;
             g.draw(ctx);
@@ -198,13 +211,17 @@ export const GameRenderMethods = {
         }
         this.player.draw(ctx);
         this.player.drawHpBar(ctx);
+        this.profiler.end('entities');
         // Obstacles whose feet sit below the player draw on top of them, so the
         // player is occluded when standing behind a wall/building.
+        this.profiler.begin('obstacles');
         this.obstacleSystem.forVisible(
             this.camera, viewW, viewH,
             (ob) => ob.draw(ctx), (ob) => !ob.def.decorative && ob.baseY > playerBaseY
         );
+        this.profiler.end('obstacles');
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
+        this.profiler.begin('projectiles');
         for (const p of this.projectiles) {
             if (!cull(p)) continue;
             p.draw(ctx);
@@ -217,6 +234,7 @@ export const GameRenderMethods = {
             ep.draw(ctx);
             if (L) L.addLight(ep.x, ep.y, 110, '#c97bff', 0.8, 0);
         }
+        this.profiler.end('projectiles');
         // Bright hazards (boss shockwave rings + sweeping laser beams) —
         // above entities, additive, each carving its own light.
         this.hazardSystem.drawAbove(ctx, this, L);
@@ -237,7 +255,9 @@ export const GameRenderMethods = {
 
         // Occludable additive particles (embers + death dust) — these sit
         // above entities but BELOW the veil, so they read as ambient glow.
+        this.profiler.begin('particles');
         if (this.particlesEnabled) this.particles.drawWorldAdditive(ctx, this.camera);
+        this.profiler.end('particles');
 
         if (this.collisionSystem.contactFlash > 0) {
             this._drawContactFlash(ctx);
@@ -276,8 +296,10 @@ export const GameRenderMethods = {
         // SCREEN SPACE. Composite the darkness veil (+ baked vignette +
         // color tint) over the lit world, or fall back to the plain
         // vignette if the lighting buffer is unavailable.
+        this.profiler.begin('lighting');
         if (L) L.composite(ctx);
         else this.mapRenderer.drawVignette(ctx, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        this.profiler.end('lighting');
 
         // Biome weather (embers rise / snow falls) — screen-space atmosphere
         // over the lit world, beneath the HUD.
@@ -291,7 +313,9 @@ export const GameRenderMethods = {
 
         // Always-bright sparks sit ABOVE the veil so kill/hit/pickup/level
         // feedback never gets dimmed by the darkness.
+        this.profiler.begin('particles');
         if (this.particlesEnabled) this.particles.drawScreenAdditive(ctx, this.camera);
+        this.profiler.end('particles');
 
         // Damage numbers also draw above the veil (world-positioned via a
         // re-applied camera transform) so combat math stays fully legible.
@@ -321,7 +345,9 @@ export const GameRenderMethods = {
             return;
         }
 
+        this.profiler.begin('ui');
         this.ui.draw(ctx, buildUIState(this));
+        this.profiler.end('ui');
 
         if (this.victory) this._drawVictory(ctx);
 

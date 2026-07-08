@@ -28,6 +28,7 @@ import {
 import { TWO_PI, clamp } from './MathUtils.js';
 import { Easing } from './Easing.js';
 import { Camera } from './Camera.js';
+import { FrameProfiler } from './FrameProfiler.js';
 import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
 import { Shrine } from '../entities/Shrine.js';
@@ -188,6 +189,13 @@ export class Game {
         // time-jump keys below stay out of reach of regular players.
         this.showDebug = DEV_MODE &&
             ((DEBUG_DEFAULT_ON && !touchPrimary) || this.saveSystem.getSetting('debug') === true);
+        // Render-phase timing profiler (roadmap #4): times per-frame buckets so an
+        // FPS drop is diagnosed from the debug HUD, not guessed. Handed to the loop
+        // (which times the top-level update/render phases at their single call
+        // sites); enabled only while the debug HUD shows, so it's free otherwise.
+        this.profiler = new FrameProfiler();
+        this.profiler.enabled = this.showDebug;
+        if (this.loop) this.loop.profiler = this.profiler;
         // Performance/accessibility render flags (re-read at each run start).
         this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
         this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
@@ -196,6 +204,7 @@ export class Game {
         window.addEventListener('keydown', (e) => {
             if (DEV_MODE && (e.code === 'Backquote' || e.code === 'F2')) {
                 this.showDebug = !this.showDebug;
+                this.profiler.enabled = this.showDebug;
                 return;
             }
             // EMBERGLASS: the Keeper's Lens. While open, its own keys drive the
@@ -355,6 +364,7 @@ export class Game {
             ) {
                 this._pressFeedback('dbg');
                 this.showDebug = !this.showDebug;
+                this.profiler.enabled = this.showDebug;
                 // The DBG toggle doesn't run _updateJoystickEnabled (unlike pause),
                 // so drop any touch-button tap this same press latched — otherwise
                 // TouchButtons' right-half claim would leak a Focus lock/clear

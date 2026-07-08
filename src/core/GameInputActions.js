@@ -228,7 +228,7 @@ export const GameInputActionMethods = {
     _toggleSetting(key) {
         const cur = this.saveSystem.getSetting(key) === true;
         this.saveSystem.setSetting(key, !cur);
-        if (key === 'debug') this.showDebug = !cur;
+        if (key === 'debug') { this.showDebug = !cur; this.profiler.enabled = this.showDebug; }
     },
     _adjustVolume(key, delta) {
         const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;

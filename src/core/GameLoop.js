@@ -14,6 +14,12 @@ export class GameLoop {
         this._fpsAccum = 0;
         this._fpsFrames = 0;
 
+        // Optional per-frame timing profiler (roadmap #4), set by main.js after
+        // the Game (which owns it) is built. Times the two top-level phases here
+        // — the clean single call sites — while Game times the sub-phases inside
+        // update()/render(). No-op unless the dev/debug HUD has enabled it.
+        this.profiler = null;
+
         this._tick = this._tick.bind(this);
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) this._resetClock();
@@ -51,16 +57,22 @@ export class GameLoop {
                 this._fpsFrames = 0;
             }
 
+            const prof = this.profiler;
             this.accumulator += frameDt;
             let steps = 0;
             while (this.accumulator >= this.fixedDt && steps < 8) {
+                if (prof) prof.begin('update');
                 this.update(this.fixedDt);
+                if (prof) prof.end('update');
                 this.accumulator -= this.fixedDt;
                 steps += 1;
             }
 
             const alpha = this.accumulator / this.fixedDt;
+            if (prof) prof.begin('render');
             this.render(alpha);
+            if (prof) prof.end('render');
+            if (prof) prof.frame();
         } catch (err) {
             console.error('[GameLoop] frame error:', err);
         } finally {
