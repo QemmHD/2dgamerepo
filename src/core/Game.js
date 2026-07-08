@@ -50,6 +50,7 @@ import { attuneEffects, applyHeroAttunement } from '../content/heroAttunement.js
 import { accrueRites } from '../content/rites.js';
 import { getRiteTrialSetup, riteTrialScore } from '../content/riteTrial.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
+import { ProjectilePool } from '../systems/ProjectilePool.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
 import { WaveDirector } from '../systems/WaveDirector.js';
@@ -694,6 +695,9 @@ export class Game {
 
         this.enemies = [];
         this.projectiles = [];
+        // Reclaim every pooled bolt so a restart never inherits live projectiles
+        // (the array above is fresh, so no instance is double-listed).
+        this.projectilePool?.releaseAll();
         this.enemyProjectiles = [];
         // Damaging area hazards (boss shockwaves) + their telegraph decals.
         // Game-owned pool; cleared here so a restart never inherits one.
@@ -752,6 +756,10 @@ export class Game {
         // The run begins with the weapon chosen in the loadout (defaults to the
         // Cinderbolt). Other weapons still appear as level-up choices.
         this.weaponSystem = new WeaponSystem(resolveStartingWeapon(this.saveSystem.data));
+        // Player-bolt object pool (BOSSFORGE): weapons acquire from here via
+        // ctx.spawnProjectile so combat never allocates a Projectile. Released
+        // back on death (compaction) + fully reclaimed on each run start.
+        this.projectilePool = new ProjectilePool();
         // KINDLED (update #3): the run's hero id keys the Grand Signature ult
         // (signatures.js). A Rite-Trial run overrides it session-locally, never
         // touching the saved pick (_effectiveCharacterId).
@@ -3643,7 +3651,7 @@ export class Game {
         // — that IS the bullet-time look). Focus target threaded so single-target
         // weapons concentrate fire on the lock.
         const weaponResult = this.weaponSystem.update(
-            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio, this.focusTarget
+            dt, this.player, this.enemies, this.projectiles, this.obstacleSystem, this.particles, this.audio, this.focusTarget, this.projectilePool
         );
 
         // Held weapon: aim the signature wand (owned[0], the menu-chosen
@@ -4162,6 +4170,9 @@ export class Game {
         this.audio.setIntensity(lowHp ? Math.min(intensity, 0.25) : intensity);
 
         compactInPlace(this.enemies);
+        // Return dead bolts to the pool in the SAME pass that compacts them out
+        // of the live array, so each instance is released exactly once.
+        for (const p of this.projectiles) if (!p.active) this.projectilePool.release(p);
         compactInPlace(this.projectiles);
         // New enemy shots this frame → one soft incoming-fire pip, gated to
         // on-screen shooters (the cue's own min-gap keeps volleys as a chorus).

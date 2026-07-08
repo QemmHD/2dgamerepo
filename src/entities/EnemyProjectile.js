@@ -32,10 +32,14 @@ export class EnemyProjectile {
         this.sourceLabel = opts.sourceLabel ?? null;   // killer attribution (cards)
         this.sprite = getGlowSprite(opts.color ?? ENEMY_PROJECTILE.color);
         // Fading motion trail (matches the player-bolt look) so hostile bolts
-        // read as fast-moving energy. Sampled sparsely + capped; additive.
+        // read as fast-moving energy. Fixed-length ring buffer (no push/shift
+        // churn — boss volleys spawn many of these): trailHead is the next write
+        // slot, trailLen (0..6) how many samples are valid.
         this.trailColor = opts.color ?? ENEMY_PROJECTILE.color;
-        this.trailX = [];
-        this.trailY = [];
+        this.trailX = new Array(6);
+        this.trailY = new Array(6);
+        this.trailLen = 0;
+        this.trailHead = 0;
         this._trailAccum = 0;
     }
 
@@ -60,12 +64,14 @@ export class EnemyProjectile {
             this.vy = Math.sin(cur) * speed;
             this.angle = cur;
         }
-        // Sample the trail sparsely (every ~0.016s), capped at 6 points.
+        // Sample the trail sparsely (every ~0.016s) into the ring buffer.
         this._trailAccum += dt;
         if (this._trailAccum >= 0.016) {
             this._trailAccum = 0;
-            this.trailX.push(this.x); this.trailY.push(this.y);
-            if (this.trailX.length > 6) { this.trailX.shift(); this.trailY.shift(); }
+            this.trailX[this.trailHead] = this.x;
+            this.trailY[this.trailHead] = this.y;
+            this.trailHead = (this.trailHead + 1) % 6;
+            if (this.trailLen < 6) this.trailLen++;
         }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
@@ -90,17 +96,19 @@ export class EnemyProjectile {
     }
 
     draw(ctx) {
-        // Fading ghost trail behind the bolt — older samples fade + shrink.
-        const n = this.trailX.length;
+        // Fading ghost trail behind the bolt — walk the ring oldest → newest.
+        const n = this.trailLen;
         if (n > 1) {
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.fillStyle = this.trailColor;
+            const start = (this.trailHead - n + 6) % 6;
             for (let i = 0; i < n; i++) {
+                const idx = (start + i) % 6;
                 const f = (i + 1) / n;
                 ctx.globalAlpha = 0.30 * f;
                 ctx.beginPath();
-                ctx.arc(this.trailX[i], this.trailY[i], this.radius * (0.4 + 0.6 * f), 0, TWO_PI);
+                ctx.arc(this.trailX[idx], this.trailY[idx], this.radius * (0.4 + 0.6 * f), 0, TWO_PI);
                 ctx.fill();
             }
             ctx.restore();

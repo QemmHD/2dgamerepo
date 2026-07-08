@@ -25,7 +25,6 @@
 import { TWO_PI, circleOverlap, distanceSq } from '../core/MathUtils.js';
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KNOCKBACK, SHOCK_CFG, AURA } from '../config/GameConfig.js';
 import { applyCombo } from './elements.js';
-import { Projectile } from '../entities/Projectile.js';
 import { getEmberWispSprite } from '../assets/ProceduralSprites.js';
 
 // HP fraction at/under which Last Light's rage bonus engages.
@@ -946,13 +945,13 @@ function arcaneBoltUpdate(dt, owned, ctx) {
     const len = Math.hypot(dx, dy) || 1;
     const vx = (dx / len) * cfg.projectileSpeed;
     const vy = (dy / len) * cfg.projectileSpeed;
-    ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
+    ctx.spawnProjectile(ctx.player.x, ctx.player.y, vx, vy, {
         damage: cfg.damage * dmgMul,
         radius: cfg.projectileRadius,
         pierce: cfg.pierce,
         ricochet: cfg.ricochet ?? 0,
         ricochetRange: cfg.ricochetRange ?? 0,
-    }));
+    });
     if (ctx.audio) ctx.audio.shootBolt();
     owned.timer = cfg.cooldown * cdMul;
 }
@@ -1207,13 +1206,13 @@ function arcaneStormUpdate(dt, owned, ctx) {
         const a = baseAngle + offset;
         const vx = Math.cos(a) * cfg.projectileSpeed;
         const vy = Math.sin(a) * cfg.projectileSpeed;
-        ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
+        ctx.spawnProjectile(ctx.player.x, ctx.player.y, vx, vy, {
             damage: cfg.damage * dmgMul,
             radius: cfg.projectileRadius,
             pierce: cfg.pierce,
             ricochet: cfg.ricochet ?? 0,
             ricochetRange: cfg.ricochetRange ?? 0,
-        }));
+        });
     }
     if (ctx.audio) ctx.audio.shootBolt();
     owned.timer = cfg.cooldown * cdMul;
@@ -1240,7 +1239,7 @@ function emberWispUpdate(dt, owned, ctx) {
     const vx = (dx / len) * cfg.projectileSpeed;
     const vy = (dy / len) * cfg.projectileSpeed;
     const burnScale = ctx.player.fireRoundScale ?? 1;
-    ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
+    ctx.spawnProjectile(ctx.player.x, ctx.player.y, vx, vy, {
         damage: cfg.damage * dmgMul,
         radius: cfg.projectileRadius,
         pierce: cfg.pierce,
@@ -1248,7 +1247,7 @@ function emberWispUpdate(dt, owned, ctx) {
         burnDps: cfg.burnDps * burnScale,
         burnDuration: cfg.burnDuration,
         sprite: getEmberWispSprite(),
-    }));
+    });
     if (ctx.audio) ctx.audio.shootFire();
     owned.timer = cfg.cooldown * cdMul;
 }
@@ -1280,7 +1279,7 @@ function infernoStormUpdate(dt, owned, ctx) {
         const a = baseAngle + offset;
         const vx = Math.cos(a) * cfg.projectileSpeed;
         const vy = Math.sin(a) * cfg.projectileSpeed;
-        ctx.projectiles.push(new Projectile(ctx.player.x, ctx.player.y, vx, vy, {
+        ctx.spawnProjectile(ctx.player.x, ctx.player.y, vx, vy, {
             damage: cfg.damage * dmgMul,
             radius: cfg.projectileRadius,
             pierce: cfg.pierce,
@@ -1288,7 +1287,7 @@ function infernoStormUpdate(dt, owned, ctx) {
             burnDps: cfg.burnDps * burnScale,
             burnDuration: cfg.burnDuration,
             sprite: getEmberWispSprite(),
-        }));
+        });
     }
     if (ctx.audio) ctx.audio.shootFire();
     owned.timer = cfg.cooldown * cdMul;

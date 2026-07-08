@@ -130,12 +130,12 @@ export class CollisionSystem {
 
             for (const e of candidates) {
                 if (!e.active) continue;
-                if (p.hitEnemies.has(e)) continue;
+                if (p.hasHit(e)) continue;
                 if (!circleOverlap(p.x, p.y, p.radius, e.x, e.y, e.radius)) continue;
 
                 e.takeDamage(p.damage, kx, ky);
                 hits.push({ x: e.x, y: e.y - e.radius, amount: p.damage, element: p.element });
-                p.hitEnemies.add(e);
+                p.markHit(e);
                 // FIRE payload: stamp a burn. Re-applies on every pierce pass
                 // and on each ricochet hop for free (same projectile object),
                 // which is the intended "ember bolt keeps things burning" feel.
@@ -157,7 +157,7 @@ export class CollisionSystem {
                 // Ricochet-on-kill (Arcane Bolt signature): a lethal hit with
                 // ricochet budget redirects the bolt toward the nearest
                 // not-yet-hit enemy within range instead of dying. Bounded by
-                // the finite p.ricochet count and the p.hitEnemies guard, so
+                // the finite p.ricochet count and the p.hasHit() guard, so
                 // it can never loop. One redirect per frame (we break and let
                 // it re-scan next frame from its new heading).
                 if (lethal && p.ricochet > 0) {
@@ -166,7 +166,7 @@ export class CollisionSystem {
                     let best = null;
                     let bestSq = rrSq;
                     for (const t of enemies) {
-                        if (!t.active || p.hitEnemies.has(t)) continue;
+                        if (!t.active || p.hasHit(t)) continue;
                         const tdx = t.x - e.x;
                         const tdy = t.y - e.y;
                         const dsq = tdx * tdx + tdy * tdy;

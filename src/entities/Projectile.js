@@ -13,8 +13,38 @@ const PROJECTILE_TRAIL_COLOR = {
     default: '#ffd1a0',
 };
 
+// Max DISTINCT enemies one bolt can damage over its life = 1 + pierce + ricochet.
+// The heaviest evolved weapons cap at pierce 4 / ricochet 4, so 16 slots is far
+// above any reachable value. A projectile that somehow exceeds it simply stops
+// recording (worst case a single harmless re-hit) — it never overflows.
+const HITLIST_CAP = 16;
+// Motion trail: a short ring of recent positions redrawn as fading ghosts.
+const TRAIL_LEN = 6;
+
 export class Projectile {
-    constructor(x, y, vx, vy, opts = {}) {
+    // Poolable: `new Projectile()` builds an inert instance whose persistent
+    // buffers (hit-list + trail ring) are allocated ONCE and reused for the
+    // pool's lifetime; `reset(...)` re-inits every gameplay field. Passing
+    // constructor args re-inits immediately (back-compat with `new Projectile(x,…)`).
+    constructor(x, y, vx, vy, opts) {
+        // Fixed hit-list replaces a per-projectile Set — no allocation on reuse
+        // (hitCount=0 IS the clear; stale refs past hitCount are never read).
+        this.hitList = new Array(HITLIST_CAP);
+        this.hitCount = 0;
+        // Trail ring buffer (fixed length, no push/shift churn). trailHead is
+        // the next write slot; trailLen (0..TRAIL_LEN) is how many are valid.
+        this.trailX = new Array(TRAIL_LEN);
+        this.trailY = new Array(TRAIL_LEN);
+        this.trailLen = 0;
+        this.trailHead = 0;
+        this._trailAccum = 0;
+        this.active = false;
+        if (x !== undefined) this.reset(x, y, vx, vy, opts);
+    }
+
+    // (Re)initialize every gameplay field. Returns `this` so the pool can
+    // `return p.reset(...)`. `stamp` is a monotonic id from the pool (debug).
+    reset(x, y, vx, vy, opts = {}, stamp = 0) {
         this.x = x;
         this.y = y;
         this.vx = vx;
@@ -35,32 +65,47 @@ export class Projectile {
         this.element = opts.element ?? null;
         this.burnDps = opts.burnDps ?? 0;
         this.burnDuration = opts.burnDuration ?? 0;
-        // Tracks enemies already damaged so a single piercing projectile
-        // doesn't double-hit the same target while passing through.
-        this.hitEnemies = new Set();
+        // Clear hit history: zeroing the count is the reset (contents left stale).
+        this.hitCount = 0;
         this.age = 0;
         this.active = true;
         this.angle = Math.atan2(vy, vx);
         // Weapons may supply a tinted sprite (e.g. the ember bolt); default is
         // the arcane bolt art.
         this.sprite = opts.sprite ?? getProjectileSprite();
-        // Motion trail: a short ring of recent positions, redrawn as fading
-        // additive ghosts so a bolt reads as a streak. Element tints the glow.
-        this.trailX = [];
-        this.trailY = [];
+        // Reset the trail ring (drop any ghosts from a prior life).
+        this.trailLen = 0;
+        this.trailHead = 0;
         this._trailAccum = 0;
         this.trailColor = opts.trailColor ?? PROJECTILE_TRAIL_COLOR[this.element] ?? PROJECTILE_TRAIL_COLOR.default;
+        this._stamp = stamp;
+        return this;
+    }
+
+    // Per-projectile hit tracking (replaces a Set). Linear scan over ≤16 entries
+    // is faster than Set ops and, unlike a shared enemy stamp, correctly records
+    // that THIS bolt already hit an enemy even when other bolts hit it too.
+    hasHit(e) {
+        for (let i = 0; i < this.hitCount; i++) {
+            if (this.hitList[i] === e) return true;
+        }
+        return false;
+    }
+
+    markHit(e) {
+        if (this.hitCount < this.hitList.length) this.hitList[this.hitCount++] = e;
     }
 
     update(dt) {
-        // Sample a sparse trail (every ~16ms, capped) before moving so ghosts
-        // sit behind the head.
+        // Sample a sparse trail (every ~16ms) before moving so ghosts sit
+        // behind the head. Ring buffer: overwrite the head slot, advance, wrap.
         this._trailAccum += dt;
         if (this._trailAccum >= 0.016) {
             this._trailAccum = 0;
-            this.trailX.push(this.x);
-            this.trailY.push(this.y);
-            if (this.trailX.length > 6) { this.trailX.shift(); this.trailY.shift(); }
+            this.trailX[this.trailHead] = this.x;
+            this.trailY[this.trailHead] = this.y;
+            this.trailHead = (this.trailHead + 1) % TRAIL_LEN;
+            if (this.trailLen < TRAIL_LEN) this.trailLen++;
         }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
@@ -78,16 +123,20 @@ export class Projectile {
 
     draw(ctx) {
         // Additive ghost trail behind the head — older samples fade + shrink.
-        const n = this.trailX.length;
+        // Walk the ring from oldest → newest so the fade reads the same as the
+        // old push/shift list did.
+        const n = this.trailLen;
         if (n > 1) {
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.fillStyle = this.trailColor;
+            const start = (this.trailHead - n + TRAIL_LEN) % TRAIL_LEN;   // oldest
             for (let i = 0; i < n; i++) {
+                const idx = (start + i) % TRAIL_LEN;
                 const f = (i + 1) / n;           // 0 (oldest) → 1 (newest)
                 ctx.globalAlpha = 0.32 * f;
                 ctx.beginPath();
-                ctx.arc(this.trailX[i], this.trailY[i], this.radius * (0.4 + 0.6 * f), 0, TWO_PI);
+                ctx.arc(this.trailX[idx], this.trailY[idx], this.radius * (0.4 + 0.6 * f), 0, TWO_PI);
                 ctx.fill();
             }
             ctx.restore();
