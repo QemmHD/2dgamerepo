@@ -71,6 +71,10 @@ import { loadObstacleSprites } from '../../src/assets/ObstacleSprites.js';
 import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
 import { loadRenderedProps } from '../../src/assets/RenderedWeaponProps.js';
 import { Enemy } from '../../src/entities/Enemy.js';
+import { XPGem } from '../../src/entities/XPGem.js';
+import { Coin } from '../../src/entities/Coin.js';
+import { HealthOrb } from '../../src/entities/HealthOrb.js';
+import { DamageNumber } from '../../src/entities/DamageNumber.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 import { photoFilterIndexById } from '../../src/content/photoFilters.js';
 
@@ -93,6 +97,16 @@ const SHOWCASE = params.get('showcase');
 const PHOTO = params.get('photo') === '1';
 const PHOTOZOOM = parseFloat(params.get('photozoom') || '1');
 const PHOTOFILTER = params.get('filter');   // filter id (e.g. 'gloam'); default none
+// Adaptive-quality QA (roadmap #5 visual pass). gfxtier forces a governor tier
+// for the final frame; debughud shows the GFXTIER/profiler readout; the scenario
+// knobs spawn a stress frame. All QA-only — no shipped gameplay is touched.
+const GFXTIER = params.has('gfxtier') ? parseInt(params.get('gfxtier'), 10) : null;
+const DEBUGHUD = params.get('debughud') === '1';
+const DENSE = parseInt(params.get('dense') || '0', 10);      // extra enemies
+const PICKUPS = parseInt(params.get('pickups') || '0', 10);  // gems + coins + orbs
+const DMGNUM = parseInt(params.get('dmgnum') || '0', 10);    // floating damage numbers
+const QABOSS = params.get('boss') === '1';                   // spawn a boss + warning
+const MAP = params.get('map');                               // force selected map (weather)
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -124,6 +138,7 @@ async function boot() {
         for (let i = 0; i < 90; i++) { try { game.update(DT); } catch (e) { ERR.push('menu ' + i + ': ' + String(e && e.stack || e)); break; } }
         game.render();
     } else {
+        if (MAP) { try { game.saveSystem.setSelectedMap(MAP); } catch (e) { ERR.push('map: ' + String(e)); } }
         game._startRun();                // default hero (monkey "Pyra"), default map
         game.player.damageTakenMul = 0;  // harness godmode: survive the swarm for the shot
 
@@ -177,6 +192,50 @@ async function boot() {
                 for (let i = 0; i < 30; i++) game.update(DT);
             } catch (e) { ERR.push('tp: ' + String(e && e.stack || e)); }
         }
+        // ── Adaptive-quality QA scenarios (roadmap #5) — spawn a stress frame ──
+        try {
+            const px = game.player.x, py = game.player.y;
+            const rng = (i, n, r) => { const a = -Math.PI / 2 + i * (2 * Math.PI / n); return [px + Math.cos(a) * r, py + Math.sin(a) * r]; };
+            if (DENSE) {
+                const types = ['slime', 'bat', 'crawler', 'spitter', 'mite', 'brute'];
+                for (let i = 0; i < DENSE; i++) {
+                    const [x, y] = rng(i, DENSE, 140 + (i % 5) * 60);
+                    game.enemies.push(new Enemy(types[i % types.length], x, y));
+                }
+                game.player.damageMul = 0;   // keep the swarm alive for the shot
+            }
+            if (PICKUPS) {
+                const tiers = ['small', 'medium', 'large'];
+                for (let i = 0; i < PICKUPS; i++) {
+                    const [x, y] = rng(i, PICKUPS, 90 + (i % 6) * 45);
+                    if (i % 4 === 3) game.coins.push(new Coin(x, y, 1));
+                    else if (i % 7 === 6) game.healthOrbs.push(new HealthOrb(x, y));
+                    else game.gems.push(new XPGem(x, y, tiers[i % 3]));
+                }
+            }
+            if (QABOSS) {
+                const bd = game.bossDirector;
+                const id = (bd && bd.bosses && bd.bosses[0]) || 'emberwarden';
+                game._spawnBoss(id);
+                game._startBossWarning(id);
+            }
+            if (DENSE || PICKUPS || QABOSS) {
+                for (let i = 0; i < 12; i++) {   // brief settle so lights/positions land
+                    game.update(DT);
+                    if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);
+                }
+            }
+            if (DMGNUM) {
+                // Burst of floating combat numbers around the player (spawned last so
+                // they haven't decayed by the shot). Tests the T3 damage-numbers drop.
+                const cols = ['#ffffff', '#ffd166', '#ff6a5a', '#7be0ff', '#b48cff'];
+                for (let i = 0; i < DMGNUM; i++) {
+                    const [x, y] = rng(i, DMGNUM, 60 + (i % 8) * 30);
+                    game.damageNumbers.push(new DamageNumber(x, y, 10 + (i * 7) % 90, cols[i % cols.length]));
+                }
+            }
+        } catch (e) { ERR.push('qa-scenario: ' + String(e && e.stack || e)); }
+
         if (PHOTO) {
             try {
                 game._enterPhotoMode('gameplay');
@@ -185,6 +244,13 @@ async function boot() {
                 for (let i = 0; i < 4; i++) game.update(DT);   // let toolbar-fade settle deterministically
             } catch (e) { ERR.push('photo: ' + String(e && e.stack || e)); }
         }
+        // Force a governor tier for the final frame (roadmap #5 QA). Applied last
+        // so it wins over _startRun's tier re-apply; drives the same _applyGfxLevel
+        // path the live governor uses.
+        if (GFXTIER != null && GFXTIER >= 0) {
+            try { game._gfxLevel = GFXTIER; game._applyGfxLevel(); } catch (e) { ERR.push('gfxtier: ' + String(e && e.stack || e)); }
+        }
+        if (DEBUGHUD) { game.showDebug = true; if (game.profiler) game.profiler.enabled = true; }
         game.render();
     }
 
