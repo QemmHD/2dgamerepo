@@ -38,6 +38,9 @@ import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js'
 import { ACHIEVEMENTS } from '../content/achievements.js';
 import { pickDailyChallenges, currentDayNumber } from '../content/dailyChallenges.js';
 import { getDailySetup } from '../content/dailyRoad.js';
+import { getRiteTrialSetup } from '../content/riteTrial.js';
+import { ritesFor, riteProgress, ritesCompletedCount } from '../content/rites.js';
+import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
 import { getRoad } from '../content/roads.js';
 import { PATRONS, PATRON_IDS } from '../content/patrons.js';
 
@@ -1136,13 +1139,15 @@ export class MenuRenderer {
         }
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-        // START RUN (left) + DAILY ROAD (right) share the CTA row. START stays the
-        // big animated call-to-action; DAILY launches the day's curated fixed run.
+        // START RUN (left) + DAILY ROAD + RITE TRIAL (right) share the CTA row. START
+        // stays the big animated call-to-action; DAILY launches the day's curated fixed
+        // run; RITE TRIAL (KINDLED #3) launches the day's hero-locked Kindle trial.
         const dGap = 12;
-        const dailyW = Math.min(240, innerW * 0.34);
-        const startW = innerW - dailyW - dGap;
+        const sideW = Math.min(220, innerW * 0.26);
+        const startW = innerW - sideW * 2 - dGap * 2;
         this._drawStartButton(ctx, { x: innerX, y: startY, w: startW, h: startH }, t);
-        this._drawDailyButton(ctx, { x: innerX + startW + dGap, y: startY, w: dailyW, h: startH }, state, t);
+        this._drawDailyButton(ctx, { x: innerX + startW + dGap, y: startY, w: sideW, h: startH }, state, t);
+        this._drawRiteTrialButton(ctx, { x: innerX + startW + dGap * 2 + sideW, y: startY, w: sideW, h: startH }, state, t);
     }
 
     // DAILY ROAD launch button — a distinct pink/gold CTA showing the day's fixed
@@ -1175,6 +1180,36 @@ export class MenuRenderer {
             : 'First run pays a free case';
         ctx.fillText(scoreLine, r.x + r.w / 2, r.y + r.h / 2 + 24);
         this._hot(r.x, r.y, r.w, r.h, 'startDaily', null);
+    }
+
+    // RITE TRIAL launch button (KINDLED #3) — the daily HERO-LOCKED Kindle trial: an
+    // ember CTA showing today's locked hero + best-of-day. Same-for-everyone each UTC
+    // day (salt 0x4b494e44); the trial hero is a session-local override that never
+    // touches the saved pick. Dispatches 'startRiteTrial'.
+    _drawRiteTrialButton(ctx, r, state, t) {
+        const setup = getRiteTrialSetup(currentDayNumber());
+        const heroName = (getCharacter(setup.heroId)?.name) || setup.heroId;
+        const best = state.riteTrialBest ?? 0;
+        const prev = state.riteTrialPrevBest ?? 0;
+        const glow = 0.5 + Math.sin(t * 3 + 1) * 0.25;
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
+        ctx.fillStyle = 'rgba(58,30,16,0.95)'; ctx.fill();
+        ctx.save();
+        ctx.globalAlpha = glow;
+        ctx.strokeStyle = '#ff9a4a'; ctx.lineWidth = 2.5;
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14); ctx.stroke();
+        ctx.restore();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd8b0'; ctx.font = `800 22px ${FONT}`;
+        ctx.fillText('RITE TRIAL', r.x + r.w / 2, r.y + r.h / 2 - 16);
+        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
+        ctx.fillText(this._ellip(ctx, `Today: ${heroName}`, r.w - 20), r.x + r.w / 2, r.y + r.h / 2 + 6);
+        ctx.fillStyle = 'rgba(255,206,84,0.9)'; ctx.font = `700 13px ${FONT}`;
+        const scoreLine = best > 0 ? `Best today: ${best}`
+            : prev > 0 ? `Yesterday: ${prev} — beat it!`
+            : 'Hero locks each day';
+        ctx.fillText(scoreLine, r.x + r.w / 2, r.y + r.h / 2 + 24);
+        this._hot(r.x, r.y, r.w, r.h, 'startRiteTrial', null);
     }
 
     // Pulsing accent glow behind a SELECTED chip (biome / difficulty / trial).
@@ -1854,9 +1889,87 @@ export class MenuRenderer {
             ctx.fillText(this._ellip(ctx, item.name || '—', sw - 150), sx + sw - 14, ry + rowH / 2);
         }
 
-        // Right: the cosmetic pickers, on the same page.
-        const rRect = { x: c.x + avW + gap, y: c.y, w: c.w - avW - gap, h: c.h };
-        this._drawItemGrid(ctx, state, 'cosmetic', rRect);
+        // Right column: cosmetic pickers (top) + the hero's RITES & Attunement
+        // (bottom, KINDLED #3). The rites strip shrinks the picker grid rather than
+        // adding a whole tab — mastery lives with the hero it belongs to.
+        const rColX = c.x + avW + gap, rColW = c.w - avW - gap;
+        const ritesH = Math.min(236, c.h * 0.44);
+        this._drawItemGrid(ctx, state, 'cosmetic', { x: rColX, y: c.y, w: rColW, h: c.h - ritesH - 14 });
+        this._drawRitesPanel(ctx, state, { x: rColX, y: c.y + c.h - ritesH, w: rColW, h: ritesH });
+    }
+
+    // KINDLED #3 — the selected hero's RITES (3 mastery quests + progress) and the
+    // Hero Attunement ladder (Lv 0..5; rungs 3/4/5 rite-gated). Reads save.rites /
+    // save.heroAttunement directly (like the cosmetic pickers read save.cosmetics);
+    // the buy button dispatches 'buyHeroAttune' with the hero id.
+    _drawRitesPanel(ctx, state, rect) {
+        const save = state.saveData;
+        const heroId = save.selectedCharacter;
+        const rites = ritesFor(heroId);
+        const done = ritesCompletedCount(save, heroId);
+        this._panel(ctx, rect.x, rect.y, rect.w, rect.h, 'rgba(24,16,12,0.82)', 'rgba(255,154,74,0.24)');
+        const pad = 16;
+        let y = rect.y + pad + 6;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#ffd8b0'; ctx.font = `800 18px ${FONT}`;
+        ctx.fillText(`RITES — ${done}/${rites.length} complete`, rect.x + pad, y);
+        y += 22;
+        const rowH = 40, barH = 8;
+        for (const rt of rites) {
+            const prog = riteProgress(save, heroId, rt.id);
+            const frac = rt.goal > 0 ? Math.max(0, Math.min(1, prog / rt.goal)) : 0;
+            const complete = prog >= rt.goal;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = complete ? '#7fe08a' : '#fff'; ctx.font = `700 14px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, `${complete ? '✓ ' : ''}${rt.name}`, rect.w - pad * 2 - 96), rect.x + pad, y + 7);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `600 12px ${FONT}`;
+            ctx.fillText(`${Math.min(prog, rt.goal).toLocaleString()} / ${rt.goal.toLocaleString()}`, rect.x + rect.w - pad, y + 7);
+            const bx = rect.x + pad, bw = rect.w - pad * 2, by = y + 18;
+            roundRectPath(ctx, bx, by, bw, barH, barH / 2); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
+            if (frac > 0) { roundRectPath(ctx, bx, by, bw * frac, barH, barH / 2); ctx.fillStyle = complete ? '#5fd36a' : '#ff9a4a'; ctx.fill(); }
+            y += rowH;
+        }
+        // Attunement ladder.
+        const level = save.heroAttunement?.[heroId] ?? 0;
+        const maxed = level >= HERO_ATTUNE_MAX;
+        const nextGate = maxed ? 0 : heroAttuneRiteGate(level + 1);
+        const gateMet = done >= nextGate;
+        const cost = maxed ? 0 : heroAttuneCost(level);
+        const afford = !maxed && (save.totalCoins ?? 0) >= cost;
+        const canBuy = !maxed && gateMet && afford;
+        const ay = y + 2;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd8b0'; ctx.font = `800 15px ${FONT}`;
+        ctx.fillText(`ATTUNEMENT  Lv ${level}/${HERO_ATTUNE_MAX}`, rect.x + pad, ay + 8);
+        const segW = 22, segGap = 6, segH = 10;
+        let sx2 = rect.x + pad + 190;
+        for (let s = 0; s < HERO_ATTUNE_MAX; s++) {
+            roundRectPath(ctx, sx2, ay + 3, segW, segH, 4);
+            ctx.fillStyle = s < level ? '#ff9a4a' : 'rgba(255,255,255,0.12)'; ctx.fill();
+            sx2 += segW + segGap;
+        }
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = 'rgba(255,255,255,0.66)'; ctx.font = `600 12px ${FONT}`;
+        ctx.fillText(this._ellip(ctx, maxed ? 'Fully attuned' : this._heroAttuneEffectLabel(level + 1), rect.w - pad * 2 - 140), rect.x + pad, ay + 32);
+        const bw = 132, bh = 34, bx = rect.x + rect.w - pad - bw, by = ay - 6;
+        const label = maxed ? 'MAX' : !gateMet ? `NEEDS ${nextGate} RITE${nextGate > 1 ? 'S' : ''}` : `◎ ${cost}`;
+        this._button(ctx, { x: bx, y: by, w: bw, h: bh }, label, {
+            enabled: canBuy, accent: canBuy ? '#2e6b3f' : null,
+            action: canBuy ? 'buyHeroAttune' : null, arg: heroId, fontSize: 14,
+        });
+    }
+
+    // The one-line effect a given attunement level grants (menu copy).
+    _heroAttuneEffectLabel(level) {
+        switch (level) {
+            case 1: return 'Next: +10% Kindle gain';
+            case 2: return 'Next: −0.5s blink cooldown';
+            case 3: return 'Next: +12% ult damage (needs 1 Rite)';
+            case 4: return 'Next: +8% vs focused (needs 2 Rites)';
+            case 5: return 'Next: ult costs 85 · ember crown (needs 3 Rites)';
+            default: return '';
+        }
     }
 
     // ── SHOP (cases) ─────────────────────────────────────────────────────

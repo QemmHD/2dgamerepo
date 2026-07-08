@@ -45,7 +45,10 @@ import { DamageNumber } from '../entities/DamageNumber.js';
 import { Spawner } from '../systems/Spawner.js';
 import { WeaponSystem, AUTO_AIM_RANGE } from '../systems/WeaponSystem.js';
 import { KindleSystem } from '../systems/KindleSystem.js';
-import { signatureFor } from '../content/signatures.js';
+import { signatureFor, setUltFocus } from '../content/signatures.js';
+import { attuneEffects, applyHeroAttunement } from '../content/heroAttunement.js';
+import { accrueRites } from '../content/rites.js';
+import { getRiteTrialSetup, riteTrialScore } from '../content/riteTrial.js';
 import { CollisionSystem } from '../systems/CollisionSystem.js';
 import { UpgradeSystem } from '../systems/UpgradeSystem.js';
 import { PassiveSystem } from '../systems/PassiveSystem.js';
@@ -193,6 +196,14 @@ export class Game {
         this.dailyMode = false;
         this._dailyMapOverride = null;
         this._dailySetup = null;
+        // KINDLED PR5 — the daily hero-locked Rite Trial. Same session-local
+        // discipline as dailyMode: a HERO + map override resolved BEFORE _initRunState,
+        // never touching the saved pick (selectedCharacter). Mutually exclusive with
+        // dailyMode.
+        this.riteTrialMode = false;
+        this._riteTrialHeroOverride = null;
+        this._riteTrialMapOverride = null;
+        this._riteTrialSetup = null;
         // Pre-run Patron choice (id or null) — biases the level-up draft toward
         // that Patron's weapons/passives. Session-local (not persisted), chosen
         // on the Play tab; folded into committedPatrons at run start.
@@ -274,7 +285,7 @@ export class Game {
                     // While the guided tour is up, Space/Enter advances it
                     // (matching the NEXT button) instead of launching a run.
                     if (this.menuTour) { this._menuAction('tourNext', null); return; }
-                    this.dailyMode = false;   // keyboard start is always a NORMAL run
+                    this.dailyMode = false; this.riteTrialMode = false;   // keyboard start is always a NORMAL run
                     this._startRun();
                 }
                 return;
@@ -664,11 +675,21 @@ export class Game {
     // so the override lands before _initRunState builds the BossDirector/tier.
     _effectiveMapId() {
         if (this.dailyMode && this._dailyMapOverride) return this._dailyMapOverride;
+        if (this.riteTrialMode && this._riteTrialMapOverride) return this._riteTrialMapOverride;
         return this.saveSystem.getSelectedMap();
     }
 
+    // KINDLED PR5 — the run's effective HERO id: the Rite-Trial daily override
+    // (session-local, never persisted) or the saved pick. Read at every run-build
+    // site so the locked trial hero flows through Player / _heroId / attunement /
+    // share card WITHOUT mutating selectedCharacter.
+    _effectiveCharacterId() {
+        if (this.riteTrialMode && this._riteTrialHeroOverride) return this._riteTrialHeroOverride;
+        return this.saveSystem.getSelectedCharacter();
+    }
+
     _initRunState() {
-        this.player = new Player(undefined, undefined, this.saveSystem.getSelectedCharacter());
+        this.player = new Player(undefined, undefined, this._effectiveCharacterId());
         this.camera.follow(this.player);
 
         this.enemies = [];
@@ -708,6 +729,17 @@ export class Game {
         // Daily Road per-run bookkeeping (score banked once at game-over/victory).
         this._dailyRoadRecorded = false;
         this.dailyRoadBest = false;
+        // KINDLED PR5 — Rite-Trial banking latch + per-run KINDLED counters, read at
+        // the single run-end summary pass to bank the trial score, feed lifetime
+        // stats, and accrue this hero's rite progress. Reset each run/restart.
+        this._riteTrialRecorded = false;
+        this._riteAccrued = false;
+        this.riteTrialBestNew = false;
+        this.ultsReleased = 0;       // Grand Signatures released this run (score input)
+        this.blinks = 0;             // successful aimed blinks this run (stat)
+        this._runBestUltHits = 0;    // most foes hit by one ult this run (rite metric)
+        this._runBestUltKills = 0;   // most kills by one ult this run (rite metric)
+        this._runBrinkCasts = 0;     // Pyre-of-the-Brink casts below 20% HP (rite metric)
         this.gems = [];
         this.damageNumbers = [];
 
@@ -720,14 +752,16 @@ export class Game {
         // The run begins with the weapon chosen in the loadout (defaults to the
         // Cinderbolt). Other weapons still appear as level-up choices.
         this.weaponSystem = new WeaponSystem(resolveStartingWeapon(this.saveSystem.data));
-        // KINDLED (update #3): the Kindle ult meter + aimed-blink cooldown.
-        // Built here (same lifecycle as weaponSystem) so every run/restart
-        // resets the meter to startFill and the blink cooldown to 0.
-        this.kindleSystem = new KindleSystem();
-        // The run's hero id — keys the Grand Signature ult (signatures.js) and,
-        // later (PR5), a session-local Rite-Trial override without touching the
-        // saved pick.
-        this._heroId = this.saveSystem.getSelectedCharacter();
+        // KINDLED (update #3): the run's hero id keys the Grand Signature ult
+        // (signatures.js). A Rite-Trial run overrides it session-locally, never
+        // touching the saved pick (_effectiveCharacterId).
+        this._heroId = this._effectiveCharacterId();
+        // The Kindle ult meter + aimed-blink cooldown, built here (same lifecycle as
+        // weaponSystem) so every run/restart resets the meter + cooldown. Its per-hero
+        // Attunement modifiers (Kindle gain / blink CD / ult cost) are resolved from
+        // the hero's heroAttunement level; the ult/focused DAMAGE multipliers are
+        // stamped on the player in _startRun (applyHeroAttunement).
+        this.kindleSystem = new KindleSystem(attuneEffects(this.saveSystem.getHeroAttunement(this._heroId)));
         // Focus targeting (PR3): the locked enemy ref (or null) + an out-of-range
         // grace timer, both run-scoped so a restart clears the lock.
         this.focusTarget = null;
@@ -879,21 +913,38 @@ export class Game {
             this._dailySetup = getDailySetup(currentDayNumber());
             this._dailyMapOverride = this._dailySetup.mapId;
             this.selectedModifiers = new Set(this._dailySetup.modifierIds);
+        } else if (this.riteTrialMode) {
+            // KINDLED PR5 — the daily hero-locked Rite Trial: a deterministic HERO +
+            // map + one Trial modifier (salt 0x4b494e44). The hero override is
+            // resolved HERE so _initRunState's Player/_heroId read the trial hero,
+            // without ever mutating the saved selectedCharacter.
+            this._riteTrialSetup = getRiteTrialSetup(currentDayNumber());
+            this._riteTrialHeroOverride = this._riteTrialSetup.heroId;
+            this._riteTrialMapOverride = this._riteTrialSetup.mapId;
+            this.selectedModifiers = new Set(this._riteTrialSetup.modifierIds);
         } else {
             this._dailySetup = null;
             this._dailyMapOverride = null;
+            this._riteTrialSetup = null;
+            this._riteTrialHeroOverride = null;
+            this._riteTrialMapOverride = null;
         }
         this._initRunState();
         // Character base stats apply FIRST so permanent upgrades / gear /
         // passives / run upgrades all stack cleanly on top of the hero's
         // baseline (and the sprite already matches the selected character).
-        applyCharacter(this.player, this.saveSystem.getSelectedCharacter());
+        applyCharacter(this.player, this._effectiveCharacterId());
         const coinsBefore = this.player.coins ?? 0;
         applyPermanentUpgrades(this.player, this.saveSystem.data);
         // Relic Attunement (coin sink): fold in every saved attunement level ONCE,
         // right after permanent upgrades — they're the same class of meta bonus
         // (defensive/utility only, no raw weapon damage; see relics.js ATTUNABLE).
         applyAttunements(this.player, this.saveSystem.getRelicAttunements());
+        // KINDLED PR5 — Hero Attunement's ult + focused-target DAMAGE multipliers
+        // (Lv3/Lv4) stamped onto the player fields signatures.js reads. Kindle-gain /
+        // blink-CD / ult-cost (Lv1/2/5) live on the KindleSystem instance (built in
+        // _initRunState). Keyed by the run's effective hero (_heroId).
+        applyHeroAttunement(this.player, this.saveSystem.getHeroAttunement(this._heroId));
         // Loadout gear buffs stack ON TOP of permanent upgrades (applied after
         // so multipliers compound). Cosmetics drive the player's appearance.
         applyLoadout(this.player, this.saveSystem.data);
@@ -1038,8 +1089,8 @@ export class Game {
         // Leaving a live (paused) run still banks what was earned, matching
         // the death path. No-op once already banked this run.
         this._bankRunCoins();
-        // A RESTART is a fresh NORMAL run — never silently re-launch a Daily.
-        this.dailyMode = false;
+        // A RESTART is a fresh NORMAL run — never silently re-launch a Daily/Trial.
+        this.dailyMode = false; this.riteTrialMode = false;
         this._startRun();
     }
 
@@ -1050,9 +1101,10 @@ export class Game {
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
         this.paused = false;
-        // Back at the menu, a Daily is over — clear the flag so the next launch
-        // (button OR keyboard) is a normal run unless DAILY ROAD is chosen again.
-        this.dailyMode = false;
+        // Back at the menu, a Daily/Trial is over — clear the flags so the next
+        // launch (button OR keyboard) is a normal run unless DAILY ROAD / RITE TRIAL
+        // is chosen again.
+        this.dailyMode = false; this.riteTrialMode = false;
         // The guided menu tour fires on the first menu visit AFTER a recorded
         // run (right when the guided first run ends) and re-fires until
         // finished or skipped. The runs>=1 gate keeps a pause-quit of the very
@@ -1306,7 +1358,10 @@ export class Game {
     _checkPactMastery() {
         const tier = (this.activeModifiers ?? []).length;
         if (tier <= 0) return;
-        const char = this.saveSystem.getSelectedCharacter();
+        // KINDLED PR5 — credit the hero actually PLAYED (a Rite Trial forces a
+        // session-local hero override), not the saved menu pick, so a trial clear
+        // advances the trial hero's ladder + pays its bounty (not the menu hero's).
+        const char = this._effectiveCharacterId();
         const steps = this.saveSystem.recordPactClear(char, tier);
         if (steps > 0) {
             const bounty = steps * 80;
@@ -1359,6 +1414,10 @@ export class Game {
             // Daily Road: a WON daily banks its score + payout too (same latch
             // as game-over so leaving-on-victory then dying can't double-count).
             this._bankDailyRoad();
+            // KINDLED PR5 — same rite accrual + Rite-Trial banking as the death path
+            // (both latched, so a victory-then-death can't double-count).
+            this._accrueRiteProgress();
+            this._bankRiteTrial();
             this._checkAchievements();
             this._checkDailyChallenges();
             this._runRecorded = true;
@@ -1431,6 +1490,61 @@ export class Game {
             this.runSummary.dailyRoadCase = caseLabel;
         }
         this._dailyRoadRecorded = true;
+    }
+
+    // KINDLED PR5 — the per-run rite metrics + Kindle score inputs from the finished
+    // run (one summary pass, no per-frame cost). Distinct from the daily-road score.
+    _runRiteStats() {
+        return {
+            time: Math.floor(this.time),
+            kills: this.kills,
+            bosses: this.bossesDefeated,
+            ults: this.ultsReleased,
+            comboProcs: (this.player && this.player._comboProcs) || 0,
+            heal: Math.floor((this.player && this.player.healedThisRun) || 0),
+            bestUltHits: this._runBestUltHits,
+            bestUltKills: this._runBestUltKills,
+            brinkCasts: this._runBrinkCasts,
+        };
+    }
+
+    // Accrue THIS run's contribution into the run HERO's rite progress — EVERY run,
+    // not just a Rite Trial (mastery accumulates whenever you play that hero). Keyed
+    // by _effectiveCharacterId so a trial run credits the trial hero. Also folds the
+    // lifetime KINDLED counters. Latched by _riteAccrued so victory-then-death can't
+    // double-count.
+    _accrueRiteProgress() {
+        if (this._riteAccrued) return;
+        this._riteAccrued = true;
+        const heroId = this._effectiveCharacterId();
+        const stats = this._runRiteStats();
+        const prev = this.saveSystem.getRites()[heroId];
+        const { map, newlyDone } = accrueRites(prev, heroId, stats);
+        this.saveSystem.setHeroRites(heroId, map);
+        if (this.ultsReleased > 0) this.saveSystem.incrementStat('ultsReleased', this.ultsReleased);
+        if (stats.comboProcs > 0) this.saveSystem.incrementStat('comboProcs', stats.comboProcs);
+        if (this.blinks > 0) this.saveSystem.incrementStat('blinks', this.blinks);
+        if (this.runSummary) this.runSummary.ritesCompleted = newlyDone.map((r) => r.name);
+        if (newlyDone.length && this._setToast) this._setToast(`Rite complete — ${newlyDone[0].name}`);
+    }
+
+    // Bank the daily hero-locked Rite Trial score (the Kindle-centric formula) into
+    // the best-of-day record, once per run. Latched by _riteTrialRecorded.
+    _bankRiteTrial() {
+        if (!this.riteTrialMode || this._riteTrialRecorded) return;
+        this._riteTrialRecorded = true;
+        const score = riteTrialScore({
+            kills: this.kills, ults: this.ultsReleased,
+            comboProcs: (this.player && this.player._comboProcs) || 0,
+            bosses: this.bossesDefeated,
+        });
+        const rec = this.saveSystem.recordRiteTrial(currentDayNumber(), score);
+        this.riteTrialBestNew = rec.best;
+        if (this.runSummary) {
+            this.runSummary.riteTrialScore = score;
+            this.runSummary.riteTrialBest = rec.best;
+            this.runSummary.riteTrialHero = this._effectiveCharacterId();
+        }
     }
 
     // Pause is only meaningful during live gameplay (overlays already
@@ -1565,6 +1679,18 @@ export class Game {
         return false;
     }
 
+    // KINDLED PR5 — buy the next Hero Attunement level (SaveSystem enforces coins,
+    // the level cap, AND the rite-gate on rungs 3/4/5). Same feedback contract as
+    // buyAttune; returns whether a level was bought.
+    buyHeroAttune(charId) {
+        if (this.saveSystem.attuneHero(charId)) {
+            this.audio.purchase();
+            return true;
+        }
+        this.audio.deny();
+        return false;
+    }
+
     // Buy a coin-priced cosmetic, then equip it. Mirrors buyUpgrade's
     // spend→apply→refund-on-failure safety so coins are never taken without
     // the item actually unlocking. Already-owned items just equip (free).
@@ -1621,8 +1747,11 @@ export class Game {
             // Opening a tab acknowledges its one-time "NEW" badge (staged
             // unlock — see MenuRenderer tabUnlocked + SaveSystem.markTabSeen).
             case 'tab': this.menuTab = arg; this.saveSystem.markTabSeen(arg); this.resetConfirming = false; break;
-            case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this._startRun(); break;
-            case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this._startRun(); break;
+            case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this.riteTrialMode = false; this._startRun(); break;
+            case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this.riteTrialMode = false; this._startRun(); break;
+            // KINDLED PR5 — launch the daily hero-locked Rite Trial (mutually
+            // exclusive with the Daily Road; the trial hero is a session-local override).
+            case 'startRiteTrial': this._pressFeedback('start'); this.riteTrialMode = true; this.dailyMode = false; this._startRun(); break;
             case 'setDifficulty': this.saveSystem.setDifficulty(arg); break;
             case 'toggleModifier':
                 if (this.selectedModifiers.has(arg)) this.selectedModifiers.delete(arg);
@@ -1636,6 +1765,7 @@ export class Game {
                 break;
             case 'buyUpgrade': this._pressFeedback(`shop:${arg}`); this.buyUpgrade(arg); break;
             case 'attuneRelic': this._pressFeedback(`attune:${arg}`); this.buyAttune(arg); break;
+            case 'buyHeroAttune': this._pressFeedback(`heroAttune:${arg}`); this.buyHeroAttune(arg); break;
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
             case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); this.audio.equip(); break;
@@ -2068,6 +2198,7 @@ export class Game {
         p.dashFx = { fromX, fromY, toX: p.x, toY: p.y, age: 0, dur: 0.28 };
         this.audio.dash();
         k.startBlinkCooldown();
+        this.blinks++;   // KINDLED PR5 — successful-blink run counter (lifetime 'blinks' stat)
     }
 
     // KINDLED — the Focus-Time aim state machine (keyboard KeyQ + touch KINDLE
@@ -2146,7 +2277,18 @@ export class Game {
         const k = this.kindleSystem;
         k.aiming = null;
         const sig = signatureFor(this._heroId);
+        // KINDLED PR5 — rite metric: a Kael 'Pyre of the Brink' counts as a brink cast
+        // only if released below 20% HP (checked BEFORE the ult's own HP sacrifice).
+        const lowHpCast = this.player && this.player.maxHp > 0 && this.player.hp < this.player.maxHp * 0.20;
+        setUltFocus(this);   // KINDLED PR5 — arm the focused-target bonus (Lv4) for this cast
         const res = (sig.fire(this, angle)) || { hits: [], killed: [] };
+        // KINDLED PR5 — per-run counters read at the summary pass (score + rite metrics).
+        this.ultsReleased++;
+        const hits = res.hits ? res.hits.length : 0;
+        const kills = res.killed ? res.killed.length : 0;
+        if (hits > this._runBestUltHits) this._runBestUltHits = hits;
+        if (kills > this._runBestUltKills) this._runBestUltKills = kills;
+        if (this._heroId === 'berserker' && lowHpCast) this._runBrinkCasts++;
         this.audio.ult(sig.aimKind);
         this._shake(SCREEN_SHAKE.intensity * 0.8, 0.35);
         this._pushFeedback('levelup', 0.4);
@@ -2885,6 +3027,10 @@ export class Game {
         // Daily Road score + payout — banked once per run (a daily can die at
         // any point, so it's NOT gated on _gauntletActive).
         this._bankDailyRoad();
+        // KINDLED PR5 — accrue this run's rite progress (every run, keyed by the run
+        // hero) + bank the Rite-Trial best-of-day (trial runs only). Both latched.
+        this._accrueRiteProgress();
+        this._bankRiteTrial();
 
         // Fold the run into lifetime/best records; capture which bests were
         // beaten so the game-over summary can flag them. Skip if a victory-leave
@@ -2929,6 +3075,7 @@ export class Game {
     }
     // Build the pending 'death' card data (composed next render()).
     _queueDeathCard() {
+        if (this.riteTrialMode) { this._queueRiteCard('death'); return; }   // KINDLED PR5
         const s = this.runSummary || {};
         const cid = this.saveSystem.getSelectedCharacter();
         const kills = s.kills ?? 0;
@@ -2953,9 +3100,41 @@ export class Game {
             },
         };
     }
+    // KINDLED PR5 — the Rite-Trial share card ('rite' template, reusing the Emberglass
+    // compositor). Built from LIVE fields so it works at BOTH death- and victory-time;
+    // the actual share fires later from a user tap (iOS gesture rule).
+    _queueRiteCard(outcome) {
+        const cid = this._effectiveCharacterId();
+        const score = riteTrialScore({
+            kills: this.kills, ults: this.ultsReleased,
+            comboProcs: (this.player && this.player._comboProcs) || 0,
+            bosses: this.bossesDefeated,
+        });
+        const rt = this.saveSystem.data.riteTrial;
+        const storedBest = (rt && rt.day === currentDayNumber()) ? (rt.best ?? 0) : 0;
+        const sig = signatureFor(cid);
+        this._pendingCardMint = {
+            template: 'rite',
+            data: {
+                name: this._cardHeroName(cid), characterId: cid,
+                ultName: sig ? sig.name : '', day: currentDayNumber(),
+                score, best: Math.max(storedBest, score), outcome: outcome || 'end',
+                time: this.time,
+                chips: [
+                    `SCORE ${score.toLocaleString()}`,
+                    `${this.ultsReleased} ULTS`,
+                    `${(this.kills ?? 0).toLocaleString()} KILLS`,
+                    `${this.bossesDefeated ?? 0} BOSSES`,
+                ],
+                mapName: this._cardMapName(this._effectiveMapId()),
+                difficulty: this._cardDifficulty(),
+            },
+        };
+    }
     // Build the pending 'victory' card data from LIVE fields (runSummary does
     // not exist yet when the victory overlay appears).
     _queueVictoryCard() {
+        if (this.riteTrialMode) { this._queueRiteCard('victory'); return; }   // KINDLED PR5
         const cid = this.saveSystem.getSelectedCharacter();
         const kills = this.kills ?? 0;
         this._pendingCardMint = {
@@ -2985,7 +3164,10 @@ export class Game {
             const comp = getCardCompositor();
             comp.captureFromCanvas(this.renderer.canvas);
             const canvas = comp.compose(pend.template, pend.data);
-            if (canvas) this.mintedCard = { canvas, template: pend.template };
+            // Stash the card's hero id so the share CAPTION always names the hero the
+            // card ART shows — for a Rite Trial that's the trial hero (_effective-
+            // CharacterId), which differs from the saved menu pick.
+            if (canvas) this.mintedCard = { canvas, template: pend.template, heroId: pend.data && pend.data.characterId };
         } catch (e) { /* card is optional; never break the frame */ }
     }
     // Share the minted card via the compositor ladder. MUST run synchronously
@@ -3003,7 +3185,9 @@ export class Game {
         } catch (e) { this._afterShare(null); }
     }
     _shareCardText() {
-        const name = this._cardHeroName(this.saveSystem.getSelectedCharacter());
+        // Name the hero the minted card ART shows (the trial hero for a Rite Trial),
+        // falling back to the saved pick for any card minted without a stashed id.
+        const name = this._cardHeroName((this.mintedCard && this.mintedCard.heroId) || this.saveSystem.getSelectedCharacter());
         if (this.victory) return `${name} held the light in EMBERWAKE.`;
         const k = this.runSummary && this.runSummary.killedBy;
         if (k && k.label) {

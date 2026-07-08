@@ -336,11 +336,67 @@ function drawPhotoCard(ctx, data, helpers) {
     }
 }
 
+// KINDLED (roadmap #3) — the daily Rite Trial recap. A hero-locked, Kindle-centric
+// score card. Reuses the shared forged chrome; the big number is the SCORE.
+// data: { name, characterId, ultName, day, score, best, outcome, time, chips,
+//         mapName, difficulty }. Reads defensively; never throws.
+function drawRiteCard(ctx, data, helpers) {
+    ensureMenuFont();
+    const d = data || {};
+    drawBackground(ctx, helpers && helpers.bg, 0.52);
+    drawFrame(ctx, EMBER);
+    drawWordmark(ctx, 56, 66, GOLD);
+
+    // "RITE TRIAL · Day N", top-right.
+    ctx.save();
+    ctx.font = `600 20px ${DISPLAY_FONT}`;
+    ctx.fillStyle = ASH;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    const dayLabel = Number.isFinite(d.day) ? `RITE TRIAL · DAY ${d.day}` : 'RITE TRIAL';
+    ctx.fillText(dayLabel, CARD_W - 56, 52);
+    ctx.restore();
+
+    // NEW BEST ribbon when this run set the day's best.
+    if (d.best != null && d.score != null && d.score >= d.best && d.score > 0) drawNewBestRibbon(ctx, CARD_W - 180, 150);
+
+    const size = 176;
+    const px = 56, py = CARD_H - 46 - size - 26;
+    drawPortrait(ctx, px, py, size, d.characterId, EMBER);
+
+    const tx = px + size + 34;
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    // Headline: "RITE OF <HERO>".
+    ctx.font = `48px ${DISPLAY_FONT}`;
+    ctx.fillStyle = '#fff1e0';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 8;
+    const name = String(d.name || 'THE KEEPER').toUpperCase();
+    ctx.fillText(`RITE OF ${name}`, tx, py + 44);
+    ctx.shadowBlur = 0;
+    // The score, big.
+    ctx.font = `700 46px ${DISPLAY_FONT}`;
+    ctx.fillStyle = GOLD;
+    ctx.fillText(`${Math.max(0, Math.floor(d.score || 0)).toLocaleString()} PTS`, tx, py + 96);
+    // Subline: the day's signature + the survived time.
+    ctx.font = `600 24px ${DISPLAY_FONT}`;
+    ctx.fillStyle = EMBER;
+    const sub = d.ultName ? `${d.ultName} · ${fmtTime(d.time)}` : fmtTime(d.time);
+    ctx.fillText(sub, tx, py + 128);
+    ctx.restore();
+
+    drawChips(ctx, tx, py + 148, d.chips || [], EMBER);
+    drawFooter(ctx, d.mapName || '', d.difficulty || '', EMBER);
+}
+
 export function registerCardTemplates(compositor) {
     if (!compositor || !compositor.registerTemplate) return;
     compositor.registerTemplate('death', drawDeathCard);
     compositor.registerTemplate('victory', drawVictoryCard);
     compositor.registerTemplate('photo', drawPhotoCard);
+    compositor.registerTemplate('rite', drawRiteCard);
 }
 
 export { fmtTime as cardFmtTime };

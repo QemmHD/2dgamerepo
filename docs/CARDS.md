@@ -87,6 +87,7 @@ UTC date). All text uses the menu's Cinzel display face
 // 'death'   — { name, characterId, time, killer:{label,epithet,boss,hazard}, chips:string[], newBest:bool, mapName, difficulty }
 // 'victory' — { name, characterId, time, sub, chips:string[], mapName, difficulty }
 // 'photo'   — { filterName }
+// 'rite'    — (KINDLED #3) { name, characterId, ultName, day:int, score:int, best:int, outcome:'death'|'victory', time, chips:string[], mapName, difficulty }
 // killer/lastHitBy — { label, epithet:string|null, boss:bool, hazard?:bool }
 ```
 
