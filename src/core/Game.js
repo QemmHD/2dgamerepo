@@ -10,13 +10,8 @@ import {
     INTERNAL_HEIGHT,
     CONTACT_FLASH_DURATION,
     SCREEN_SHAKE,
-    GEM,
-    GEM_TIERS,
-    HEALTH_DROP,
     ENEMY,
     BOSS,
-    CHEST,
-    COIN,
     ELEMENT,
     CAPS,
     AURA,
@@ -30,16 +25,13 @@ import {
     KINDLE,
     BLINK,
 } from '../config/GameConfig.js';
-import { TWO_PI, clamp, pickWeighted, compactInPlace } from './MathUtils.js';
+import { TWO_PI, clamp } from './MathUtils.js';
 import { Easing } from './Easing.js';
 import { Camera } from './Camera.js';
 import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
-import { XPGem } from '../entities/XPGem.js';
-import { Chest } from '../entities/Chest.js';
 import { Shrine } from '../entities/Shrine.js';
 import { Coin } from '../entities/Coin.js';
-import { HealthOrb } from '../entities/HealthOrb.js';
 import { EnemyProjectile } from '../entities/EnemyProjectile.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 import { AUTO_AIM_RANGE } from '../systems/WeaponSystem.js';
@@ -85,26 +77,9 @@ import { PhotoModeMethods } from './PhotoModeController.js';   // photo mode spl
 import { RunStateMethods } from './RunState.js';           // run-state creation/reset split out; spliced onto the prototype below
 import { GameUpdateMethods, gemLightColor } from './GameUpdate.js';   // gameplay update pipeline split out; spliced onto the prototype below (gemLightColor still used by render() here)
 import { GameRenderMethods } from './GameRender.js';       // render pipeline split out; spliced onto the prototype below
+import { CombatResolverMethods } from './CombatResolver.js';   // combat resolution + kill/drop flow split out; spliced onto the prototype below
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
-
-// Death-burst tint per enemy type (boss/elite handled separately).
-const DEATH_COLORS = {
-    slime: '#7be08a',
-    bat: '#b48cff',
-    crawler: '#9a7cff',
-    brute: '#d8a060',
-    // P1.3 behavior types burst in their tell color.
-    splitter: '#b48cff',
-    bomber: '#ffd166',
-    summoner: '#c97bff',
-    teleporter: '#7fe0ff',
-};
-function deathColor(e) {
-    if (e.boss) return '#ffd27a';
-    if (e.elite) return '#ffe08a';
-    return DEATH_COLORS[e.type] ?? '#ffcaa0';
-}
 
 export class Game {
     constructor({ renderer, input, loop }) {
@@ -2534,42 +2509,6 @@ export class Game {
         }
     }
 
-    _dropChest(x, y) {
-        const s = this._clearSpot(x, y, 40);
-        this.chests.push(new Chest(s.x, s.y));
-    }
-
-    // Boss reward: spawn a treasure chest AND a Wick Shrine to either side of the
-    // death point. They're linked as siblings — walking onto one claims it and
-    // despawns the other, so the player PICKS ONE (chest reward or relic altar).
-    _dropBossReward(x, y) {
-        const off = WICK_ROADS.bossRewardOffset;
-        const cs = this._clearSpot(x - off, y, 40);
-        const ss = this._clearSpot(x + off, y, 40);
-        const chest = new Chest(cs.x, cs.y);
-        const shrine = new Shrine(ss.x, ss.y);
-        chest._sibling = shrine;
-        shrine._sibling = chest;
-        this.chests.push(chest);
-        this.shrines.push(shrine);
-    }
-
-    _dropCoin(x, y, value = 1) {
-        // KINDLED — Sylphine's Zephyr Windfall: a 4s window where kills pay 2×
-        // coins (the single coin-drop choke, so bursts inherit it for free).
-        if (this._coinWindfallTimer > 0) value *= 2;
-        if (this.obstacleSystem.isBlocked(x, y, 18)) { const s = this._clearSpot(x, y, 18); x = s.x; y = s.y; }
-        this.coins.push(new Coin(x, y, value));
-    }
-
-    _dropCoinBurst(x, y, count, value) {
-        for (let i = 0; i < count; i++) {
-            const ox = x + (Math.random() - 0.5) * 36;
-            const oy = y + (Math.random() - 0.5) * 36;
-            this._dropCoin(ox, oy, value);
-        }
-    }
-
     // Elemental DoT pass — applies FIRE burn to every burning enemy on a
     // fixed tick. Returns { killed, hits } so the caller can route burn kills
     // through the normal reward pipeline (gems/coins/kills/affix death). Burn
@@ -2649,89 +2588,6 @@ export class Game {
             }
         }
         return { killed, hits };
-    }
-
-    // Elite affix on-death effects. Volatile detonates an AoE; Splitting
-    // bursts into a few crawlers (non-elite, so no recursive splitting).
-    _applyAffixDeath(e) {
-        const def = e.affixDef;
-        if (!def) return;
-        if (e.affix === 'volatile') {
-            // A crowd-damaging blast should never be silent (muffled thump).
-            if (this._inView(e.x, e.y, 120)) this.audio.volatileBoom();
-            const r2 = def.explodeRadius * def.explodeRadius;
-            for (const other of this.enemies) {
-                if (!other.active || other === e) continue;
-                const dx = other.x - e.x;
-                const dy = other.y - e.y;
-                if (dx * dx + dy * dy > r2) continue;
-                other.takeDamage(def.explodeDamage);
-                this.damageNumbers.push(new DamageNumber(
-                    other.x, other.y - other.radius, def.explodeDamage, '#ffae66'
-                ));
-                // A blast kill must flow through the normal reward path or the
-                // explosion silently eats the XP/kill-count for everything it
-                // wipes. We route gem + burst + tally here (NOT a recursive
-                // affix death, so a clump of volatiles can't chain-detonate).
-                if (!other.active) {
-                    this.kills += 1;
-                    this.particles.deathBurst(other.x, other.y, deathColor(other));
-                    this._dropGem(other.x, other.y);
-                }
-            }
-            // AoE ring + ember burst + a light kick so the blast reads.
-            this.weaponSystem.effects.push({
-                kind: 'pulse', x: e.x, y: e.y, radius: def.explodeRadius,
-                age: 0, lifetime: 0.4, active: true,
-            });
-            this.particles.deathBurst(e.x, e.y, def.tint);
-            this._shake(SCREEN_SHAKE.intensity * 0.6, 0.25);
-        } else if (e.affix === 'splitting') {
-            const count = def.spawnCount ?? 2;
-            const type = def.spawnType ?? 'crawler';
-            // Alive-cap gated per child (same as _splitOnDeath below): a
-            // twilight AoE wipe can pop many splitting affixes in one frame,
-            // and an on-death spawn must not burst past maxAlive.
-            const cap = this.waveState?.maxAlive ?? 120;
-            let live = 0;
-            for (const o of this.enemies) if (o.active) live++;
-            for (let i = 0; i < count; i++) {
-                if (live >= cap) break;
-                const a = (i / count) * TWO_PI + Math.random() * 0.5;
-                const ox = e.x + Math.cos(a) * 40;
-                const oy = e.y + Math.sin(a) * 40;
-                this.enemies.push(new Enemy(type, ox, oy, {
-                    healthMul: this.waveState.healthMul,
-                    speedMul: this.waveState.speedMul,
-                }));
-                live++;
-            }
-        }
-    }
-
-    // P1.3 splitter (def.splitInto) on-death burst: children spawn WEAKENED
-    // (hpFrac of the live wave scale) as plain types — never elite, never a
-    // splitter — so a split can't recurse or double-dip the reward path
-    // (children pay their own small XP when the player actually kills them).
-    _splitOnDeath(e) {
-        const s = e.def.splitInto;
-        const count = s.count ?? 2;
-        // Alive-cap gated like every other mid-fight spawn path (summoner
-        // calls, boss support, pack spawns): re-check before EACH child so an
-        // AoE wipe of a splitter clump can't burst past maxAlive.
-        const cap = this.waveState?.maxAlive ?? 120;
-        let live = 0;
-        for (const o of this.enemies) if (o.active) live++;
-        for (let i = 0; i < count; i++) {
-            if (live >= cap) break;
-            const a = (i / count) * TWO_PI + Math.random() * 0.6;
-            this.enemies.push(new Enemy(s.type ?? 'slime', e.x + Math.cos(a) * 46, e.y + Math.sin(a) * 46, {
-                healthMul: this.waveState.healthMul * (s.hpFrac ?? 0.5),
-                speedMul: this.waveState.speedMul,
-                contactDamageMul: this.waveState.damageMul ?? 1,
-            }));
-            live++;
-        }
     }
 
     _enterGameOver() {
@@ -2966,169 +2822,6 @@ export class Game {
         if (res && res.ok && method !== 'none') this.saveSystem.incrementStat('cardsShared', 1);
     }
 
-    // Contact/projectile collisions + the merged kill/hit reward pipeline
-    // (gems, coins, chests, boss/lieutenant/elite setpieces, hit feedback).
-    _resolveCombat(dt, weaponResult, statusResult, kindleResult = null) {
-        const collisionResult = this.collisionSystem.resolve(
-            dt, this.player, this.enemies, this.projectiles, this.spatialIndex
-        );
-
-        // Merge weapon-system hits/kills (orbit blades, pulse, lightning),
-        // projectile-collision results, burn-DoT kills, and elite bomber
-        // self-detonations so gem drops, kill count, affix deaths, and damage
-        // numbers all flow through the same downstream path. (Burn damage
-        // numbers are already pushed, tinted, inside _tickStatuses — so only
-        // its killed list is merged here.)
-        const allKilled = collisionResult.killed
-            .concat(weaponResult.killed, statusResult.killed, this._selfDetonated, this._hazardKilled,
-                kindleResult ? kindleResult.killed : []);
-        this._selfDetonated.length = 0;
-        this._hazardKilled.length = 0;
-        const allHits = collisionResult.hits.concat(weaponResult.hits, kindleResult ? kindleResult.hits : []);
-
-        if (allKilled.length > 0) {
-            this.kills += allKilled.length;
-            // KINDLED charge hook 1: feed the Kindle meter from this frame's
-            // kills (reads e.elite/e.boss per corpse — no scan of the live field).
-            this.kindleSystem.onKills(allKilled);
-            this._addCombo(allKilled.length);
-            this.audio.kill();
-            // Blooddrinker lifesteal-on-kill (capped by the sustained-heal budget).
-            if (this.player.killHeal > 0) this.player.healSustained(this.player.killHeal * allKilled.length);
-            this.waveDirector.notifyKill(allKilled.length);
-            for (const e of allKilled) {
-                this.particles.deathBurst(e.x, e.y, deathColor(e));
-                if (e.affix) this._applyAffixDeath(e);
-                // P1.3 splitter: bursts into live slimelets (def-driven,
-                // unlike the rolled elite 'splitting' AFFIX — both can fire
-                // on an elite splitter, which is the fun kind of chaos).
-                if (e.def.splitInto) this._splitOnDeath(e);
-                this._dropGem(e.x, e.y);
-                // Rare health orb (skipped at full HP so it's never wasted).
-                if (this.player.hp < this.player.maxHp && Math.random() < HEALTH_DROP.chance) {
-                    this.healthOrbs.push(new HealthOrb(e.x, e.y));
-                }
-                if (e.boss) {
-                    // Bosses drop a coin burst + a PICK-ONE reward: a treasure
-                    // chest OR a Wick Shrine (relic altar), spawned side by side —
-                    // claiming one despawns the other.
-                    this.bossesDefeated += 1;
-                    // Arm the post-death cooldown so the next boss doesn't
-                    // chain in immediately after a late kill.
-                    this.bossDirector.notifyBossDefeated(this.time);
-                    // Re-center the Lieutenant for the new segment (endless: keeps
-                    // firing one per boss-to-boss stretch).
-                    this.lieutenantDirector.reset(this.time);
-                    // Branching Roads: on every boss EXCEPT the run-ending 3rd
-                    // (which opens the victory overlay), QUEUE a CROSSROADS fork.
-                    // The end-of-update presenter opens it once no other overlay is
-                    // up — deferring (not force-setting this.altar) so a same-frame
-                    // level-up can't stack a hidden overlay under the fork's cards.
-                    // In endless/gauntlet (_victoryShown latched), isFinalBoss is
-                    // false forever after, so forks reappear after every boss.
-                    const isFinalBoss = (this.bossesDefeated >= 3 && !this._victoryShown);
-                    if (!isFinalBoss) this.pendingCrossroads = true;
-                    this._dropBossReward(e.x, e.y);
-                    this._dropCoinBurst(e.x, e.y, COIN.bossCoinCount, COIN.bossCoinValue);
-                    // Setpiece payoff: a banner, a heavy layered burst, and a
-                    // strong shake so an apex kill lands.
-                    this.waveDirector.announce(`${e.name.toUpperCase()} DEFEATED!`, 3.0, '#ff6a4a');
-                    this.audio.bossDefeat();
-                    this.particles.bossDeathBurst(e.x, e.y, '#ff8c4a');
-                    this._shake(SCREEN_SHAKE.intensity * 1.1, 0.5);
-                    // Setpiece punch: a hard freeze-frame + a triple expanding
-                    // shockwave so an apex kill really lands.
-                    this._hitStop(0.12);
-                    this._spawnRing(e.x, e.y, { maxR: 520, width: 16, life: 0.7, color: '#ffd0a0', ease: 'outCubic' });
-                    this._spawnRing(e.x, e.y, { maxR: 360, width: 10, life: 0.55, color: '#ff8c4a' });
-                    this._spawnRing(e.x, e.y, { maxR: 220, width: 7, life: 0.4, color: '#ffffff' });
-                    // Back to the driving theme once the duel ends; lift the arena.
-                    this.audio.playMusic('gameplay');
-                    this.arena = null;
-                    // Clearing the 3rd boss is a milestone: open the victory
-                    // overlay (continue / new biome / main menu) once per run.
-                    if (isFinalBoss) {
-                        this._victoryShown = true;
-                        this._showVictory();
-                    }
-                } else if (e.lieutenant) {
-                    // Lieutenant mini-boss down: a mid-tier reward beat — a ring, a
-                    // coin burst, a chance at a chest, and a callout. Touches NONE of
-                    // the boss state (bossesDefeated / crossroads / victory / arena).
-                    this._spawnRing(e.x, e.y, { maxR: 260, width: 10, life: 0.55, color: LIEUTENANT.color, ease: 'outCubic' });
-                    this._dropCoinBurst(e.x, e.y, LIEUTENANT.coinCount, LIEUTENANT.coinValue);
-                    if (Math.random() < LIEUTENANT.chestChance) this._dropChest(e.x, e.y);
-                    this.audio.lieutenantDown();
-                    this.waveDirector.announce(`${e.name} SLAIN`, 2.5, LIEUTENANT.color);
-                    this.particles.deathBurst(e.x, e.y, LIEUTENANT.color);
-                    this._shake(SCREEN_SHAKE.intensity * 0.5, 0.25);
-                } else if (e.elite) {
-                    // Elite kills pop a small shockwave ring tinted to the affix.
-                    this._spawnRing(e.x, e.y, {
-                        maxR: 170, width: 8, life: 0.5,
-                        color: e.affixColor || '#ffd166',
-                    });
-                    // Elites: chance at a chest, chance at a coin burst.
-                    if (Math.random() < CHEST.eliteDropChance) {
-                        this._dropChest(e.x, e.y);
-                    }
-                    if (Math.random() < COIN.eliteDropChance) {
-                        const count = COIN.eliteCoinMin +
-                            Math.floor(Math.random() *
-                                Math.max(1, COIN.eliteCoinMax - COIN.eliteCoinMin + 1));
-                        this._dropCoinBurst(e.x, e.y, count, 1);
-                    }
-                } else if (Math.random() < COIN.normalDropChance) {
-                    // Normal enemies: small chance of a single coin.
-                    this._dropCoin(e.x, e.y, 1);
-                }
-            }
-        }
-        // Hit sparks + floating numbers are both capped per frame so a wide
-        // AoE hit (pulse/orbit/lightning striking a big crowd) can't drain the
-        // particle pool or flood the damage-number array — a real perf + GC
-        // win in dense fights, with negligible readability loss (you can't
-        // read 80 overlapping numbers anyway). Damage is unaffected.
-        let sparkBudget = 6;
-        let numberBudget = 14;
-        for (const hit of allHits) {
-            if (numberBudget > 0) {
-                // KINDLED combo bursts (SHATTER) tint their number via hit.color;
-                // everything else stays the white default.
-                this.damageNumbers.push(new DamageNumber(hit.x, hit.y, hit.amount, hit.color || '#ffffff'));
-                numberBudget--;
-            }
-            if (sparkBudget > 0) {
-                // Element-tinted impact: fire sparks warm, frost/freeze shatter
-                // into shards, shock crackles yellow, everything else the white
-                // default. Activates the frostShards/shockSparks emitters.
-                const el = hit.element;
-                if (el === 'fire') this.particles.hitSpark(hit.x, hit.y, '#ff7a33');
-                else if (el === 'frost' || el === 'freeze') this.particles.frostShards(hit.x, hit.y);
-                else if (el === 'shock') this.particles.shockSparks(hit.x, hit.y);
-                else this.particles.hitSpark(hit.x, hit.y);
-                sparkBudget--;
-            }
-        }
-        if (collisionResult.playerHit) {
-            if (collisionResult.strongest) this.lastHitBy = collisionResult.strongest;   // death-card attribution
-            this._playerHurtShake(collisionResult.playerDamageTaken);
-            this._pushFeedback('hit', 0.32);
-            this.damageNumbers.push(new DamageNumber(
-                this.player.x,
-                this.player.y - this.player.radius,
-                collisionResult.playerDamageTaken,
-                '#ff4757'
-            ));
-        }
-    }
-
-    _dropGem(x, y) {
-        const tier = pickWeighted(GEM_TIERS, (t) => GEM[t].dropWeight) ?? 'small';
-        if (this.obstacleSystem.isBlocked(x, y, 16)) { const s = this._clearSpot(x, y, 16); x = s.x; y = s.y; }
-        this.gems.push(new XPGem(x, y, tier));
-    }
-
 }
 
 // Photo mode (EMBERGLASS) lives in PhotoModeController.js; splice its methods
@@ -3144,3 +2837,7 @@ Object.assign(Game.prototype, GameUpdateMethods);
 // Render pipeline (render + the _drawX steps) lives in GameRender.js; splice it
 // onto the prototype so game.render() and every internal step resolve unchanged.
 Object.assign(Game.prototype, GameRenderMethods);
+// Combat resolution + kill/drop flow (_resolveCombat + the _dropX/_applyAffixDeath/
+// _splitOnDeath helpers) lives in CombatResolver.js; splice it onto the prototype
+// so the update pipeline's this._resolveCombat() and every drop call resolve unchanged.
+Object.assign(Game.prototype, CombatResolverMethods);
