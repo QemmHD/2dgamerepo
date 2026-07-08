@@ -152,9 +152,13 @@ export const GameUpdateMethods = {
         const _kBossHp0 = (_kBoss && _kBoss.maxHp > 0) ? _kBoss.hp : null;
 
         this._updateComboAndObjectives(dt);
+        this.profiler.begin('spawner');
         this._updateDirectors(dt);
+        this.profiler.end('spawner');
         this.kindleSystem.update(dt);   // tick the blink cooldown (real dt)
+        this.profiler.begin('weapons');
         const weaponResult = this._updatePlayerAndWeapons(dt, worldDt, _aiming);
+        this.profiler.end('weapons');
         const statusResult = this._updateEnemies(worldDt);
         this._updateProjectiles(worldDt);
         // Boss area hazards (shockwaves, delayed zones, beams, lingering
@@ -165,7 +169,9 @@ export const GameUpdateMethods = {
         this.hazardSystem.updateBiome(worldDt, this);
         this.hazardSystem.update(worldDt, this);
         this._updatePickups(dt);
+        this.profiler.begin('collision');
         this._resolveCombat(dt, weaponResult, statusResult, kindleResult);
+        this.profiler.end('collision');
         // Charge the meter from boss damage dealt this frame (skip on heal/no-op).
         if (_kBossHp0 != null && _kBoss.hp < _kBossHp0) {
             this.kindleSystem.onBossDamage((_kBossHp0 - _kBoss.hp) / _kBoss.maxHp);

@@ -409,6 +409,7 @@ export class UISystem {
         this._drawHpBar(ctx, gameState);
         this._drawXPBar(ctx, gameState);
         this._drawDebugPanel(ctx, gameState);
+        this._drawProfiler(ctx, gameState);
         this._drawDebugButton(ctx, gameState);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar && !gameState.paused) {
             this._drawPauseButton(ctx, gameState);
@@ -1420,6 +1421,63 @@ export class UISystem {
         this._hudGlassPlate(ctx, barRight + 8, barY - 4, layout.readoutW - 16, layout.barH + 8, 10, { stroke: 'rgba(255,180,120,0.12)' });
         ctx.font = `22px ${MONO}`;
         this._textWithShadow(ctx, `${Math.floor(state.player.xp)} / ${state.player.xpToNext}`, barRight + 20, midY, '#fff');
+        ctx.restore();
+    }
+
+    // ── Render-phase timing profiler (roadmap #4; dev/debug HUD only) ──────
+    // A compact bottom-left panel of the per-frame timing buckets, so an FPS
+    // drop is diagnosed from where the milliseconds actually go, not guessed.
+    // Reads the loop's profiler EMA (smoothed ms). The bar is scaled to the
+    // 60fps budget (16.67ms) and colour-flags update/render as they approach it.
+    _drawProfiler(ctx, state) {
+        if (!state.showDebug) return;
+        const prof = this.loop && this.loop.profiler;
+        if (!prof || !prof.enabled) return;
+        const sa = this.renderer.safeArea;
+
+        const budget = 1000 / 60;   // 16.67ms per frame at 60fps
+        const lineH = 24;
+        const boxW = 300;
+        const barW = 96;
+        const rows = prof.buckets.length + 1;   // + header
+        const boxH = lineH * rows + 16;
+        const boxLeft = sa.left + 12;
+        const boxTop = INTERNAL_HEIGHT - sa.bottom - 12 - boxH;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        roundRectPath(ctx, boxLeft, boxTop, boxW, boxH, 10);
+        ctx.fill();
+
+        ctx.font = `20px ${MONO}`;
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        const textLeft = boxLeft + 12;
+        let y = boxTop + 10;
+        ctx.fillStyle = 'rgba(180,230,255,0.95)';
+        ctx.fillText('PROFILE ms  60=16.7', textLeft, y);
+        y += lineH;
+
+        const barLeft = boxLeft + boxW - barW - 12;
+        for (const b of prof.buckets) {
+            const ms = prof.ema[b] || 0;
+            // update/render are the top-level totals — flag them by budget.
+            const top = (b === 'update' || b === 'render');
+            let col = 'rgba(150,210,180,0.9)';
+            if (top) col = ms >= budget ? '#ff6a5a' : ms >= budget * 0.7 ? '#ffce54' : '#7be08a';
+            ctx.fillStyle = col;
+            ctx.fillText(b, textLeft, y);
+            ctx.textAlign = 'right';
+            ctx.fillText(ms.toFixed(2), barLeft - 8, y);
+            ctx.textAlign = 'left';
+            // bar
+            const frac = Math.max(0, Math.min(1, ms / budget));
+            ctx.fillStyle = 'rgba(255,255,255,0.12)';
+            ctx.fillRect(barLeft, y + 4, barW, 12);
+            ctx.fillStyle = top ? col : 'rgba(120,180,255,0.8)';
+            ctx.fillRect(barLeft, y + 4, barW * frac, 12);
+            y += lineH;
+        }
         ctx.restore();
     }
 
