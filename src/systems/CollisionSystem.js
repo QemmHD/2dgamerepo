@@ -90,9 +90,11 @@ export class CollisionSystem {
         // in exactly one (center) cell, so the query never visits a duplicate;
         // the query range = p.radius + the frame's largest enemy radius, which
         // provably contains every overlap (floor is monotonic), so the grid
-        // finds precisely the enemies the flat scan would — only the visit
-        // ORDER differs, which only affects which single enemy a non-piercing
-        // bolt strikes among several it overlaps (both are valid).
+        // finds precisely the enemies the flat scan would. Only the visit ORDER
+        // differs, which affects only WHICH enemies a pierce-limited bolt strikes
+        // among several it overlaps at once — it always hits the same COUNT
+        // (min(pierce+1, overlaps)) for identical total damage, and the old
+        // array order was itself arbitrary, so neither order is more correct.
         const useGrid = this._buildEnemyGrid(enemies);
         const cell = this._gridCell;
         const grid = this._grid;
