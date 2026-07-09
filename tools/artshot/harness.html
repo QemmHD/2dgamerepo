@@ -114,6 +114,7 @@ const MAP = params.get('map');                               // force selected m
 // Off by default → the CI harness-smoke path is byte-for-byte unchanged.
 const PROFILE = parseInt(params.get('profile') || '0', 10);
 const PROFTAG = (params.get('proftag') || 'run').replace(/[^A-Za-z0-9._-]/g, '');
+const VEILSCALE = params.has('veilscale') ? parseFloat(params.get('veilscale')) : null;
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -257,6 +258,12 @@ async function boot() {
         if (GFXTIER != null && GFXTIER >= 0) {
             try { game._gfxLevel = GFXTIER; game._applyGfxLevel(); } catch (e) { ERR.push('gfxtier: ' + String(e && e.stack || e)); }
         }
+        // Roadmap #6 veil-scale override (tooling only) — force the darkness-veil
+        // buffer resolution AFTER the tier apply, so a profiling A/B can isolate
+        // the half-res-veil win at otherwise-identical quality. Off unless set.
+        if (VEILSCALE != null && game.lighting && game.lighting.setQuality) {
+            try { game.lighting.setQuality({ veilScale: VEILSCALE }); } catch (e) { ERR.push('veilscale: ' + String(e && e.stack || e)); }
+        }
         if (DEBUGHUD) { game.showDebug = true; if (game.profiler) game.profiler.enabled = true; }
 
         // ── Roadmap #6 profiling pass (tooling only) ──────────────────────────
@@ -285,6 +292,7 @@ async function boot() {
                 frames: PROFILE,
                 scenario: { dense: DENSE, pickups: PICKUPS, dmgnum: DMGNUM, boss: QABOSS, gfxtier: GFXTIER, map: MAP || null },
                 dpr: (renderer && renderer.dpr) || null,
+                veilScale: (game.lighting && game.lighting.veilScale != null) ? game.lighting.veilScale : null,
                 counts: {
                     enemies: game.enemies ? game.enemies.length : -1,
                     projectiles: game.projectiles ? game.projectiles.length : -1,
@@ -303,12 +311,16 @@ async function boot() {
                 firstErr: ERR.length ? ERR[0].slice(0, 200) : null,
             };
             window.__profile = result;
-            try {
-                await fetch('/__save/profile-' + PROFTAG + '.json', {
-                    method: 'PUT',
-                    body: JSON.stringify(result, null, 2),
-                });
-            } catch (e) { ERR.push('profile-save: ' + String(e)); }
+            // Optional server-save (only when served over http; a file:// harness
+            // has no server, and a Playwright driver reads window.__profile directly).
+            if (location.protocol !== 'file:') {
+                try {
+                    await fetch('/__save/profile-' + PROFTAG + '.json', {
+                        method: 'PUT',
+                        body: JSON.stringify(result, null, 2),
+                    });
+                } catch (e) { ERR.push('profile-save: ' + String(e)); }
+            }
         }
         game.render();
     }

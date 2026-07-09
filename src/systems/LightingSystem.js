@@ -8,8 +8,13 @@
 // the holes.
 //
 // Technique (chosen for mobile Safari):
-//   - ONE offscreen buffer at INTERNAL resolution (1920×1080), never ×DPR
-//     — a fixed ~2.07M-px fill independent of device.
+//   - ONE offscreen buffer at INTERNAL resolution × `veilScale` (default 1 =
+//     1920×1080), never ×DPR — a device-independent fill. The governor's higher
+//     quality tiers drop veilScale to 0.5, quartering the buffer fill + cutout
+//     cost; because the veil is soft/low-frequency it upscales (smoothly) back
+//     to full size near-imperceptibly. All light cutouts are carved in buffer
+//     space (screen coords × veilScale); the tint pass still runs at INTERNAL
+//     res on the main canvas, so it is unaffected by veilScale.
 //   - Each frame: fill the buffer with a dark radial gradient (center
 //     darkness + extra toward the corners = baked vignette), then for each
 //     light draw a cached white mask with 'destination-out' to erase the
@@ -31,10 +36,14 @@ const STRENGTH_CAP = 0.62;
 export class LightingSystem {
     constructor() {
         this.ok = false;
+        // Veil-buffer resolution (×INTERNAL). Buffer pixel dims derive from it.
+        this.veilScale = 1;
+        this._bufW = INTERNAL_WIDTH;
+        this._bufH = INTERNAL_HEIGHT;
         try {
             this.canvas = document.createElement('canvas');
-            this.canvas.width = INTERNAL_WIDTH;
-            this.canvas.height = INTERNAL_HEIGHT;
+            this.canvas.width = this._bufW;
+            this.canvas.height = this._bufH;
             this.lctx = this.canvas.getContext('2d');
             this.ok = !!this.lctx;
         } catch (_) {
@@ -59,6 +68,23 @@ export class LightingSystem {
         };
         this._veilGrad = null;
         this._veilStrength = -1;
+        this._applyVeilScale(GFX.lighting.veilScale ?? 1);
+    }
+
+    // Resize the veil buffer to `scale`×INTERNAL. No-op if unchanged. Resizing a
+    // canvas resets its 2D state (re-established each frame in beginFrame) and
+    // orphans the cached gradient, so force a gradient rebuild.
+    _applyVeilScale(scale) {
+        scale = Math.max(0.25, Math.min(1, scale || 1));
+        if (scale === this.veilScale && this.canvas && this.canvas.width === this._bufW) return;
+        this.veilScale = scale;
+        this._bufW = Math.max(1, Math.round(INTERNAL_WIDTH * scale));
+        this._bufH = Math.max(1, Math.round(INTERNAL_HEIGHT * scale));
+        if (this.ok && this.canvas) {
+            this.canvas.width = this._bufW;
+            this.canvas.height = this._bufH;
+        }
+        this._veilStrength = -1;   // gradient is buffer-space; rebuild at new size
     }
 
     setQuality(q) {
@@ -67,6 +93,7 @@ export class LightingSystem {
         if (q.pickupCap != null) this.quality.pickupCap = q.pickupCap;
         if (q.colorTint != null) this.quality.colorTint = q.colorTint;
         if (q.tintIntensity != null) this.quality.tintIntensity = q.tintIntensity;
+        if (q.veilScale != null) this._applyVeilScale(q.veilScale);
     }
 
     _veilGradient() {
@@ -75,8 +102,10 @@ export class LightingSystem {
         if (this._veilGrad && this._veilStrength === this.quality.strength) {
             return this._veilGrad;
         }
-        const cx = INTERNAL_WIDTH / 2;
-        const cy = INTERNAL_HEIGHT / 2;
+        // Gradient lives in BUFFER space (veilScale × INTERNAL); the composite
+        // upscales it back, so the vignette stays centered at any veilScale.
+        const cx = this._bufW / 2;
+        const cy = this._bufH / 2;
         const maxR = Math.hypot(cx, cy);
         const g = this.lctx.createRadialGradient(cx, cy, maxR * 0.25, cx, cy, maxR);
         const s = this.quality.strength;
@@ -101,9 +130,9 @@ export class LightingSystem {
         const lctx = this.lctx;
         lctx.globalCompositeOperation = 'source-over';
         lctx.globalAlpha = 1;
-        lctx.clearRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        lctx.clearRect(0, 0, this._bufW, this._bufH);
         lctx.fillStyle = this._veilGradient();
-        lctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        lctx.fillRect(0, 0, this._bufW, this._bufH);
         // Switch to cutout mode for the light blits that follow.
         lctx.globalCompositeOperation = 'destination-out';
     }
@@ -129,9 +158,13 @@ export class LightingSystem {
         if (sx + r < 0 || sx - r > INTERNAL_WIDTH ||
             sy + r < 0 || sy - r > INTERNAL_HEIGHT) return;
 
+        // Carve the hole in BUFFER space: screen coords × veilScale (the cull
+        // test above and the tint list below stay in INTERNAL/screen space, so
+        // the composite + tint pass are unaffected by veilScale).
+        const vs = this.veilScale;
         const lctx = this.lctx;
         lctx.globalAlpha = Math.min(1, intensity);
-        lctx.drawImage(this.mask, sx - r, sy - r, r * 2, r * 2);
+        lctx.drawImage(this.mask, (sx - r) * vs, (sy - r) * vs, r * 2 * vs, r * 2 * vs);
 
         this._count++;
         if (priority === 1) this._pickupCount++;
@@ -147,6 +180,15 @@ export class LightingSystem {
         ctx.save();
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1;
+        // Smooth upscale of the veil back to INTERNAL — keeps it soft, never
+        // pixelated. Only when the buffer is sub-full (veilScale < 1) do we force
+        // 'low' quality: a single cheap bilinear tap is all a low-frequency veil
+        // needs, and it avoids the costly high-quality multi-tap resample. At
+        // veilScale === 1 the buffer is INTERNAL-sized, so we leave the renderer's
+        // default quality untouched → T0 composite is byte-identical to before.
+        // save/restore isolates both flags.
+        ctx.imageSmoothingEnabled = true;
+        if (this.veilScale !== 1) ctx.imageSmoothingQuality = 'low';
         ctx.drawImage(this.canvas, 0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
         ctx.restore();
 

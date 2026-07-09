@@ -1497,7 +1497,7 @@ export class UISystem {
             `ENEMIES ${state.enemyCount}`,
             `BOLTS   ${state.projectileCount} +${state.enemyProjectileCount ?? 0}e`,
             `PARTICLE ${state.particleCount ?? 0}`,
-            `GFXTIER ${state.gfxTier ?? 0}`,
+            `GFXTIER ${state.gfxTier ?? 0}  VEIL ${(state.veilScale ?? 1).toFixed(2)}x`,
             `PICKUPS ${state.pickupCount ?? 0}`,
             `HAZARDS ${state.hazardCount ?? 0}`,
             `COINS   ${state.runCoins ?? 0}`,
