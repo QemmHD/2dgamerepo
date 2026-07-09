@@ -391,12 +391,65 @@ function drawRiteCard(ctx, data, helpers) {
     drawFooter(ctx, d.mapName || '', d.difficulty || '', EMBER);
 }
 
+// BOSSFORGE — Boss Rush share card. Mirrors the Rite card: hero portrait,
+// gauntlet headline, bosses-felled as the big stat, the apex reached + time as
+// the subline, and the run's build as chips. A ★ NEW BEST ribbon on a record.
+function drawBossRushCard(ctx, data, helpers) {
+    ensureMenuFont();
+    const d = data || {};
+    drawBackground(ctx, helpers && helpers.bg, 0.52);
+    drawFrame(ctx, EMBER);
+    drawWordmark(ctx, 56, 66, GOLD);
+
+    // "BOSS RUSH", top-right.
+    ctx.save();
+    ctx.font = `600 20px ${DISPLAY_FONT}`;
+    ctx.fillStyle = ASH;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('BOSS RUSH', CARD_W - 56, 52);
+    ctx.restore();
+
+    if (d.newBest) drawNewBestRibbon(ctx, CARD_W - 180, 150);
+
+    const size = 176;
+    const px = 56, py = CARD_H - 46 - size - 26;
+    drawPortrait(ctx, px, py, size, d.characterId, EMBER);
+
+    const tx = px + size + 34;
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    // Headline: cleared vs the hero's gauntlet.
+    ctx.font = `48px ${DISPLAY_FONT}`;
+    ctx.fillStyle = '#fff1e0';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 8;
+    const name = String(d.name || 'THE KEEPER').toUpperCase();
+    ctx.fillText(d.cleared ? 'GAUNTLET CLEARED' : `${name}'S RUSH`, tx, py + 44);
+    ctx.shadowBlur = 0;
+    // Bosses felled, big.
+    ctx.font = `700 46px ${DISPLAY_FONT}`;
+    ctx.fillStyle = GOLD;
+    const felled = `${Math.max(0, Math.floor(d.bosses || 0))} / ${Math.max(0, Math.floor(d.total || 0))} FELLED`;
+    ctx.fillText(felled, tx, py + 96);
+    // Subline: apex reached / cleared + survived time.
+    ctx.font = `600 24px ${DISPLAY_FONT}`;
+    ctx.fillStyle = EMBER;
+    ctx.fillText(`${d.sub || ''} · ${fmtTime(d.time)}`, tx, py + 128);
+    ctx.restore();
+
+    drawChips(ctx, tx, py + 148, d.chips || [], EMBER);
+    drawFooter(ctx, d.mapName || '', d.difficulty || '', EMBER);
+}
+
 export function registerCardTemplates(compositor) {
     if (!compositor || !compositor.registerTemplate) return;
     compositor.registerTemplate('death', drawDeathCard);
     compositor.registerTemplate('victory', drawVictoryCard);
     compositor.registerTemplate('photo', drawPhotoCard);
     compositor.registerTemplate('rite', drawRiteCard);
+    compositor.registerTemplate('bossrush', drawBossRushCard);
 }
 
 export { fmtTime as cardFmtTime };

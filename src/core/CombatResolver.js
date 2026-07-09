@@ -208,21 +208,33 @@ export const CombatResolverMethods = {
                     // chest OR a Wick Shrine (relic altar), spawned side by side —
                     // claiming one despawns the other.
                     this.bossesDefeated += 1;
-                    // Arm the post-death cooldown so the next boss doesn't
-                    // chain in immediately after a late kill.
-                    this.bossDirector.notifyBossDefeated(this.time);
-                    // Re-center the Lieutenant for the new segment (endless: keeps
-                    // firing one per boss-to-boss stretch).
-                    this.lieutenantDirector.reset(this.time);
-                    // Branching Roads: on every boss EXCEPT the run-ending 3rd
-                    // (which opens the victory overlay), QUEUE a CROSSROADS fork.
-                    // The end-of-update presenter opens it once no other overlay is
-                    // up — deferring (not force-setting this.altar) so a same-frame
-                    // level-up can't stack a hidden overlay under the fork's cards.
-                    // In endless/gauntlet (_victoryShown latched), isFinalBoss is
-                    // false forever after, so forks reappear after every boss.
-                    const isFinalBoss = (this.bossesDefeated >= 3 && !this._victoryShown);
-                    if (!isFinalBoss) this.pendingCrossroads = true;
+                    // Progression differs by mode. Boss Rush owns its own sequence:
+                    // it advances to the next boss's prep phase (or clears the whole
+                    // gauntlet) and uses NONE of the normal-run boss plumbing — no
+                    // trash director cooldown, no Lieutenant reset, no CROSSROADS
+                    // fork, and no 3-boss victory rule. `bossRushCleared` opens the
+                    // victory overlay below once the final apex falls.
+                    let isFinalBoss = false;
+                    let bossRushCleared = false;
+                    if (this.bossRush) {
+                        bossRushCleared = this.bossRush.notifyBossDefeated().cleared;
+                    } else {
+                        // Arm the post-death cooldown so the next boss doesn't
+                        // chain in immediately after a late kill.
+                        this.bossDirector.notifyBossDefeated(this.time);
+                        // Re-center the Lieutenant for the new segment (endless: keeps
+                        // firing one per boss-to-boss stretch).
+                        this.lieutenantDirector.reset(this.time);
+                        // Branching Roads: on every boss EXCEPT the run-ending 3rd
+                        // (which opens the victory overlay), QUEUE a CROSSROADS fork.
+                        // The end-of-update presenter opens it once no other overlay is
+                        // up — deferring (not force-setting this.altar) so a same-frame
+                        // level-up can't stack a hidden overlay under the fork's cards.
+                        // In endless/gauntlet (_victoryShown latched), isFinalBoss is
+                        // false forever after, so forks reappear after every boss.
+                        isFinalBoss = (this.bossesDefeated >= 3 && !this._victoryShown);
+                        if (!isFinalBoss) this.pendingCrossroads = true;
+                    }
                     this._dropBossReward(e.x, e.y);
                     this._dropCoinBurst(e.x, e.y, COIN.bossCoinCount, COIN.bossCoinValue);
                     // Setpiece payoff: a banner, a heavy layered burst, and a
@@ -240,9 +252,9 @@ export const CombatResolverMethods = {
                     // Back to the driving theme once the duel ends; lift the arena.
                     this.audio.playMusic('gameplay');
                     this.arena = null;
-                    // Clearing the 3rd boss is a milestone: open the victory
-                    // overlay (continue / new biome / main menu) once per run.
-                    if (isFinalBoss) {
+                    // Clearing the 3rd boss (normal) or the whole Boss Rush gauntlet
+                    // is a milestone: open the victory overlay once per run.
+                    if (isFinalBoss || bossRushCleared) {
                         this._victoryShown = true;
                         this._showVictory();
                     }

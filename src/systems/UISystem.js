@@ -419,6 +419,7 @@ export class UISystem {
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
             this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
             this._drawBossWarning(ctx, gameState);
+            this._drawBossRushHud(ctx, gameState);
         }
 
         // Low-HP danger vignette during live play.
@@ -995,6 +996,51 @@ export class UISystem {
         const lx = cx + ux * (t - 40);
         const ly = cy + uy * (t - 40);
         ctx.fillText(`${dist}`, lx, ly);
+        ctx.restore();
+    }
+
+    // BOSSFORGE — compact Boss Rush banner: mode label + progress (boss X/N),
+    // then a second line previewing the incoming/next apex with the prep
+    // countdown. Top-center, under the timer readout; only in Boss Rush.
+    _drawBossRushHud(ctx, state) {
+        const br = state.bossRush;
+        if (!br) return;
+        const cx = INTERNAL_WIDTH / 2;
+        const sa = this.renderer.safeArea;
+        // Sit just under the timer during prep (nothing else up there); drop below
+        // the boss-bar band once a boss/warning occupies the top so they never
+        // overlap.
+        const bossBandUp = !!(state.activeBoss || state.bossWarning);
+        const y = (sa?.top ?? 0) + (bossBandUp ? 236 : 104);
+        const line1 = `${(br.label || 'BOSS RUSH').toUpperCase()}  ·  ${br.bossNumber}/${br.total}`;
+        let line2 = '';
+        if (br.cleared) {
+            line2 = 'GAUNTLET CLEARED';
+        } else if (br.phase === 'prep') {
+            const secs = Math.ceil(br.prepRemaining || 0);
+            const who = br.currentBossName || '—';
+            line2 = `INCOMING: ${who}${secs > 0 ? `  ·  ${secs}s` : ''}`;
+        } else if (br.phase === 'fight') {
+            line2 = br.nextBossName ? `Next: ${br.nextBossName}` : 'Final apex!';
+        }
+        ctx.save();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = `800 24px ${FONT}`;
+        const w1 = ctx.measureText(line1).width;
+        ctx.font = `600 18px ${FONT}`;
+        const w2 = line2 ? ctx.measureText(line2).width : 0;
+        const pw = Math.max(w1, w2) + 48;
+        const ph = line2 ? 64 : 40;
+        roundRectPath(ctx, cx - pw / 2, y - ph / 2, pw, ph, 12);
+        ctx.fillStyle = 'rgba(40,12,12,0.82)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,106,74,0.75)'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#ffcbb0'; ctx.font = `800 24px ${FONT}`;
+        ctx.fillText(line1, cx, y - (line2 ? 12 : 0));
+        if (line2) {
+            ctx.fillStyle = br.phase === 'prep' && !br.cleared ? '#ffd8a0' : 'rgba(255,255,255,0.85)';
+            ctx.font = `600 18px ${FONT}`;
+            ctx.fillText(line2, cx, y + 15);
+        }
         ctx.restore();
     }
 
@@ -2232,7 +2278,18 @@ export class UISystem {
             return;
         }
 
-        const stats = [
+        // BOSSFORGE — Boss Rush swaps the wave/objective-centric readout for a
+        // gauntlet result: bosses felled, whether it was cleared, the apex reached,
+        // time, and score. (The hero + build/weapons are on the recap card.)
+        const stats = summary.bossRush ? [
+            ['Boss Rush', summary.bossRushCleared ? 'CLEARED!' : 'Fell short'],
+            ['Bosses felled', `${summary.bossRushBosses ?? 0}/${summary.bossRushTotal ?? 0}`],
+            ['Apex reached', summary.bossRushFinalBoss || '—'],
+            ['Time', formatTime(summary.time)],
+            ['Level', `Lv ${summary.level}`],
+            ['Score', `${summary.bossRushScore ?? 0}`],
+            ['Coins earned', summary.coinsEarned],
+        ] : [
             ['Survived', formatTime(summary.time)],
             ['Final Wave', `${summary.finalWave}` + (summary.finalWaveName ? `  •  ${summary.finalWaveName}` : '')],
             ['Level', `Lv ${summary.level}`],

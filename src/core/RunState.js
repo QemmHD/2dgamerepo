@@ -172,6 +172,12 @@ export const RunStateMethods = {
         // Boss arena confinement ({ x, y, r } while a boss fight is sealed; null otherwise).
         this.arena = null;
         this.bossesDefeated = 0;
+        // BOSSFORGE — Boss Rush live controller (null in every other mode; set by
+        // _startRun right after this build when bossRushMode is on) + the run-end
+        // banking latch so a death AND a victory-leave never double-record.
+        this.bossRush = null;
+        this._bossRushRecorded = false;
+        this.bossRushBestNew = false;
         // Victory overlay shown once when the 3rd boss falls (Continue / new
         // biome / main menu). _victoryShown latches so later bosses don't reopen
         // it; _runRecorded guards against double-counting lifetime stats when a

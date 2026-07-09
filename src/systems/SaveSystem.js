@@ -140,6 +140,11 @@ function defaultData() {
         heroAttunement: {},
         rites: {},
         riteTrial: { day: 0, best: 0, prevBest: 0 },
+        // BOSSFORGE — Boss Rush all-time best record ({ bestBosses, bestTime (of a
+        // FULL clear, seconds), bestScore }). NOT date-scoped — Boss Rush is
+        // always-available freeplay; Weekly Ember will add its own dated record.
+        // Additive field: absent on old saves, defaulted by the normalizer → no wipe.
+        bossRush: { bestBosses: 0, bestTime: 0, bestScore: 0 },
         version: 8,
     };
 }
@@ -413,7 +418,16 @@ export class SaveSystem {
             prevBest: Number.isFinite(rtd.prevBest) && rtd.prevBest > 0 ? Math.floor(rtd.prevBest) : 0,
         };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, version: 8 };
+        // BOSSFORGE — Boss Rush all-time best record (additive; absent on pre-Boss
+        // Rush saves → all-zero, never a wipe).
+        const brd = data.bossRush && typeof data.bossRush === 'object' ? data.bossRush : {};
+        const bossRush = {
+            bestBosses: Number.isFinite(brd.bestBosses) && brd.bestBosses > 0 ? Math.floor(brd.bestBosses) : 0,
+            bestTime: Number.isFinite(brd.bestTime) && brd.bestTime > 0 ? Math.floor(brd.bestTime) : 0,
+            bestScore: Number.isFinite(brd.bestScore) && brd.bestScore > 0 ? Math.floor(brd.bestScore) : 0,
+        };
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, version: 8 };
     }
 
     save() {
@@ -546,6 +560,27 @@ export class SaveSystem {
         if (this.data.stats && v > (this.data.stats.riteTrialBest ?? 0)) this.data.stats.riteTrialBest = v;
         this.save();
         return { best, firstToday };
+    }
+
+    // ── Boss Rush all-time best record (BOSSFORGE) ───────────────────────
+    // Not date-scoped (freeplay). Tracks the most bosses felled, the fastest
+    // FULL clear (seconds), and the best score. Returns which fields were newly
+    // beaten so the end screen can flag them. Additive — safe on old saves.
+    recordBossRush({ bossesDefeated = 0, timeSurvived = 0, score = 0, cleared = false } = {}) {
+        const br = this.data.bossRush || (this.data.bossRush = { bestBosses: 0, bestTime: 0, bestScore: 0 });
+        const beat = { bosses: false, time: false, score: false };
+        const b = Math.max(0, Math.floor(bossesDefeated));
+        if (b > (br.bestBosses ?? 0)) { br.bestBosses = b; beat.bosses = true; }
+        const s = Math.max(0, Math.floor(score));
+        if (s > (br.bestScore ?? 0)) { br.bestScore = s; beat.score = true; }
+        // Fastest time is meaningful only for a FULL clear (else a quick death
+        // would masquerade as the best time).
+        if (cleared) {
+            const tt = Math.max(0, Math.floor(timeSurvived));
+            if (!br.bestTime || tt < br.bestTime) { br.bestTime = tt; beat.time = true; }
+        }
+        this.save();
+        return beat;
     }
 
     getUpgradeLevel(id) {

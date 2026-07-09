@@ -39,6 +39,7 @@ import { ACHIEVEMENTS } from '../content/achievements.js';
 import { pickDailyChallenges, currentDayNumber } from '../content/dailyChallenges.js';
 import { getDailySetup } from '../content/dailyRoad.js';
 import { getRiteTrialSetup } from '../content/riteTrial.js';
+import { BOSS_RUSH_CONFIG, getBossRushSequence } from '../content/bossRush.js';
 import { ritesFor, riteProgress, ritesCompletedCount } from '../content/rites.js';
 import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
 import { getRoad } from '../content/roads.js';
@@ -1142,12 +1143,16 @@ export class MenuRenderer {
         // START RUN (left) + DAILY ROAD + RITE TRIAL (right) share the CTA row. START
         // stays the big animated call-to-action; DAILY launches the day's curated fixed
         // run; RITE TRIAL (KINDLED #3) launches the day's hero-locked Kindle trial.
+        // Three mode CTAs share the row with START: DAILY ROAD · RITE TRIAL ·
+        // BOSS RUSH. Side buttons shrink a touch to fit the third; all stay in
+        // logical coords so they remain tappable on mobile (letterboxed 16:9).
         const dGap = 12;
-        const sideW = Math.min(220, innerW * 0.26);
-        const startW = innerW - sideW * 2 - dGap * 2;
+        const sideW = Math.min(196, innerW * 0.2);
+        const startW = innerW - sideW * 3 - dGap * 3;
         this._drawStartButton(ctx, { x: innerX, y: startY, w: startW, h: startH }, t);
         this._drawDailyButton(ctx, { x: innerX + startW + dGap, y: startY, w: sideW, h: startH }, state, t);
         this._drawRiteTrialButton(ctx, { x: innerX + startW + dGap * 2 + sideW, y: startY, w: sideW, h: startH }, state, t);
+        this._drawBossRushButton(ctx, { x: innerX + startW + dGap * 3 + sideW * 2, y: startY, w: sideW, h: startH }, state, t);
     }
 
     // DAILY ROAD launch button — a distinct pink/gold CTA showing the day's fixed
@@ -1210,6 +1215,32 @@ export class MenuRenderer {
             : 'Hero locks each day';
         ctx.fillText(scoreLine, r.x + r.w / 2, r.y + r.h / 2 + 24);
         this._hot(r.x, r.y, r.w, r.h, 'startRiteTrial', null);
+    }
+
+    // BOSS RUSH launch button (BOSSFORGE) — a crimson CTA into the apex-boss
+    // gauntlet on the player's own hero + map. Shows the boss count + lifetime
+    // best (bosses felled). Dispatches 'startBossRush'. Always available (not
+    // date-locked); Weekly Ember will later add its own dated CTA beside it.
+    _drawBossRushButton(ctx, r, state, t) {
+        const total = getBossRushSequence(BOSS_RUSH_CONFIG).length;
+        const best = state.bossRushBest ?? 0;
+        const glow = 0.5 + Math.sin(t * 3 + 2) * 0.25;
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
+        ctx.fillStyle = 'rgba(58,18,18,0.95)'; ctx.fill();
+        ctx.save();
+        ctx.globalAlpha = glow;
+        ctx.strokeStyle = '#ff6a4a'; ctx.lineWidth = 2.5;
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14); ctx.stroke();
+        ctx.restore();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffcbb0'; ctx.font = `800 22px ${FONT}`;
+        ctx.fillText('BOSS RUSH', r.x + r.w / 2, r.y + r.h / 2 - 16);
+        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
+        ctx.fillText(`${total} apex bosses`, r.x + r.w / 2, r.y + r.h / 2 + 6);
+        ctx.fillStyle = 'rgba(255,206,84,0.9)'; ctx.font = `700 13px ${FONT}`;
+        const scoreLine = best > 0 ? `Best: ${best} felled` : 'Face the gauntlet';
+        ctx.fillText(scoreLine, r.x + r.w / 2, r.y + r.h / 2 + 24);
+        this._hot(r.x, r.y, r.w, r.h, 'startBossRush', null);
     }
 
     // Pulsing accent glow behind a SELECTED chip (biome / difficulty / trial).
