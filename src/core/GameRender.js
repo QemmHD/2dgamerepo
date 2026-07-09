@@ -635,6 +635,7 @@ export const GameRenderMethods = {
             maxLights: t.maxLights,
             pickupCap: t.pickupCap,
             colorTint: t.colorTint,
+            veilScale: t.veilScale,
         });
         this.particles.setQuality({ max: t.particleCap, fog: t.fog });
         this.renderer.setDprCap?.(t.dpr === 'min' ? RENDER.minDpr : RENDER.maxDpr);

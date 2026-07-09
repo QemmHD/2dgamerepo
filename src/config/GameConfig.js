@@ -1469,6 +1469,10 @@ export const GFX = {
         pickupLightCap: 40,  // gem/coin/chest lights capped separately
         colorTint: true,     // faint warm/cool additive bloom in the holes
         tintIntensity: 0.3,
+        veilScale: 1,        // darkness-veil buffer resolution ×INTERNAL (governor
+                             // tiers drop this to 0.5; the veil is soft/low-freq so
+                             // a smooth upscale is visually near-identical, ~¼ the
+                             // buffer fill + cutout cost). Default 1 = T0 full-res.
         playerRadius: 360,
         playerIntensity: 1.0,
         projectileRadius: 130,
@@ -1504,15 +1508,19 @@ export const GFX = {
     // tiers with hysteresis (down after `sustainSeconds` below `downFps`; up only
     // after 2× that above `upFps`) so it stays STABLE, not constantly flipping.
     // dpr: 'max' = RENDER.maxDpr, 'min' = RENDER.minDpr (render below CSS + upscale).
+    // veilScale: darkness-veil buffer resolution ×INTERNAL. T0 stays full-res
+    // (1) so the default tier is visually identical; T1+ drop to 0.5 (the veil is
+    // soft/low-frequency, so a smooth upscale is near-imperceptible while cutting
+    // the buffer fill + light-cutout cost to ~¼). See ENGINE_PROFILER_REPORT.md.
     tierDefs: [
         // T0 — full
-        { particleCap: 220, pickupCap: 40, maxLights: 96, colorTint: true,  shadows: true,  weatherScale: 1,   fog: true,  damageNumbers: true,  dpr: 'max' },
-        // T1 — reduce particle cap, reduce pickup lights, skip decoration shadows
-        { particleCap: 150, pickupCap: 20, maxLights: 96, colorTint: true,  shadows: false, weatherScale: 1,   fog: true,  damageNumbers: true,  dpr: 'max' },
-        // T2 — disable lighting color tint, reduce max lights, reduce weather count
-        { particleCap: 150, pickupCap: 20, maxLights: 56, colorTint: false, shadows: false, weatherScale: 0.5, fog: true,  damageNumbers: true,  dpr: 'max' },
-        // T3 — lower DPR cap, damage numbers off, particles minimal
-        { particleCap: 70,  pickupCap: 20, maxLights: 56, colorTint: false, shadows: false, weatherScale: 0.5, fog: false, damageNumbers: false, dpr: 'min' },
+        { particleCap: 220, pickupCap: 40, maxLights: 96, colorTint: true,  shadows: true,  weatherScale: 1,   fog: true,  damageNumbers: true,  dpr: 'max', veilScale: 1   },
+        // T1 — reduce particle cap, reduce pickup lights, skip decoration shadows, half-res veil
+        { particleCap: 150, pickupCap: 20, maxLights: 96, colorTint: true,  shadows: false, weatherScale: 1,   fog: true,  damageNumbers: true,  dpr: 'max', veilScale: 0.5 },
+        // T2 — disable lighting color tint, reduce max lights, reduce weather count, half-res veil
+        { particleCap: 150, pickupCap: 20, maxLights: 56, colorTint: false, shadows: false, weatherScale: 0.5, fog: true,  damageNumbers: true,  dpr: 'max', veilScale: 0.5 },
+        // T3 — lower DPR cap, damage numbers off, particles minimal, half-res veil
+        { particleCap: 70,  pickupCap: 20, maxLights: 56, colorTint: false, shadows: false, weatherScale: 0.5, fog: false, damageNumbers: false, dpr: 'min', veilScale: 0.5 },
     ],
 };
 
