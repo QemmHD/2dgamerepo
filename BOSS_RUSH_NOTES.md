@@ -48,6 +48,22 @@ Ember later without touching the controller.
   run-minute HP ramp + steep per-encounter tier, which would compound into an
   unwinnable wall across twelve bosses with no trash XP.
 
+## Head-start build (start armed, not at level 1)
+
+Boss Rush drops the player straight into an apex fight with no trash to level on,
+so it grants a **head-start build**: `BOSS_RUSH_CONFIG.startingLevelUps` (default
+**5**) level-ups at run start. The player becomes **level 6** and drafts **5
+upgrades** from the normal level-up pool during the opening prep — the level-up
+overlay freezes the world (and the controller's prep timer with it), so the
+first boss can't land until the picks are made.
+
+- `Player.grantLevels(n)` bumps the level counter + keeps the XP curve consistent
+  (level is a counter; power comes from the drafted upgrades).
+- `Game._startRun` (end) grants the levels + opens the first draft;
+  `selectUpgrade` already chains the rest.
+- First-run onboarding is suppressed in Boss Rush (it teaches the first level-up
+  pick, which the head-start drafts already cover). Tunable via the config.
+
 ## UI, persistence, recap
 
 - **HUD** (`UISystem._drawBossRushHud`, fed by `UIStateBuilder.base.bossRush`) —

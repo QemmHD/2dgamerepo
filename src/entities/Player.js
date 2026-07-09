@@ -226,6 +226,19 @@ export class Player {
         return levels;
     }
 
+    // Grant `n` levels outright (no XP math) — used by modes that start the
+    // player mid-progression (Boss Rush). Bumps the level counter and keeps the
+    // XP-to-next curve consistent; the caller queues the matching upgrade drafts.
+    // Returns the number of levels granted.
+    grantLevels(n) {
+        const levels = Math.max(0, Math.floor(n || 0));
+        if (levels <= 0) return 0;
+        this.level += levels;
+        this.xpToNext = xpRequired(this.level);
+        this.xp = 0;
+        return levels;
+    }
+
     takeDamage(amount) {
         if (this.invincibleTimer > 0 || this.hp <= 0) return 0;
         // Thick Hide reduces all incoming damage uniformly (contact, enemy

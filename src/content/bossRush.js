@@ -48,6 +48,11 @@ export const BOSS_RUSH_CONFIG = {
     deterministic: false,
     firstPrepDuration: 6,
     prepDuration: 9,
+    // Boss Rush drops the player straight into an apex fight with no trash to
+    // level on, so it grants a head-start build: N level-ups at run start (the
+    // player becomes level N+1 and picks N upgrades from the normal draft during
+    // the opening prep, before the first boss lands). Enough to actively fight.
+    startingLevelUps: 5,
     scaling: { baseHpMul: 1.2, hpPerBoss: 0.12, baseDmgMul: 1.0, dmgPerBoss: 0.04 },
 };
 
