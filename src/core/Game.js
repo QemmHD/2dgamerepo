@@ -857,11 +857,20 @@ export class Game {
         // non-blocking hint sequence — move → auto-attack → shards → first
         // level-up pick — ticked by _tickOnboarding, drawn as a HUD pill by
         // UISystem. Never a modal wall; gameplay is untouched.
-        this.onboarding = (!SKIP_ONBOARDING
+        this.onboarding = (!SKIP_ONBOARDING && !this.bossRushMode
             && ((this.saveSystem.data.stats?.runs ?? 0) === 0 || this._forceRunHints))
             ? { step: 0, timer: 0, moved: 0, armed: true }
             : null;
         this._forceRunHints = false;   // Replay-Tutorial re-teach is one run only
+        // BOSSFORGE — Boss Rush head-start: grant the configured starting level-ups
+        // so the player drafts a real build BEFORE the first apex. The level-up
+        // overlay freezes the world (and the controller's prep timer with it), so
+        // the first boss can't land until the picks are made. Applied last, after
+        // the player is fully built, so level/xpToNext stay consistent.
+        if (this.bossRushMode && this._bossRushConfig) {
+            const n = this._bossRushConfig.startingLevelUps || 0;
+            if (n > 0) this.pendingLevelUps += this.player.grantLevels(n);
+        }
         this.screen = 'gameplay';
         // Kick the driving gameplay theme (resume covers the keyboard-start path
         // where no menu tap fired yet).
@@ -872,6 +881,10 @@ export class Game {
         // bar slide, etc.) so nothing carries over from the previous run.
         if (this.ui.beginRun) this.ui.beginRun(this.player);
         this._updateJoystickEnabled();
+        // BOSSFORGE — open the first Boss Rush head-start draft now (the world is
+        // frozen while it's up). selectUpgrade chains the remaining picks, so the
+        // player drafts their whole starting build before the opening prep runs.
+        if (this.bossRushMode && this.pendingLevelUps > 0 && !this.upgradeChoices) this._presentLevelUp();
     }
 
     restart() {
