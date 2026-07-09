@@ -74,8 +74,8 @@ Bucket columns omitted from the table (`map`, `decor`, `obstacles`,
 
 **What this says:**
 
-- **`lighting` is 98.9 %, 98.6 %, 98.5 %, 99.0 %** of `render` across the four
-  loads. Nothing else is close.
+- **`lighting` is 99.0 %, 98.8 %, 98.7 %, 99.0 %** of `render` (bucket ÷
+  `render`) across the four loads. Nothing else is close.
 - **`update` is negligible** (≤ 0.86 ms at 126 enemies): the sim is not the
   bottleneck in any regime — the game is **entirely fill/render-bound** here.
   Enemy AI, collision (broadphase grid, PR #145), and the projectile pool
@@ -140,14 +140,17 @@ harness `gfxtier=` hook. T2 disables `colorTint` and drops `maxLights` to 56 at
 | **T2** | colour tint off, maxLights 56 | 1.0 | 58 | 0 | 268.9 | **273.2** | −8 % |
 | **T3** | + DPR 0.7 | 0.7 | 56 | 0 | 157.0 | **160.5** | **−46 %** |
 
-- **Tint pass + fewer light cutouts (T0→T2, same DPR):** dropping all 97 tint
-  blits + 39 fewer light masks cost ~24 ms — a **real but modest ~8 %** lever at
-  DPR 1.
-- **DPR 1.0→0.7 (T2→T3):** ~112 ms, a **~42 %** cut. `0.7² = 0.49`, and the
-  composite/tint (the DPR-scaled part) roughly halves; the residual is the
-  DPR-independent 1920×1080 veil-buffer fill, which is why it drops to ~0.58×
-  rather than 0.49×. **This is the single biggest fill lever, and directly
-  confirms §3's DPR² claim.**
+- **Tint pass off (T0→T2, same DPR):** the `lighting`-bucket drop of ~24 ms is
+  essentially the 97 tint blits alone — a **real but modest ~8 %** lever at
+  DPR 1. (The 39 fewer light-mask cutouts also shed cost, but per §3 that lands
+  in the `entities`/`projectiles` buckets, not `lighting`, so it is not in this
+  bucket delta.)
+- **DPR 1.0→0.7 (T2→T3):** ~113 ms, a **~41 %** cut. Tint is already off in both
+  tiers, so this delta is purely the veil **composite blit** (the DPR-scaled
+  part): `0.7² = 0.49`, but it drops to ~0.58× rather than 0.49× because of the
+  DPR-independent 1920×1080 veil-buffer residual. **This is the single biggest
+  fill lever — consistent with §3's code-grounded DPR² model** (two tiers can't
+  independently pin the exponent, but they corroborate it).
 
 The governor sheds these in the right order: the *cheap-visual-loss* tint first
 (T2), the *more-visible* resolution cut last (T3). The cost structure matches
@@ -192,7 +195,8 @@ figure in `CLAUDE.md` is not enforced anywhere; the literal `220` constants are
 **Particles** are hard-capped at `GFX.particles.max = 220` preallocated slots
 (`_spawn` drops when full). Each drawn particle is exactly **one `drawImage`** of
 a cached glow sprite, batched per compositing layer — which is why 214 live
-particles cost ≤ 0.46 ms even in software raster (§2). Weather motes draw
+particles cost 0.37 ms even in software raster (the `particles` bucket at the
+120-enemy worst case). Weather motes draw
 outside the `particles` bucket (`mapRenderer.drawWeather`, unbracketed).
 
 ---
@@ -247,7 +251,8 @@ affects them only via the shared transform, never as a buffer size):**
   `WeaponSystem.js:146-147` (auto-target on-screen test);
   `ParticleSystem.js:392-394,424-425` (particle screen-map + cull).
 - Full-screen overlays / centering: `GameRender.js:301` (vignette), `:307`
-  (weather), `:400-412` (game-over gradient/fill), `:431,:479,:501-502`;
+  (weather), `:400-412` (hit/damage vignette, `_drawHitVignette`),
+  `:431,:479,:501-502`;
   dozens in `UISystem.js` (e.g. `:793,:1018,:1284,:1614,:1853,:2199` —
   `fillRect(0,0,INTERNAL_WIDTH,INTERNAL_HEIGHT)` + `/2` centering);
   `MenuRenderer.js:143,250,468-470,599,2298`; `MinigameOverlay.js:154,165,209`;
