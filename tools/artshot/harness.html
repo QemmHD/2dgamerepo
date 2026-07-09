@@ -107,6 +107,13 @@ const PICKUPS = parseInt(params.get('pickups') || '0', 10);  // gems + coins + o
 const DMGNUM = parseInt(params.get('dmgnum') || '0', 10);    // floating damage numbers
 const QABOSS = params.get('boss') === '1';                   // spawn a boss + warning
 const MAP = params.get('map');                               // force selected map (weather)
+// Roadmap #6 profiling pass (tooling only). profile=<N> runs N measured frames
+// with the FrameProfiler enabled, wrapping update()/render() so the top-level
+// buckets (normally timed by GameLoop, which sync-stepping bypasses) populate,
+// then PUTs game.profiler.ema + live counts to __out/profile-<proftag>.json.
+// Off by default → the CI harness-smoke path is byte-for-byte unchanged.
+const PROFILE = parseInt(params.get('profile') || '0', 10);
+const PROFTAG = (params.get('proftag') || 'run').replace(/[^A-Za-z0-9._-]/g, '');
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -251,6 +258,58 @@ async function boot() {
             try { game._gfxLevel = GFXTIER; game._applyGfxLevel(); } catch (e) { ERR.push('gfxtier: ' + String(e && e.stack || e)); }
         }
         if (DEBUGHUD) { game.showDebug = true; if (game.profiler) game.profiler.enabled = true; }
+
+        // ── Roadmap #6 profiling pass (tooling only) ──────────────────────────
+        // Measure per-bucket render/update cost under the load already injected
+        // above. Wrap update()/render() with the top-level buckets by hand (the
+        // sync-stepping harness bypasses GameLoop, which normally times them),
+        // run N frames so the EMA converges, then PUT the result to the server.
+        if (PROFILE > 0 && game.profiler) {
+            const P = game.profiler;
+            P.enabled = true;
+            for (let i = 0; i < PROFILE; i++) {
+                try {
+                    P.begin('update'); game.update(DT); P.end('update');
+                    if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);
+                    if (game.chestReward && game._dismissChestReward) game._dismissChestReward();
+                    if (game.altar && game.selectAltar) game.selectAltar(0);
+                    P.begin('render'); game.render(); P.end('render');
+                    P.frame();
+                } catch (e) { ERR.push('profile ' + i + ': ' + String(e && e.stack || e)); break; }
+            }
+            const ema = {};
+            for (const b of P.buckets) ema[b] = Math.round((P.ema[b] || 0) * 1000) / 1000;
+            const totalMs = (P.ema['update'] || 0) + (P.ema['render'] || 0);
+            const result = {
+                tag: PROFTAG,
+                frames: PROFILE,
+                scenario: { dense: DENSE, pickups: PICKUPS, dmgnum: DMGNUM, boss: QABOSS, gfxtier: GFXTIER, map: MAP || null },
+                dpr: (renderer && renderer.dpr) || null,
+                counts: {
+                    enemies: game.enemies ? game.enemies.length : -1,
+                    projectiles: game.projectiles ? game.projectiles.length : -1,
+                    projectilePoolAll: (game.projectilePool && game.projectilePool._all) ? game.projectilePool._all.length : -1,
+                    particles: (game.particles && game.particles.activeCount) ? game.particles.activeCount() : -1,
+                    gems: game.gems ? game.gems.length : -1,
+                    coins: game.coins ? game.coins.length : -1,
+                    hazards: game.hazards ? game.hazards.length : -1,
+                    lights: (game.lighting && game.lighting._count != null) ? game.lighting._count : -1,
+                    tintBlits: (game.lighting && game.lighting.tints) ? Math.floor(game.lighting.tints.length / 5) : -1,
+                },
+                ema,
+                totalMs: Math.round(totalMs * 1000) / 1000,
+                fps: totalMs > 0 ? Math.round(1000 / totalMs) : 0,
+                exc: ERR.length,
+                firstErr: ERR.length ? ERR[0].slice(0, 200) : null,
+            };
+            window.__profile = result;
+            try {
+                await fetch('/__save/profile-' + PROFTAG + '.json', {
+                    method: 'PUT',
+                    body: JSON.stringify(result, null, 2),
+                });
+            } catch (e) { ERR.push('profile-save: ' + String(e)); }
+        }
         game.render();
     }
 
