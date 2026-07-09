@@ -3,7 +3,7 @@
 // mutates game state, only assembles the screen-appropriate fields into a
 // fresh snapshot object (one per frame — same shape/cost as before the move).
 
-import { BOSS, CAPS, COMBO, COMPOSURE, MAX_WEAPON_SLOTS, BLINK, KINDLE } from '../config/GameConfig.js';
+import { BOSS, CAPS, COMBO, COMPOSURE, MAX_WEAPON_SLOTS, BLINK, KINDLE, ENEMY } from '../config/GameConfig.js';
 import { signatureFor } from '../content/signatures.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { OBJECTIVE_COUNT } from '../content/objectives.js';
@@ -63,6 +63,8 @@ export function buildUIState(game) {
         base.riteTrialPrevBest = _rt
             ? (_rt.day === _today ? (_rt.prevBest ?? 0) : (_rt.day === _today - 1 ? (_rt.best ?? 0) : 0))
             : 0;
+        // BOSSFORGE — Boss Rush all-time best (bosses felled) for the PLAY-screen CTA.
+        base.bossRushBest = game.saveSystem.data.bossRush?.bestBosses ?? 0;
         // Day streak for the PLAY tab — alive if the last played day is
         // today or yesterday (a yesterday-streak still extends by playing).
         const _st = game.saveSystem.data.streak;
@@ -178,6 +180,25 @@ export function buildUIState(game) {
         ? { name: game.bossWarning.name, epithet: game.bossWarning.epithet ?? null,
             tier: game.bossWarning.tier ?? null, t: 1 - game.bossWarning.timer / game.bossWarning.total }
         : null;
+    // BOSSFORGE — Boss Rush HUD status (label, boss X/N, next boss name, prep
+    // timer, progress). Null in every other mode. Names resolved from ENEMY.
+    if (game.bossRush) {
+        const st = game.bossRush.getStatus();
+        const nm = (id) => (id ? (ENEMY[id]?.bossName ?? id) : null);
+        base.bossRush = {
+            label: st.label,
+            phase: st.phase,
+            bossNumber: st.bossNumber,
+            total: st.total,
+            bossesDefeated: st.bossesDefeated,
+            currentBossName: nm(st.currentBossId),
+            nextBossName: nm(st.nextBossId),
+            prepRemaining: st.prepRemaining,
+            cleared: st.cleared,
+        };
+    } else {
+        base.bossRush = null;
+    }
     // Lieutenant mini-boss: a small HP bar + its own warning tell.
     base.activeLieutenant = game.activeLieutenantRef ? {
         name: game.activeLieutenantRef.name,

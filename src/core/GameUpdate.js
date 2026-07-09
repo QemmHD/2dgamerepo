@@ -241,7 +241,17 @@ export const GameUpdateMethods = {
         // A scheduled boss first opens a WARNING window (BOSS INCOMING) so the
         // player can reposition; it actually spawns when the warning expires.
         const bossAlive = this.enemies.some((e) => e.active && e.boss);
-        if (!bossAlive && !this.bossWarning) {
+        if (this.bossRush) {
+            // Boss Rush drives its own cadence: when the prep phase elapses it
+            // asks for the next boss's warning, which the shared warning→spawn
+            // block below turns into a real spawn through the normal pipeline
+            // (telegraph, arena, enraged phases, adds). The normal boss director,
+            // the Lieutenant, and the trash spawner are all bypassed for the mode.
+            if (!bossAlive && !this.bossWarning) {
+                const act = this.bossRush.update(dt);
+                if (act && act.spawn) this._startBossWarning(act.spawn);
+            }
+        } else if (!bossAlive && !this.bossWarning) {
             const bossId = this.bossDirector.update(this.time, bossAlive);
             if (bossId) this._startBossWarning(bossId);
         }
@@ -258,7 +268,7 @@ export const GameUpdateMethods = {
         // setpiece; the swarm keeps running (unlike a boss). A short telegraph
         // precedes the spawn. `bossAlive` is reused from the boss gate above.
         const lieutenantAlive = this.enemies.some((e) => e.active && e.lieutenant);
-        if (!bossAlive && !this.bossWarning && !this.lieutenantWarning && !lieutenantAlive) {
+        if (!this.bossRush && !bossAlive && !this.bossWarning && !this.lieutenantWarning && !lieutenantAlive) {
             if (this.lieutenantDirector.update(this.time)) this._startLieutenantWarning();
         }
         if (this.lieutenantWarning) {
@@ -330,8 +340,10 @@ export const GameUpdateMethods = {
         // trash spawner so the fight is the player vs. the boss (and only the
         // boss's own themed adds), not a swarm. Normal spawns resume once the
         // boss is dead.
+        // Boss Rush is boss-only: the trash spawner never runs (each fight is the
+        // player vs. the apex + its own themed adds, with a calm prep phase between).
         const bossOnField = !!this.bossWarning || this.enemies.some((e) => e.active && e.boss);
-        if (!bossOnField) {
+        if (!bossOnField && !this.bossRush) {
             // Spawner slows with the world during Focus Time (worldDt).
             this.spawner.update(worldDt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
         }

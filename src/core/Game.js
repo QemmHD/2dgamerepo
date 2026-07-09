@@ -51,6 +51,8 @@ import { rollAltarChoices, rollRoadChoices } from '../systems/WickRoadsSystem.js
 import { applyAttunements } from '../content/relics.js';
 import { getRoad } from '../content/roads.js';
 import { getDailySetup } from '../content/dailyRoad.js';
+import { BOSS_RUSH_CONFIG, getBossRushSequence, bossRushScore } from '../content/bossRush.js';
+import { BossRushController } from '../systems/BossRushController.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { evaluateAchievements } from '../content/achievements.js';
@@ -160,6 +162,11 @@ export class Game {
         this._riteTrialHeroOverride = null;
         this._riteTrialMapOverride = null;
         this._riteTrialSetup = null;
+        // BOSSFORGE — Boss Rush: a sequence of apex bosses with prep phases, using
+        // the player's own hero + map pick (no override). Session-local flag,
+        // mutually exclusive with dailyMode/riteTrialMode; the live controller
+        // (this.bossRush) is built in _startRun and reset in _initRunState.
+        this.bossRushMode = false;
         // Pre-run Patron choice (id or null) — biases the level-up draft toward
         // that Patron's weapons/passives. Session-local (not persisted), chosen
         // on the Play tab; folded into committedPatrons at run start.
@@ -232,6 +239,14 @@ export class Game {
                 return;
             }
             if (this.screen === 'start') {
+                // BOSSFORGE — dev shortcut: launch Boss Rush straight from the menu
+                // (skips finding the CTA), gated by DEV_MODE like the other cheats.
+                if (DEV_MODE && e.code === 'KeyG' && !this.minigame.mines && !this.minigame.caseAnim && !this.menuTour) {
+                    e.preventDefault();
+                    this.bossRushMode = true; this.dailyMode = false; this.riteTrialMode = false;
+                    this._startRun();
+                    return;
+                }
                 if (this.minigame.mines) {
                     if (e.code === 'Space' || e.code === 'Enter') {
                         e.preventDefault();
@@ -249,7 +264,7 @@ export class Game {
                     // While the guided tour is up, Space/Enter advances it
                     // (matching the NEXT button) instead of launching a run.
                     if (this.menuTour) { this._menuAction('tourNext', null); return; }
-                    this.dailyMode = false; this.riteTrialMode = false;   // keyboard start is always a NORMAL run
+                    this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false;   // keyboard start is always a NORMAL run
                     this._startRun();
                 }
                 return;
@@ -293,6 +308,15 @@ export class Game {
                 // KINDLED: grant +50 Kindle so the meter / (PR3) ult path can be
                 // tested without grinding kills.
                 if (e.code === 'KeyK') { e.preventDefault(); this.kindleSystem.debugGrant(50); return; }
+                // BOSSFORGE — Boss Rush test shortcuts (only in a Boss Rush run):
+                // N = skip to the next boss (drop the active boss to 1 HP so the
+                // next auto-shot kills it → advances; in prep, skip the countdown);
+                // H = force the active boss to ~3% HP; J = finish the whole gauntlet.
+                if (this.bossRush) {
+                    if (e.code === 'KeyN') { e.preventDefault(); this._debugBossRushNext(); return; }
+                    if (e.code === 'KeyH') { e.preventDefault(); this._debugBossRushLowHp(); return; }
+                    if (e.code === 'KeyJ') { e.preventDefault(); this._debugBossRushFinish(); return; }
+                }
             }
             // Pause toggle — gameplay only, never while a level-up/chest
             // overlay is up (those already freeze the world).
@@ -680,7 +704,16 @@ export class Game {
             this._riteTrialHeroOverride = null;
             this._riteTrialMapOverride = null;
         }
+        // Boss Rush resolves its boss sequence from the mode config (fixed order
+        // today; a seed makes it a deterministic shuffle for Weekly Ember). It
+        // uses the player's OWN hero + map (no override), so — unlike daily/rite —
+        // it needs nothing resolved before _initRunState; the controller is built
+        // right after, once the run arrays exist.
+        this._bossRushConfig = this.bossRushMode ? BOSS_RUSH_CONFIG : null;
         this._initRunState();
+        if (this.bossRushMode) {
+            this.bossRush = new BossRushController(getBossRushSequence(this._bossRushConfig), this._bossRushConfig);
+        }
         // Character base stats apply FIRST so permanent upgrades / gear /
         // passives / run upgrades all stack cleanly on top of the hero's
         // baseline (and the sprite already matches the selected character).
@@ -846,7 +879,7 @@ export class Game {
         // the death path. No-op once already banked this run.
         this._bankRunCoins();
         // A RESTART is a fresh NORMAL run — never silently re-launch a Daily/Trial.
-        this.dailyMode = false; this.riteTrialMode = false;
+        this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false;
         this._startRun();
     }
 
@@ -860,7 +893,7 @@ export class Game {
         // Back at the menu, a Daily/Trial is over — clear the flags so the next
         // launch (button OR keyboard) is a normal run unless DAILY ROAD / RITE TRIAL
         // is chosen again.
-        this.dailyMode = false; this.riteTrialMode = false;
+        this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false;
         // The guided menu tour fires on the first menu visit AFTER a recorded
         // run (right when the guided first run ends) and re-fires until
         // finished or skipped. The runs>=1 gate keeps a pause-quit of the very
@@ -1130,6 +1163,10 @@ export class Game {
     // Continue the same run (keep the gauntlet going past 3 bosses). From here
     // on the run is scored as a Gauntlet (endless) — banked on the next death.
     victoryContinue() {
+        // BOSSFORGE — a cleared Boss Rush has no endless continue (the boss
+        // sequence is exhausted and the trash spawner is off, so "continue" would
+        // drop the player into an empty world). Bank + return to the menu instead.
+        if (this.bossRushMode) { this.victoryToMenu(false); return; }
         this.victory = null;
         this.shareToast = null;   // don't carry a victory share toast into the gauntlet
         this._gauntletActive = true;
@@ -1174,6 +1211,7 @@ export class Game {
             // (both latched, so a victory-then-death can't double-count).
             this._accrueRiteProgress();
             this._bankRiteTrial();
+            this._bankBossRush();
             this._checkAchievements();
             this._checkDailyChallenges();
             this._runRecorded = true;
@@ -1300,6 +1338,36 @@ export class Game {
             this.runSummary.riteTrialScore = score;
             this.runSummary.riteTrialBest = rec.best;
             this.runSummary.riteTrialHero = this._effectiveCharacterId();
+        }
+    }
+
+    // BOSSFORGE — bank a Boss Rush run into the all-time best record + stamp the
+    // recap fields onto runSummary (bosses felled, whether the gauntlet was
+    // cleared, final boss reached, hero, time, score). Once per run, latched by
+    // _bossRushRecorded so a victory-leave then death can't double-count.
+    _bankBossRush() {
+        if (!this.bossRushMode || !this.bossRush || this._bossRushRecorded) return;
+        this._bossRushRecorded = true;
+        const st = this.bossRush.getStatus();
+        const cleared = st.cleared;
+        const timeSurvived = Math.floor(this.time);
+        const score = bossRushScore({ bossesDefeated: st.bossesDefeated, timeSurvived, cleared });
+        const beat = this.saveSystem.recordBossRush({ bossesDefeated: st.bossesDefeated, timeSurvived, score, cleared });
+        this.bossRushBestNew = !!(beat.bosses || beat.score || beat.time);
+        // The apex reached = the boss being fought at the end (death), or the
+        // final apex on a full clear. Name resolved from ENEMY like the warning.
+        const reachedId = st.currentBossId || this.bossRush.sequence[this.bossRush.sequence.length - 1] || null;
+        const reachedName = reachedId ? (ENEMY[reachedId]?.bossName ?? reachedId) : '—';
+        if (this.runSummary) {
+            this.runSummary.bossRush = true;
+            this.runSummary.bossRushBosses = st.bossesDefeated;
+            this.runSummary.bossRushTotal = st.total;
+            this.runSummary.bossRushCleared = cleared;
+            this.runSummary.bossRushScore = score;
+            this.runSummary.bossRushBestNew = this.bossRushBestNew;
+            this.runSummary.bossRushHero = this._effectiveCharacterId();
+            this.runSummary.bossRushFinalBoss = reachedName;
+            this.runSummary.bossRushTime = timeSurvived;
         }
     }
 
@@ -1579,6 +1647,32 @@ export class Game {
         const target = minute * 60;
         if (target <= this.time) return;
         this._debugSkipTime(target - this.time);
+    }
+
+    // ── BOSSFORGE Boss Rush debug helpers (DEV_MODE shortcuts) ──────────────
+    // Skip to the next boss: drop the active boss to 1 HP so the next auto-shot
+    // kills it through the REAL death pipeline (which advances the sequence);
+    // during a prep phase, shorten the countdown instead.
+    _debugBossRushNext() {
+        if (!this.bossRush) return;
+        const boss = this.enemies.find((e) => e.active && e.boss);
+        if (boss) boss.hp = 1;
+        else if (this.bossRush.phase === 'prep') this.bossRush.debugSkipPrep();
+    }
+    // Force the active boss to ~3% HP (test the finish / enraged threshold).
+    _debugBossRushLowHp() {
+        const boss = this.enemies.find((e) => e.active && e.boss);
+        if (boss) boss.hp = Math.max(1, Math.floor((boss.maxHp || boss.hp || 1) * 0.03));
+    }
+    // Finish the whole gauntlet immediately: clear the field + mark the sequence
+    // cleared, then open the victory overlay (recap reads the controller status).
+    _debugBossRushFinish() {
+        if (!this.bossRush) return;
+        for (const e of this.enemies) if (e.active && e.boss) e.active = false;
+        this.bossWarning = null;
+        this.arena = null;
+        this.bossRush.debugForceFinish();
+        if (!this._victoryShown) { this._victoryShown = true; this._showVictory(); }
     }
 
     _clearSpot(x, y, clearance) {
@@ -1977,8 +2071,19 @@ export class Game {
         const mapDmgMul = 1 + (mt - 1) * 0.04;
         // baseHpMul lengthens EVERY boss fight (early and late) by a flat factor
         // so a duel is a real war of attrition, not a quick burst-down.
-        const bossHpMul = (BOSS.baseHpMul ?? 1) * Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul * (this.runScale?.hp ?? 1) * mapHpMul;
-        const bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.12) * mapDmgMul;
+        let bossHpMul, bossDmgMul;
+        if (this.bossRush) {
+            // Boss Rush override: a gentle, position-driven curve (bossRush.js).
+            // The mode has no trash XP and stacks up to twelve bosses, so the
+            // normal run-minute HP ramp + steep per-encounter tier would compound
+            // into an unwinnable wall. runScale.hp (pacts/difficulty) still applies.
+            const sc = this.bossRush.currentScale();
+            bossHpMul = sc.hp * (this.runScale?.hp ?? 1);
+            bossDmgMul = sc.dmg;
+        } else {
+            bossHpMul = (BOSS.baseHpMul ?? 1) * Math.min(1 + minutes * BOSS.hpPerMinute, BOSS.maxHpMul) * tierMul * (this.runScale?.hp ?? 1) * mapHpMul;
+            bossDmgMul = (this.waveState.damageMul ?? 1) * (1 + encounter * 0.12) * mapDmgMul;
+        }
         const boss = new Enemy(id, x, y, {
             healthMul: bossHpMul,
             speedMul: this.waveState.speedMul * (1 + encounter * 0.04),
@@ -2372,6 +2477,7 @@ export class Game {
         // hero) + bank the Rite-Trial best-of-day (trial runs only). Both latched.
         this._accrueRiteProgress();
         this._bankRiteTrial();
+        this._bankBossRush();
 
         // Fold the run into lifetime/best records; capture which bests were
         // beaten so the game-over summary can flag them. Skip if a victory-leave
@@ -2416,6 +2522,7 @@ export class Game {
     }
     // Build the pending 'death' card data (composed next render()).
     _queueDeathCard() {
+        if (this.bossRushMode) { this._queueBossRushCard('death'); return; }   // BOSSFORGE
         if (this.riteTrialMode) { this._queueRiteCard('death'); return; }   // KINDLED PR5
         const s = this.runSummary || {};
         const cid = this.saveSystem.getSelectedCharacter();
@@ -2472,9 +2579,52 @@ export class Game {
             },
         };
     }
+    // BOSSFORGE — the Boss Rush share card ('bossrush' template). Built from LIVE
+    // fields so it works at BOTH death- and victory-time. Shows the hero, the
+    // gauntlet progress (bosses felled / total), whether it was cleared, the apex
+    // reached, the time, and the run's build (up to three owned weapons).
+    _queueBossRushCard(outcome) {
+        const cid = this._effectiveCharacterId();
+        const st = this.bossRush
+            ? this.bossRush.getStatus()
+            : { bossesDefeated: this.bossesDefeated, total: 0, cleared: false, currentBossId: null };
+        const cleared = !!st.cleared;
+        const timeSurvived = Math.floor(this.time);
+        const score = bossRushScore({ bossesDefeated: st.bossesDefeated, timeSurvived, cleared });
+        const reachedId = st.currentBossId
+            || (this.bossRush && this.bossRush.sequence[this.bossRush.sequence.length - 1])
+            || null;
+        const reached = reachedId ? (ENEMY[reachedId]?.bossName ?? reachedId) : '—';
+        let weaponNames = [];
+        try {
+            weaponNames = (this.weaponSystem.snapshotForUI() || [])
+                .map((w) => w && w.name).filter(Boolean).slice(0, 3);
+        } catch (_) { weaponNames = []; }
+        const chips = [
+            `${st.bossesDefeated}/${st.total} FELLED`,
+            cleared ? 'CLEARED' : `REACHED ${String(reached).toUpperCase()}`,
+        ];
+        if (weaponNames.length) chips.push(weaponNames.join(' · ').toUpperCase());
+        this._pendingCardMint = {
+            template: 'bossrush',
+            data: {
+                name: this._cardHeroName(cid), characterId: cid,
+                time: this.time,
+                score, bosses: st.bossesDefeated, total: st.total,
+                cleared, reached, outcome: outcome || 'end',
+                newBest: !!this.bossRushBestNew,
+                sub: cleared ? 'The apex gauntlet is broken' : `Fell to ${reached}`,
+                chips, weapons: weaponNames,
+                mapName: this._cardMapName(this._effectiveMapId()),
+                difficulty: this._cardDifficulty(),
+            },
+        };
+    }
+
     // Build the pending 'victory' card data from LIVE fields (runSummary does
     // not exist yet when the victory overlay appears).
     _queueVictoryCard() {
+        if (this.bossRushMode) { this._queueBossRushCard('victory'); return; }   // BOSSFORGE
         if (this.riteTrialMode) { this._queueRiteCard('victory'); return; }   // KINDLED PR5
         const cid = this.saveSystem.getSelectedCharacter();
         const kills = this.kills ?? 0;

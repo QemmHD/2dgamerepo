@@ -337,6 +337,10 @@ async function boot() {
         ctx.fillStyle = '#000';
         ctx.fillText(msg, 14, 10);
     }
+    // Expose the live game for headless drivers (dev tooling only; the shipped
+    // build never loads this harness). Lets a Playwright test start Boss Rush and
+    // step/inspect the sim after boot.
+    window.__game = game;
     document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1);
     window.__done = true;
 }

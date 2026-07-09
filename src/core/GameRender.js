@@ -438,13 +438,21 @@ export const GameRenderMethods = {
         ctx.fillRect(0, 0, W, H);
         ctx.globalAlpha = t;
         ctx.textAlign = 'center';
-        // Title.
+        // Title + subtitle. Boss Rush gets its own gauntlet copy (a full clear is
+        // all N apex bosses, on the player's own biome — not the 3-boss "new biome
+        // opens" milestone).
+        const isBossRush = !!this.bossRushMode;
         ctx.fillStyle = '#ffd98a';
         ctx.font = 'bold 86px sans-serif';
-        ctx.fillText('VIGIL TRIUMPHANT', W / 2, H / 2 - 150);
+        ctx.fillText(isBossRush ? 'GAUNTLET BROKEN' : 'VIGIL TRIUMPHANT', W / 2, H / 2 - 150);
         ctx.fillStyle = '#cde4ff';
         ctx.font = '34px sans-serif';
-        ctx.fillText('Three apex Hollow have fallen. A new biome opens.', W / 2, H / 2 - 96);
+        const brTotal = this.bossRush ? this.bossRush.total : 12;
+        ctx.fillText(
+            isBossRush
+                ? `All ${brTotal} apex Hollow have fallen — Boss Rush cleared!`
+                : 'Three apex Hollow have fallen. A new biome opens.',
+            W / 2, H / 2 - 96);
 
         const r = this._victoryRects();
         const btn = (rect, label, sub, fill, border) => {
@@ -462,9 +470,17 @@ export const GameRenderMethods = {
                 ctx.fillText(sub, rect.x + rect.w / 2, rect.y + 74);
             }
         };
-        btn(r.cont, 'CONTINUE', 'keep going — the gauntlet cycles harder', '#1d6b3a', '#7be08a');
-        btn(r.biome, 'PLAY NEW BIOME', 'Hollow Reach — the frozen vigil', '#1d4a7a', '#7fd0ff');
-        btn(r.menu, 'MAIN MENU', 'bank coins • upgrade • pick a map', '#5a3a1a', '#ffb24a');
+        if (isBossRush) {
+            // A cleared Boss Rush has no endless continue; every top button banks
+            // the result and returns to the menu (Continue is routed there too).
+            btn(r.cont, 'RETURN', 'bank your gauntlet result', '#5a3a1a', '#ffb24a');
+            btn(r.biome, 'NEW MAP', 'swap biome for your next run', '#1d4a7a', '#7fd0ff');
+            btn(r.menu, 'MAIN MENU', 'bank coins • upgrade • pick a map', '#5a3a1a', '#ffb24a');
+        } else {
+            btn(r.cont, 'CONTINUE', 'keep going — the gauntlet cycles harder', '#1d6b3a', '#7be08a');
+            btn(r.biome, 'PLAY NEW BIOME', 'Hollow Reach — the frozen vigil', '#1d4a7a', '#7fd0ff');
+            btn(r.menu, 'MAIN MENU', 'bank coins • upgrade • pick a map', '#5a3a1a', '#ffb24a');
+        }
         // EMBERGLASS: share the auto-minted victory card (S / tap).
         if (this.mintedCard) btn(r.share, 'SHARE CARD', 'copy your victory card to share', '#5a3a1a', '#ffd166');
         ctx.restore();
