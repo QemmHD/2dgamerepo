@@ -52,8 +52,13 @@ const GAMEPLAY_BASE = {
     padVoicing: [0, 2, 4], arp: [0, 4, 7, 10, 7, 4],
 };
 
-const THEMES = {
-    menu: {
+// ── Menu playlist ────────────────────────────────────────────────────────
+// Three DISTINCT menu tracks so the lobby never wears one groove out. The
+// active one is installed as THEMES.menu; rotation advances on every menu
+// visit (playMusic('menu')) AND on the 64-bar wrap while sitting in the menu,
+// so both quick trips and long lobby sits keep the music moving.
+const MENU_THEMES = [
+    {   // "Emberkin" — the original warm hearth lilt (pentatonic, swung).
         bpm: 96, wave: 'triangle', cutoff: 2400, root: 57, scale: PENT, energy: 0.6, swing: 0.18,
         prog: [0, 0, 3, 5],
         lead:  [0, null, 2, null, 4, null, 2, null, 3, null, 5, null, 4, null, 2, null],
@@ -61,6 +66,29 @@ const THEMES = {
         bassSteps: [0, 8], kick: [0, 8], hat: [4, 12],
         padVoicing: [0, 2, 4], arp: [0, 4, 7, 4],
     },
+    {   // "Long Watch" — slow dorian ember-drift: sparse lead, lush pads,
+        // heavy swing. The campfire-rest of the three.
+        bpm: 76, wave: 'sine', cutoff: 2000, root: 50, scale: DORIAN, energy: 0.5, swing: 0.22,
+        prog: [0, 5, 3, 7],
+        lead:  [0, null, null, 2, null, null, 4, null, null, null, 3, null, null, 2, null, null],
+        leadB: [5, null, null, 4, null, null, 2, null, null, null, 4, null, 3, null, null, null],
+        bassSteps: [0, 10], kick: [0], hat: [8],
+        padVoicing: [0, 2, 4, 6], arp: [0, 2, 4, 7],
+    },
+    {   // "Vigil Call" — minor and a touch heroic: moving eighths, brighter
+        // top, a firmer pulse. The "gear up" track.
+        bpm: 108, wave: 'triangle', cutoff: 2800, root: 52, scale: MINOR, energy: 0.7, swing: 0.12,
+        prog: [0, 8, 5, 7],
+        lead:  [0, null, 2, 3, null, 4, null, 7, null, 5, 4, null, 3, null, 2, null],
+        leadB: [7, null, 8, 7, null, 5, 4, null, 5, null, 4, 3, null, 2, null, 0],
+        bassSteps: [0, 6, 8, 14], bassWalk: [0, 0, 2, 0],
+        kick: [0, 8], hat: [4, 10, 12],
+        padVoicing: [0, 2, 4], arp: [0, 3, 7, 10],
+    },
+];
+
+const THEMES = {
+    menu: MENU_THEMES[0],
     gameplay: GAMEPLAY_BASE,
     boss: {
         bpm: 152, wave: 'sawtooth', cutoff: 1600, root: 38, scale: MINOR, energy: 1.12, swing: 0.0,
@@ -82,13 +110,46 @@ const THEMES = {
     },
 };
 
-// Per-biome tone levers, shallow-merged over GAMEPLAY_BASE (patterns unchanged —
-// only root/scale/cutoff/energy/wave/swing/reverb recolour the same groove).
+// Per-biome gameplay THEMES, shallow-merged over GAMEPLAY_BASE. These are no
+// longer just tone recolours — each map carries its own melody, groove and
+// progression so every biome has a genuinely different track (the user-facing
+// "each map sounds like itself"). Emberwood keeps the canonical base groove.
 const BIOME_TUNE = {
+    // Emberwood — the canonical driving pentatonic groove (base patterns).
     emberwood:   { root: 45, scale: PENT,   cutoff: 2900, energy: 1.00, wave: 'triangle', swing: 0.10, reverb: 0.18 },
-    hollowreach: { root: 48, scale: DORIAN, cutoff: 3200, energy: 0.92, wave: 'triangle', swing: 0.12, reverb: 0.30 },
-    crypts:      { root: 41, scale: MINOR,  cutoff: 2200, energy: 1.00, wave: 'sawtooth', swing: 0.06, reverb: 0.24 },
-    dunes:       { root: 46, scale: PHRYG,  cutoff: 2600, energy: 1.02, wave: 'triangle', swing: 0.08, reverb: 0.16 },
+    // Hollow Reach — frost vigil: slower, dorian, wide reverb; a haunting
+    // legato lead over a sparse floor (half-time feel against the swarm).
+    hollowreach: {
+        root: 48, scale: DORIAN, cutoff: 3200, energy: 0.92, wave: 'triangle', swing: 0.12, reverb: 0.30,
+        bpm: 122, prog: [0, 5, 3, 7],
+        lead:  [0, null, null, 4, null, 3, null, null, 2, null, null, 4, null, null, 3, 2],
+        leadB: [7, null, null, 5, null, 4, null, null, 5, null, 7, null, null, 4, null, null],
+        bassSteps: [0, 6, 8, 14], bassWalk: [0, 0, -2, 0],
+        kick: [0, 8], hat: [2, 6, 10, 14],
+        padVoicing: [0, 2, 4, 6], arp: [0, 2, 4, 7, 4, 2],
+    },
+    // The Crypts — bone march: minor sawtooth, relentless stepping bass,
+    // tighter and darker with a downward-leaning progression.
+    crypts: {
+        root: 41, scale: MINOR, cutoff: 2200, energy: 1.00, wave: 'sawtooth', swing: 0.06, reverb: 0.24,
+        bpm: 132, prog: [0, 3, 8, 10],
+        lead:  [0, null, 0, 2, null, 3, null, 0, null, 2, null, 3, 5, null, 3, 2],
+        leadB: [5, null, 5, 4, null, 3, null, 5, null, 7, null, 5, 4, null, 3, null],
+        bassSteps: [0, 2, 4, 6, 8, 10, 12, 14], bassWalk: [0, 0, 0, 2, 0, 0, -1, 0],
+        kick: [0, 4, 8, 12], hat: [2, 6, 10, 13, 14],
+        padVoicing: [0, 2, 5], arp: [0, 3, 7, 3],
+    },
+    // The Dunes — serpent heat: phrygian colour (that b2!), swung, an
+    // ornamented winding lead over a rolling camel-gait bass.
+    dunes: {
+        root: 46, scale: PHRYG, cutoff: 2600, energy: 1.02, wave: 'triangle', swing: 0.14, reverb: 0.16,
+        bpm: 126, prog: [0, 1, 0, 5],
+        lead:  [0, 1, 0, null, 3, null, 2, 1, null, 0, null, 4, 3, null, 1, 0],
+        leadB: [5, null, 4, 5, null, 7, null, 5, 4, null, 3, 4, null, 1, null, 0],
+        bassSteps: [0, 3, 6, 8, 11, 14], bassWalk: [0, 0, 1, 0, -2, 0],
+        kick: [0, 4, 8, 12], hat: [2, 5, 10, 13],
+        padVoicing: [0, 3, 5], arp: [0, 1, 4, 7, 4, 1],
+    },
 };
 
 // Hybrid one-shot layer — curated CC0 (Kenney.nl) samples for the most TACTILE
@@ -287,10 +348,20 @@ export class AudioSystem {
     }
 
     playMusic(theme) {
+        // Fresh menu visit → next track in the playlist, so successive trips to
+        // the lobby don't replay the same groove (see MENU_THEMES).
+        if (theme === 'menu' && this.theme !== 'menu') this._advanceMenuTrack();
         this.theme = THEMES[theme] ? theme : null;
         if (this.theme === 'gameplay') this._applyBiome();
     }
     stopMusic() { this.theme = null; }
+
+    // Install the next menu track. Also called on the 64-bar wrap while sitting
+    // in the menu, so a long lobby stay rotates through all three.
+    _advanceMenuTrack() {
+        this._menuIdx = ((this._menuIdx ?? -1) + 1) % MENU_THEMES.length;
+        THEMES.menu = MENU_THEMES[this._menuIdx];
+    }
 
     // Current biome recolours the gameplay theme. Callable before the ctx exists
     // (it just latches the id); _applyBiome() re-derives when audio is live.
@@ -329,7 +400,12 @@ export class AudioSystem {
                 }
                 this._nextTime += sixteenth;
                 this._step = (this._step + 1) % 16;
-                if (this._step === 0) this._bar = (this._bar + 1) % 64;
+                if (this._step === 0) {
+                    this._bar = (this._bar + 1) % 64;
+                    // Long menu sit: rotate to the next lobby track each full
+                    // 64-bar cycle (~2-3 min) so the playlist keeps moving.
+                    if (this._bar === 0 && this.theme === 'menu') this._advanceMenuTrack();
+                }
             }
         };
         this._schedId = setInterval(tick, 25);

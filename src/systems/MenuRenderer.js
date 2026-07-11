@@ -29,6 +29,8 @@ import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '.
 import { getHeroFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { getMenuImages } from '../assets/MenuImages.js';
 import { getGearEmblem } from '../assets/GearEmblems.js';
+import { getCaseArt } from '../assets/CaseArt.js';
+import { getCosmeticEmblem } from '../assets/CosmeticEmblems.js';
 import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
@@ -895,6 +897,16 @@ export class MenuRenderer {
         this._drawTabBar(ctx, state);
 
         const tab = state.menuTab || 'play';
+        // Tab-switch transition (the Hades-style beat): the incoming screen
+        // slides in ~26px from the right over ~180ms with a fade. Only the
+        // content moves — chrome (bar/header) stays planted. Hotspots are
+        // registered at the untranslated rest positions; the offset lives for
+        // under 200ms, so taps land where the content is about to settle.
+        if (this._transTab !== tab) { this._transTab = tab; this._transT0 = this._t; }
+        const transK = Math.min(1, ((this._t - (this._transT0 ?? 0)) / 0.18) || 1);
+        const transE = 1 - Math.pow(1 - transK, 3);
+        ctx.save();
+        if (transE < 1) { ctx.globalAlpha = transE; ctx.translate((1 - transE) * 26, 0); }
         if (tab === 'play') this._drawPlay(ctx, state);
         else if (tab === 'modes') this._drawModes(ctx, state);
         else if (tab === 'skills') this._drawSkills(ctx, state);
@@ -905,6 +917,7 @@ export class MenuRenderer {
         else if (tab === 'battlepass') this._drawBattlePass(ctx, state);
         else if (tab === 'stats') this._drawStats(ctx, state);
         else if (tab === 'settings') this._drawSettings(ctx, state);
+        ctx.restore();
 
     }
 
@@ -2414,6 +2427,24 @@ export class MenuRenderer {
                 }
                 ctx.textBaseline = 'alphabetic';
             }
+            // ── The case CHEST art fills the band's free middle (the card's
+            // hero image — the loot-box look). Gentle idle bob + a warm breathing
+            // glow when affordable; skipped gracefully while the art loads or
+            // when a cramped layout leaves no room.
+            const chest = getCaseArt(def.id);
+            const artTop = obTop + 20, artBot = pityTop - 22;
+            if (chest && artBot - artTop >= 56) {
+                const t = this._t || 0;
+                const size = Math.min(artBot - artTop, innerW * 0.52, 150);
+                const bob = Math.sin(t * 1.6 + i * 1.1) * 2.5;
+                const ay = (artTop + artBot) / 2 + bob;
+                if (afford) {
+                    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+                    this._ember(ctx, midX, ay, size * 0.72, '#ff9a3c', 0.13 + Math.sin(t * 2.2 + i) * 0.04);
+                    ctx.restore(); ctx.globalAlpha = 1;
+                }
+                ctx.drawImage(chest, midX - size / 2, ay - size / 2, size, size);
+            }
             // Always clickable: an unaffordable tap surfaces a "Not enough
             // coins" toast rather than silently doing nothing.
             this._button(ctx, br, `OPEN  ◎ ${def.cost}`,
@@ -2645,7 +2676,10 @@ export class MenuRenderer {
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
         const cx = W / 2, cy = H / 2;
         const t = anim.age;
-        const reveal = anim.reel ? (anim.spinTime ?? 2.6) : 0.85;
+        // The reveal fires AFTER a dead-air settle beat: the reel stops at
+        // spinTime, holds its breath for settleHold, THEN the reveal bursts.
+        const spinEnd = anim.reel ? (anim.spinTime ?? 2.6) : 0.85;
+        const reveal = spinEnd + (anim.reel ? (anim.settleHold ?? 0) : 0);
         const result = anim.result;
         const col = result && result.rarity ? rarityColor(result.rarity) : '#ffce54';
         const tier = result && result.rarity && RARITIES[result.rarity] ? RARITIES[result.rarity].tier : 1;
@@ -2669,8 +2703,13 @@ export class MenuRenderer {
         if (t < reveal && anim.reel) {
             // ── SPIN: a framed reel tray of real item cards ──
             const cellW = 176, cellH = 172, gap = 12, stride = cellW + gap;
-            const p = clamp01(t / reveal);
-            const offset = backOut(p) * anim.landingIndex * stride;
+            const p = clamp01(t / spinEnd);   // p=1 through the settle hold
+            // NEAR-MISS landing: the reel rests up to ±0.35 cells off-centre
+            // (rolled per open), so the winner "almost" was its neighbour — the
+            // classic case-opening tension beat. Eased in so the early spin is
+            // unaffected; the reveal then names the true prize.
+            const offset = backOut(p) * anim.landingIndex * stride
+                + easeOutCubic(p) * (anim.landOff || 0) * stride;
             const bandY = cy - cellH / 2;
             // Tray frame (case name up top, glass band, warm floor glow).
             const trayX = 48, trayW = W - 96;
@@ -2684,6 +2723,13 @@ export class MenuRenderer {
             ctx.fillStyle = '#ffd8b0';
             this._fitFont(ctx, (caseDef?.name || 'CASE').toUpperCase(), 500, 700, 26);
             ctx.fillText((caseDef?.name || 'CASE').toUpperCase(), cx, bandY - 36);
+            // The case's own chest art flanks its name (which box you're opening).
+            const trayChest = getCaseArt(anim.caseType);
+            if (trayChest) {
+                const nW = ctx.measureText((caseDef?.name || 'CASE').toUpperCase()).width;
+                ctx.drawImage(trayChest, cx - nW / 2 - 62, bandY - 62, 52, 52);
+                ctx.drawImage(trayChest, cx + nW / 2 + 10, bandY - 62, 52, 52);
+            }
             // Cells (clipped to the tray).
             ctx.save();
             ctx.beginPath(); ctx.rect(trayX + 10, bandY - 6, trayW - 20, cellH + 12); ctx.clip();
@@ -2711,14 +2757,21 @@ export class MenuRenderer {
                 ctx.fillStyle = cc; ctx.fill(); ctx.restore();
                 roundRectPath(ctx, cellX, bandY, cellW, cellH, 14);
                 ctx.strokeStyle = cc; ctx.lineWidth = 2.5 + near * 2.5; ctx.stroke();
-                // The item's face: gear emblem art / cosmetic colour swatch.
-                this._itemFace(ctx, cellX + cellW / 2, bandY + 62, 34, cell);
+                // The item's face: gear emblem art / cosmetic category medallion.
+                this._itemFace(ctx, cellX + cellW / 2, bandY + 60, 36, cell);
                 // Name (auto-fit) + rarity pips.
                 ctx.fillStyle = '#fff';
                 this._fitFont(ctx, cell.name, cellW - 22, 700, 18, FONT, 12);
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(cell.name, cellX + cellW / 2, bandY + cellH - 44);
-                this._tierPips(ctx, cellX + cellW / 2, bandY + cellH - 20, ctier, cc);
+                ctx.fillText(cell.name, cellX + cellW / 2, bandY + cellH - 48);
+                this._tierPips(ctx, cellX + cellW / 2, bandY + cellH - 26, ctier, cc);
+                // CS-style rarity strip along the card's BOTTOM edge — the loot
+                // grammar players already know: colour = quality, at a glance.
+                ctx.save();
+                roundRectPath(ctx, cellX, bandY, cellW, cellH, 14); ctx.clip();
+                ctx.fillStyle = cc;
+                ctx.fillRect(cellX, bandY + cellH - 8, cellW, 8);
+                ctx.restore();
             }
             ctx.restore();
             // Edge fades so the strip melts into the tray instead of hard-cutting.
@@ -2904,8 +2957,9 @@ export class MenuRenderer {
     }
 
     // The face of a reel/reveal item: gear draws its category EMBLEM art (the
-    // same art the loadout cards use), a cosmetic draws its colour swatch with a
-    // sparkle, anything else falls back to the kind glyph in a rarity disc.
+    // same art the loadout cards use), a cosmetic draws its category MEDALLION
+    // (paw/cloak/hat/aura/comet) with the item's actual colour as a small
+    // swatch gem, anything else falls back to the kind glyph in a rarity disc.
     _itemFace(ctx, cx, cy, s, item) {
         const cc = rarityColor(item.rarity || 'common');
         if (item.kind === 'gear' && item.category) {
@@ -2913,7 +2967,19 @@ export class MenuRenderer {
             if (emblem) { ctx.drawImage(emblem, cx - s, cy - s, s * 2, s * 2); return; }
         }
         if (item.kind === 'cosmetic') {
-            // Colour swatch (the cosmetic's actual colour when it has one).
+            const med = getCosmeticEmblem(item.category);
+            if (med) {
+                ctx.drawImage(med, cx - s, cy - s, s * 2, s * 2);
+                // The item's actual colour as a small swatch gem on the rim, so
+                // "Frost" vs "Ember" fur still read as different pulls.
+                if (item.color) {
+                    ctx.beginPath(); ctx.arc(cx + s * 0.62, cy + s * 0.62, s * 0.26, 0, TAU);
+                    ctx.fillStyle = item.color; ctx.fill();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+                }
+                return;
+            }
+            // Fallback: colour swatch disc with the sparkle glyph.
             ctx.beginPath(); ctx.arc(cx, cy, s * 0.78, 0, TAU);
             ctx.fillStyle = item.color || cc; ctx.fill();
             ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 2.5; ctx.stroke();

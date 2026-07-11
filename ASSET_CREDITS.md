@@ -190,6 +190,18 @@ loading, so the menu renders correctly without them.
 | `src/assets/ui/gear/armor.png` | Generated | higgsfield (Nano Banana 2) | Armor emblem — a lion-crest ember pauldron. Keyed transparent + trimmed. |
 | `src/assets/ui/gear/trinket.png` | Generated | higgsfield (Nano Banana 2) | Trinket emblem — an ember filigree medallion. Keyed transparent + trimmed. |
 | `src/assets/ui/gear/charm.png` | Generated | higgsfield (Nano Banana 2) | Charm emblem — a runed ember talisman. Keyed transparent + trimmed. |
+| `src/assets/ui/cases/basic.png` | Generated | higgsfield (Nano Banana 2) | Basic gear case — bronze-banded oak chest, ember seam. Keyed transparent + trimmed to 320px. |
+| `src/assets/ui/cases/mystic.png` | Generated | higgsfield (Nano Banana 2) | Mystic gear case — blue-steel rune chest. Keyed + trimmed. |
+| `src/assets/ui/cases/royal.png` | Generated | higgsfield (Nano Banana 2) | Royal gear case — gold filigree chest with light burst. Keyed + trimmed. |
+| `src/assets/ui/cases/basicCosmetic.png` | Generated | higgsfield (Nano Banana 2) | Basic cosmetic case — bronze chest with pink ribbon. Keyed + trimmed. |
+| `src/assets/ui/cases/mysticCosmetic.png` | Generated | higgsfield (Nano Banana 2) | Mystic cosmetic case — violet moon-sigil chest. Keyed + trimmed. |
+| `src/assets/ui/cases/royalCosmetic.png` | Generated | higgsfield (Nano Banana 2) | Royal cosmetic case — gold-magenta plume chest. Keyed + trimmed. |
+| `src/assets/ui/cosmetics/fur.png` | Generated | higgsfield (Nano Banana 2) | Fur cosmetic-category medallion (paw print). Keyed + trimmed to 256px. |
+| `src/assets/ui/cosmetics/cloak.png` | Generated | higgsfield (Nano Banana 2) | Cloak cosmetic-category medallion. Keyed + trimmed. |
+| `src/assets/ui/cosmetics/accessory.png` | Generated | higgsfield (Nano Banana 2) | Accessory cosmetic-category medallion (hat). Keyed + trimmed. |
+| `src/assets/ui/cosmetics/aura.png` | Generated | higgsfield (Nano Banana 2) | Aura cosmetic-category medallion (fire ring). Keyed + trimmed. |
+| `src/assets/ui/cosmetics/trail.png` | Generated | higgsfield (Nano Banana 2) | Trail cosmetic-category medallion (comet). Keyed + trimmed. |
+| `src/assets/ui/cosmetics/sparkle.png` | Generated | higgsfield (Nano Banana 2) | Generic cosmetic medallion (sparkle) — reel/reveal fallback. Keyed + trimmed. |
 
 These load lazily via `src/assets/GearEmblems.js` and draw as the item icon per
 gear category in `MenuRenderer._drawItemGrid`; each falls back to the
