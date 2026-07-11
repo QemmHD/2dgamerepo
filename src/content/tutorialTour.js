@@ -37,7 +37,7 @@ export const TOUR_STEPS = [
     },
     {
         tab: 'shop',
-        title: 'Shop — spend coins on gear & looks',
+        title: 'Shop — spend coins on cases & games',
         highlightAction: 'openCase',
         lines: [
             'A "case" is a surprise box: you pay coins and get one random reward.',
@@ -63,8 +63,8 @@ export const TOUR_STEPS = [
         lines: [
             'These are "cosmetics" — they only change how your character looks',
             '(its fur, cape, hat and glow). They never change how the game plays;',
-            'they\'re purely for style. You unlock them from cases, by spending',
-            'coins, or by completing achievements. The preview updates live.',
+            'they\'re purely for style. You unlock them from cases, achievements,',
+            'or buy them in the BOUTIQUE — try looks on there before you pay.',
         ],
     },
     {
@@ -93,8 +93,8 @@ export const TOUR_STEPS = [
         lines: [
             'This page remembers your best results and your lifetime totals.',
             'It also lists "achievements" — one-time goals (like "defeat a boss")',
-            'that pay out coins, and some unlock exclusive looks. "Today\'s Trials"',
-            'are three small goals that refresh daily for a quick bonus.',
+            'that pay out coins, and some unlock exclusive looks. Daily goals',
+            'live on the MODES screen — "Today\'s Trials" refresh there each day.',
         ],
     },
     {
