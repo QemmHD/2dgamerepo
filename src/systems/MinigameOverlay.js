@@ -70,14 +70,24 @@ export class MinigameOverlay {
 
     // Case-overlay input: while the reel is still spinning, SNAP to the reveal
     // (fast-forward) instead of cancelling — impatient players still see their
-    // prize. Once revealed, a tap closes the overlay.
-    caseInput() {
+    // prize. Once revealed, a tap on OPEN ANOTHER re-rolls the same case (the
+    // renderer stamps the button rect on the anim and only draws it when the
+    // case is affordable; openCaseFlow re-checks the cost anyway); any other
+    // tap closes the overlay. `pos` is the tap in internal coords (absent for
+    // keyboard continues, which always just close).
+    caseInput(pos) {
         const a = this.caseAnim;
         if (!a) return;
         const spinTime = a.spinTime ?? 2.6;
         if (a.age < spinTime) {
             a.age = spinTime;               // jump the reel to its landing
             this.game.audio.reveal(a.result?.rarity);
+        } else if (pos && a._againRect && a.caseType
+            && pos.x >= a._againRect.x && pos.x <= a._againRect.x + a._againRect.w
+            && pos.y >= a._againRect.y && pos.y <= a._againRect.y + a._againRect.h) {
+            const type = a.caseType;
+            this.dismissCase();
+            this.openCaseFlow(type);
         } else {
             this.dismissCase();
         }

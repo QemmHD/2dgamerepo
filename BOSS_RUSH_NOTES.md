@@ -92,22 +92,22 @@ first boss can't land until the picks are made.
 - **H** — force the active boss to ~3% HP.
 - **J** — finish the whole gauntlet (clear → victory).
 
-## How Weekly Ember reuses this
+## Weekly Ember (now shipped on these hooks)
 
-Weekly Ember is intentionally **not** built. The hooks are in place so it needs
-no controller/HUD/save-shape changes:
+Weekly Ember is live, built exactly on the reuse path this design left:
 
-- Ship a parallel config: `{ ...BOSS_RUSH_CONFIG, id: 'weeklyEmber', label:
-  'Weekly Ember', seed: weeklyEmberSeed(currentDayNumber()), deterministic: true }`.
-  `getBossRushSequence` already turns a non-null `seed` into a deterministic
-  shuffle (`bossRush.js`), and `weeklyEmberSeed(day)` (a UTC-week number) is
-  exported and documented but unused today.
-- Reuse the same `BossRushController`, the same `'startBossRush'`-style path
-  (add a `weeklyEmberMode` flag + a menu CTA mirroring `_drawBossRushButton`),
-  and the same `'bossrush'` recap card.
-- Add a **date-scoped** best record next to `bossRush` in the save (mirroring
-  `riteTrial`'s day-gated shape) for the weekly leaderboard — the freeplay Boss
-  Rush record stays all-time.
+- `getWeeklyEmberConfig(day)` → `{ ...BOSS_RUSH_CONFIG, id: 'weeklyEmber',
+  seed: weeklyEmberSeed(day), deterministic: true }` — the same
+  `getBossRushSequence` turns the per-UTC-week seed into a deterministic
+  shuffle of the same 12-apex roster.
+- Same `BossRushController`, same gauntlet gates (they key off the
+  controller/config), same `'bossrush'` recap card (mode label parameterised).
+- `startWeeklyEmber` action + `weeklyEmberMode` flag; launched from the
+  **MODES screen** (the menu's mode gallery, alongside Daily Road / Rite
+  Trial / Boss Rush).
+- Week-scoped save record `weeklyEmber { week, best, prevBest }` mirroring
+  `riteTrial`'s day-gated shape — the freeplay Boss Rush record stays all-time
+  and is never inflated by a weekly run.
 
 ## What was intentionally NOT changed
 

@@ -101,8 +101,8 @@ export function minesRawMultiplier(safe, mines = MINES.mines, tiles = MINES.tile
 // so it should never be a case pull.
 const ITEM_POOL = [
     ...GEAR_LIST.filter((g) => !g.defaultUnlocked)
-        .map((g) => ({ kind: 'gear', id: g.id, rarity: g.rarity, name: g.name, category: g.category })),
-    ...COSMETIC_LIST.map((c) => ({ kind: 'cosmetic', id: c.id, rarity: c.rarity, name: c.name, category: c.category })),
+        .map((g) => ({ kind: 'gear', id: g.id, rarity: g.rarity, name: g.name, category: g.category, description: g.description ?? '', color: null })),
+    ...COSMETIC_LIST.map((c) => ({ kind: 'cosmetic', id: c.id, rarity: c.rarity, name: c.name, category: c.category, description: c.description ?? '', color: c.color ?? null })),
 ];
 
 // Pool filtered by rarity and (optionally) kind. A null kind means "any" —
@@ -127,14 +127,22 @@ export function buildCaseReel(caseType, result, length = 48, landingIndex = 42) 
         const rr = weighted.length ? weighted[Math.floor(Math.random() * weighted.length)] : 'common';
         const pool = poolByRarity(rr, kind);
         const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
-        // Cells carry their kind so the spin reel can draw a gear/cosmetic logo.
-        reel.push({ rarity: rr, name: pick ? pick.name : rarityName(rr), kind: pick ? pick.kind : (kind || 'coins') });
+        // Cells carry kind + category + swatch colour so the spin reel can draw
+        // each item's real face (gear emblem / cosmetic swatch), not a generic dot.
+        reel.push({
+            rarity: rr, name: pick ? pick.name : rarityName(rr),
+            kind: pick ? pick.kind : (kind || 'coins'),
+            category: pick ? pick.category : null,
+            color: pick ? pick.color : null,
+        });
     }
     // Place the real result on the landing cell.
     reel[landingIndex] = {
         rarity: result.rarity || 'common',
         name: result.name || result.label || rarityName(result.rarity || 'common'),
         kind: result.kind || kind || 'coins',
+        category: result.category ?? null,
+        color: result.color ?? null,
     };
     return { reel, landingIndex };
 }
@@ -203,13 +211,15 @@ function grantRarityReward(save, rarity, kind = null) {
             save.addCoins(amount);
             save.incrementStat('dupeCoins', amount);   // lifetime dupe-refund tally
             return { ok: true, kind: 'duplicate', rarity, id: pick.id, name: pick.name,
-                category: pick.category, amount, dupeTotal: save.data.stats.dupeCoins,
+                category: pick.category, description: pick.description, color: pick.color,
+                amount, dupeTotal: save.data.stats.dupeCoins,
                 label: `Duplicate ${pick.name} → ${amount} coins` };
         }
         if (pick.kind === 'gear') save.unlockGear(pick.id);
         else save.unlockCosmetic(pick.id);
         return { ok: true, kind: pick.kind, rarity, id: pick.id, name: pick.name,
-            category: pick.category, label: `${rarityName(rarity)} ${pick.name}` };
+            category: pick.category, description: pick.description, color: pick.color,
+            label: `${rarityName(rarity)} ${pick.name}` };
     }
     if (Math.random() < 0.6) {
         const amount = Math.round(rarityDust(rarity) * 1.5);

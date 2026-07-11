@@ -39,7 +39,7 @@ import { ACHIEVEMENTS } from '../content/achievements.js';
 import { pickDailyChallenges, currentDayNumber } from '../content/dailyChallenges.js';
 import { getDailySetup } from '../content/dailyRoad.js';
 import { getRiteTrialSetup } from '../content/riteTrial.js';
-import { BOSS_RUSH_CONFIG, getBossRushSequence } from '../content/bossRush.js';
+import { BOSS_RUSH_CONFIG, getBossRushSequence, weeklyEmberSeed } from '../content/bossRush.js';
 import { ritesFor, riteProgress, ritesCompletedCount } from '../content/rites.js';
 import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
 import { getRoad } from '../content/roads.js';
@@ -59,6 +59,7 @@ const TAU = Math.PI * 2;
 // ambers, cosmetic violet, utility grey.
 export const MENU_TABS = [
     { id: 'play', label: 'PLAY', accent: '#5fd36a' },
+    { id: 'modes', label: 'MODES', accent: '#ff6a4a' },
     { id: 'skills', label: 'SKILLS', accent: '#7fd0ff' },
     { id: 'attune', label: 'ATTUNE', accent: '#ff9ecf' },
     { id: 'loadout', label: 'LOADOUT', accent: '#ffce54' },
@@ -68,6 +69,35 @@ export const MENU_TABS = [
     { id: 'stats', label: 'STATS', accent: '#a8d5f7' },
     { id: 'settings', label: 'SETTINGS', accent: '#9fb0c4' },
 ];
+
+// App-like navigation: the flat tab list is presented as SECTIONS — a top bar
+// of groups, with a sub-tab pill row when the active group has more than one
+// screen. menuTab stays the single source of truth (every tab id above still
+// exists and is reachable), so the guided tour, markTabSeen/"NEW" badges, and
+// every 'tab' action work unchanged; only the presentation is grouped.
+export const MENU_GROUPS = [
+    { id: 'gPlay', label: 'PLAY', accent: '#5fd36a', tabs: ['play', 'modes'] },
+    { id: 'gHero', label: 'HERO', accent: '#c08bff', tabs: ['character', 'attune'] },
+    { id: 'gArmory', label: 'ARMORY', accent: '#7fd0ff', tabs: ['skills', 'loadout'] },
+    { id: 'gShop', label: 'SHOP', accent: '#ff9a4a', tabs: ['shop'] },
+    { id: 'gProgress', label: 'PROGRESS', accent: '#ff5a8a', tabs: ['battlepass', 'stats'] },
+    { id: 'gSettings', label: 'SETTINGS', accent: '#9fb0c4', tabs: ['settings'] },
+];
+
+// One-line plain-English description per screen — drawn in the header strip so
+// every screen says what it IS (the tour teaches once; this stays forever).
+export const TAB_DESCRIPTIONS = {
+    play: 'Pick your hero, biome and difficulty — then START RUN.',
+    modes: 'Special ways to play: daily and weekly challenges with their own records.',
+    skills: 'Permanent upgrades bought with run coins — they apply to every future run.',
+    loadout: 'Gear won from cases, worn in four slots — each piece is a small permanent bonus.',
+    attune: 'Spend coins to strengthen discovered relics and each hero’s gifts.',
+    character: 'Choose who you play and dress them up — looks are cosmetic only.',
+    shop: 'Spend run coins on cases and coin games. No real money, ever.',
+    battlepass: 'The free reward track — every run you finish earns progress.',
+    stats: 'Your lifetime records, bests, and today’s trials.',
+    settings: 'Options, accessibility and save management.',
+};
 
 // Staged menu unlock: a brand-new player sees only PLAY + SETTINGS instead of
 // a 9-tab dump; the rest unlock at their natural first-use moments (computed
@@ -91,6 +121,9 @@ export function tabUnlocked(id, save) {
         // First coins banked — spendable balance counts too, so a payout that
         // bypasses the lifetime stat can never leave a coin-holder tab-less.
         case 'skills': return (s.totalCoinsEarned ?? 0) > 0 || (save?.totalCoins ?? 0) > 0;
+        // Modes hold the daily/weekly challenges — they mean nothing before the
+        // first finished run (same gate as stats/battlepass).
+        case 'modes': return (s.runs ?? 0) >= 1;
         case 'loadout': return (s.casesOpened ?? 0) > 0;                  // first gear case opened
         case 'attune': return (save?.discoveredRelics?.length ?? 0) > 0;  // first relic claimed
         case 'character':
@@ -467,7 +500,9 @@ export class MenuRenderer {
         const sa = this._sa();
         const x = sa.left + 56;
         const w = INTERNAL_WIDTH - sa.left - sa.right - 112;
-        const top = sa.top + 184;
+        // The sub-tab pill row (set by _drawTabBar, which always draws before
+        // tab content) pushes the content down when visible.
+        const top = sa.top + 184 + (this._subRowH || 0);
         const bottom = INTERNAL_HEIGHT - sa.bottom - 40;
         return { x, y: top, w, h: bottom - top };
     }
@@ -521,10 +556,30 @@ export class MenuRenderer {
         // Coin bank pill (right-aligned).
         this._coinBank(ctx, INTERNAL_WIDTH - sa.right - 56, sa.top + 54, save.totalCoins);
 
+        // Screen title + one-line plain-English description in the header strip
+        // (between the wordmark and the coin bank) — every screen says what it
+        // IS, in the same spot, so the menu explains itself past the tour.
+        {
+            const tabDef = MENU_TABS.find((m) => m.id === (state.menuTab || 'play')) || MENU_TABS[0];
+            const desc = TAB_DESCRIPTIONS[tabDef.id] || '';
+            const hx = tx + logoW + 56;
+            const hMax = (INTERNAL_WIDTH - sa.right - 300) - hx;
+            if (hMax > 220) {
+                ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+                ctx.fillStyle = tabDef.accent || '#ffce54';
+                this._fitFont(ctx, tabDef.label, hMax, 700, 26);
+                ctx.fillText(tabDef.label, hx, sa.top + 44);
+                ctx.fillStyle = 'rgba(235,240,248,0.62)';
+                ctx.font = `500 15px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, desc, hMax), hx, sa.top + 68);
+            }
+        }
+
         this._drawTabBar(ctx, state);
 
         const tab = state.menuTab || 'play';
         if (tab === 'play') this._drawPlay(ctx, state);
+        else if (tab === 'modes') this._drawModes(ctx, state);
         else if (tab === 'skills') this._drawSkills(ctx, state);
         else if (tab === 'attune') this._drawAttune(ctx, state);
         else if (tab === 'loadout') this._drawLoadout(ctx, state);
@@ -553,21 +608,22 @@ export class MenuRenderer {
         if (state.menuTour) this._drawTourOverlay(ctx, state);
 
         // Case-opening overlay sits above everything (and owns input while up).
-        if (state.caseAnim) this._drawCaseOverlay(ctx, state.caseAnim);
+        if (state.caseAnim) this._drawCaseOverlay(ctx, state.caseAnim, state);
     }
 
-    // Rect of one tab chip in the CURRENT staged layout (same math as
-    // _drawTabBar: filtered tab list, shared row geometry). Null if hidden.
+    // Rect of the GROUP chip containing a tab, in the current staged layout
+    // (same math as _drawTabBar). The tour spotlights the group — its arrow and
+    // ring land on the section that holds the step's screen. Null if hidden.
     _tabRectFor(save, tabId) {
-        const tabs = MENU_TABS.filter((t) => tabUnlocked(t.id, save));
-        const i = tabs.findIndex((t) => t.id === tabId);
+        const groups = this._visibleGroups(save);
+        const i = groups.findIndex((g) => g.kids.includes(tabId));
         if (i < 0) return null;
         const sa = this._sa();
         const x0 = sa.left + 56;
         const w = INTERNAL_WIDTH - sa.left - sa.right - 112;
         const gap = 10;
-        const tabW = (w - gap * (tabs.length - 1)) / tabs.length;
-        return { x: x0 + i * (tabW + gap), y: sa.top + 104, w: tabW, h: 62, accent: tabs[i].accent };
+        const tabW = (w - gap * (groups.length - 1)) / groups.length;
+        return { x: x0 + i * (tabW + gap), y: sa.top + 104, w: tabW, h: 62, accent: groups[i].accent };
     }
 
     // A downward-pointing "look here" chevron bouncing just outside a target
@@ -683,12 +739,21 @@ export class MenuRenderer {
         ctx.restore();
     }
 
+    // Group geometry shared by the bar draw and _tabRectFor (tour spotlight):
+    // groups whose every child tab is locked stay hidden, so a new player still
+    // starts with a near-empty bar (PLAY + SHOP + SETTINGS).
+    _visibleGroups(save) {
+        return MENU_GROUPS
+            .map((g) => ({ ...g, kids: g.tabs.filter((id) => tabUnlocked(id, save)) }))
+            .filter((g) => g.kids.length > 0);
+    }
+
     _drawTabBar(ctx, state) {
         const activeTab = state.menuTab;
         const save = state.saveData || {};
-        // Staged unlock: only earned tabs render (the bar re-lays-out wider
-        // chips while few are unlocked — a new player starts at just 2).
-        const tabs = MENU_TABS.filter((t) => tabUnlocked(t.id, save));
+        // App-like sections: the bar shows GROUPS; the active group's screens
+        // render as a sub-tab pill row beneath (only when it has more than one).
+        const tabs = this._visibleGroups(save);
         const seen = (save.onboarding && save.onboarding.tabsSeen) || [];
         // Dot-badge sources: unclaimed Battle-Pass levels + unfinished dailies
         // (the Today's-Trials strip lives on PLAY). Cheap per-frame reads.
@@ -724,7 +789,7 @@ export class MenuRenderer {
         for (let i = 0; i < tabs.length; i++) {
             const t = tabs[i];
             const x = x0 + i * (tabW + gap);
-            const active = t.id === activeTab;
+            const active = t.kids.includes(activeTab);
             const accent = t.accent || '#ffce54';
             if (active) activeX = x;
             // Fill: dark glass for the active tab, warm-neutral gradient otherwise.
@@ -769,13 +834,16 @@ export class MenuRenderer {
                 ctx.fillStyle = accent; ctx.globalAlpha = 0.6;
                 ctx.fillRect(x + 14, y + h - 7, tabW - 28, 3); ctx.globalAlpha = 1;
             }
-            this._hot(x, y, tabW, h, 'tab', t.id);
-            // Badges (top-right corner): a one-time "NEW" pill on a freshly
-            // unlocked tab (cleared on first open via save.onboarding.tabsSeen),
-            // else a small accent dot when the tab holds something actionable
-            // (unclaimed Battle-Pass rewards / unfinished Today's Trials).
-            const isNew = !active && !seen.includes(t.id) && t.id !== 'play' && t.id !== 'settings';
-            const hasDot = (t.id === 'battlepass' && bpClaimable) || (t.id === 'play' && dailiesLeft);
+            // Clicking a group opens its first unlocked screen (or stays on the
+            // current screen when the group is already active — a no-op re-tap).
+            this._hot(x, y, tabW, h, 'tab', active ? activeTab : t.kids[0]);
+            // Badges (top-right corner): a one-time "NEW" pill when ANY of the
+            // group's screens is freshly unlocked (cleared per-screen on first
+            // open via save.onboarding.tabsSeen), else a small accent dot when a
+            // screen holds something actionable (unclaimed Battle-Pass rewards /
+            // unfinished Today's Trials).
+            const isNew = !active && t.kids.some((k) => !seen.includes(k) && k !== 'play' && k !== 'settings');
+            const hasDot = (t.kids.includes('battlepass') && bpClaimable) || (t.kids.includes('play') && dailiesLeft);
             if (isNew) {
                 const bw = 42, bh = 20, bx = x + tabW - bw + 6, by = y - 8;
                 ctx.globalAlpha = 0.85 + Math.sin(time * 3 + i) * 0.15;
@@ -801,9 +869,48 @@ export class MenuRenderer {
             this._tabIndicX += (targetX - this._tabIndicX) * k;
             this._tabIndicW += (targetW - this._tabIndicW) * k;
         }
-        const acc = (tabs.find((tt) => tt.id === activeTab) || {}).accent || '#ffce54';
+        const activeGroup = tabs.find((tt) => tt.kids.includes(activeTab)) || tabs[0] || {};
+        const acc = activeGroup.accent || '#ffce54';
         ctx.fillStyle = acc;
         ctx.fillRect(this._tabIndicX, y + h - 4, this._tabIndicW, 3);
+
+        // ── Sub-tab pill row ────────────────────────────────────────────────
+        // Shown only when the active group has more than one unlocked screen.
+        // Content below shifts down by _subRowH (see _contentRect).
+        const kids = activeGroup.kids || [];
+        if (kids.length > 1) {
+            const py = y + h + 14;
+            const ph = 40;
+            // Measure pills (label + padding), then center the row.
+            ctx.font = `700 17px ${FONT}`;
+            const defs = kids.map((id) => {
+                const td = MENU_TABS.find((m) => m.id === id) || { id, label: id.toUpperCase(), accent: acc };
+                return { ...td, w: ctx.measureText(td.label).width + 44 };
+            });
+            const totalW = defs.reduce((s, d) => s + d.w, 0) + (defs.length - 1) * 10;
+            let px = INTERNAL_WIDTH / 2 - totalW / 2;
+            for (const d of defs) {
+                const act = d.id === activeTab;
+                roundRectPath(ctx, px, py, d.w, ph, ph / 2);
+                ctx.fillStyle = act ? 'rgba(24,18,15,0.95)' : 'rgba(14,10,9,0.6)'; ctx.fill();
+                ctx.strokeStyle = act ? (d.accent || acc) : 'rgba(255,255,255,0.12)';
+                ctx.lineWidth = act ? 2 : 1.5; ctx.stroke();
+                ctx.fillStyle = act ? (d.accent || acc) : 'rgba(235,240,248,0.75)';
+                ctx.font = `700 17px ${FONT}`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(d.label, px + d.w / 2, py + ph / 2 + 0.5);
+                // Unseen screen inside an open group → small accent dot.
+                if (!act && !seen.includes(d.id) && d.id !== 'play' && d.id !== 'settings') {
+                    ctx.beginPath(); ctx.arc(px + d.w - 8, py + 8, 5, 0, TAU);
+                    ctx.fillStyle = d.accent || acc; ctx.fill();
+                }
+                this._hot(px, py, d.w, ph, 'tab', d.id);
+                px += d.w + 10;
+            }
+            this._subRowH = ph + 22;
+        } else {
+            this._subRowH = 0;
+        }
     }
 
     // ── PLAY ───────────────────────────────────────────────────────────
@@ -1140,90 +1247,24 @@ export class MenuRenderer {
         }
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-        // START RUN (left) + DAILY ROAD + RITE TRIAL (right) share the CTA row. START
-        // stays the big animated call-to-action; DAILY launches the day's curated fixed
-        // run; RITE TRIAL (KINDLED #3) launches the day's hero-locked Kindle trial.
-        // Three mode CTAs share the row with START: DAILY ROAD · RITE TRIAL ·
-        // BOSS RUSH. Side buttons shrink a touch to fit the third; all stay in
-        // logical coords so they remain tappable on mobile (letterboxed 16:9).
+        // CTA row: the big START RUN plus one compact MODES shortcut — the mode
+        // launchers themselves live on the MODES screen (proper cards with room
+        // to explain what each mode is), decluttering PLAY.
         const dGap = 12;
-        const sideW = Math.min(196, innerW * 0.2);
-        const startW = innerW - sideW * 3 - dGap * 3;
+        const modesW = Math.min(280, innerW * 0.3);
+        const startW = innerW - modesW - dGap;
         this._drawStartButton(ctx, { x: innerX, y: startY, w: startW, h: startH }, t);
-        this._drawDailyButton(ctx, { x: innerX + startW + dGap, y: startY, w: sideW, h: startH }, state, t);
-        this._drawRiteTrialButton(ctx, { x: innerX + startW + dGap * 2 + sideW, y: startY, w: sideW, h: startH }, state, t);
-        this._drawBossRushButton(ctx, { x: innerX + startW + dGap * 3 + sideW * 2, y: startY, w: sideW, h: startH }, state, t);
+        this._drawModesShortcut(ctx, { x: innerX + startW + dGap, y: startY, w: modesW, h: startH }, state, t);
     }
 
-    // DAILY ROAD launch button — a distinct pink/gold CTA showing the day's fixed
-    // setup (biome + forced road) and today's best score (or yesterday's best to
-    // beat, or the first-run-of-day case payout when there's no record at all).
-    // Same-for-everyone each UTC day; forces Normal difficulty. Dispatches the
-    // 'startDaily' action.
-    _drawDailyButton(ctx, r, state, t) {
-        const setup = getDailySetup(currentDayNumber());
-        const mapName = (MAPS[setup.mapId]?.name) || setup.mapId;
-        const roadName = (getRoad(setup.roadId)?.name) || setup.roadId;
-        const best = state.dailyRoadBest ?? 0;
-        const prev = state.dailyRoadPrevBest ?? 0;
-        const glow = 0.5 + Math.sin(t * 3) * 0.25;
-        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
-        ctx.fillStyle = 'rgba(60,26,44,0.95)'; ctx.fill();
-        ctx.save();
-        ctx.globalAlpha = glow;
-        ctx.strokeStyle = '#ff9ecf'; ctx.lineWidth = 2.5;
-        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14); ctx.stroke();
-        ctx.restore();
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffd3ec'; ctx.font = `800 22px ${FONT}`;
-        ctx.fillText('DAILY ROAD', r.x + r.w / 2, r.y + r.h / 2 - 16);
-        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
-        ctx.fillText(`${mapName} · ${roadName}`, r.x + r.w / 2, r.y + r.h / 2 + 6);
-        ctx.fillStyle = 'rgba(255,206,84,0.9)'; ctx.font = `700 13px ${FONT}`;
-        const scoreLine = best > 0 ? `Best today: ${best}`
-            : prev > 0 ? `Yesterday: ${prev} — beat it!`
-            : 'First run pays a free case';
-        ctx.fillText(scoreLine, r.x + r.w / 2, r.y + r.h / 2 + 24);
-        this._hot(r.x, r.y, r.w, r.h, 'startDaily', null);
-    }
-
-    // RITE TRIAL launch button (KINDLED #3) — the daily HERO-LOCKED Kindle trial: an
-    // ember CTA showing today's locked hero + best-of-day. Same-for-everyone each UTC
-    // day (salt 0x4b494e44); the trial hero is a session-local override that never
-    // touches the saved pick. Dispatches 'startRiteTrial'.
-    _drawRiteTrialButton(ctx, r, state, t) {
-        const setup = getRiteTrialSetup(currentDayNumber());
-        const heroName = (getCharacter(setup.heroId)?.name) || setup.heroId;
-        const best = state.riteTrialBest ?? 0;
-        const prev = state.riteTrialPrevBest ?? 0;
-        const glow = 0.5 + Math.sin(t * 3 + 1) * 0.25;
-        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
-        ctx.fillStyle = 'rgba(58,30,16,0.95)'; ctx.fill();
-        ctx.save();
-        ctx.globalAlpha = glow;
-        ctx.strokeStyle = '#ff9a4a'; ctx.lineWidth = 2.5;
-        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14); ctx.stroke();
-        ctx.restore();
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffd8b0'; ctx.font = `800 22px ${FONT}`;
-        ctx.fillText('RITE TRIAL', r.x + r.w / 2, r.y + r.h / 2 - 16);
-        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
-        ctx.fillText(this._ellip(ctx, `Today: ${heroName}`, r.w - 20), r.x + r.w / 2, r.y + r.h / 2 + 6);
-        ctx.fillStyle = 'rgba(255,206,84,0.9)'; ctx.font = `700 13px ${FONT}`;
-        const scoreLine = best > 0 ? `Best today: ${best}`
-            : prev > 0 ? `Yesterday: ${prev} — beat it!`
-            : 'Hero locks each day';
-        ctx.fillText(scoreLine, r.x + r.w / 2, r.y + r.h / 2 + 24);
-        this._hot(r.x, r.y, r.w, r.h, 'startRiteTrial', null);
-    }
-
-    // BOSS RUSH launch button (BOSSFORGE) — a crimson CTA into the apex-boss
-    // gauntlet on the player's own hero + map. Shows the boss count + lifetime
-    // best (bosses felled). Dispatches 'startBossRush'. Always available (not
-    // date-locked); Weekly Ember will later add its own dated CTA beside it.
-    _drawBossRushButton(ctx, r, state, t) {
-        const total = getBossRushSequence(BOSS_RUSH_CONFIG).length;
-        const best = state.bossRushBest ?? 0;
+    // Compact PLAY-screen shortcut to the MODES screen: crimson glass, the mode
+    // names as a subtitle, and an accent dot while today's dailies are undone.
+    _drawModesShortcut(ctx, r, state, t) {
+        const save = state.saveData || {};
+        const day = currentDayNumber();
+        const dd = save.daily || { day: 0, completed: [] };
+        const doneN = dd.day === day && Array.isArray(dd.completed) ? dd.completed.length : 0;
+        const dailiesLeft = ((save.stats?.runs ?? 0) >= 1) && doneN < pickDailyChallenges(day).length;
         const glow = 0.5 + Math.sin(t * 3 + 2) * 0.25;
         roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
         ctx.fillStyle = 'rgba(58,18,18,0.95)'; ctx.fill();
@@ -1233,14 +1274,106 @@ export class MenuRenderer {
         roundRectPath(ctx, r.x, r.y, r.w, r.h, 14); ctx.stroke();
         ctx.restore();
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffcbb0'; ctx.font = `800 22px ${FONT}`;
-        ctx.fillText('BOSS RUSH', r.x + r.w / 2, r.y + r.h / 2 - 16);
+        ctx.fillStyle = '#ffcbb0';
+        this._fitFont(ctx, 'MODES', r.w - 24, 800, 26);
+        ctx.fillText('MODES', r.x + r.w / 2, r.y + r.h / 2 - 14);
         ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
-        ctx.fillText(`${total} apex bosses`, r.x + r.w / 2, r.y + r.h / 2 + 6);
-        ctx.fillStyle = 'rgba(255,206,84,0.9)'; ctx.font = `700 13px ${FONT}`;
-        const scoreLine = best > 0 ? `Best: ${best} felled` : 'Face the gauntlet';
-        ctx.fillText(scoreLine, r.x + r.w / 2, r.y + r.h / 2 + 24);
-        this._hot(r.x, r.y, r.w, r.h, 'startBossRush', null);
+        ctx.fillText(this._ellip(ctx, 'Daily · Trial · Boss Rush · Weekly', r.w - 20), r.x + r.w / 2, r.y + r.h / 2 + 12);
+        if (dailiesLeft) {
+            ctx.beginPath(); ctx.arc(r.x + r.w - 12, r.y + 12, 6, 0, TAU);
+            ctx.fillStyle = '#ff6a4a'; ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        this._hot(r.x, r.y, r.w, r.h, 'tab', 'modes');
+    }
+
+    // ── MODES ──────────────────────────────────────────────────────────
+    // The mode gallery: four launch cards with room to say what each mode IS —
+    // the daily curated run, the daily hero trial, the freeplay boss gauntlet,
+    // and the seeded weekly gauntlet. Each card shows today's/this week's setup
+    // and your record, and launches straight into the mode.
+    _drawModes(ctx, state) {
+        const c = this._contentRect();
+        const t = this._t || 0;
+        const day = currentDayNumber();
+        const daily = getDailySetup(day);
+        const rite = getRiteTrialSetup(day);
+        const week = weeklyEmberSeed(day);
+        const brTotal = getBossRushSequence(BOSS_RUSH_CONFIG).length;
+        const bestLine = (best, prev, unit) => best > 0 ? `Best: ${best.toLocaleString()}${unit}`
+            : prev > 0 ? `Last: ${prev.toLocaleString()}${unit} — beat it!`
+            : null;
+        const cards = [
+            {
+                title: 'DAILY ROAD', accent: '#ff9ecf', action: 'startDaily',
+                desc: ['One curated run per day — a fixed biome and a forced starting road,',
+                    'the same for every player. Your score resets each day.'],
+                setup: `Today: ${(MAPS[daily.mapId]?.name) || daily.mapId} · ${(getRoad(daily.roadId)?.name) || daily.roadId}`,
+                best: bestLine(state.dailyRoadBest ?? 0, state.dailyRoadPrevBest ?? 0, ' pts') ?? 'First run of the day pays a free case',
+            },
+            {
+                title: 'RITE TRIAL', accent: '#ff9a4a', action: 'startRiteTrial',
+                desc: ['Play today\u2019s locked hero with one Trial curse — a daily test of',
+                    'Kindle mastery. The hero changes every day.'],
+                setup: `Today\u2019s hero: ${(getCharacter(rite.heroId)?.name) || rite.heroId}`,
+                best: bestLine(state.riteTrialBest ?? 0, state.riteTrialPrevBest ?? 0, ' pts') ?? 'Hero locks each day',
+            },
+            {
+                title: 'BOSS RUSH', accent: '#ff6a4a', action: 'startBossRush',
+                desc: [`All ${brTotal} apex bosses back to back with a head-start build.`,
+                    'No waves, no timer pressure — pure boss duels. Always available.'],
+                setup: 'Your own hero & biome · head-start: 5 upgrade picks',
+                best: (state.bossRushBest ?? 0) > 0 ? `Best: ${state.bossRushBest} bosses felled` : 'Face the gauntlet',
+            },
+            {
+                title: 'WEEKLY EMBER', accent: '#ffce54', action: 'startWeeklyEmber',
+                desc: ['Boss Rush with this week\u2019s shuffled boss order — the same order',
+                    'for every player, all week. A new gauntlet every Monday.'],
+                setup: `Week ${week} · seeded boss order`,
+                best: bestLine(state.weeklyEmberBest ?? 0, state.weeklyEmberPrevBest ?? 0, ' pts') ?? 'Set this week\u2019s record',
+            },
+        ];
+        const gap = 20;
+        const cw = (c.w - gap) / 2;
+        const ch = Math.min(240, (c.h - gap) / 2);
+        for (let i = 0; i < cards.length; i++) {
+            const cd = cards[i];
+            const x = c.x + (i % 2) * (cw + gap);
+            const y = c.y + Math.floor(i / 2) * (ch + gap);
+            // Card glass + accent frame with a soft breathing glow.
+            roundRectPath(ctx, x, y, cw, ch, 16);
+            ctx.fillStyle = 'rgba(16,12,11,0.92)'; ctx.fill();
+            ctx.save();
+            ctx.globalAlpha = 0.45 + Math.sin(t * 2.4 + i) * 0.15;
+            ctx.strokeStyle = cd.accent; ctx.lineWidth = 2.5;
+            roundRectPath(ctx, x, y, cw, ch, 16); ctx.stroke();
+            ctx.restore();
+            // Accent side-bar so the cards read as a colour-coded gallery.
+            ctx.fillStyle = cd.accent; ctx.globalAlpha = 0.85;
+            ctx.fillRect(x, y + 14, 4, ch - 28); ctx.globalAlpha = 1;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = cd.accent;
+            this._fitFont(ctx, cd.title, cw - 220, 700, 30);
+            ctx.fillText(cd.title, x + 26, y + 44);
+            ctx.fillStyle = 'rgba(235,240,248,0.78)'; ctx.font = `500 15px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, cd.desc[0], cw - 52), x + 26, y + 74);
+            ctx.fillText(this._ellip(ctx, cd.desc[1], cw - 52), x + 26, y + 95);
+            ctx.fillStyle = cd.accent; ctx.font = `600 16px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, cd.setup, cw - 52), x + 26, y + ch - 78);
+            ctx.fillStyle = 'rgba(255,206,84,0.9)'; ctx.font = `700 15px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, cd.best, cw - 220), x + 26, y + ch - 52);
+            // LAUNCH button (bottom-right) — comfortably tappable on touch.
+            const bw = 170, bh = 54, bx = x + cw - bw - 22, by = y + ch - bh - 20;
+            roundRectPath(ctx, bx, by, bw, bh, 12);
+            const bg = ctx.createLinearGradient(bx, by, bx, by + bh);
+            bg.addColorStop(0, '#33a356'); bg.addColorStop(1, '#1d6b3a');
+            ctx.fillStyle = bg; ctx.fill();
+            ctx.strokeStyle = '#7be08a'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.font = `800 22px ${FONT}`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('LAUNCH', bx + bw / 2, by + bh / 2 + 1);
+            this._hot(bx, by, bw, bh, cd.action, null);
+        }
     }
 
     // Pulsing accent glow behind a SELECTED chip (biome / difficulty / trial).
@@ -2325,7 +2458,7 @@ export class MenuRenderer {
     }
 
     // ── CASE OPENING OVERLAY ─────────────────────────────────────────────
-    _drawCaseOverlay(ctx, anim) {
+    _drawCaseOverlay(ctx, anim, state) {
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
         const cx = W / 2, cy = H / 2;
         const t = anim.age;
@@ -2334,10 +2467,11 @@ export class MenuRenderer {
         const col = result && result.rarity ? rarityColor(result.rarity) : '#ffce54';
         const tier = result && result.rarity && RARITIES[result.rarity] ? RARITIES[result.rarity].tier : 1;
         const revealAge = Math.max(0, t - reveal);
+        const caseDef = CASES[anim.caseType];
         // Overshoot ease (lands on 1 but drifts past first) — the near-miss.
         const backOut = (x, s = 0.9) => 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2);
 
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillStyle = 'rgba(0,0,0,0.82)';
         ctx.fillRect(0, 0, W, H);
 
         // High-tier reveals physically SHAKE the overlay (decays over ~0.4s).
@@ -2350,45 +2484,86 @@ export class MenuRenderer {
         ctx.translate(shx, shy);
 
         if (t < reveal && anim.reel) {
-            // Spin reel: decelerates AND overshoots so the strip drifts past the
-            // winner and creeps back — the signature "almost got the next one".
-            const cellW = 168, cellH = 132, gap = 10, stride = cellW + gap;
+            // ── SPIN: a framed reel tray of real item cards ──
+            const cellW = 176, cellH = 172, gap = 12, stride = cellW + gap;
             const p = clamp01(t / reveal);
             const offset = backOut(p) * anim.landingIndex * stride;
             const bandY = cy - cellH / 2;
-            roundRectPath(ctx, 0, bandY - 8, W, cellH + 16, 0);
-            ctx.fillStyle = 'rgba(8,10,16,0.92)'; ctx.fill();
+            // Tray frame (case name up top, glass band, warm floor glow).
+            const trayX = 48, trayW = W - 96;
+            roundRectPath(ctx, trayX, bandY - 64, trayW, cellH + 112, 22);
+            ctx.fillStyle = 'rgba(12,9,8,0.94)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(255,150,70,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            this._ember(ctx, cx, bandY + cellH + 30, 320, '#ff7a1e', 0.10 + p * 0.08);
+            ctx.restore(); ctx.globalAlpha = 1;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffd8b0';
+            this._fitFont(ctx, (caseDef?.name || 'CASE').toUpperCase(), 500, 700, 26);
+            ctx.fillText((caseDef?.name || 'CASE').toUpperCase(), cx, bandY - 36);
+            // Cells (clipped to the tray).
             ctx.save();
-            ctx.beginPath(); ctx.rect(60, bandY - 8, W - 120, cellH + 16); ctx.clip();
+            ctx.beginPath(); ctx.rect(trayX + 10, bandY - 6, trayW - 20, cellH + 12); ctx.clip();
             for (let i = 0; i < anim.reel.length; i++) {
                 const cellX = cx - offset + i * stride - cellW / 2;
                 if (cellX > W + cellW || cellX < -cellW) continue;
                 const cell = anim.reel[i];
                 const cc = rarityColor(cell.rarity);
+                const ctier = RARITIES[cell.rarity] ? RARITIES[cell.rarity].tier : 1;
                 const near = 1 - Math.min(1, Math.abs(cellX + cellW / 2 - cx) / (stride * 0.6));
-                roundRectPath(ctx, cellX, bandY, cellW, cellH, 12);
-                ctx.fillStyle = `rgba(255,255,255,${0.04 + near * 0.08})`; ctx.fill();
-                ctx.strokeStyle = cc; ctx.lineWidth = 3 + near * 3; ctx.stroke();
-                ctx.fillStyle = cc;
-                ctx.beginPath(); ctx.arc(cellX + cellW / 2, bandY + cellH * 0.36, 26, 0, Math.PI * 2); ctx.fill();
-                this._kindGlyph(ctx, cellX + cellW / 2, bandY + cellH * 0.36, 15, cell.kind);
-                ctx.fillStyle = '#fff'; ctx.font = `700 18px ${FONT}`;
+                // Near-centre glow so the passing cards feel lit by the marker.
+                if (near > 0.25) {
+                    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+                    ctx.globalAlpha = (near - 0.25) * 0.5;
+                    ctx.drawImage(getGlowSprite(cc), cellX - 18, bandY - 18, cellW + 36, cellH + 36);
+                    ctx.restore(); ctx.globalAlpha = 1;
+                }
+                // Rarity-tinted glass card.
+                roundRectPath(ctx, cellX, bandY, cellW, cellH, 14);
+                const cg = ctx.createLinearGradient(0, bandY, 0, bandY + cellH);
+                cg.addColorStop(0, 'rgba(30,26,24,0.96)'); cg.addColorStop(1, 'rgba(16,13,12,0.96)');
+                ctx.fillStyle = cg; ctx.fill();
+                ctx.save(); ctx.globalAlpha = 0.14 + near * 0.10;
+                roundRectPath(ctx, cellX, bandY, cellW, cellH, 14);
+                ctx.fillStyle = cc; ctx.fill(); ctx.restore();
+                roundRectPath(ctx, cellX, bandY, cellW, cellH, 14);
+                ctx.strokeStyle = cc; ctx.lineWidth = 2.5 + near * 2.5; ctx.stroke();
+                // The item's face: gear emblem art / cosmetic colour swatch.
+                this._itemFace(ctx, cellX + cellW / 2, bandY + 62, 34, cell);
+                // Name (auto-fit) + rarity pips.
+                ctx.fillStyle = '#fff';
+                this._fitFont(ctx, cell.name, cellW - 22, 700, 18, FONT, 12);
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                const nm = cell.name.length > 14 ? cell.name.slice(0, 13) + '…' : cell.name;
-                ctx.fillText(nm, cellX + cellW / 2, bandY + cellH * 0.78);
+                ctx.fillText(cell.name, cellX + cellW / 2, bandY + cellH - 44);
+                this._tierPips(ctx, cellX + cellW / 2, bandY + cellH - 20, ctier, cc);
             }
             ctx.restore();
-            // Center marker (brightens as it slows).
+            // Edge fades so the strip melts into the tray instead of hard-cutting.
+            const fadeW = 130;
+            for (const side of [0, 1]) {
+                const fx = side === 0 ? trayX + 10 : trayX + trayW - 10 - fadeW;
+                const fg = ctx.createLinearGradient(fx, 0, fx + fadeW, 0);
+                fg.addColorStop(side === 0 ? 0 : 1, 'rgba(12,9,8,0.95)');
+                fg.addColorStop(side === 0 ? 1 : 0, 'rgba(12,9,8,0)');
+                ctx.fillStyle = fg; ctx.fillRect(fx, bandY - 6, fadeW, cellH + 12);
+            }
+            // Ember needle marker: glow + gradient line + arrows, brightening
+            // as the reel slows toward the win.
             const mk = 0.6 + 0.4 * p;
-            ctx.strokeStyle = '#ffd86b'; ctx.globalAlpha = mk; ctx.lineWidth = 4;
-            ctx.beginPath(); ctx.moveTo(cx, bandY - 14); ctx.lineTo(cx, bandY + cellH + 14); ctx.stroke();
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            this._ember(ctx, cx, cy, 90 + p * 40, '#ffb04a', 0.20 + p * 0.20);
+            ctx.restore(); ctx.globalAlpha = 1;
+            const ng = ctx.createLinearGradient(0, bandY - 18, 0, bandY + cellH + 18);
+            ng.addColorStop(0, 'rgba(255,216,107,0)'); ng.addColorStop(0.5, '#ffd86b'); ng.addColorStop(1, 'rgba(255,216,107,0)');
+            ctx.strokeStyle = ng; ctx.globalAlpha = mk; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(cx, bandY - 16); ctx.lineTo(cx, bandY + cellH + 16); ctx.stroke();
             ctx.fillStyle = '#ffd86b';
-            ctx.beginPath(); ctx.moveTo(cx - 14, bandY - 14); ctx.lineTo(cx + 14, bandY - 14); ctx.lineTo(cx, bandY + 2); ctx.closePath(); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(cx - 14, bandY + cellH + 14); ctx.lineTo(cx + 14, bandY + cellH + 14); ctx.lineTo(cx, bandY + cellH - 2); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(cx - 13, bandY - 18); ctx.lineTo(cx + 13, bandY - 18); ctx.lineTo(cx, bandY - 2); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(cx - 13, bandY + cellH + 18); ctx.lineTo(cx + 13, bandY + cellH + 18); ctx.lineTo(cx, bandY + cellH + 2); ctx.closePath(); ctx.fill();
             ctx.globalAlpha = 1;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `800 30px ${FONT}`;
-            ctx.fillText('OPENING…', cx, bandY - 48);
+            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `600 17px ${FONT}`;
+            ctx.fillText('Tap to skip', cx, bandY + cellH + 84);
         } else if (result) {
             // ── REVEAL: spectacle scaled by rarity tier ──
             const k = easeOutCubic(clamp01(revealAge / 0.4));
@@ -2439,47 +2614,132 @@ export class MenuRenderer {
             ctx.restore();
             // (6) The prize card — pops in with a bouncy overshoot.
             const ks = backOut(clamp01(revealAge / 0.45), 1.4);
-            const cardW = 470 * ks, cardH = 268 * ks;
+            const cardW = 500 * ks, cardH = 320 * ks;
             roundRectPath(ctx, cx - cardW / 2, cy - cardH / 2, cardW, cardH, 18);
-            ctx.fillStyle = 'rgba(20,24,34,0.98)'; ctx.fill();
+            ctx.fillStyle = 'rgba(18,15,14,0.98)'; ctx.fill();
             ctx.strokeStyle = col; ctx.lineWidth = 4 + tier; ctx.stroke();
             if (k > 0.55) {
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 const isItem = result.kind === 'gear' || result.kind === 'cosmetic';
-                // Tags above the card: PITY guarantee, then NEW / DUPLICATE.
-                let topY = cy - cardH / 2 - 26;
+                // Tags above the card: PITY guarantee.
                 if (result.pity) {
                     ctx.fillStyle = '#ffd86b'; ctx.font = `800 22px ${FONT}`;
-                    ctx.fillText('✦ BAD-LUCK GUARANTEE ✦', cx, topY); topY -= 30;
+                    ctx.fillText('✦ BAD-LUCK GUARANTEE ✦', cx, cy - cardH / 2 - 26);
                 }
-                // Kind logo.
-                ctx.fillStyle = col;
-                ctx.beginPath(); ctx.arc(cx, cy - 92, 24, 0, Math.PI * 2); ctx.fill();
-                this._kindGlyph(ctx, cx, cy - 92, 14, result.kind);
-                ctx.fillStyle = col; ctx.font = `800 30px ${FONT}`;
-                ctx.fillText(rarityName(result.rarity).toUpperCase(), cx, cy - 52);
-                ctx.fillStyle = '#fff'; ctx.font = `800 40px ${FONT}`;
-                ctx.fillText(result.kind === 'duplicate' ? result.name : (result.name || result.label), cx, cy + 2);
+                // The item's face in a rarity medallion.
+                ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5;
+                ctx.drawImage(getGlowSprite(col), cx - 66, cy - 188, 132, 132);
+                ctx.restore(); ctx.globalAlpha = 1;
+                ctx.beginPath(); ctx.arc(cx, cy - 122, 44, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(10,8,7,0.9)'; ctx.fill();
+                ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.stroke();
+                this._itemFace(ctx, cx, cy - 122, 30, result);
+                // Rarity word + tier pips.
+                ctx.fillStyle = col; ctx.font = `800 28px ${FONT}`;
+                ctx.fillText(rarityName(result.rarity).toUpperCase(), cx, cy - 58);
+                this._tierPips(ctx, cx, cy - 34, tier, col);
+                // Name.
+                ctx.fillStyle = '#fff';
+                this._fitFont(ctx, result.name || result.label || '', cardW - 60, 800, 38, FONT, 22);
+                ctx.fillText(result.kind === 'duplicate' ? result.name : (result.name || result.label), cx, cy + 4);
+                // What it IS: the item's own card text (wrapped, muted).
+                if (result.description) {
+                    ctx.fillStyle = 'rgba(235,240,248,0.7)'; ctx.font = `500 16px ${FONT}`;
+                    const lines = this._wrapText(ctx, result.description, cardW - 80, 2);
+                    lines.forEach((ln, i) => ctx.fillText(ln, cx, cy + 34 + i * 21));
+                }
+                const stateY = result.description ? cy + 86 : cy + 44;
                 if (isItem) {
-                    ctx.fillStyle = '#5fe87a'; ctx.font = `800 24px ${FONT}`;
-                    ctx.fillText('★ NEW — UNLOCKED! ★', cx, cy + 48);
+                    ctx.fillStyle = '#5fe87a'; ctx.font = `800 23px ${FONT}`;
+                    ctx.fillText('★ NEW — UNLOCKED! ★', cx, stateY);
                 } else if (result.kind === 'duplicate') {
-                    ctx.fillStyle = '#ffd86b'; ctx.font = `700 24px ${FONT}`;
-                    ctx.fillText(`DUPLICATE → +${result.amount} ◎`, cx, cy + 48);
+                    ctx.fillStyle = '#ffd86b'; ctx.font = `700 23px ${FONT}`;
+                    ctx.fillText(`DUPLICATE → +${result.amount} ◎`, cx, stateY);
                     if (result.dupeTotal) {
-                        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 16px ${FONT}`;
-                        ctx.fillText(`${result.dupeTotal} ◎ earned from duplicates`, cx, cy + 78);
+                        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 15px ${FONT}`;
+                        ctx.fillText(`${result.dupeTotal} ◎ earned from duplicates`, cx, stateY + 26);
                     }
                 } else {
-                    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `700 24px ${FONT}`;
-                    ctx.fillText(result.label, cx, cy + 48);
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `700 23px ${FONT}`;
+                    ctx.fillText(result.label, cx, stateY);
                 }
-                ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 20px ${FONT}`;
-                ctx.fillText('Tap / Space to continue', cx, cy + cardH / 2 + 38);
+                // OPEN ANOTHER — the instant re-roll loop. Drawn only when this
+                // case is known + affordable; taps route through caseInput(pos)
+                // (the overlay owns input), so the rect is stamped on the anim.
+                const coins = state?.saveData?.totalCoins ?? 0;
+                anim._againRect = null;
+                if (caseDef && coins >= caseDef.cost && revealAge > 0.5) {
+                    const bw = 300, bh = 56, bx = cx - bw / 2, by = cy + cardH / 2 + 24;
+                    roundRectPath(ctx, bx, by, bw, bh, 12);
+                    const bg2 = ctx.createLinearGradient(bx, by, bx, by + bh);
+                    bg2.addColorStop(0, '#33a356'); bg2.addColorStop(1, '#1d6b3a');
+                    ctx.fillStyle = bg2; ctx.fill();
+                    ctx.strokeStyle = '#7be08a'; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.fillStyle = '#fff'; ctx.font = `800 21px ${FONT}`;
+                    ctx.fillText(`OPEN ANOTHER — ◎ ${caseDef.cost}`, bx + bw / 2, by + bh / 2 + 1);
+                    anim._againRect = { x: bx, y: by, w: bw, h: bh };
+                    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 18px ${FONT}`;
+                    ctx.fillText('Tap anywhere else to close', cx, by + bh + 30);
+                } else {
+                    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 20px ${FONT}`;
+                    ctx.fillText('Tap / Space to continue', cx, cy + cardH / 2 + 38);
+                }
             }
         }
         ctx.restore();  // shake
         this._hot(0, 0, W, H, 'caseContinue', null);
+    }
+
+    // Greedy word-wrap capped to maxLines (last line ellipsized if it overflows).
+    _wrapText(ctx, text, maxW, maxLines = 2) {
+        const words = String(text).split(/\s+/);
+        const lines = [];
+        let cur = '';
+        for (const w of words) {
+            const tryLine = cur ? cur + ' ' + w : w;
+            if (ctx.measureText(tryLine).width <= maxW || !cur) cur = tryLine;
+            else {
+                lines.push(cur); cur = w;
+                if (lines.length === maxLines - 1) break;
+            }
+        }
+        const used = lines.join(' ');
+        const rest = String(text).slice(used.length).trim();
+        if (rest) lines.push(this._ellip(ctx, rest, maxW));
+        return lines.slice(0, maxLines);
+    }
+
+    // A row of `tier` rarity pips (filled) against the 6-tier ladder (hollow).
+    _tierPips(ctx, cx, cy, tier, color) {
+        const n = 6, r = 4, gap = 14;
+        const x0 = cx - ((n - 1) * gap) / 2;
+        for (let i = 0; i < n; i++) {
+            ctx.beginPath(); ctx.arc(x0 + i * gap, cy, r, 0, TAU);
+            if (i < tier) { ctx.fillStyle = color; ctx.fill(); }
+            else { ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5; ctx.stroke(); }
+        }
+    }
+
+    // The face of a reel/reveal item: gear draws its category EMBLEM art (the
+    // same art the loadout cards use), a cosmetic draws its colour swatch with a
+    // sparkle, anything else falls back to the kind glyph in a rarity disc.
+    _itemFace(ctx, cx, cy, s, item) {
+        const cc = rarityColor(item.rarity || 'common');
+        if (item.kind === 'gear' && item.category) {
+            const emblem = getGearEmblem(item.category);
+            if (emblem) { ctx.drawImage(emblem, cx - s, cy - s, s * 2, s * 2); return; }
+        }
+        if (item.kind === 'cosmetic') {
+            // Colour swatch (the cosmetic's actual colour when it has one).
+            ctx.beginPath(); ctx.arc(cx, cy, s * 0.78, 0, TAU);
+            ctx.fillStyle = item.color || cc; ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 2.5; ctx.stroke();
+            this._kindGlyph(ctx, cx, cy, s * 0.42, 'cosmetic');
+            return;
+        }
+        ctx.beginPath(); ctx.arc(cx, cy, s * 0.78, 0, TAU);
+        ctx.fillStyle = cc; ctx.fill();
+        this._kindGlyph(ctx, cx, cy, s * 0.5, item.kind);
     }
 
     // A small white logo marking what KIND of loot a reel cell / reveal is:
