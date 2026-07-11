@@ -694,6 +694,10 @@ export class MenuRenderer {
         const t = this._t;
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
         const ui = getMenuImages();
+        // Leaving HOME always plays the section slide-in — even back into the
+        // same section you were on (without this, _transTab still matches and
+        // the return trip pops in with no transition).
+        this._transTab = null;
 
         // Coin bank stays top-right (the lobby shows your currency).
         this._coinBank(ctx, W - sa.right - 56, sa.top + 54, save.totalCoins);
@@ -903,7 +907,11 @@ export class MenuRenderer {
         // registered at the untranslated rest positions; the offset lives for
         // under 200ms, so taps land where the content is about to settle.
         if (this._transTab !== tab) { this._transTab = tab; this._transT0 = this._t; }
-        const transK = Math.min(1, ((this._t - (this._transT0 ?? 0)) / 0.18) || 1);
+        // NaN-guard without swallowing the legitimate 0 on the switch frame (a
+        // `|| 1` here made frame 1 render at rest, then frame 2 snap dim — a
+        // visible flash on every switch).
+        const rawK = (this._t - (this._transT0 ?? 0)) / 0.18;
+        const transK = Number.isFinite(rawK) ? Math.min(1, Math.max(0, rawK)) : 1;
         const transE = 1 - Math.pow(1 - transK, 3);
         ctx.save();
         if (transE < 1) { ctx.globalAlpha = transE; ctx.translate((1 - transE) * 26, 0); }
@@ -2512,7 +2520,8 @@ export class MenuRenderer {
         let bx = c.x + c.w - totalW - 32;
         for (const bet of bets) {
             const aff = save.totalCoins >= bet && plays.remaining > 0;
-            const r = { x: bx, y: fy + 96, w: bw, h: 56 };
+            // Bottom-aligned INSIDE the 144px strip (96+56 overhung it by 8px).
+            const r = { x: bx, y: fy + 84, w: bw, h: 52 };
             this._button(ctx, r, `BET  ◎ ${bet}`,
                 { primary: aff, enabled: true, accent: aff ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openMines', arg: bet, fontSize: 24 });
             bx += bw + bgap;

@@ -5,11 +5,15 @@
 // in the case reel + reveal so cosmetics read as real loot (the gear analogue
 // is GearEmblems.js). Entries are null until loaded → procedural fallback.
 
+// NOTE: the cosmetics content model calls its headwear category 'hat'
+// (cosmetics.js COSMETIC_CATEGORIES) — the map is keyed to match so
+// getCosmeticEmblem(item.category) resolves; the file keeps its original
+// accessory.png name on disk.
 const FILES = {
-    fur: 'fur.png', cloak: 'cloak.png', accessory: 'accessory.png',
+    fur: 'fur.png', cloak: 'cloak.png', hat: 'accessory.png',
     aura: 'aura.png', trail: 'trail.png', sparkle: 'sparkle.png',
 };
-const _imgs = { fur: null, cloak: null, accessory: null, aura: null, trail: null, sparkle: null };
+const _imgs = { fur: null, cloak: null, hat: null, aura: null, trail: null, sparkle: null };
 let _started = false;
 
 export function getCosmeticEmblems() {
