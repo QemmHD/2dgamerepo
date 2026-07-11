@@ -14,7 +14,7 @@ import { SCREEN_SHAKE } from '../config/GameConfig.js';
 import { clamp } from './MathUtils.js';
 import { claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
 import { openCase } from '../systems/CaseSystem.js';
-import { COSMETICS, cosmeticCoinCost } from '../content/cosmetics.js';
+import { COSMETICS, COSMETIC_SETS, cosmeticCoinCost } from '../content/cosmetics.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { getMap } from '../content/maps.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
@@ -127,6 +127,48 @@ export const GameInputActionMethods = {
         this._setToast(`Unlocked ${item.name}`);
         return true;
     },
+    // BOUTIQUE — buy every unowned coin-priced piece in the try-on look with
+    // ONE spend (all-or-nothing so a partial look can't half-charge), then
+    // equip the whole tried-on look (owned pieces included). With nothing to
+    // buy it just equips — the free path for recombining owned pieces.
+    buyTryOn() {
+        const entries = Object.entries(this.tryOn || {});
+        if (!entries.length) return;
+        const buys = [];
+        let total = 0, ownedN = 0;
+        for (const [, id] of entries) {
+            const item = COSMETICS[id];
+            if (!item) continue;
+            if (this.saveSystem.isCosmeticUnlocked(id)) { ownedN++; continue; }
+            const price = cosmeticCoinCost(item);
+            if (!price) continue;              // case/achievement drop: preview-only
+            buys.push(item); total += price;
+        }
+        // Nothing equippable at all (a look of pure case/achievement drops,
+        // e.g. Gloambound on a fresh save): refuse honestly, KEEP the try-on.
+        if (!buys.length && !ownedN) {
+            this.audio.deny();
+            this._setToast('Preview only — these pieces drop from cases or achievements');
+            return;
+        }
+        if (total > 0 && !this.saveSystem.spendCoins(total)) {
+            this.audio.deny();
+            this._setToast(`Need ◎ ${(total - this.saveSystem.data.totalCoins).toLocaleString()} more`);
+            return;
+        }
+        for (const item of buys) this.saveSystem.unlockCosmetic(item.id);
+        let equippedN = 0;
+        for (const [cat, id] of entries) {
+            if (this.saveSystem.isCosmeticUnlocked(id)) { this.saveSystem.equipCosmetic(cat, id); equippedN++; }
+        }
+        // Honest toast: name what was bought AND what stayed locked (a set can
+        // mix coin pieces with case/achievement drops the spend can't cover).
+        const skipped = entries.length - equippedN;
+        const skipTxt = skipped > 0 ? ` (${skipped} case/achievement piece${skipped > 1 ? 's' : ''} skipped)` : '';
+        if (buys.length) { this.audio.cosmeticReward(); this._setToast(`Unlocked ${buys.length} piece${buys.length > 1 ? 's' : ''} — look equipped${skipTxt}`); }
+        else { this.audio.equip(); this._setToast(`Look equipped${skipTxt}`); }
+        this.tryOn = {};
+    },
     requestResetSave() {
         if (this.resetConfirming) {
             this.saveSystem.reset();
@@ -194,6 +236,33 @@ export const GameInputActionMethods = {
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
             case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); this.audio.equip(); break;
             case 'buyCosmetic': this._pressFeedback(`cos:${arg && arg.id}`); this._buyCosmetic(arg); break;
+            // BOUTIQUE fitting room: toggle a piece, stage a whole themed set,
+            // clear, or buy+equip the tried-on look.
+            case 'tryOnCosmetic': {
+                this._pressFeedback(`try:${arg && arg.id}`);
+                if (arg && arg.category) {
+                    if (this.tryOn[arg.category] === arg.id) delete this.tryOn[arg.category];
+                    else this.tryOn[arg.category] = arg.id;
+                }
+                break;
+            }
+            case 'tryOnSet': {
+                this._pressFeedback(`tryset:${arg}`);
+                const set = COSMETIC_SETS.find((s) => s.id === arg);
+                if (set) this.tryOn = { ...set.pieces };
+                break;
+            }
+            case 'tryOnClear': this._pressFeedback('tryclear'); this.tryOn = {}; break;
+            // From the CHARACTER grid: stage the tapped coin cosmetic in the
+            // fitting room and jump to the boutique, try-on ready.
+            case 'tryInBoutique': {
+                this._pressFeedback(`try:${arg && arg.id}`);
+                if (arg && arg.category) this.tryOn[arg.category] = arg.id;
+                this.menuTab = 'boutique';
+                this.saveSystem.markTabSeen('boutique');
+                break;
+            }
+            case 'buyTryOn': this._pressFeedback('trybuy'); this.buyTryOn(); break;
             case 'selectCharacter': this._pressFeedback(`char:${arg.id}`); this.saveSystem.setSelectedCharacter(arg.id); break;
             case 'selectMap': {
                 this._pressFeedback(`map:${arg.id}`);

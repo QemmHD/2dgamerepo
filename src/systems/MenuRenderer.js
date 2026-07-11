@@ -18,6 +18,7 @@ import {
 } from '../content/gear.js';
 import {
     COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement, cosmeticCoinCost,
+    COSMETIC_SETS,
 } from '../content/cosmetics.js';
 import { CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining, CASE_PITY, WAGER_BETS } from './CaseSystem.js';
 import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
@@ -67,6 +68,7 @@ export const MENU_TABS = [
     { id: 'loadout', label: 'LOADOUT', accent: '#ffce54' },
     { id: 'character', label: 'CHARACTER', accent: '#c08bff' },
     { id: 'shop', label: 'SHOP', accent: '#ff9a4a' },
+    { id: 'boutique', label: 'BOUTIQUE', accent: '#ff7edb' },
     { id: 'battlepass', label: 'BATTLE PASS', accent: '#ff5a8a' },
     { id: 'stats', label: 'STATS', accent: '#a8d5f7' },
     { id: 'settings', label: 'SETTINGS', accent: '#9fb0c4' },
@@ -81,7 +83,7 @@ export const MENU_GROUPS = [
     { id: 'gPlay', label: 'PLAY', accent: '#5fd36a', tabs: ['play', 'modes'] },
     { id: 'gHero', label: 'HERO', accent: '#c08bff', tabs: ['character', 'attune'] },
     { id: 'gArmory', label: 'ARMORY', accent: '#7fd0ff', tabs: ['skills', 'loadout'] },
-    { id: 'gShop', label: 'SHOP', accent: '#ff9a4a', tabs: ['shop'] },
+    { id: 'gShop', label: 'SHOP', accent: '#ff9a4a', tabs: ['shop', 'boutique'] },
     { id: 'gProgress', label: 'PROGRESS', accent: '#ff5a8a', tabs: ['battlepass', 'stats'] },
     { id: 'gSettings', label: 'SETTINGS', accent: '#9fb0c4', tabs: ['settings'] },
 ];
@@ -96,8 +98,9 @@ export const TAB_DESCRIPTIONS = {
     attune: 'Spend coins to strengthen discovered relics and each hero’s gifts.',
     character: 'Choose who you play and dress them up — looks are cosmetic only.',
     shop: 'Spend run coins on cases and coin games. No real money, ever.',
+    boutique: 'Try looks on before you buy — single pieces or whole themed sets.',
     battlepass: 'The free reward track — every run you finish earns progress.',
-    stats: 'Your lifetime records, bests, and today’s trials.',
+    stats: 'Your lifetime records, bests and achievements.',
     settings: 'Options, accessibility and save management.',
 };
 
@@ -118,8 +121,10 @@ export function tabUnlocked(id, save) {
         case 'settings':
         // The SHOP is part of the base menu from the first boot — new players
         // arrive with a 2,000-coin stake, so the case shop is immediately
-        // relevant (and the guided tour walks them through it).
-        case 'shop': return true;
+        // relevant (and the guided tour walks them through it). The BOUTIQUE
+        // rides with it: try-on costs nothing, and the stake can buy a look.
+        case 'shop':
+        case 'boutique': return true;
         // First coins banked — spendable balance counts too, so a payout that
         // bypasses the lifetime stat can never leave a coin-holder tab-less.
         case 'skills': return (s.totalCoinsEarned ?? 0) > 0 || (save?.totalCoins ?? 0) > 0;
@@ -956,6 +961,7 @@ export class MenuRenderer {
         else if (tab === 'loadout') this._drawLoadout(ctx, state);
         else if (tab === 'character') this._drawCharacter(ctx, state);
         else if (tab === 'shop') this._drawShop(ctx, state);
+        else if (tab === 'boutique') this._drawBoutique(ctx, state);
         else if (tab === 'battlepass') this._drawBattlePass(ctx, state);
         else if (tab === 'stats') this._drawStats(ctx, state);
         else if (tab === 'settings') this._drawSettings(ctx, state);
@@ -980,7 +986,7 @@ export class MenuRenderer {
         const tabs = this._visibleGroups(save);
         const seen = (save.onboarding && save.onboarding.tabsSeen) || [];
         // Dot-badge sources: unclaimed Battle-Pass levels + unfinished dailies
-        // (the Today's-Trials strip lives on PLAY). Cheap per-frame reads.
+        // (the Today's-Trials strip lives on MODES). Cheap per-frame reads.
         const day = currentDayNumber();
         const dd = save.daily || { day: 0, completed: [] };
         const doneN = dd.day === day && Array.isArray(dd.completed) ? dd.completed.length : 0;
@@ -1292,7 +1298,7 @@ export class MenuRenderer {
         const avail = startY - top - 12;
         const nGear = GEAR_CATEGORIES.length;
         const tRows = Math.ceil(RUN_MODIFIERS.length / 3); // Trials chip grid rows (3 cols)
-        const N = { gearRow: 52, gearGap: 9, sec: 18, lbl: 30, biome: 60, diff: 46, chip: 38, chipGap: 8, daily: 42 };
+        const N = { gearRow: 52, gearGap: 9, sec: 18, lbl: 30, biome: 60, diff: 46, chip: 38, chipGap: 8 };
         // The TRUE laid-out height for a given scale. Labels + chip rows have
         // their own lower floors (so text stays legible), which is exactly why
         // a naive avail/needed under-budgets — so we MEASURE with the real
@@ -1306,8 +1312,7 @@ export class MenuRenderer {
             + N.lbl * lblScale(s) + N.biome * s + N.sec * s
             + N.lbl * lblScale(s) + N.diff * s + N.sec * s   // Patron row (reuses diff height)
             + N.lbl * lblScale(s) + N.diff * s + N.sec * s
-            + N.lbl * lblScale(s) + (tRows * N.chip * chipScale(s) + (tRows - 1) * N.chipGap * s) + N.sec * s
-            + N.lbl * lblScale(s) + N.daily * chipScale(s);   // Today's Trials strip (daily loop)
+            + N.lbl * lblScale(s) + (tRows * N.chip * chipScale(s) + (tRows - 1) * N.chipGap * s) + N.sec * s;
         let s = 1;
         // Floor: low enough that even a degenerate ultra-short panel keeps every
         // section's row from overlapping the next (the label/chip legibility
@@ -1451,78 +1456,10 @@ export class MenuRenderer {
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         y += tRows * chipRow + (tRows - 1) * chipGap + sec;
 
-        // ── Today's Trials + day streak — the daily loop, surfaced right beside
-        // the DAILY ROAD CTA instead of buried on STATS. Three read-only chips
-        // (completion lives in save.daily, evaluated at run end) + a celebratory
-        // streak counter (never punitive — a lapse just restarts it at 1).
-        const dDay = currentDayNumber();
-        const dState = save.daily || { day: 0, completed: [] };
-        const dDone = dState.day === dDay && Array.isArray(dState.completed) ? dState.completed : [];
-        const dChs = pickDailyChallenges(dDay);
-        const dGotN = dChs.filter((cc) => dDone.includes(cc.id)).length;
-        ctx.fillStyle = '#ffd479'; ctx.font = `800 ${fs(19)}px ${HEAD}`;
-        ctx.fillText(`Today's Trials  ${dGotN}/${dChs.length}`, innerX, y + lbl * 0.72);
-        if ((state.dayStreak ?? 0) > 0) {
-            ctx.textAlign = 'right'; ctx.fillStyle = '#ff9a4a'; ctx.font = `800 ${fs(17)}px ${FONT}`;
-            ctx.fillText(`🔥 ${state.dayStreak}-day streak`, innerX + innerW, y + lbl * 0.72);
-            ctx.textAlign = 'left';
-        }
-        y += lbl;
-        const dRowH = N.daily * chipScale(s);
-        const dChipW = (innerW - tgap * (dChs.length - 1)) / Math.max(1, dChs.length);
-        for (let i = 0; i < dChs.length; i++) {
-            const cc = dChs[i];
-            const got = dDone.includes(cc.id);
-            const dcx = innerX + i * (dChipW + tgap);
-            roundRectPath(ctx, dcx, y, dChipW, dRowH, 8);
-            ctx.fillStyle = got ? 'rgba(95,211,106,0.14)' : 'rgba(255,212,121,0.06)'; ctx.fill();
-            ctx.strokeStyle = got ? '#5fd36a' : 'rgba(255,212,121,0.45)'; ctx.lineWidth = 2; ctx.stroke();
-            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = got ? '#5fd36a' : '#fff'; ctx.font = `800 ${fs(14)}px ${FONT}`;
-            ctx.fillText(this._ellip(ctx, `${got ? '✓ ' : ''}${cc.name}`, dChipW - 24), dcx + 12, y + dRowH * 0.45);
-            ctx.fillStyle = got ? 'rgba(95,211,106,0.8)' : '#ffce54'; ctx.font = `800 ${fs(12)}px ${FONT}`;
-            ctx.fillText(got ? 'CLAIMED' : `+${cc.coins} coins`, dcx + 12, y + dRowH * 0.85);
-        }
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-
-        // CTA row: the big START RUN plus one compact MODES shortcut — the mode
-        // launchers themselves live on the MODES screen (proper cards with room
-        // to explain what each mode is), decluttering PLAY.
-        const dGap = 12;
-        const modesW = Math.min(280, innerW * 0.3);
-        const startW = innerW - modesW - dGap;
-        this._drawStartButton(ctx, { x: innerX, y: startY, w: startW, h: startH }, t);
-        this._drawModesShortcut(ctx, { x: innerX + startW + dGap, y: startY, w: modesW, h: startH }, state, t);
-    }
-
-    // Compact PLAY-screen shortcut to the MODES screen: crimson glass, the mode
-    // names as a subtitle, and an accent dot while today's dailies are undone.
-    _drawModesShortcut(ctx, r, state, t) {
-        const save = state.saveData || {};
-        const day = currentDayNumber();
-        const dd = save.daily || { day: 0, completed: [] };
-        const doneN = dd.day === day && Array.isArray(dd.completed) ? dd.completed.length : 0;
-        const dailiesLeft = ((save.stats?.runs ?? 0) >= 1) && doneN < pickDailyChallenges(day).length;
-        const glow = 0.5 + Math.sin(t * 3 + 2) * 0.25;
-        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
-        ctx.fillStyle = 'rgba(58,18,18,0.95)'; ctx.fill();
-        ctx.save();
-        ctx.globalAlpha = glow;
-        ctx.strokeStyle = '#ff6a4a'; ctx.lineWidth = 2.5;
-        roundRectPath(ctx, r.x, r.y, r.w, r.h, 14); ctx.stroke();
-        ctx.restore();
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffcbb0';
-        this._fitFont(ctx, 'MODES', r.w - 24, 800, 26);
-        ctx.fillText('MODES', r.x + r.w / 2, r.y + r.h / 2 - 14);
-        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
-        ctx.fillText(this._ellip(ctx, 'Daily · Trial · Boss Rush · Weekly', r.w - 20), r.x + r.w / 2, r.y + r.h / 2 + 12);
-        if (dailiesLeft) {
-            ctx.beginPath(); ctx.arc(r.x + r.w - 12, r.y + 12, 6, 0, TAU);
-            ctx.fillStyle = '#ff6a4a'; ctx.fill();
-            ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
-        }
-        this._hot(r.x, r.y, r.w, r.h, 'tab', 'modes');
+        // CTA: the big START RUN, full width. PLAY is run setup ONLY — the
+        // mode launchers live on MODES and the daily trials moved there too
+        // (tab exclusivity: nothing here duplicates another screen).
+        this._drawStartButton(ctx, { x: innerX, y: startY, w: innerW, h: startH }, t);
     }
 
     // ── MODES ──────────────────────────────────────────────────────────
@@ -1534,6 +1471,40 @@ export class MenuRenderer {
         const c = this._contentRect();
         const t = this._t || 0;
         const day = currentDayNumber();
+        const save = state.saveData || {};
+
+        // ── Today's Trials strip — the daily-goal loop lives HERE, its one
+        // home (it used to render on both PLAY and STATS). Read-only chips;
+        // completion is evaluated at run end (save.daily).
+        const trialsH = 96;
+        {
+            const dState = save.daily || { day: 0, completed: [] };
+            const dDone = dState.day === day && Array.isArray(dState.completed) ? dState.completed : [];
+            const dChs = pickDailyChallenges(day);
+            const dGotN = dChs.filter((cc) => dDone.includes(cc.id)).length;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = '#ffd479'; ctx.font = `800 21px ${HEAD}`;
+            ctx.fillText(`Today's Trials  ${dGotN}/${dChs.length}`, c.x, c.y + 18);
+            if ((state.dayStreak ?? 0) > 0) {
+                ctx.textAlign = 'right'; ctx.fillStyle = '#ff9a4a'; ctx.font = `800 18px ${FONT}`;
+                ctx.fillText(`🔥 ${state.dayStreak}-day streak`, c.x + c.w, c.y + 18);
+                ctx.textAlign = 'left';
+            }
+            const dRowH = 54, dGap = 14, dTop = c.y + 30;
+            const dChipW = (c.w - dGap * (dChs.length - 1)) / Math.max(1, dChs.length);
+            for (let i = 0; i < dChs.length; i++) {
+                const cc = dChs[i];
+                const got = dDone.includes(cc.id);
+                const dcx = c.x + i * (dChipW + dGap);
+                roundRectPath(ctx, dcx, dTop, dChipW, dRowH, 8);
+                ctx.fillStyle = got ? 'rgba(95,211,106,0.14)' : 'rgba(255,212,121,0.06)'; ctx.fill();
+                ctx.strokeStyle = got ? '#5fd36a' : 'rgba(255,212,121,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+                ctx.fillStyle = got ? '#5fd36a' : '#fff'; ctx.font = `800 16px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, `${got ? '✓ ' : ''}${cc.name}`, dChipW - 24), dcx + 14, dTop + 22);
+                ctx.fillStyle = got ? 'rgba(95,211,106,0.8)' : '#ffce54'; ctx.font = `800 13px ${FONT}`;
+                ctx.fillText(got ? 'CLAIMED' : `+${cc.coins} coins`, dcx + 14, dTop + 43);
+            }
+        }
         const daily = getDailySetup(day);
         const rite = getRiteTrialSetup(day);
         const week = weeklyEmberSeed(day);
@@ -1572,12 +1543,13 @@ export class MenuRenderer {
             },
         ];
         const gap = 20;
+        const cardsTop = c.y + trialsH + 8;
         const cw = (c.w - gap) / 2;
-        const ch = Math.min(240, (c.h - gap) / 2);
+        const ch = Math.min(240, (c.h - trialsH - 8 - gap) / 2);
         for (let i = 0; i < cards.length; i++) {
             const cd = cards[i];
             const x = c.x + (i % 2) * (cw + gap);
-            const y = c.y + Math.floor(i / 2) * (ch + gap);
+            const y = cardsTop + Math.floor(i / 2) * (ch + gap);
             // Card glass + accent frame with a soft breathing glow.
             roundRectPath(ctx, x, y, cw, ch, 16);
             ctx.fillStyle = 'rgba(16,12,11,0.92)'; ctx.fill();
@@ -1665,38 +1637,9 @@ export class MenuRenderer {
         const s = (state.saveData && state.saveData.stats) || {};
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-        // ── Today's Trials — three rotating daily challenges (a "come back
-        // tomorrow" loop). The pool + day's picks are deterministic; completion
-        // lives in save.daily and resets when the UTC day rolls (we treat a
-        // stale save.daily.day as "none done today" for display).
-        const day = currentDayNumber();
-        const dd = (state.saveData && state.saveData.daily) || { day: 0, completed: [] };
-        const doneToday = dd.day === day && Array.isArray(dd.completed) ? dd.completed : [];
-        const todays = pickDailyChallenges(day);
-        ctx.fillStyle = '#ffd479'; ctx.font = `800 30px ${HEAD}`;
-        const doneN = todays.filter((cc) => doneToday.includes(cc.id)).length;
-        ctx.fillText(`Today's Trials  ${doneN}/${todays.length}`, c.x + 34, c.y + 44);
-        const dcGap = 14;
-        const dcW = (c.w - 68 - dcGap * (todays.length - 1)) / todays.length;
-        const dcH = 78;
-        const dcTop = c.y + 60;
-        for (let i = 0; i < todays.length; i++) {
-            const ch = todays[i];
-            const got = doneToday.includes(ch.id);
-            const x = c.x + 34 + i * (dcW + dcGap);
-            roundRectPath(ctx, x, dcTop, dcW, dcH, 10);
-            ctx.fillStyle = got ? 'rgba(95,211,106,0.14)' : 'rgba(255,212,121,0.06)'; ctx.fill();
-            ctx.strokeStyle = got ? '#5fd36a' : 'rgba(255,212,121,0.45)'; ctx.lineWidth = 2; ctx.stroke();
-            ctx.textAlign = 'left';
-            ctx.fillStyle = got ? '#5fd36a' : '#fff'; ctx.font = `800 18px ${FONT}`;
-            ctx.fillText(`${got ? '✓ ' : ''}${ch.name}`, x + 14, dcTop + 26);
-            ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.font = `500 13px ${FONT}`;
-            const desc = ch.desc.length > 34 ? ch.desc.slice(0, 33) + '…' : ch.desc;
-            ctx.fillText(desc, x + 14, dcTop + 48);
-            ctx.fillStyle = got ? 'rgba(95,211,106,0.8)' : '#ffce54'; ctx.font = `800 14px ${FONT}`;
-            ctx.fillText(got ? 'CLAIMED' : `+${ch.coins} coins`, x + 14, dcTop + 68);
-        }
-        const statsTop0 = dcTop + dcH + 22;
+        // (Today's Trials moved to MODES — its one home. STATS is records only,
+        // which also buys the achievements grid more vertical room.)
+        const statsTop0 = c.y + 14;
 
         ctx.fillStyle = '#a8d5f7'; ctx.font = `800 34px ${HEAD}`;
         ctx.textAlign = 'left';
@@ -1948,11 +1891,8 @@ export class MenuRenderer {
             ctx.fillText(ownedLv >= totalLv ? 'Every discipline mastered'
                 : Number.isFinite(cheapest) ? `Next costs ◎ ${cheapest}` : '', rx, c.y + 288);
         }
-        // Reset save lives at the rail's foot — off the buy grid, so a mis-tap
-        // near a card can never start the confirm flow.
-        const rr = { x: rx, y: c.y + c.h - 76, w: rw, h: 52 };
-        this._button(ctx, rr, state.resetConfirming ? 'TAP AGAIN TO CONFIRM' : 'RESET SAVE',
-            { accent: state.resetConfirming ? '#7a2230' : 'rgba(80,30,38,0.8)', action: 'resetSave', fontSize: 20 });
+        // (RESET SAVE moved to SETTINGS — save management is settings, not
+        // forge training. The rail stays purely about the coin/upgrade loop.)
 
         // ── Discipline grid (right of the rail) ──
         const gx = c.x + railW + 24;
@@ -2355,11 +2295,12 @@ export class MenuRenderer {
                     statusText = rarityName(item.rarity); statusCol = col;
                     action = kind === 'gear' ? 'equipGear' : 'equipCosmetic';
                 } else if (kind === 'cosmetic' && item.coinCost) {
-                    const price = cosmeticCoinCost(item);
-                    const afford = save.totalCoins >= price;
-                    statusText = `◎ ${price}`;
-                    statusCol = afford ? '#ffd86b' : 'rgba(255,216,107,0.4)';
-                    action = 'buyCosmetic';
+                    // Buying moved to the BOUTIQUE (tab exclusivity: CHARACTER
+                    // equips, the shop sells) — tapping stages the item in the
+                    // fitting room and jumps there, try-on ready.
+                    statusText = `◎ ${cosmeticCoinCost(item)} · in Boutique`;
+                    statusCol = 'rgba(255,216,107,0.75)';
+                    action = 'tryInBoutique';
                 } else if (kind === 'cosmetic' && item.achievement) {
                     const ach = ACHIEVEMENTS.find((a) => a.id === item.achievement);
                     statusText = `🏆 ${ach ? ach.name : 'Achievement'}`;
@@ -2368,7 +2309,7 @@ export class MenuRenderer {
                     statusText = kind === 'cosmetic' ? '🔒 Case drop' : '🔒 LOCKED';
                     statusCol = 'rgba(255,255,255,0.5)';
                 }
-                const buyable = action === 'buyCosmetic';
+                const buyable = action === 'tryInBoutique';   // boutique-linked coin item
                 const lit = unlocked || buyable;       // full-opacity (vs faded-locked)
                 const dim = lit ? 1 : 0.4;
                 roundRectPath(ctx, x + 12, iy, innerW, ih, 10);
@@ -2776,8 +2717,8 @@ export class MenuRenderer {
         }
 
         // ── Featured Prestige: a spotlight on grind-worthy cosmetics with a
-        // LIVE animated preview; tapping a card jumps to the customizer to chase
-        // it. Pure marketing for the prestige layer. ──
+        // LIVE animated preview; tapping a card jumps to the BOUTIQUE to try
+        // it on. Pure marketing for the prestige layer. ──
         const featY = c.y + gridH + featGap;
         this._panel(ctx, c.x, featY, c.w, featH, 'rgba(24,18,34,0.92)', '#c08bff');
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -2810,7 +2751,10 @@ export class MenuRenderer {
             else pathTxt = '🔒 Case drop';
             ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `600 14px ${FONT}`;
             ctx.fillText(this._ellip(ctx, pathTxt, tw), tx, bcy + 19);
-            this._hot(fx, fcTop, fcW, fcH, 'tab', 'character');
+            // Coin items live in the boutique's stock; case/achievement drops
+            // aren't sold there — those cards route to the customizer, which
+            // lists every cosmetic with its unlock path.
+            this._hot(fx, fcTop, fcW, fcH, 'tab', item.coinCost ? 'boutique' : 'character');
         }
 
         // ── Cinder Wager strip: a skill coin-gamble. Pick a stake, then STOP
@@ -2841,6 +2785,157 @@ export class MenuRenderer {
             this._button(ctx, r, `BET  ◎ ${bet}`,
                 { primary: aff, enabled: true, accent: aff ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openMines', arg: bet, fontSize: 24 });
             bx += bw + bgap;
+        }
+    }
+
+    // ── BOUTIQUE — the cosmetic fitting room ─────────────────────────────
+    // Try looks on BEFORE buying (the ask behind moving purchases out of the
+    // customizer): a live mannequin previews save-equipped cosmetics with the
+    // session try-on map (game.tryOn) layered over, the five themed SETS try
+    // on as one-tap combos, and the stock grid lists every coin-purchasable
+    // piece. One honest purchase affordance — BUY LOOK — buys every unowned
+    // coin piece currently tried on (and equips the whole look); pieces that
+    // can't be bought (case/achievement drops) preview fine but are labelled.
+    _drawBoutique(ctx, state) {
+        const c = this._contentRect();
+        const save = state.saveData;
+        const t = this._t || 0;
+        const tryOn = state.tryOn || {};
+        const trying = Object.keys(tryOn).length > 0;
+        const owned = (id) => save.cosmetics.unlocked.includes(id);
+
+        // ── Mannequin pane (left): live preview of equipped + try-on ──
+        const mw = Math.round(c.w * 0.34);
+        this._panel(ctx, c.x, c.y, mw, c.h, 'rgba(26,14,24,0.92)', 'rgba(255,126,219,0.3)', { corners: true });
+        const mcx = c.x + mw / 2;
+        const merged = { ...save.cosmetics.equipped, ...tryOn };
+        const ap = resolveAppearance(merged);
+        const ch = getCharacter(save.selectedCharacter);
+        const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
+        let charSprite = null;
+        try { charSprite = getHeroFrames(ch.id, ch).dirs.down.idle[0]; } catch (e) { charSprite = null; }
+        // Mannequin radius scales with the panel (fixed 105 collided with the
+        // caption once phone insets + the sub-tab row shrank c.h to ~557), and
+        // the caption anchors BELOW the sprite box, whichever is lower.
+        const avR = Math.max(64, Math.min(105, Math.round(c.h * 0.14)));
+        const avCy = c.y + c.h * 0.24;
+        const pedSc = Math.max(0.5, Math.min(0.9, c.h / 720));
+        this._pedestal(ctx, mcx, avCy + avR * 0.86, t, '#ff7edb', pedSc);
+        this._drawAvatar(ctx, mcx, avCy, avR, avatarAp, charSprite, null, t, !!ch.lpc, null, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        const capY = Math.max(c.y + c.h * 0.42, avCy + avR * 1.25 + 22);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#ff7edb'; ctx.font = `800 22px ${HEAD}`;
+        ctx.fillText('FITTING ROOM', mcx, capY);
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 15px ${FONT}`;
+        ctx.fillText(trying ? 'Previewing your try-on look' : 'Tap pieces or a set to try them on', mcx, capY + 24);
+
+        // Tried-on pieces, listed with their path (price / owned / drop-only).
+        let total = 0, equippableN = 0;
+        let ly = capY + 54;
+        ctx.textAlign = 'left';
+        for (const cat of COSMETIC_CATEGORIES) {
+            const id = tryOn[cat];
+            if (!id || !COSMETICS[id]) continue;
+            const item = COSMETICS[id];
+            const price = cosmeticCoinCost(item);
+            let path, pcol;
+            if (owned(id)) { path = '✓ owned'; pcol = '#5fd36a'; equippableN++; }
+            else if (price) { path = `◎ ${price}`; pcol = '#ffd86b'; total += price; equippableN++; }
+            else if (item.achievement) { path = '🏆 achievement'; pcol = 'rgba(168,213,247,0.9)'; }
+            else { path = '🔒 case drop'; pcol = 'rgba(255,255,255,0.5)'; }
+            ctx.fillStyle = rarityColor(item.rarity); ctx.font = `700 16px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, item.name, mw - 160), c.x + 24, ly);
+            ctx.textAlign = 'right'; ctx.fillStyle = pcol; ctx.font = `700 15px ${FONT}`;
+            ctx.fillText(path, c.x + mw - 24, ly);
+            ctx.textAlign = 'left';
+            ly += 26;
+        }
+        // BUY LOOK + CLEAR at the pane's foot. A look with NOTHING equippable
+        // (all case/achievement drops — e.g. the Gloambound set on a fresh
+        // save) is preview-only: the CTA disables instead of lying.
+        const afford = total > 0 && save.totalCoins >= total;
+        const canEquipOnly = trying && total === 0 && equippableN > 0;
+        const previewOnly = trying && equippableN === 0;
+        const bw2 = mw - 48, bh2 = 56;
+        const by2 = c.y + c.h - 76 - bh2;
+        this._button(ctx, { x: c.x + 24, y: by2, w: bw2, h: bh2 },
+            previewOnly ? 'PREVIEW ONLY' : total > 0 ? `BUY LOOK  ·  ◎ ${total.toLocaleString()}` : 'EQUIP LOOK',
+            { enabled: afford || canEquipOnly, primary: afford || canEquipOnly,
+              // Unaffordable stays tappable (deny toast, shop convention);
+              // preview-only looks get no action at all.
+              action: trying && !previewOnly ? 'buyTryOn' : null, fontSize: 24 });
+        if (previewOnly) {
+            ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 14px ${FONT}`;
+            ctx.fillText('These pieces drop from cases or achievements', mcx, by2 - 10);
+        }
+        if (total > 0 && !afford) {
+            ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 14px ${FONT}`;
+            ctx.fillText(`Bank ◎ ${(total - save.totalCoins).toLocaleString()} more to afford this look`, mcx, by2 - 10);
+        }
+        this._button(ctx, { x: c.x + 24, y: c.y + c.h - 66, w: bw2, h: 44 }, 'CLEAR TRY-ON',
+            { enabled: trying, action: trying ? 'tryOnClear' : null, fontSize: 18 });
+
+        // ── Right side: themed SETS row, then the coin-stock grid ──
+        const rx = c.x + mw + 20;
+        const rw = c.w - mw - 20;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = `800 17px ${HEAD}`;
+        ctx.fillText('THEMED SETS — tap to try the whole combo', rx, c.y + 16);
+        const setH = 58, setGap = 10;
+        const setW = (rw - setGap * (COSMETIC_SETS.length - 1)) / COSMETIC_SETS.length;
+        for (let i = 0; i < COSMETIC_SETS.length; i++) {
+            const s = COSMETIC_SETS[i];
+            const sx = rx + i * (setW + setGap), sy2 = c.y + 26;
+            const ownedN = COSMETIC_CATEGORIES.filter((cat) => owned(s.pieces[cat])).length;
+            const tryingSet = COSMETIC_CATEGORIES.every((cat) => tryOn[cat] === s.pieces[cat]);
+            roundRectPath(ctx, sx, sy2, setW, setH, 10);
+            ctx.fillStyle = tryingSet ? 'rgba(64,32,52,0.95)' : 'rgba(20,14,20,0.9)'; ctx.fill();
+            ctx.strokeStyle = tryingSet ? s.color : 'rgba(255,255,255,0.12)';
+            ctx.lineWidth = tryingSet ? 2.5 : 1.5; ctx.stroke();
+            if (tryingSet) this._selGlow(ctx, sx, sy2, setW, setH, 10, s.color, t);
+            ctx.fillStyle = s.color; ctx.font = `700 15px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, s.name, setW - 20), sx + 12, sy2 + 24);
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 13px ${FONT}`;
+            ctx.fillText(`${ownedN}/5 owned`, sx + 12, sy2 + 44);
+            this._hot(sx, sy2, setW, setH, 'tryOnSet', s.id);
+        }
+
+        // Stock grid: one column per category, coin-purchasable pieces only
+        // (cases/achievements advertise their own paths elsewhere).
+        const gTop = c.y + 26 + setH + 18;
+        const colGap = 14;
+        const colW = (rw - colGap * (COSMETIC_CATEGORIES.length - 1)) / COSMETIC_CATEGORIES.length;
+        const stock = {};
+        let maxRows = 0;
+        for (const cat of COSMETIC_CATEGORIES) {
+            stock[cat] = cosmeticsByCategory(cat).filter((it) => it.coinCost);
+            maxRows = Math.max(maxRows, stock[cat].length);
+        }
+        const availH = c.y + c.h - gTop - 26;
+        const cellH = Math.max(40, Math.min(64, Math.floor((availH - (maxRows - 1) * 8) / Math.max(1, maxRows))));
+        for (let ci = 0; ci < COSMETIC_CATEGORIES.length; ci++) {
+            const cat = COSMETIC_CATEGORIES[ci];
+            const cx2 = rx + ci * (colW + colGap);
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `700 14px ${FONT}`;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillText(COSMETIC_CATEGORY_LABELS[cat].toUpperCase(), cx2 + 2, gTop - 6);
+            let iy = gTop + 4;
+            for (const item of stock[cat]) {
+                const isTry = tryOn[cat] === item.id;
+                const own = owned(item.id);
+                roundRectPath(ctx, cx2, iy, colW, cellH, 8);
+                ctx.fillStyle = isTry ? 'rgba(64,32,52,0.95)' : 'rgba(18,14,18,0.88)'; ctx.fill();
+                ctx.strokeStyle = isTry ? '#ff7edb' : rarityColor(item.rarity);
+                ctx.globalAlpha = isTry ? 1 : 0.55; ctx.lineWidth = isTry ? 2.5 : 1.5; ctx.stroke();
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = rarityColor(item.rarity); ctx.font = `700 14px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, item.name, colW - 16), cx2 + 10, iy + 20);
+                ctx.fillStyle = own ? '#5fd36a' : (save.totalCoins >= cosmeticCoinCost(item) ? '#ffd86b' : 'rgba(255,216,107,0.45)');
+                ctx.font = `700 13px ${FONT}`;
+                ctx.fillText(own ? '✓ OWNED' : `◎ ${cosmeticCoinCost(item)}`, cx2 + 10, iy + cellH - 10);
+                this._hot(cx2, iy, colW, cellH, 'tryOnCosmetic', { category: cat, id: item.id });
+                iy += cellH + 8;
+            }
         }
     }
 
@@ -2994,6 +3089,17 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 17px ${FONT}`;
         ctx.textBaseline = 'alphabetic';
         this._wrapText(ctx, 'Guided tour of the menu + hint pills on your next run.',
+            rightX + 364 + (colW - 364) / 2, ry + 22, colW - 364, 22, 3);
+
+        // ── SAVE — the full reset lives HERE (save management is settings;
+        // it used to sit on the SKILLS rail, a tab it had nothing to do with).
+        ry = this._settingsHeader(ctx, rightX, colW, ry + 92, 'SAVE');
+        this._button(ctx, { x: rightX, y: ry, w: 340, h: 52 },
+            state.resetConfirming ? 'TAP AGAIN TO CONFIRM' : 'RESET SAVE',
+            { accent: state.resetConfirming ? '#7a2230' : 'rgba(80,30,38,0.8)', action: 'resetSave', fontSize: 20 });
+        ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 17px ${FONT}`;
+        ctx.textBaseline = 'alphabetic';
+        this._wrapText(ctx, 'Erase everything and start over. Asks twice.',
             rightX + 364 + (colW - 364) / 2, ry + 22, colW - 364, 22, 3);
 
         // ── Cheats (testing) — full-width strip at the panel's foot ────────

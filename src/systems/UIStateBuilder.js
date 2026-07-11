@@ -49,6 +49,8 @@ export function buildUIState(game) {
         base.selectedPatron = game.selectedPatron;
         // ATTUNE altar: which relic is staged on the detail pane.
         base.attuneSel = game.attuneSel;
+        // BOUTIQUE fitting room: the session try-on map (category → id).
+        base.tryOn = game.tryOn;
         // Daily Road: today's best (for the menu's "best today" readout). Gated
         // on the record's day so a new UTC day shows 0 until a run is played
         // (the record self-resets on the first daily of the new day).

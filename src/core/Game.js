@@ -141,6 +141,10 @@ export class Game {
         // ATTUNE altar selection (relic id; null → first attunable). Session-
         // local like selectedPatron — set by the 'attuneSelect' menu action.
         this.attuneSel = null;
+        // BOUTIQUE try-on map (category → cosmetic id), layered over the
+        // equipped look for the fitting-room preview. Session-local; never
+        // persisted — buying (buyTryOn) or clearing empties it.
+        this.tryOn = {};
         // Guided menu tour: { idx } while walking TOUR_STEPS, else null. While
         // active, _menuAction only honors tourNext/tourSkip — the tour is fully
         // guided. Armed on the first menu visit until save.onboarding.tourDone.
