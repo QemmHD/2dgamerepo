@@ -658,6 +658,19 @@ export class UISystem {
             const theme = elementThemes[p.element] ?? passiveTheme;
             chip(p.name, lv, theme);
         }
+        // Relics claimed at Wick Shrines this run — rarity-tinted so the
+        // build's one-run powers are VISIBLE, not just tracked. Capped so a
+        // shrine-lucky run can't flood the column.
+        const relics = state.runRelics ?? [];
+        const shown = relics.slice(0, 5);
+        for (const r of shown) {
+            const rc = RARITY_COLORS[r.rarity] ?? RARITY_COLORS.common;
+            chip(r.name, '✦', { fill: 'rgba(24,18,30,0.72)', border: rc.border, lv: rc.accent });
+        }
+        if (relics.length > shown.length) {
+            chip(`+${relics.length - shown.length} more relics`, '',
+                { fill: 'rgba(24,18,30,0.72)', border: 'rgba(255,255,255,0.25)', lv: '#fff' });
+        }
         ctx.restore();
     }
 

@@ -12,6 +12,7 @@ import { currentDayNumber } from '../content/dailyChallenges.js';
 import { keystoneBreadcrumbs } from '../content/keystones.js';
 import { comboDraftHints } from '../content/elements.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
+import { getRelic } from '../content/relics.js';
 
 export function buildUIState(game) {
     // Fields every screen needs. Press/feedback animation state is
@@ -165,6 +166,13 @@ export function buildUIState(game) {
         ? { x: _ft.x, y: _ft.y, hp: _ft.hp, maxHp: _ft.maxHp, radius: _ft.radius ?? 20, elite: !!_ft.elite, boss: !!_ft.boss }
         : null;
     base.ownedPassives = game.passiveSystem.snapshotForUI();
+    // Relics claimed at Wick Shrines this run — the HUD's loadout column
+    // shows them as rarity-tinted chips (they were tracked but invisible).
+    base.runRelics = (game._runRelics && game._runRelics.length)
+        ? game._runRelics
+            .map((id) => { const r = getRelic(id); return r ? { name: r.name, rarity: r.rarity } : null; })
+            .filter(Boolean)
+        : [];
     base.runCoins = game.player.coins ?? 0;
     base.chestLuck = game.player.chestLuck ?? 0;
     base.waveState = game.waveState;
