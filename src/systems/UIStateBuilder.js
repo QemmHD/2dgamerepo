@@ -65,6 +65,13 @@ export function buildUIState(game) {
             : 0;
         // BOSSFORGE — Boss Rush all-time best (bosses felled) for the PLAY-screen CTA.
         base.bossRushBest = game.saveSystem.data.bossRush?.bestBosses ?? 0;
+        // Weekly Ember best-of-week (week-gated like riteTrialBest is day-gated).
+        const _we = game.saveSystem.data.weeklyEmber;
+        const _thisWeek = Math.floor(_today / 7);
+        base.weeklyEmberBest = (_we && _we.week === _thisWeek) ? (_we.best ?? 0) : 0;
+        base.weeklyEmberPrevBest = _we
+            ? (_we.week === _thisWeek ? (_we.prevBest ?? 0) : (_we.week === _thisWeek - 1 ? (_we.best ?? 0) : 0))
+            : 0;
         // Day streak for the PLAY tab — alive if the last played day is
         // today or yesterday (a yesterday-streak still extends by playing).
         const _st = game.saveSystem.data.streak;

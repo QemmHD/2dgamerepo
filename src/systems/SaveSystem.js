@@ -142,9 +142,13 @@ function defaultData() {
         riteTrial: { day: 0, best: 0, prevBest: 0 },
         // BOSSFORGE — Boss Rush all-time best record ({ bestBosses, bestTime (of a
         // FULL clear, seconds), bestScore }). NOT date-scoped — Boss Rush is
-        // always-available freeplay; Weekly Ember will add its own dated record.
-        // Additive field: absent on old saves, defaulted by the normalizer → no wipe.
+        // always-available freeplay. Additive field: absent on old saves,
+        // defaulted by the normalizer → no wipe.
         bossRush: { bestBosses: 0, bestTime: 0, bestScore: 0 },
+        // Weekly Ember best-of-week ({ week, best, prevBest }) — the UTC-week
+        // analogue of riteTrial's best-of-day (auto-resets when the week rolls;
+        // prevBest keeps LAST week's best across the roll). Additive, no wipe.
+        weeklyEmber: { week: 0, best: 0, prevBest: 0 },
         version: 8,
     };
 }
@@ -427,7 +431,16 @@ export class SaveSystem {
             bestScore: Number.isFinite(brd.bestScore) && brd.bestScore > 0 ? Math.floor(brd.bestScore) : 0,
         };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, version: 8 };
+        // Weekly Ember best-of-week (additive; mirrors riteTrial's day-gated shape
+        // with the UTC week number as the key).
+        const wed = data.weeklyEmber && typeof data.weeklyEmber === 'object' ? data.weeklyEmber : {};
+        const weeklyEmber = {
+            week: Number.isInteger(wed.week) && wed.week > 0 ? wed.week : 0,
+            best: Number.isFinite(wed.best) && wed.best > 0 ? Math.floor(wed.best) : 0,
+            prevBest: Number.isFinite(wed.prevBest) && wed.prevBest > 0 ? Math.floor(wed.prevBest) : 0,
+        };
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, weeklyEmber, version: 8 };
     }
 
     save() {
@@ -581,6 +594,25 @@ export class SaveSystem {
         }
         this.save();
         return beat;
+    }
+
+    // ── Weekly Ember best-of-week (mirrors recordRiteTrial, keyed by UTC week) ──
+    // On a new week, reset best (carrying last week's into prevBest only when the
+    // stored record is EXACTLY week-1, so a stale record can't masquerade as last
+    // week). Also lifts the lifetime stats.weeklyEmberBest. Returns { best, firstThisWeek }.
+    recordWeeklyEmber(week, score) {
+        if (!Number.isInteger(week) || week <= 0) return { best: false, firstThisWeek: false };
+        const old = this.data.weeklyEmber;
+        const firstThisWeek = !old || typeof old !== 'object' || old.week !== week;
+        if (firstThisWeek) {
+            this.data.weeklyEmber = { week, best: 0, prevBest: (old && old.week === week - 1) ? (old.best ?? 0) : 0 };
+        }
+        const v = Math.max(0, Math.floor(score || 0));
+        let best = false;
+        if (v > this.data.weeklyEmber.best) { this.data.weeklyEmber.best = v; best = true; }
+        if (this.data.stats && v > (this.data.stats.weeklyEmberBest ?? 0)) this.data.stats.weeklyEmberBest = v;
+        this.save();
+        return { best, firstThisWeek };
     }
 
     getUpgradeLevel(id) {

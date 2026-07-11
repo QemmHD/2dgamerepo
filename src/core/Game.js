@@ -51,7 +51,7 @@ import { rollAltarChoices, rollRoadChoices } from '../systems/WickRoadsSystem.js
 import { applyAttunements } from '../content/relics.js';
 import { getRoad } from '../content/roads.js';
 import { getDailySetup } from '../content/dailyRoad.js';
-import { BOSS_RUSH_CONFIG, getBossRushSequence, bossRushScore } from '../content/bossRush.js';
+import { BOSS_RUSH_CONFIG, getBossRushSequence, bossRushScore, getWeeklyEmberConfig, weeklyEmberSeed } from '../content/bossRush.js';
 import { BossRushController } from '../systems/BossRushController.js';
 import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js';
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
@@ -167,6 +167,10 @@ export class Game {
         // mutually exclusive with dailyMode/riteTrialMode; the live controller
         // (this.bossRush) is built in _startRun and reset in _initRunState.
         this.bossRushMode = false;
+        // Weekly Ember: the seeded weekly gauntlet — same controller/pipeline as
+        // Boss Rush, but the boss order is a deterministic per-UTC-week shuffle
+        // (same for everyone all week). Mutually exclusive with every other mode.
+        this.weeklyEmberMode = false;
         // Pre-run Patron choice (id or null) — biases the level-up draft toward
         // that Patron's weapons/passives. Session-local (not persisted), chosen
         // on the Play tab; folded into committedPatrons at run start.
@@ -264,7 +268,7 @@ export class Game {
                     // While the guided tour is up, Space/Enter advances it
                     // (matching the NEXT button) instead of launching a run.
                     if (this.menuTour) { this._menuAction('tourNext', null); return; }
-                    this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false;   // keyboard start is always a NORMAL run
+                    this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false;   // keyboard start is always a NORMAL run
                     this._startRun();
                 }
                 return;
@@ -704,14 +708,17 @@ export class Game {
             this._riteTrialHeroOverride = null;
             this._riteTrialMapOverride = null;
         }
-        // Boss Rush resolves its boss sequence from the mode config (fixed order
-        // today; a seed makes it a deterministic shuffle for Weekly Ember). It
-        // uses the player's OWN hero + map (no override), so — unlike daily/rite —
-        // it needs nothing resolved before _initRunState; the controller is built
-        // right after, once the run arrays exist.
-        this._bossRushConfig = this.bossRushMode ? BOSS_RUSH_CONFIG : null;
+        // The gauntlet modes resolve their boss sequence from a mode config —
+        // Boss Rush is the fixed apex order; Weekly Ember is the same roster in a
+        // deterministic per-UTC-week shuffle. Both use the player's OWN hero +
+        // map (no override), so — unlike daily/rite — nothing needs resolving
+        // before _initRunState; the controller is built right after, once the
+        // run arrays exist.
+        this._bossRushConfig = this.weeklyEmberMode ? getWeeklyEmberConfig(currentDayNumber())
+            : this.bossRushMode ? BOSS_RUSH_CONFIG
+            : null;
         this._initRunState();
-        if (this.bossRushMode) {
+        if (this._bossRushConfig) {
             this.bossRush = new BossRushController(getBossRushSequence(this._bossRushConfig), this._bossRushConfig);
         }
         // Character base stats apply FIRST so permanent upgrades / gear /
@@ -857,17 +864,18 @@ export class Game {
         // non-blocking hint sequence — move → auto-attack → shards → first
         // level-up pick — ticked by _tickOnboarding, drawn as a HUD pill by
         // UISystem. Never a modal wall; gameplay is untouched.
-        this.onboarding = (!SKIP_ONBOARDING && !this.bossRushMode
+        this.onboarding = (!SKIP_ONBOARDING && !this._bossRushConfig
             && ((this.saveSystem.data.stats?.runs ?? 0) === 0 || this._forceRunHints))
             ? { step: 0, timer: 0, moved: 0, armed: true }
             : null;
         this._forceRunHints = false;   // Replay-Tutorial re-teach is one run only
-        // BOSSFORGE — Boss Rush head-start: grant the configured starting level-ups
-        // so the player drafts a real build BEFORE the first apex. The level-up
-        // overlay freezes the world (and the controller's prep timer with it), so
-        // the first boss can't land until the picks are made. Applied last, after
-        // the player is fully built, so level/xpToNext stay consistent.
-        if (this.bossRushMode && this._bossRushConfig) {
+        // BOSSFORGE — gauntlet head-start (Boss Rush + Weekly Ember): grant the
+        // configured starting level-ups so the player drafts a real build BEFORE
+        // the first apex. The level-up overlay freezes the world (and the
+        // controller's prep timer with it), so the first boss can't land until
+        // the picks are made. Applied last, after the player is fully built, so
+        // level/xpToNext stay consistent.
+        if (this._bossRushConfig) {
             const n = this._bossRushConfig.startingLevelUps || 0;
             if (n > 0) this.pendingLevelUps += this.player.grantLevels(n);
         }
@@ -881,10 +889,10 @@ export class Game {
         // bar slide, etc.) so nothing carries over from the previous run.
         if (this.ui.beginRun) this.ui.beginRun(this.player);
         this._updateJoystickEnabled();
-        // BOSSFORGE — open the first Boss Rush head-start draft now (the world is
+        // BOSSFORGE — open the first gauntlet head-start draft now (the world is
         // frozen while it's up). selectUpgrade chains the remaining picks, so the
         // player drafts their whole starting build before the opening prep runs.
-        if (this.bossRushMode && this.pendingLevelUps > 0 && !this.upgradeChoices) this._presentLevelUp();
+        if (this._bossRushConfig && this.pendingLevelUps > 0 && !this.upgradeChoices) this._presentLevelUp();
     }
 
     restart() {
@@ -892,7 +900,7 @@ export class Game {
         // the death path. No-op once already banked this run.
         this._bankRunCoins();
         // A RESTART is a fresh NORMAL run — never silently re-launch a Daily/Trial.
-        this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false;
+        this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false;
         this._startRun();
     }
 
@@ -906,7 +914,7 @@ export class Game {
         // Back at the menu, a Daily/Trial is over — clear the flags so the next
         // launch (button OR keyboard) is a normal run unless DAILY ROAD / RITE TRIAL
         // is chosen again.
-        this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false;
+        this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false;
         // The guided menu tour fires on the first menu visit AFTER a recorded
         // run (right when the guided first run ends) and re-fires until
         // finished or skipped. The runs>=1 gate keeps a pause-quit of the very
@@ -1176,10 +1184,11 @@ export class Game {
     // Continue the same run (keep the gauntlet going past 3 bosses). From here
     // on the run is scored as a Gauntlet (endless) — banked on the next death.
     victoryContinue() {
-        // BOSSFORGE — a cleared Boss Rush has no endless continue (the boss
-        // sequence is exhausted and the trash spawner is off, so "continue" would
-        // drop the player into an empty world). Bank + return to the menu instead.
-        if (this.bossRushMode) { this.victoryToMenu(false); return; }
+        // BOSSFORGE — a cleared gauntlet (Boss Rush / Weekly Ember) has no endless
+        // continue (the boss sequence is exhausted and the trash spawner is off,
+        // so "continue" would drop the player into an empty world). Bank + return
+        // to the menu instead.
+        if (this.bossRush) { this.victoryToMenu(false); return; }
         this.victory = null;
         this.shareToast = null;   // don't carry a victory share toast into the gauntlet
         this._gauntletActive = true;
@@ -1354,25 +1363,36 @@ export class Game {
         }
     }
 
-    // BOSSFORGE — bank a Boss Rush run into the all-time best record + stamp the
+    // BOSSFORGE — bank a gauntlet run (Boss Rush OR Weekly Ember) + stamp the
     // recap fields onto runSummary (bosses felled, whether the gauntlet was
-    // cleared, final boss reached, hero, time, score). Once per run, latched by
-    // _bossRushRecorded so a victory-leave then death can't double-count.
+    // cleared, final boss reached, hero, time, score). Boss Rush banks into the
+    // ALL-TIME freeplay record; Weekly Ember into the week-scoped best (a weekly
+    // run never inflates the freeplay record — different, seeded boss order).
+    // Once per run, latched by _bossRushRecorded so a victory-leave then death
+    // can't double-count.
     _bankBossRush() {
-        if (!this.bossRushMode || !this.bossRush || this._bossRushRecorded) return;
+        if (!this.bossRush || this._bossRushRecorded) return;
+        if (!this.bossRushMode && !this.weeklyEmberMode) return;
         this._bossRushRecorded = true;
         const st = this.bossRush.getStatus();
         const cleared = st.cleared;
         const timeSurvived = Math.floor(this.time);
         const score = bossRushScore({ bossesDefeated: st.bossesDefeated, timeSurvived, cleared });
-        const beat = this.saveSystem.recordBossRush({ bossesDefeated: st.bossesDefeated, timeSurvived, score, cleared });
-        this.bossRushBestNew = !!(beat.bosses || beat.score || beat.time);
+        if (this.weeklyEmberMode) {
+            const rec = this.saveSystem.recordWeeklyEmber(weeklyEmberSeed(currentDayNumber()), score);
+            this.weeklyEmberBestNew = rec.best;
+            this.bossRushBestNew = rec.best;   // shared "record beaten" flag for the end screen
+        } else {
+            const beat = this.saveSystem.recordBossRush({ bossesDefeated: st.bossesDefeated, timeSurvived, score, cleared });
+            this.bossRushBestNew = !!(beat.bosses || beat.score || beat.time);
+        }
         // The apex reached = the boss being fought at the end (death), or the
         // final apex on a full clear. Name resolved from ENEMY like the warning.
         const reachedId = st.currentBossId || this.bossRush.sequence[this.bossRush.sequence.length - 1] || null;
         const reachedName = reachedId ? (ENEMY[reachedId]?.bossName ?? reachedId) : '—';
         if (this.runSummary) {
             this.runSummary.bossRush = true;
+            this.runSummary.bossRushLabel = st.label || 'Boss Rush';
             this.runSummary.bossRushBosses = st.bossesDefeated;
             this.runSummary.bossRushTotal = st.total;
             this.runSummary.bossRushCleared = cleared;
@@ -1381,6 +1401,7 @@ export class Game {
             this.runSummary.bossRushHero = this._effectiveCharacterId();
             this.runSummary.bossRushFinalBoss = reachedName;
             this.runSummary.bossRushTime = timeSurvived;
+            if (this.weeklyEmberMode) this.runSummary.weeklyEmberWeek = weeklyEmberSeed(currentDayNumber());
         }
     }
 
@@ -2535,7 +2556,7 @@ export class Game {
     }
     // Build the pending 'death' card data (composed next render()).
     _queueDeathCard() {
-        if (this.bossRushMode) { this._queueBossRushCard('death'); return; }   // BOSSFORGE
+        if (this.bossRush) { this._queueBossRushCard('death'); return; }   // BOSSFORGE (Boss Rush + Weekly Ember)
         if (this.riteTrialMode) { this._queueRiteCard('death'); return; }   // KINDLED PR5
         const s = this.runSummary || {};
         const cid = this.saveSystem.getSelectedCharacter();
@@ -2592,18 +2613,31 @@ export class Game {
             },
         };
     }
-    // BOSSFORGE — the Boss Rush share card ('bossrush' template). Built from LIVE
-    // fields so it works at BOTH death- and victory-time. Shows the hero, the
-    // gauntlet progress (bosses felled / total), whether it was cleared, the apex
-    // reached, the time, and the run's build (up to three owned weapons).
+    // BOSSFORGE — the gauntlet share card ('bossrush' template; Boss Rush AND
+    // Weekly Ember). Built from LIVE fields so it works at BOTH death- and
+    // victory-time. Shows the hero, the gauntlet progress (bosses felled /
+    // total), whether it was cleared, the apex reached, the time, and the run's
+    // build (up to three owned weapons).
     _queueBossRushCard(outcome) {
         const cid = this._effectiveCharacterId();
         const st = this.bossRush
             ? this.bossRush.getStatus()
-            : { bossesDefeated: this.bossesDefeated, total: 0, cleared: false, currentBossId: null };
+            : { bossesDefeated: this.bossesDefeated, total: 0, cleared: false, currentBossId: null, label: 'Boss Rush' };
         const cleared = !!st.cleared;
         const timeSurvived = Math.floor(this.time);
         const score = bossRushScore({ bossesDefeated: st.bossesDefeated, timeSurvived, cleared });
+        // NEW BEST is computed against the CURRENT save record (banking may not
+        // have run yet — the victory card is queued before victoryToMenu banks).
+        let newBest = false;
+        if (this.weeklyEmberMode) {
+            const we = this.saveSystem.data.weeklyEmber;
+            const wk = weeklyEmberSeed(currentDayNumber());
+            const cur = (we && we.week === wk) ? (we.best ?? 0) : 0;
+            newBest = score > cur;
+        } else {
+            const br = this.saveSystem.data.bossRush || {};
+            newBest = score > (br.bestScore ?? 0) || st.bossesDefeated > (br.bestBosses ?? 0);
+        }
         const reachedId = st.currentBossId
             || (this.bossRush && this.bossRush.sequence[this.bossRush.sequence.length - 1])
             || null;
@@ -2625,7 +2659,9 @@ export class Game {
                 time: this.time,
                 score, bosses: st.bossesDefeated, total: st.total,
                 cleared, reached, outcome: outcome || 'end',
-                newBest: !!this.bossRushBestNew,
+                newBest,
+                modeLabel: (st.label || 'Boss Rush').toUpperCase()
+                    + (this.weeklyEmberMode ? ` · WEEK ${weeklyEmberSeed(currentDayNumber())}` : ''),
                 sub: cleared ? 'The apex gauntlet is broken' : `Fell to ${reached}`,
                 chips, weapons: weaponNames,
                 mapName: this._cardMapName(this._effectiveMapId()),
@@ -2637,7 +2673,7 @@ export class Game {
     // Build the pending 'victory' card data from LIVE fields (runSummary does
     // not exist yet when the victory overlay appears).
     _queueVictoryCard() {
-        if (this.bossRushMode) { this._queueBossRushCard('victory'); return; }   // BOSSFORGE
+        if (this.bossRush) { this._queueBossRushCard('victory'); return; }   // BOSSFORGE (Boss Rush + Weekly Ember)
         if (this.riteTrialMode) { this._queueRiteCard('victory'); return; }   // KINDLED PR5
         const cid = this.saveSystem.getSelectedCharacter();
         const kills = this.kills ?? 0;
