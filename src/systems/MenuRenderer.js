@@ -574,21 +574,22 @@ export class MenuRenderer {
         if (state.caseAnim) this._drawCaseOverlay(ctx, state.caseAnim, state);
     }
 
-    // Rect of the GROUP chip containing a tab, in the current staged layout
-    // (same math as _drawTabBar). The tour spotlights the group — its arrow and
-    // ring land on the section that holds the step's screen. Null if hidden.
+    // Rect of a tab's pill in the section bar (same math as _drawTabBar).
+    // The bar only shows the ACTIVE group's screens — the tour always sets
+    // menuTab to the step's tab first, so the step's pill is on screen when
+    // the spotlight draws. Null if the tab's group is fully locked.
     _tabRectFor(save, tabId) {
         const groups = this._visibleGroups(save);
-        const i = groups.findIndex((g) => g.kids.includes(tabId));
-        if (i < 0) return null;
+        const g = groups.find((gg) => gg.kids.includes(tabId));
+        if (!g) return null;
+        const i = g.kids.indexOf(tabId);
         const sa = this._sa();
-        // Mirrors _drawTabBar's geometry INCLUDING the ⌂ HOME chip offset.
-        const homeW = 84;
-        const x0 = sa.left + 56 + homeW + 12;
-        const w = INTERNAL_WIDTH - sa.left - sa.right - 112 - homeW - 12;
-        const gap = 10;
-        const tabW = (w - gap * (groups.length - 1)) / groups.length;
-        return { x: x0 + i * (tabW + gap), y: sa.top + 104, w: tabW, h: 62, accent: groups[i].accent };
+        // Mirrors _drawTabBar's geometry INCLUDING the ‹ HOME chip offset.
+        const homeW = 120;
+        const x0 = sa.left + 56 + homeW + 14;
+        const tabW = 210, gap = 12;
+        const td = MENU_TABS.find((m) => m.id === tabId);
+        return { x: x0 + i * (tabW + gap), y: sa.top + 104, w: tabW, h: 62, accent: (td && td.accent) || g.accent };
     }
 
     // A downward-pointing "look here" chevron bouncing just outside a target
@@ -978,14 +979,17 @@ export class MenuRenderer {
             .filter((g) => g.kids.length > 0);
     }
 
+    // In-section top bar: ‹ HOME + ONLY the current section's own screens as
+    // pills. Sections deliberately do NOT carry the six-group bar any more —
+    // HOME is the hub, and a section shows itself, not doors to everywhere
+    // else (the last "every screen leads to every screen" leak). The old
+    // sub-tab pill row is gone too: the section's screens ARE the bar.
     _drawTabBar(ctx, state) {
         const activeTab = state.menuTab;
         const save = state.saveData || {};
-        // App-like sections: the bar shows GROUPS; the active group's screens
-        // render as a sub-tab pill row beneath (only when it has more than one).
-        const tabs = this._visibleGroups(save);
+        const groups = this._visibleGroups(save);
         const seen = (save.onboarding && save.onboarding.tabsSeen) || [];
-        // Dot-badge sources: unclaimed Battle-Pass levels + unfinished dailies
+        // Pill-badge sources: unclaimed Battle-Pass levels + unfinished dailies
         // (the Today's-Trials strip lives on MODES). Cheap per-frame reads.
         const day = currentDayNumber();
         const dd = save.daily || { day: 0, completed: [] };
@@ -999,48 +1003,42 @@ export class MenuRenderer {
         const y = sa.top + 104;
         const h = 62;
         const time = this._t || 0;
-        // ⌂ HOME chip at the far left — back to the title screen (Esc does too).
-        const homeW = 84;
+        // ‹ HOME chip at the far left — the only way OUT of a section
+        // (Esc does the same).
+        const homeW = 120;
         {
             const hx0 = sa.left + 56;
             roundRectPath(ctx, hx0, y, homeW, h, 12);
             ctx.fillStyle = 'rgba(20,15,13,0.8)'; ctx.fill();
             ctx.strokeStyle = 'rgba(255,206,122,0.45)'; ctx.lineWidth = 2; ctx.stroke();
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#ffce7a'; ctx.font = `700 24px ${FONT}`;
-            ctx.fillText('⌂', hx0 + homeW / 2, y + h / 2 - 9);
-            ctx.font = `700 11px ${FONT}`; ctx.fillStyle = 'rgba(255,206,122,0.8)';
-            ctx.fillText('HOME', hx0 + homeW / 2, y + h / 2 + 17);
+            ctx.fillStyle = '#ffce7a'; ctx.font = `700 20px ${FONT}`;
+            ctx.fillText('‹ HOME', hx0 + homeW / 2, y + h / 2 + 1);
             this._hot(hx0, y, homeW, h, 'tab', 'home');
         }
-        const x0 = sa.left + 56 + homeW + 12;
-        const w = INTERNAL_WIDTH - sa.left - sa.right - 112 - homeW - 12;
-        const gap = 10;
-        const tabW = (w - gap * (tabs.length - 1)) / tabs.length;
-        // Smoked-glass tray behind the tabs.
-        roundRectPath(ctx, x0 - 10, y - 8, w + 20, h + 16, 16);
-        ctx.fillStyle = 'rgba(14,10,9,0.55)'; ctx.fill();
-        roundRectPath(ctx, x0 - 10, y - 7, w + 20, h + 14, 15);
-        ctx.strokeStyle = 'rgba(255,150,70,0.10)'; ctx.lineWidth = 1; ctx.stroke();
-        // The inactive-tab fill is a constant vertical gradient (x-independent);
-        // build it once per layout and reuse for all tabs + across frames.
+        const activeGroup = groups.find((g) => g.kids.includes(activeTab)) || groups[0] || { kids: [], accent: '#ffce54' };
+        const kids = activeGroup.kids;
+        const x0 = sa.left + 56 + homeW + 14;
+        const gap = 12, tabW = 210;
+        // The inactive-pill fill is a constant vertical gradient (x-independent);
+        // build it once per layout and reuse across pills + frames.
         if (this._tabGradY !== y) {
             const tgr = ctx.createLinearGradient(0, y, 0, y + h);
             tgr.addColorStop(0, '#1c1614'); tgr.addColorStop(1, '#141010');
             this._tabGrad = tgr; this._tabGradY = y;
         }
         let activeX = x0;
-        for (let i = 0; i < tabs.length; i++) {
-            const t = tabs[i];
+        for (let i = 0; i < kids.length; i++) {
+            const id = kids[i];
+            const td = MENU_TABS.find((m) => m.id === id) || { id, label: id.toUpperCase(), accent: activeGroup.accent };
             const x = x0 + i * (tabW + gap);
-            const active = t.kids.includes(activeTab);
-            const accent = t.accent || '#ffce54';
+            const active = id === activeTab;
+            const accent = td.accent || activeGroup.accent || '#ffce54';
             if (active) activeX = x;
-            // Fill: dark glass for the active tab, warm-neutral gradient otherwise.
             roundRectPath(ctx, x, y, tabW, h, 12);
             ctx.fillStyle = active ? 'rgba(20,15,13,0.92)' : this._tabGrad; ctx.fill();
-            // Active tab: forged-plate relief (same higgsfield plate as the buttons)
-            // so the selected tab reads as a lit metal plate, not a flat fill.
+            // Active pill: forged-plate relief + breathing glow + ember rim
+            // (the lit-metal treatment the group chips used to get).
             if (active) {
                 const plate = getMenuImages().btnPlate;
                 if (plate) {
@@ -1048,46 +1046,32 @@ export class MenuRenderer {
                     ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.22;
                     ctx.drawImage(plate, x, y, tabW, h); ctx.restore();
                 }
-            }
-            // Active tab: breathing cached-glow behind (replaces per-frame shadowBlur).
-            if (active) {
                 ctx.save(); ctx.globalCompositeOperation = 'lighter';
                 ctx.globalAlpha = 0.24 + Math.sin(time * 4) * 0.10;
                 ctx.drawImage(getGlowSprite(accent), x - 10, y - 10, tabW + 20, h + 20);
                 ctx.restore(); ctx.globalAlpha = 1;
-                // Flaming ember rim licking up from the tab's top edge (mockup accent).
                 this._emberRim(ctx, x + 6, y, tabW - 12, h, time, i * 0.9);
             }
             roundRectPath(ctx, x, y, tabW, h, 12);
             ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.10)';
             ctx.lineWidth = active ? 2.5 : 2; ctx.stroke();
             if (active) {
-                // Lit-metal top inner rim.
                 ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
                 ctx.beginPath(); ctx.moveTo(x + 12, y + 2.5); ctx.lineTo(x + tabW - 12, y + 2.5); ctx.stroke();
             }
-            // Label: forged display face (Cinzel), accent colour when active,
-            // muted otherwise. Auto-fit so the wider Cinzel glyphs never overflow
-            // a tab (e.g. "BATTLE PASS" / "CHARACTER" on a narrow 9-tab bar).
             ctx.fillStyle = active ? accent : 'rgba(235,240,248,0.85)';
-            this._fitFont(ctx, t.label, tabW - 20, 700, tabW < 230 ? 20 : 23);
+            this._fitFont(ctx, td.label, tabW - 24, 700, 22);
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(t.label, x + tabW / 2, y + h / 2 + 1);
+            ctx.fillText(td.label, x + tabW / 2, y + h / 2 + 1);
             if (!active) {
-                // Inactive tabs keep a thin static accent underline (section identity).
                 ctx.fillStyle = accent; ctx.globalAlpha = 0.6;
                 ctx.fillRect(x + 14, y + h - 7, tabW - 28, 3); ctx.globalAlpha = 1;
             }
-            // Clicking a group opens its first unlocked screen (or stays on the
-            // current screen when the group is already active — a no-op re-tap).
-            this._hot(x, y, tabW, h, 'tab', active ? activeTab : t.kids[0]);
-            // Badges (top-right corner): a one-time "NEW" pill when ANY of the
-            // group's screens is freshly unlocked (cleared per-screen on first
-            // open via save.onboarding.tabsSeen), else a small accent dot when a
-            // screen holds something actionable (unclaimed Battle-Pass rewards /
-            // unfinished Today's Trials).
-            const isNew = !active && t.kids.some((k) => !seen.includes(k) && k !== 'play' && k !== 'settings');
-            const hasDot = (t.kids.includes('battlepass') && bpClaimable) || (t.kids.includes('play') && dailiesLeft);
+            this._hot(x, y, tabW, h, 'tab', id);
+            // Badges: one-time NEW pill on a freshly unlocked sibling screen,
+            // else an accent dot when the screen holds something actionable.
+            const isNew = !active && !seen.includes(id) && id !== 'play' && id !== 'settings';
+            const hasDot = (id === 'battlepass' && bpClaimable) || (id === 'modes' && dailiesLeft);
             if (isNew) {
                 const bw = 42, bh = 20, bx = x + tabW - bw + 6, by = y - 8;
                 ctx.globalAlpha = 0.85 + Math.sin(time * 3 + i) * 0.15;
@@ -1103,8 +1087,7 @@ export class MenuRenderer {
                 ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
             }
         }
-        // Sliding accent indicator that eases toward the active tab on switch
-        // (replaces the old hue-cycling RGB underline; warm-biases the bar).
+        // Sliding accent indicator easing toward the active pill on switch.
         const dt = this._dt();
         const targetX = activeX + tabW * 0.15, targetW = tabW * 0.7;
         if (this._tabIndicX == null || this._tabStale) { this._tabIndicX = targetX; this._tabIndicW = targetW; }
@@ -1113,48 +1096,10 @@ export class MenuRenderer {
             this._tabIndicX += (targetX - this._tabIndicX) * k;
             this._tabIndicW += (targetW - this._tabIndicW) * k;
         }
-        const activeGroup = tabs.find((tt) => tt.kids.includes(activeTab)) || tabs[0] || {};
-        const acc = activeGroup.accent || '#ffce54';
-        ctx.fillStyle = acc;
+        ctx.fillStyle = activeGroup.accent || '#ffce54';
         ctx.fillRect(this._tabIndicX, y + h - 4, this._tabIndicW, 3);
-
-        // ── Sub-tab pill row ────────────────────────────────────────────────
-        // Shown only when the active group has more than one unlocked screen.
-        // Content below shifts down by _subRowH (see _contentRect).
-        const kids = activeGroup.kids || [];
-        if (kids.length > 1) {
-            const py = y + h + 14;
-            const ph = 40;
-            // Measure pills (label + padding), then center the row.
-            ctx.font = `700 17px ${FONT}`;
-            const defs = kids.map((id) => {
-                const td = MENU_TABS.find((m) => m.id === id) || { id, label: id.toUpperCase(), accent: acc };
-                return { ...td, w: ctx.measureText(td.label).width + 44 };
-            });
-            const totalW = defs.reduce((s, d) => s + d.w, 0) + (defs.length - 1) * 10;
-            let px = INTERNAL_WIDTH / 2 - totalW / 2;
-            for (const d of defs) {
-                const act = d.id === activeTab;
-                roundRectPath(ctx, px, py, d.w, ph, ph / 2);
-                ctx.fillStyle = act ? 'rgba(24,18,15,0.95)' : 'rgba(14,10,9,0.6)'; ctx.fill();
-                ctx.strokeStyle = act ? (d.accent || acc) : 'rgba(255,255,255,0.12)';
-                ctx.lineWidth = act ? 2 : 1.5; ctx.stroke();
-                ctx.fillStyle = act ? (d.accent || acc) : 'rgba(235,240,248,0.75)';
-                ctx.font = `700 17px ${FONT}`;
-                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(d.label, px + d.w / 2, py + ph / 2 + 0.5);
-                // Unseen screen inside an open group → small accent dot.
-                if (!act && !seen.includes(d.id) && d.id !== 'play' && d.id !== 'settings') {
-                    ctx.beginPath(); ctx.arc(px + d.w - 8, py + 8, 5, 0, TAU);
-                    ctx.fillStyle = d.accent || acc; ctx.fill();
-                }
-                this._hot(px, py, d.w, ph, 'tab', d.id);
-                px += d.w + 10;
-            }
-            this._subRowH = ph + 22;
-        } else {
-            this._subRowH = 0;
-        }
+        // No separate sub-row any more — the section's screens ARE the bar.
+        this._subRowH = 0;
     }
 
     // ── PLAY ───────────────────────────────────────────────────────────
