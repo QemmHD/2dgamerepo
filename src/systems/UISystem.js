@@ -596,80 +596,115 @@ export class UISystem {
     }
 
     // ── Compact loadout chips (top-left) replacing the old text wall ────
+    // ── BUILD STRIP (top-left) ───────────────────────────────────────────
+    // The run's whole build on one smoked plate: weapons + passives as
+    // compact element-ticked chips that wrap into a second column under a
+    // HARD height clamp (the old 34px pill column was uncapped and grew
+    // straight into the HP bar on phones), and relics as a single row of
+    // rarity gems beneath — visible without six more rows of text.
     _drawLoadoutChips(ctx, state) {
         const sa = this.renderer.safeArea;
-        let x = sa.left + 28;
-        let y = sa.top + 22;
-        const h = 34;
-        const gap = 8;
+        const weapons = state.ownedWeapons ?? [];
+        const passives = state.ownedPassives ?? [];
+        const relics = state.runRelics ?? [];
+        if (!weapons.length && !passives.length && !relics.length) return;
+
+        const x0 = sa.left + 26, y0 = sa.top + 22;
+        const chipH = 26, gap = 6, colW = 192, colGap = 10;
+        const relicRowH = relics.length ? 32 : 0;
+
+        // Tick colours: element hue when the entry has one, else kind colour.
+        const ELEMENT_TICK = { fire: '#ff7a33', frost: '#7fe0ff', shock: '#ffe066' };
+        const entries = [];
+        for (const w of weapons) {
+            entries.push({
+                label: w.name,
+                lv: w.evolved ? 'EVO' : (w.isMax ? 'MAX' : `${w.level}`),
+                col: w.evolved ? '#d88cff' : (ELEMENT_TICK[w.element] ?? '#ffd166'),
+            });
+        }
+        for (const p of passives) {
+            entries.push({
+                label: p.name,
+                lv: p.isMax ? 'MAX' : `${p.level}`,
+                col: ELEMENT_TICK[p.element] ?? '#5fc7ff',
+            });
+        }
+
+        // Height clamp: the strip may NEVER reach the vitals console below.
+        const consoleTop = this._bottomBarLayout().y;
+        const maxH = Math.max(4 * (chipH + gap), consoleTop - 24 - y0 - relicRowH - 16);
+        const maxRows = Math.max(4, Math.floor((maxH + gap) / (chipH + gap)));
+        const cap = maxRows * 2;                     // at most two columns
+        let shown = entries, moreN = 0;
+        if (entries.length > cap) {
+            shown = entries.slice(0, cap - 1);       // last slot = "+N" chip
+            moreN = entries.length - shown.length;
+        }
+        const total = shown.length + (moreN ? 1 : 0);
+        const colsUsed = total > maxRows ? 2 : 1;
+        const rowsUsed = Math.ceil(total / colsUsed);
 
         ctx.save();
-        ctx.textBaseline = 'middle';
-        ctx.font = `bold 20px ${FONT}`;
+        // One plate ties the strip together (and separates it from the world).
+        const plateW = colsUsed * colW + (colsUsed - 1) * colGap + 20;
+        const plateH = rowsUsed * (chipH + gap) - gap + relicRowH + 20;
+        this._hudGlassPlate(ctx, x0 - 10, y0 - 10, plateW, plateH, 12, { stroke: 'rgba(255,180,120,0.10)' });
 
-        const chip = (label, level, theme) => {
-            ctx.font = `bold 20px ${FONT}`;
-            const lvText = level;
-            const padX = 14;
-            const labelW = ctx.measureText(label).width;
-            ctx.font = `bold 18px ${MONO}`;
-            const lvW = lvText ? ctx.measureText(lvText).width + 12 : 0;
-            const w = padX + labelW + (lvText ? 10 + lvW : 0) + padX;
-
-            roundRectPath(ctx, x, y, w, h, 10);
-            ctx.fillStyle = theme.fill;
-            ctx.fill();
-            ctx.strokeStyle = theme.border;
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            ctx.fillStyle = '#fff';
-            ctx.font = `bold 20px ${FONT}`;
-            ctx.textAlign = 'left';
-            ctx.fillText(label, x + padX, y + h / 2 + 1);
-
-            if (lvText) {
-                ctx.fillStyle = theme.lv;
-                ctx.font = `bold 18px ${MONO}`;
-                ctx.textAlign = 'right';
-                ctx.fillText(lvText, x + w - padX, y + h / 2 + 1);
+        const drawChip = (e, x, y) => {
+            roundRectPath(ctx, x, y, colW, chipH, 7);
+            ctx.fillStyle = 'rgba(14, 12, 16, 0.72)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.stroke();
+            // Element/kind tick down the left edge.
+            ctx.fillStyle = e.col;
+            ctx.fillRect(x + 3, y + 5, 3, chipH - 10);
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(240,244,250,0.92)';
+            ctx.font = `600 14px ${FONT}`; ctx.textAlign = 'left';
+            let label = e.label;
+            if (ctx.measureText(label).width > colW - 52) {
+                // Trim with the ellipsis INCLUDED in the measurement — it adds
+                // real width, and the margin to the level tag is only a few px.
+                while (label.length > 3 && ctx.measureText(label + '…').width > colW - 52) label = label.slice(0, -2);
+                label += '…';
             }
-            y += h + gap;
+            ctx.fillText(label, x + 14, y + chipH / 2 + 1);
+            if (e.lv) {
+                ctx.fillStyle = e.col;
+                ctx.font = `700 13px ${MONO}`; ctx.textAlign = 'right';
+                ctx.fillText(e.lv, x + colW - 8, y + chipH / 2 + 1);
+            }
         };
+        // Column-major: fill the first column top-to-bottom, then the second.
+        for (let i = 0; i < shown.length; i++) {
+            const col = Math.floor(i / rowsUsed), row = i % rowsUsed;
+            drawChip(shown[i], x0 + col * (colW + colGap), y0 + row * (chipH + gap));
+        }
+        if (moreN) {
+            const i = shown.length;
+            const col = Math.floor(i / rowsUsed), row = i % rowsUsed;
+            drawChip({ label: `+${moreN} more`, lv: '', col: 'rgba(255,255,255,0.35)' },
+                x0 + col * (colW + colGap), y0 + row * (chipH + gap));
+        }
 
-        const weaponTheme = { fill: 'rgba(40,30,12,0.7)', border: 'rgba(255,209,102,0.7)', lv: '#ffd166' };
-        const evolvedTheme = { fill: 'rgba(40,18,46,0.7)', border: 'rgba(216,140,255,0.8)', lv: '#ffd6f5' };
-        const passiveTheme = { fill: 'rgba(14,30,40,0.7)', border: 'rgba(95,199,255,0.65)', lv: '#9fe0ff' };
-        // Element-tinted chip themes so a fire/frost/shock build reads at a
-        // glance on the HUD.
-        const elementThemes = {
-            fire:  { fill: 'rgba(46,22,10,0.72)', border: 'rgba(255,122,51,0.85)', lv: '#ffb27a' },
-            frost: { fill: 'rgba(12,32,44,0.72)', border: 'rgba(127,224,255,0.85)', lv: '#bdeeff' },
-            shock: { fill: 'rgba(44,40,10,0.72)', border: 'rgba(255,224,102,0.85)', lv: '#ffe89a' },
-        };
-
-        for (const w of state.ownedWeapons ?? []) {
-            const lv = w.evolved ? 'EVO' : (w.isMax ? 'MAX' : `${w.level}`);
-            const theme = elementThemes[w.element] ?? (w.evolved ? evolvedTheme : weaponTheme);
-            chip(w.name, lv, theme);
-        }
-        for (const p of state.ownedPassives ?? []) {
-            const lv = p.isMax ? 'MAX' : `${p.level}`;
-            const theme = elementThemes[p.element] ?? passiveTheme;
-            chip(p.name, lv, theme);
-        }
-        // Relics claimed at Wick Shrines this run — rarity-tinted so the
-        // build's one-run powers are VISIBLE, not just tracked. Capped so a
-        // shrine-lucky run can't flood the column.
-        const relics = state.runRelics ?? [];
-        const shown = relics.slice(0, 5);
-        for (const r of shown) {
-            const rc = RARITY_COLORS[r.rarity] ?? RARITY_COLORS.common;
-            chip(r.name, '✦', { fill: 'rgba(24,18,30,0.72)', border: rc.border, lv: rc.accent });
-        }
-        if (relics.length > shown.length) {
-            chip(`+${relics.length - shown.length} more relics`, '',
-                { fill: 'rgba(24,18,30,0.72)', border: 'rgba(255,255,255,0.25)', lv: '#fff' });
+        // Relic gem row — one rarity-coloured diamond per claimed relic.
+        if (relics.length) {
+            const gy = y0 + rowsUsed * (chipH + gap) - gap + 20;
+            let gx = x0 + 10;
+            const maxGems = 10;
+            for (const r of relics.slice(0, maxGems)) {
+                const rc = RARITY_COLORS[r.rarity] ?? RARITY_COLORS.common;
+                ctx.beginPath();
+                ctx.moveTo(gx, gy - 9); ctx.lineTo(gx + 7, gy);
+                ctx.lineTo(gx, gy + 9); ctx.lineTo(gx - 7, gy);
+                ctx.closePath();
+                ctx.fillStyle = rc.border; ctx.globalAlpha = 0.32; ctx.fill();
+                ctx.globalAlpha = 1; ctx.lineWidth = 1.5; ctx.strokeStyle = rc.border; ctx.stroke();
+                gx += 22;
+            }
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 13px ${FONT}`;
+            ctx.fillText(relics.length > maxGems ? `+${relics.length - maxGems} relics` : 'relics', gx + 2, gy + 1);
         }
         ctx.restore();
     }
@@ -1124,12 +1159,18 @@ export class UISystem {
     // seconds sit in the center, and a ready ability gets a bright pulsing
     // ring + its initial. Readable at 1920×1080 and within iPhone safe-area.
     _drawAbilityCooldowns(ctx, state) {
-        const list = state.abilityCooldowns;
+        // On touch, the BLINK disc's recharge rim already shows the blink
+        // cooldown — drop the duplicate pip, and lift the weapon pips above
+        // the KINDLE disc zone (disc top ≈ H − sa.bottom − 284, −290 with the
+        // ready-pulse ring) so the row can never sit under a thumb or disc.
+        const list = state.touchMode
+            ? (state.abilityCooldowns || []).filter((a) => a.id !== 'blink')
+            : state.abilityCooldowns;
         if (!list || list.length === 0) return;
         const sa = this.renderer.safeArea;
         const R = 30;
         const gap = 22;
-        const cy = INTERNAL_HEIGHT - sa.bottom - 104;
+        const cy = INTERNAL_HEIGHT - sa.bottom - (state.touchMode ? 352 : 104);
         let cx = INTERNAL_WIDTH - sa.right - 56 - R;
         const now = performanceNowSafe();
         ctx.save();
@@ -1175,11 +1216,12 @@ export class UISystem {
                 ctx.font = `bold 22px ${MONO}`;
                 ctx.fillText(a.remaining >= 1 ? String(Math.ceil(a.remaining)) : a.remaining.toFixed(1), cx, cy + 1);
             }
-            // Short name beneath.
+            // Short name beneath — truncated to fit the 82px pip pitch, so
+            // adjacent labels can't run together ("Shadow DasCinder Aur…").
             ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
-            ctx.font = `600 14px ${FONT}`;
+            ctx.font = `600 13px ${FONT}`;
             ctx.textBaseline = 'top';
-            const nm = a.name.length > 11 ? a.name.slice(0, 10) + '…' : a.name;
+            const nm = a.name.length > 9 ? a.name.slice(0, 8) + '…' : a.name;
             ctx.fillText(nm, cx, cy + R + 5);
             cx -= (R * 2 + gap);
         }
@@ -1192,6 +1234,10 @@ export class UISystem {
     _drawKindleMeter(ctx, state) {
         const k = state.kindle;
         if (!k) return;
+        // Touch devices: the KINDLE action disc's rim IS this meter
+        // (TouchButtons.rimFrac) — drawing the bar too doubles the signal
+        // and physically overlaps the disc. Desktop keeps the bar.
+        if (state.touchMode) return;
         const sa = this.renderer.safeArea;
         const w = 300, h = 16;
         const x = INTERNAL_WIDTH - sa.right - 56 - w;
@@ -1344,25 +1390,28 @@ export class UISystem {
         ctx.restore();
     }
 
+    // Bottom-left VITALS CONSOLE geometry — one glass plate holding the LV
+    // badge + HP bar + XP bar, numbers drawn INSIDE the bars. Replaces the
+    // old full-width bars whose right-side readout pills sat exactly where
+    // the touch BLINK disc (and the blink cooldown pip) live — the HUD's
+    // worst overlap. Everything bottom-left keys off this one rect.
     _bottomBarLayout() {
         const sa = this.renderer.safeArea;
-        return {
-            padL: sa.left + 40,
-            padR: sa.right + 40,
-            labelW: 160,
-            readoutW: 200,
-            barH: 26,
-        };
+        const x = sa.left + 28;
+        const w = 560;
+        const h = 92;
+        const y = INTERNAL_HEIGHT - sa.bottom - 24 - h;
+        // Bar column right of the LV badge.
+        const lvW = 66;
+        const bx = x + 16 + lvW + 14;
+        const bw = w - 16 * 2 - lvW - 14;
+        return { x, y, w, h, lvW, bx, bw, hpH: 26, xpH: 12 };
     }
 
     _drawHpBar(ctx, state) {
-        const layout = this._bottomBarLayout();
-        const sa = this.renderer.safeArea;
-        const padB = sa.bottom + 122;
-        const barLeft = layout.padL + layout.labelW;
-        const barRight = INTERNAL_WIDTH - layout.padR - layout.readoutW;
-        const barW = Math.max(60, barRight - barLeft);
-        const barY = INTERNAL_HEIGHT - padB;
+        const L = this._bottomBarLayout();
+        const barY = L.y + 14;
+        const barLeft = L.bx, barW = L.bw;
 
         const target = state.player.maxHp > 0
             ? clamp01(state.player.hp / state.player.maxHp)
@@ -1385,52 +1434,67 @@ export class UISystem {
             border = `rgba(255, 80, 90, ${0.6 + 0.35 * p})`;
         }
 
-        const midY = barY + layout.barH / 2;
+        const midY = barY + L.hpH / 2;
         ctx.save();
+        // The console plate (drawn once here — _drawXPBar draws into it).
+        this._hudGlassPlate(ctx, L.x, L.y, L.w, L.h, 14, { stroke: 'rgba(255,180,120,0.14)' });
+        // LV badge column: big gold level over a small LV tag.
+        const lvCx = L.x + 16 + L.lvW / 2;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._hudGlow(ctx, lvCx, L.y + L.h / 2 - 4, 26, '#ffd06a', 0.14);
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
+        ctx.font = `800 34px ${MONO}`;
+        this._textWithShadow(ctx, `${state.player.level}`, lvCx, L.y + L.h / 2 - 8, '#ffd06a');
+        ctx.font = `700 12px ${FONT}`;
+        this._textWithShadow(ctx, 'LEVEL', lvCx, L.y + L.h - 16, 'rgba(255,255,255,0.55)');
+
         // Low-HP frame glow (additive, same 9Hz pulse as the border).
         if (target < 0.3) {
             const lp = 0.5 + 0.5 * Math.sin(state.time * 9);
             ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.10 + 0.10 * lp;
-            ctx.drawImage(getGlowSprite('#ff5a4a'), barLeft - 24, barY - 24, barW + 48, layout.barH + 48);
+            ctx.drawImage(getGlowSprite('#ff5a4a'), barLeft - 24, barY - 24, barW + 48, L.hpH + 48);
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
         }
         // Glass gutter + fill + segment ticks.
-        this._hudBarTrack(ctx, barLeft, barY, barW, layout.barH);
-        drawStatBar(ctx, barLeft, barY, barW, layout.barH, target, fill, {
+        this._hudBarTrack(ctx, barLeft, barY, barW, L.hpH);
+        drawStatBar(ctx, barLeft, barY, barW, L.hpH, target, fill, {
             radius: 9,
             chip: this.dispHpRatio,
             chipColor: 'rgba(255, 90, 90, 0.5)',
             border,
             borderWidth: 2,
         });
-        this._hudBarTicks(ctx, barLeft, barY, barW, layout.barH, 10);
-        // Heart end-cap riding the fill tip (tinted to the HP band).
-        if (target > 0.02) {
-            const capX = Math.max(barLeft + 9, Math.min(barRight - 9, barLeft + barW * target));
+        this._hudBarTicks(ctx, barLeft, barY, barW, L.hpH, 10);
+        // Inline readout measured FIRST so the heart end-cap can yield to it —
+        // "872 / 1160" is ~102px wide, so a fixed skip zone under-covers and
+        // the heart lands on the leading digit through a whole HP band.
+        const readout = `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`;
+        ctx.font = `700 17px ${MONO}`;
+        const roW = ctx.measureText(readout).width;
+        // Heart end-cap riding the fill tip (tinted to the HP band). Skipped
+        // once the tip (±13px of heart + glow fringe) would enter the digits.
+        const capX = Math.max(barLeft + 9, Math.min(barLeft + barW - 9, barLeft + barW * target));
+        if (target > 0.02 && capX + 13 < barLeft + barW - 14 - roW) {
             const tint = target < 0.3 ? '#ff5a4a' : target < 0.6 ? '#ff8a3a' : '#74e890';
             const lp = 0.5 + 0.5 * Math.sin(state.time * 9);
             ctx.save(); ctx.globalCompositeOperation = 'lighter';
             this._hudGlow(ctx, capX, midY, 22, tint, 0.30 + (target < 0.3 ? 0.25 * lp : 0));
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
-            this._hudHeartSigil(ctx, capX, midY, 18, tint);
+            this._hudHeartSigil(ctx, capX, midY, 16, tint);
         }
-        // Gold label + readout pill.
-        ctx.font = `bold 30px ${FONT}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-        this._textWithShadow(ctx, 'HP', layout.padL, midY, '#ffce7a');
-        this._hudGlassPlate(ctx, barRight + 8, barY - 4, layout.readoutW - 16, layout.barH + 8, 10, { stroke: 'rgba(255,180,120,0.12)' });
-        ctx.font = `22px ${MONO}`;
-        this._textWithShadow(ctx, `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`, barRight + 20, midY, '#fff');
+        // Numbers INSIDE the bar (right end) — no readout pill to collide with.
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        this._textWithShadow(ctx, readout, barLeft + barW - 12, midY, '#fff');
         ctx.restore();
     }
 
+    // XP row of the vitals console — a thin cool-blue strip under the HP bar
+    // (hard hue split from the warm HP). LV badge + plate live in _drawHpBar.
     _drawXPBar(ctx, state) {
-        const layout = this._bottomBarLayout();
-        const sa = this.renderer.safeArea;
-        const padB = sa.bottom + 74;
-        const barLeft = layout.padL + layout.labelW;
-        const barRight = INTERNAL_WIDTH - layout.padR - layout.readoutW;
-        const barW = Math.max(60, barRight - barLeft);
-        const barY = INTERNAL_HEIGHT - padB;
+        const L = this._bottomBarLayout();
+        const barLeft = L.bx, barW = L.bw;
+        const barY = L.y + 14 + L.hpH + 12;
 
         const target = state.player.xpToNext > 0
             ? Math.min(1, state.player.xp / state.player.xpToNext)
@@ -1441,45 +1505,27 @@ export class UISystem {
         if (this._lastLevel != null && state.player.level > this._lastLevel) this._xpFlash = state.time;
         this._lastLevel = state.player.level;
 
-        const midY = barY + layout.barH / 2;
         ctx.save();
-        // Glass gutter + fill (cool blue — a hard hue split from the warm HP) + ticks.
-        this._hudBarTrack(ctx, barLeft, barY, barW, layout.barH);
-        drawStatBar(ctx, barLeft, barY, barW, layout.barH, this.dispXpRatio,
+        this._hudBarTrack(ctx, barLeft, barY, barW, L.xpH);
+        drawStatBar(ctx, barLeft, barY, barW, L.xpH, this.dispXpRatio,
             { from: '#3aa8ff', to: '#7fdcff' },
-            { radius: 9, border: 'rgba(255,255,255,0.42)', borderWidth: 2 });
-        this._hudBarTicks(ctx, barLeft, barY, barW, layout.barH, 10);
+            { radius: 6, border: 'rgba(255,255,255,0.35)', borderWidth: 1.5 });
         // Leading-edge comet (clipped so it can't spill past the rounded caps).
         if (this.dispXpRatio > 0.01 && this.dispXpRatio < 0.995) {
             ctx.save();
-            roundRectPath(ctx, barLeft - 6, barY - 12, barW + 12, layout.barH + 24, 12); ctx.clip();
+            roundRectPath(ctx, barLeft - 6, barY - 10, barW + 12, L.xpH + 20, 8); ctx.clip();
             ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.6;
             const ex = barLeft + barW * this.dispXpRatio;
-            ctx.drawImage(getGlowSprite('#bfe8ff'), ex - 22, barY - 12, 44, layout.barH + 24);
+            ctx.drawImage(getGlowSprite('#bfe8ff'), ex - 18, barY - 10, 36, L.xpH + 20);
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
         }
-        // Level-up flash (0.5s, self-clearing).
+        // Level-up flash (0.5s, self-clearing) — washes the whole console row.
         if (this._xpFlash >= 0 && (state.time - this._xpFlash) < 0.5) {
             const fa = (1 - (state.time - this._xpFlash) / 0.5) * 0.5;
             ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fa;
-            ctx.drawImage(getGlowSprite('#ffd06a'), barLeft - 30, barY - 20, barW + 60, layout.barH + 40);
+            ctx.drawImage(getGlowSprite('#ffd06a'), barLeft - 30, barY - 24, barW + 60, L.xpH + 48);
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
         }
-        // LV badge chip (within the label slot).
-        this._hudGlassPlate(ctx, layout.padL - 2, barY - 4, 118, layout.barH + 8, 10);
-        ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-        ctx.font = `700 15px ${FONT}`;
-        this._textWithShadow(ctx, 'LV', layout.padL + 12, midY, 'rgba(255,255,255,0.62)');
-        const numX = layout.padL + 44;
-        ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        this._hudGlow(ctx, numX + 14, midY, 20, '#ffd06a', 0.14);
-        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
-        ctx.font = `800 26px ${MONO}`;
-        this._textWithShadow(ctx, `${state.player.level}`, numX, midY, '#ffd06a');
-        // Readout pill.
-        this._hudGlassPlate(ctx, barRight + 8, barY - 4, layout.readoutW - 16, layout.barH + 8, 10, { stroke: 'rgba(255,180,120,0.12)' });
-        ctx.font = `22px ${MONO}`;
-        this._textWithShadow(ctx, `${Math.floor(state.player.xp)} / ${state.player.xpToNext}`, barRight + 20, midY, '#fff');
         ctx.restore();
     }
 
