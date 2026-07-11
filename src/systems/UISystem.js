@@ -609,7 +609,7 @@ export class UISystem {
         const relics = state.runRelics ?? [];
         if (!weapons.length && !passives.length && !relics.length) return;
 
-        const x0 = sa.left + 26, y0 = sa.top + 22;
+        const x0 = sa.left + 18, y0 = sa.top + 16;
         const chipH = 26, gap = 6, colW = 192, colGap = 10;
         const relicRowH = relics.length ? 32 : 0;
 
@@ -646,10 +646,12 @@ export class UISystem {
         const rowsUsed = Math.ceil(total / colsUsed);
 
         ctx.save();
-        // One plate ties the strip together (and separates it from the world).
+        // Corner-DOCKED plate: bleeds past the physical top-left edge (same
+        // reasoning as the vitals console) — only its bottom-right corner
+        // rounds on screen, so the strip reads as part of the display frame.
         const plateW = colsUsed * colW + (colsUsed - 1) * colGap + 20;
         const plateH = rowsUsed * (chipH + gap) - gap + relicRowH + 20;
-        this._hudGlassPlate(ctx, x0 - 10, y0 - 10, plateW, plateH, 12, { stroke: 'rgba(255,180,120,0.10)' });
+        this._hudGlassPlate(ctx, -40, -40, x0 + plateW + 30, y0 + plateH + 30, 16, { stroke: 'rgba(255,180,120,0.10)' });
 
         const drawChip = (e, x, y) => {
             roundRectPath(ctx, x, y, colW, chipH, 7);
@@ -1171,7 +1173,7 @@ export class UISystem {
         const R = 30;
         const gap = 22;
         const cy = INTERNAL_HEIGHT - sa.bottom - (state.touchMode ? 352 : 104);
-        let cx = INTERNAL_WIDTH - sa.right - 56 - R;
+        let cx = INTERNAL_WIDTH - sa.right - 28 - R;
         const now = performanceNowSafe();
         ctx.save();
         ctx.textAlign = 'center';
@@ -1240,7 +1242,7 @@ export class UISystem {
         if (state.touchMode) return;
         const sa = this.renderer.safeArea;
         const w = 300, h = 16;
-        const x = INTERNAL_WIDTH - sa.right - 56 - w;
+        const x = INTERNAL_WIDTH - sa.right - 28 - w;
         // Above the pip discs (pips: cy = H - sa.bottom - 104, R = 30).
         const y = INTERNAL_HEIGHT - sa.bottom - 104 - 30 - 42;
         const frac = clamp01(k.fill / (k.max || 1));
@@ -1397,10 +1399,10 @@ export class UISystem {
     // worst overlap. Everything bottom-left keys off this one rect.
     _bottomBarLayout() {
         const sa = this.renderer.safeArea;
-        const x = sa.left + 28;
+        const x = sa.left + 16;
         const w = 560;
         const h = 92;
-        const y = INTERNAL_HEIGHT - sa.bottom - 24 - h;
+        const y = INTERNAL_HEIGHT - sa.bottom - 12 - h;
         // Bar column right of the LV badge.
         const lvW = 66;
         const bx = x + 16 + lvW + 14;
@@ -1436,8 +1438,12 @@ export class UISystem {
 
         const midY = barY + L.hpH / 2;
         ctx.save();
-        // The console plate (drawn once here — _drawXPBar draws into it).
-        this._hudGlassPlate(ctx, L.x, L.y, L.w, L.h, 14, { stroke: 'rgba(255,180,120,0.14)' });
+        // Corner-DOCKED console plate (drawn once here — _drawXPBar draws into
+        // it): it bleeds past the physical bottom-left edge so the console
+        // reads as part of the display frame, not a card floating in the
+        // arena — cover-fit crop + insets made an inset plate hover visibly
+        // mid-screen on phones. Only its top-right corner rounds on screen.
+        this._hudGlassPlate(ctx, -40, L.y, L.x + L.w + 40, INTERNAL_HEIGHT + 80 - L.y, 16, { stroke: 'rgba(255,180,120,0.14)' });
         // LV badge column: big gold level over a small LV tag.
         const lvCx = L.x + 16 + L.lvW / 2;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
