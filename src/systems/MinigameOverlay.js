@@ -44,9 +44,13 @@ export class MinigameOverlay {
                     this.game.audio.spinTick(pitch);
                 }
             }
-            // Fire the reveal chime the instant the reel settles — its pitch/
-            // richness scales with the won rarity (better pull = bigger noise).
-            if (wasSpinning && this.caseAnim.age >= spinTime) this.game.audio.reveal(this.caseAnim.result?.rarity);
+            // Fire the reveal chime AFTER the dead-air settle beat (the reel
+            // stops, holds a breath, THEN the reveal bursts — the pause is what
+            // sells it). Pitch/richness scales with the won rarity.
+            const hold = this.caseAnim.settleHold ?? 0;
+            const revealAt = spinTime + hold;
+            const wasHeld = this.caseAnim.age - dt < revealAt;
+            if (wasHeld && this.caseAnim.age >= revealAt) this.game.audio.reveal(this.caseAnim.result?.rarity);
         }
         if (this.mines) this._menuClock += dt;   // drives Mines reveal-pop / multiplier juice
         if (this.mines && this.mines.stopped) this.mines.age += dt;
@@ -61,9 +65,14 @@ export class MinigameOverlay {
         const { reel, landingIndex } = buildCaseReel(caseType, res);
         // Anticipation: a better pull takes LONGER to settle (tenser slow-down),
         // so the reveal feels earned. Tier drives spin time + the overlay's FX.
+        // Timing follows the CS-case doctrine: a long ease-out tail (~4-6s), a
+        // NEAR-MISS landing offset (the marker rarely stops dead-centre — the
+        // winner sits just off, as if it "almost" was the neighbour), and a
+        // dead-air settle pause before the reveal fires (see settleHold).
         const tier = ({ common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, mythic: 5 })[res.rarity] ?? 0;
-        const spinTime = 2.4 + tier * 0.22;
-        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier };
+        const spinTime = 4.2 + tier * 0.35;
+        const landOff = (Math.random() * 0.7 - 0.35);   // ±0.35 cell widths
+        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier, landOff, settleHold: 0.45 };
     }
 
     dismissCase() { this.caseAnim = null; }
@@ -80,8 +89,8 @@ export class MinigameOverlay {
         if (!a) return;
         const spinTime = a.spinTime ?? 2.6;
         if (a.age < spinTime) {
-            a.age = spinTime;               // jump the reel to its landing
-            this.game.audio.reveal(a.result?.rarity);
+            a.age = spinTime;   // jump the reel to its landing; update() fires
+                                // the reveal chime after the settle beat.
         } else if (pos && a._againRect && a.caseType
             && pos.x >= a._againRect.x && pos.x <= a._againRect.x + a._againRect.w
             && pos.y >= a._againRect.y && pos.y <= a._againRect.y + a._againRect.h) {
