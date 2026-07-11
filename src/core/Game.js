@@ -538,8 +538,12 @@ export class Game {
                 return true; // consume taps while the board is up
             }
             // The case-opening overlay owns input: a tap FAST-FORWARDS to the
-            // reveal while spinning, or dismisses once the reward is shown.
-            if (this.minigame.caseAnim) { this.minigame.caseInput(); return true; }
+            // reveal while spinning, dismisses once the reward is shown, or —
+            // on the reveal's OPEN ANOTHER button — re-rolls the same case.
+            if (this.minigame.caseAnim) {
+                this.minigame.caseInput(this.renderer.clientToInternal(clientX, clientY));
+                return true;
+            }
             const pos = this.renderer.clientToInternal(clientX, clientY);
             // Dispatch against the menu's clickable regions (topmost wins).
             const hs = this.ui.menu.hotspots;
