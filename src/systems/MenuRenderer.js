@@ -525,69 +525,10 @@ export class MenuRenderer {
         // vignette) — replaces the old flat fill.
         this._drawBackdrop(ctx, save.settings);
 
-        // Header: title (higgsfield ember wordmark, or animated gradient text as
-        // a fallback) + animated cached under-glow + coin bank.
-        const ui = getMenuImages();
-        const tx = sa.left + 56;
-        const off = Math.sin(t * 1.2) * 0.5 + 0.5;
-        const logoH = 62;
-        const logoW = ui.title ? ui.title.width * (logoH / ui.title.height) : 420;
-        // Cached-glow under-glow behind the wordmark (replaces per-frame shadowBlur).
-        ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        this._ember(ctx, tx + logoW * 0.5, sa.top + 52, 160, '#ff7a1e', 0.22 + Math.sin(t * 1.2) * 0.05);
-        ctx.restore(); ctx.globalAlpha = 1;
-        if (ui.title) {
-            ctx.drawImage(ui.title, tx, sa.top + 14, logoW, logoH);
-        } else {
-            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-            const tg = ctx.createLinearGradient(tx, 0, tx + 420, 0);
-            tg.addColorStop(Math.max(0, off - 0.3), '#ffb43a');
-            tg.addColorStop(off, '#fff1b8');
-            tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
-            ctx.fillStyle = tg;
-            ctx.font = `800 52px ${HEAD}`;
-            ctx.fillText('EMBERWAKE', tx, sa.top + 70);
-        }
-        // Ember-rule under the title.
-        const ruleW = Math.min(logoW, 460);
-        const rule = ctx.createLinearGradient(tx, 0, tx + ruleW, 0);
-        rule.addColorStop(0, 'rgba(255,122,30,0.5)'); rule.addColorStop(1, 'rgba(255,122,30,0)');
-        ctx.fillStyle = rule; ctx.fillRect(tx, sa.top + 84, ruleW, 2);
-        // Coin bank pill (right-aligned).
-        this._coinBank(ctx, INTERNAL_WIDTH - sa.right - 56, sa.top + 54, save.totalCoins);
-
-        // Screen title + one-line plain-English description in the header strip
-        // (between the wordmark and the coin bank) — every screen says what it
-        // IS, in the same spot, so the menu explains itself past the tour.
-        {
-            const tabDef = MENU_TABS.find((m) => m.id === (state.menuTab || 'play')) || MENU_TABS[0];
-            const desc = TAB_DESCRIPTIONS[tabDef.id] || '';
-            const hx = tx + logoW + 56;
-            const hMax = (INTERNAL_WIDTH - sa.right - 300) - hx;
-            if (hMax > 220) {
-                ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-                ctx.fillStyle = tabDef.accent || '#ffce54';
-                this._fitFont(ctx, tabDef.label, hMax, 700, 26);
-                ctx.fillText(tabDef.label, hx, sa.top + 44);
-                ctx.fillStyle = 'rgba(235,240,248,0.62)';
-                ctx.font = `500 15px ${FONT}`;
-                ctx.fillText(this._ellip(ctx, desc, hMax), hx, sa.top + 68);
-            }
-        }
-
-        this._drawTabBar(ctx, state);
-
-        const tab = state.menuTab || 'play';
-        if (tab === 'play') this._drawPlay(ctx, state);
-        else if (tab === 'modes') this._drawModes(ctx, state);
-        else if (tab === 'skills') this._drawSkills(ctx, state);
-        else if (tab === 'attune') this._drawAttune(ctx, state);
-        else if (tab === 'loadout') this._drawLoadout(ctx, state);
-        else if (tab === 'character') this._drawCharacter(ctx, state);
-        else if (tab === 'shop') this._drawShop(ctx, state);
-        else if (tab === 'battlepass') this._drawBattlePass(ctx, state);
-        else if (tab === 'stats') this._drawStats(ctx, state);
-        else if (tab === 'settings') this._drawSettings(ctx, state);
+        // HOME is the title screen (big logo, hero, menu stack); every other
+        // menuTab renders the section chrome (wordmark, header strip, group bar).
+        if ((state.menuTab || 'home') === 'home') this._drawHome(ctx, state);
+        else this._drawSections(ctx, state);
 
         // Toast (transient result message, e.g. claim / case errors).
         if (state.menuToast) {
@@ -619,8 +560,10 @@ export class MenuRenderer {
         const i = groups.findIndex((g) => g.kids.includes(tabId));
         if (i < 0) return null;
         const sa = this._sa();
-        const x0 = sa.left + 56;
-        const w = INTERNAL_WIDTH - sa.left - sa.right - 112;
+        // Mirrors _drawTabBar's geometry INCLUDING the ⌂ HOME chip offset.
+        const homeW = 84;
+        const x0 = sa.left + 56 + homeW + 12;
+        const w = INTERNAL_WIDTH - sa.left - sa.right - 112 - homeW - 12;
         const gap = 10;
         const tabW = (w - gap * (groups.length - 1)) / groups.length;
         return { x: x0 + i * (tabW + gap), y: sa.top + 104, w: tabW, h: 62, accent: groups[i].accent };
@@ -739,6 +682,232 @@ export class MenuRenderer {
         ctx.restore();
     }
 
+    // ── HOME — the title screen ─────────────────────────────────────────
+    // What you land on: the big EMBERWAKE wordmark, the selected hero standing
+    // on their forge pedestal, a vertical menu stack (the game-menu classic),
+    // and a lifetime-stats strip. Sections open from the stack; ⌂/Esc returns.
+    _drawHome(ctx, state) {
+        const sa = this._sa();
+        const save = state.saveData;
+        const t = this._t;
+        const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
+        const ui = getMenuImages();
+
+        // Coin bank stays top-right (the lobby shows your currency).
+        this._coinBank(ctx, W - sa.right - 56, sa.top + 54, save.totalCoins);
+
+        // Big centred wordmark with a breathing under-glow + ember rule.
+        const logoH = 132;
+        const logoW = ui.title ? ui.title.width * (logoH / ui.title.height) : 720;
+        const lx = W / 2 - logoW / 2, ly = sa.top + 64;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._ember(ctx, W / 2, ly + logoH * 0.55, 300, '#ff7a1e', 0.26 + Math.sin(t * 1.2) * 0.06);
+        ctx.restore(); ctx.globalAlpha = 1;
+        if (ui.title) {
+            ctx.drawImage(ui.title, lx, ly, logoW, logoH);
+        } else {
+            ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+            const tg = ctx.createLinearGradient(W / 2 - 360, 0, W / 2 + 360, 0);
+            const off = Math.sin(t * 1.2) * 0.5 + 0.5;
+            tg.addColorStop(Math.max(0, off - 0.3), '#ffb43a');
+            tg.addColorStop(off, '#fff1b8');
+            tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
+            ctx.fillStyle = tg; ctx.font = `800 104px ${HEAD}`;
+            ctx.fillText('EMBERWAKE', W / 2, ly + 104);
+        }
+        const ruleG = ctx.createLinearGradient(W / 2 - 300, 0, W / 2 + 300, 0);
+        ruleG.addColorStop(0, 'rgba(255,122,30,0)'); ruleG.addColorStop(0.5, 'rgba(255,122,30,0.55)'); ruleG.addColorStop(1, 'rgba(255,122,30,0)');
+        ctx.fillStyle = ruleG; ctx.fillRect(W / 2 - 300, ly + logoH + 14, 600, 2);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = 'rgba(255,224,180,0.6)'; ctx.font = `500 19px ${FONT}`;
+        ctx.fillText('Survive the vigil. Kindle the flame.', W / 2, ly + logoH + 44);
+
+        // ── The menu stack (left) ──
+        const groups = this._visibleGroups(save);
+        const seen = (save.onboarding && save.onboarding.tabsSeen) || [];
+        const plate = ui.btnPlate;
+        const stackX = sa.left + 150;
+        let sy = sa.top + 356;
+        // PLAY — the primary CTA (opens run setup; Space/Enter quick-starts).
+        {
+            const bw = 470, bh = 92;
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            this._ember(ctx, stackX + bw / 2, sy + bh / 2, bw * 0.5, '#74e890', 0.16 + Math.sin(t * 3) * 0.05);
+            ctx.restore(); ctx.globalAlpha = 1;
+            const sweep = Math.sin(t * 1.5) * 0.5 + 0.5;
+            const g = ctx.createLinearGradient(stackX, sy, stackX + bw, sy);
+            g.addColorStop(Math.max(0, sweep - 0.28), '#33a356');
+            g.addColorStop(sweep, '#74e890');
+            g.addColorStop(Math.min(1, sweep + 0.28), '#33a356');
+            roundRectPath(ctx, stackX, sy, bw, bh, 14);
+            ctx.fillStyle = g; ctx.fill();
+            if (plate) {
+                ctx.save(); roundRectPath(ctx, stackX, sy, bw, bh, 14); ctx.clip();
+                ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.20;
+                ctx.drawImage(plate, stackX, sy, bw, bh); ctx.restore();
+            }
+            ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 1.6);
+            ctx.strokeStyle = '#ffce7a'; ctx.lineWidth = 3;
+            roundRectPath(ctx, stackX, sy, bw, bh, 14); ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffffff'; this._fitFont(ctx, 'PLAY', 300, 800, 40);
+            ctx.fillText('PLAY', stackX + 34, sy + bh / 2 - 8);
+            ctx.font = `600 15px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillText('set up your run  ·  Space / Enter quick-starts', stackX + 34, sy + bh / 2 + 22);
+            ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.font = `800 30px ${FONT}`; ctx.fillText('▶', stackX + bw - 28, sy + bh / 2 + 1);
+            this._hot(stackX, sy, bw, bh, 'tab', 'play');
+            sy += bh + 16;
+        }
+        // Section buttons: MODES + the non-PLAY groups, forged-plate rows.
+        const rows = [];
+        if (tabUnlocked('modes', save)) rows.push({ label: 'MODES', accent: '#ff6a4a', target: 'modes', kids: ['modes'] });
+        for (const gDef of groups) {
+            if (gDef.id === 'gPlay') continue;
+            rows.push({ label: gDef.label, accent: gDef.accent, target: gDef.kids[0], kids: gDef.kids });
+        }
+        for (const r of rows) {
+            const bw = 400, bh = 60;
+            roundRectPath(ctx, stackX, sy, bw, bh, 12);
+            const bg = ctx.createLinearGradient(0, sy, 0, sy + bh);
+            bg.addColorStop(0, 'rgba(30,24,21,0.92)'); bg.addColorStop(1, 'rgba(18,14,13,0.92)');
+            ctx.fillStyle = bg; ctx.fill();
+            if (plate) {
+                ctx.save(); roundRectPath(ctx, stackX, sy, bw, bh, 12); ctx.clip();
+                ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.10;
+                ctx.drawImage(plate, stackX, sy, bw, bh); ctx.restore();
+            }
+            roundRectPath(ctx, stackX, sy, bw, bh, 12);
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.fillStyle = r.accent; ctx.globalAlpha = 0.9;
+            ctx.fillRect(stackX, sy + 10, 4, bh - 20); ctx.globalAlpha = 1;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(240,244,250,0.92)'; this._fitFont(ctx, r.label, bw - 120, 700, 24);
+            ctx.fillText(r.label, stackX + 28, sy + bh / 2 + 1);
+            ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.font = `700 20px ${FONT}`; ctx.fillText('›', stackX + bw - 20, sy + bh / 2 + 1);
+            const isNew = r.kids.some((k) => !seen.includes(k) && k !== 'play' && k !== 'settings');
+            if (isNew) {
+                const bx = stackX + bw - 66, by2 = sy - 8, bw2 = 42, bh2 = 20;
+                ctx.globalAlpha = 0.85 + Math.sin(t * 3) * 0.15;
+                roundRectPath(ctx, bx, by2, bw2, bh2, 10);
+                ctx.fillStyle = '#ffce54'; ctx.fill();
+                ctx.fillStyle = '#221604'; ctx.font = `800 12px ${FONT}`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('NEW', bx + bw2 / 2, by2 + bh2 / 2 + 0.5);
+                ctx.globalAlpha = 1;
+            }
+            this._hot(stackX, sy, bw, bh, 'tab', r.target);
+            sy += bh + 12;
+        }
+
+        // ── Hero showcase (right) — the selected monkey on their pedestal ──
+        const ch = getCharacter(save.selectedCharacter);
+        const ap = resolveAppearance(save.cosmetics.equipped);
+        const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
+        let charSprite = null;
+        const castFlash = !ch.lpc && (t % 3.6) > 3.0;
+        try {
+            const d = getHeroFrames(ch.id, ch).dirs.down;
+            charSprite = (t % 3.6) > 3.0 ? d.cast[0] : d.idle[0];
+        } catch (e) { charSprite = null; }
+        const startWeaponId = resolveStartingWeapon(save);
+        const skin = resolveWeaponSkin(startWeaponId);
+        const heldProp = resolveWeaponProp(startWeaponId);
+        const hx = W * 0.70, hy = sa.top + 560;
+        this._pedestal(ctx, hx, hy + 150, t, ch.accent || '#ff7a1e', 1.5);
+        this._drawAvatar(ctx, hx, hy, 175, avatarAp, charSprite, skin, t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#fff';
+        this._fitFont(ctx, `${ch.name} — ${ch.title}`, 460, 700, 32);
+        ctx.fillText(`${ch.name} — ${ch.title}`, hx, hy + 246);
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 15px ${FONT}`;
+        ctx.fillText('tap to customise', hx, hy + 272);
+        this._hot(hx - 230, hy - 160, 460, 440, 'tab', 'character');
+
+        // ── Lifetime strip (bottom-left) — a small lobby flourish ──
+        const st = (save && save.stats) || {};
+        const mm = Math.floor((st.bestTime ?? 0) / 60), ss = Math.floor((st.bestTime ?? 0) % 60);
+        const strip = `RUNS ${st.runs ?? 0}   ·   BEST ${mm}:${String(ss).padStart(2, '0')}   ·   ${(st.totalKills ?? 0).toLocaleString()} FOES FELLED`;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = 'rgba(235,240,248,0.45)'; ctx.font = `600 15px ${FONT}`;
+        ctx.fillText(strip, sa.left + 56, H - sa.bottom - 24);
+    }
+
+    // Section chrome + content: the corner wordmark, screen title/description,
+    // group bar (+ sub-tab pills) and the active screen. Everything below the
+    // backdrop for every screen EXCEPT the HOME title screen.
+    _drawSections(ctx, state) {
+        const sa = this._sa();
+        const save = state.saveData;
+        const t = this._t;
+        // Header: title (higgsfield ember wordmark, or animated gradient text as
+        // a fallback) + animated cached under-glow + coin bank.
+        const ui = getMenuImages();
+        const tx = sa.left + 56;
+        const off = Math.sin(t * 1.2) * 0.5 + 0.5;
+        const logoH = 62;
+        const logoW = ui.title ? ui.title.width * (logoH / ui.title.height) : 420;
+        // Cached-glow under-glow behind the wordmark (replaces per-frame shadowBlur).
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._ember(ctx, tx + logoW * 0.5, sa.top + 52, 160, '#ff7a1e', 0.22 + Math.sin(t * 1.2) * 0.05);
+        ctx.restore(); ctx.globalAlpha = 1;
+        if (ui.title) {
+            ctx.drawImage(ui.title, tx, sa.top + 14, logoW, logoH);
+        } else {
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            const tg = ctx.createLinearGradient(tx, 0, tx + 420, 0);
+            tg.addColorStop(Math.max(0, off - 0.3), '#ffb43a');
+            tg.addColorStop(off, '#fff1b8');
+            tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
+            ctx.fillStyle = tg;
+            ctx.font = `800 52px ${HEAD}`;
+            ctx.fillText('EMBERWAKE', tx, sa.top + 70);
+        }
+        // Ember-rule under the title.
+        const ruleW = Math.min(logoW, 460);
+        const rule = ctx.createLinearGradient(tx, 0, tx + ruleW, 0);
+        rule.addColorStop(0, 'rgba(255,122,30,0.5)'); rule.addColorStop(1, 'rgba(255,122,30,0)');
+        ctx.fillStyle = rule; ctx.fillRect(tx, sa.top + 84, ruleW, 2);
+        // Coin bank pill (right-aligned).
+        this._coinBank(ctx, INTERNAL_WIDTH - sa.right - 56, sa.top + 54, save.totalCoins);
+
+        // Screen title + one-line plain-English description in the header strip
+        // (between the wordmark and the coin bank) — every screen says what it
+        // IS, in the same spot, so the menu explains itself past the tour.
+        {
+            const tabDef = MENU_TABS.find((m) => m.id === (state.menuTab || 'play')) || MENU_TABS[0];
+            const desc = TAB_DESCRIPTIONS[tabDef.id] || '';
+            const hx = tx + logoW + 56;
+            const hMax = (INTERNAL_WIDTH - sa.right - 300) - hx;
+            if (hMax > 220) {
+                ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+                ctx.fillStyle = tabDef.accent || '#ffce54';
+                this._fitFont(ctx, tabDef.label, hMax, 700, 26);
+                ctx.fillText(tabDef.label, hx, sa.top + 44);
+                ctx.fillStyle = 'rgba(235,240,248,0.62)';
+                ctx.font = `500 15px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, desc, hMax), hx, sa.top + 68);
+            }
+        }
+
+        this._drawTabBar(ctx, state);
+
+        const tab = state.menuTab || 'play';
+        if (tab === 'play') this._drawPlay(ctx, state);
+        else if (tab === 'modes') this._drawModes(ctx, state);
+        else if (tab === 'skills') this._drawSkills(ctx, state);
+        else if (tab === 'attune') this._drawAttune(ctx, state);
+        else if (tab === 'loadout') this._drawLoadout(ctx, state);
+        else if (tab === 'character') this._drawCharacter(ctx, state);
+        else if (tab === 'shop') this._drawShop(ctx, state);
+        else if (tab === 'battlepass') this._drawBattlePass(ctx, state);
+        else if (tab === 'stats') this._drawStats(ctx, state);
+        else if (tab === 'settings') this._drawSettings(ctx, state);
+
+    }
+
     // Group geometry shared by the bar draw and _tabRectFor (tour spotlight):
     // groups whose every child tab is locked stay hidden, so a new player still
     // starts with a near-empty bar (PLAY + SHOP + SETTINGS).
@@ -766,13 +935,27 @@ export class MenuRenderer {
         let bpClaimable = false;
         for (let lv = 1; lv <= bpLevel; lv++) { if (!bpClaimed.includes(lv)) { bpClaimable = true; break; } }
         const sa = this._sa();
-        const x0 = sa.left + 56;
-        const w = INTERNAL_WIDTH - sa.left - sa.right - 112;
-        const gap = 10;
-        const tabW = (w - gap * (tabs.length - 1)) / tabs.length;
         const y = sa.top + 104;
         const h = 62;
         const time = this._t || 0;
+        // ⌂ HOME chip at the far left — back to the title screen (Esc does too).
+        const homeW = 84;
+        {
+            const hx0 = sa.left + 56;
+            roundRectPath(ctx, hx0, y, homeW, h, 12);
+            ctx.fillStyle = 'rgba(20,15,13,0.8)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(255,206,122,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffce7a'; ctx.font = `700 24px ${FONT}`;
+            ctx.fillText('⌂', hx0 + homeW / 2, y + h / 2 - 9);
+            ctx.font = `700 11px ${FONT}`; ctx.fillStyle = 'rgba(255,206,122,0.8)';
+            ctx.fillText('HOME', hx0 + homeW / 2, y + h / 2 + 17);
+            this._hot(hx0, y, homeW, h, 'tab', 'home');
+        }
+        const x0 = sa.left + 56 + homeW + 12;
+        const w = INTERNAL_WIDTH - sa.left - sa.right - 112 - homeW - 12;
+        const gap = 10;
+        const tabW = (w - gap * (tabs.length - 1)) / tabs.length;
         // Smoked-glass tray behind the tabs.
         roundRectPath(ctx, x0 - 10, y - 8, w + 20, h + 16, 16);
         ctx.fillStyle = 'rgba(14,10,9,0.55)'; ctx.fill();
@@ -2645,7 +2828,7 @@ export class MenuRenderer {
                 // What it IS: the item's own card text (wrapped, muted).
                 if (result.description) {
                     ctx.fillStyle = 'rgba(235,240,248,0.7)'; ctx.font = `500 16px ${FONT}`;
-                    const lines = this._wrapText(ctx, result.description, cardW - 80, 2);
+                    const lines = this._wrapLines(ctx, result.description, cardW - 80, 2);
                     lines.forEach((ln, i) => ctx.fillText(ln, cx, cy + 34 + i * 21));
                 }
                 const stateY = result.description ? cy + 86 : cy + 44;
@@ -2691,7 +2874,7 @@ export class MenuRenderer {
     }
 
     // Greedy word-wrap capped to maxLines (last line ellipsized if it overflows).
-    _wrapText(ctx, text, maxW, maxLines = 2) {
+    _wrapLines(ctx, text, maxW, maxLines = 2) {
         const words = String(text).split(/\s+/);
         const lines = [];
         let cur = '';

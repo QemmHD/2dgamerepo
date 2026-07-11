@@ -135,8 +135,9 @@ export class Game {
         this.resetConfirmTimer = 0;
 
         // Main-menu state: active tab + transient case-opening animation +
-        // a short-lived toast for claim/case feedback.
-        this.menuTab = 'play';
+        // a short-lived toast for claim/case feedback. The menu lands on the
+        // HOME title screen; sections open from its stack.
+        this.menuTab = 'home';
         // Guided menu tour: { idx } while walking TOUR_STEPS, else null. While
         // active, _menuAction only honors tourNext/tourSkip — the tour is fully
         // guided. Armed on the first menu visit until save.onboarding.tourDone.
@@ -249,6 +250,14 @@ export class Game {
                     e.preventDefault();
                     this.bossRushMode = true; this.dailyMode = false; this.riteTrialMode = false;
                     this._startRun();
+                    return;
+                }
+                // Esc from any section returns to the HOME title screen (the ⌂
+                // chip's keyboard twin). Not while a minigame/tour owns input.
+                if (e.code === 'Escape' && !this.minigame.mines && !this.minigame.caseAnim && !this.menuTour
+                    && this.menuTab !== 'home') {
+                    e.preventDefault();
+                    this.menuTab = 'home';
                     return;
                 }
                 if (this.minigame.mines) {
@@ -912,6 +921,7 @@ export class Game {
         this._bankRunCoins();
         this.audio.playMusic('menu');
         this.screen = 'start';
+        this.menuTab = 'home';   // back to the lobby (the title screen)
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
         this.paused = false;
@@ -947,7 +957,7 @@ export class Game {
     _endMenuTour() {
         this.menuTour = null;
         this.saveSystem.setTourDone(true);
-        this.menuTab = 'play';
+        this.menuTab = 'home';   // land back on the title screen after the tour
     }
 
     // ── First-run onboarding (guided first run) ──────────────────────────
