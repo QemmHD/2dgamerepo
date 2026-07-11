@@ -138,6 +138,9 @@ export class Game {
         // a short-lived toast for claim/case feedback. The menu lands on the
         // HOME title screen; sections open from its stack.
         this.menuTab = 'home';
+        // ATTUNE altar selection (relic id; null → first attunable). Session-
+        // local like selectedPatron — set by the 'attuneSelect' menu action.
+        this.attuneSel = null;
         // Guided menu tour: { idx } while walking TOUR_STEPS, else null. While
         // active, _menuAction only honors tourNext/tourSkip — the tour is fully
         // guided. Armed on the first menu visit until save.onboarding.tourDone.

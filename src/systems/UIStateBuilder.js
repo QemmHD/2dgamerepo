@@ -46,6 +46,8 @@ export function buildUIState(game) {
         base.difficulty = game.saveSystem.getDifficulty();
         base.selectedModifiers = [...game.selectedModifiers];
         base.selectedPatron = game.selectedPatron;
+        // ATTUNE altar: which relic is staged on the detail pane.
+        base.attuneSel = game.attuneSel;
         // Daily Road: today's best (for the menu's "best today" readout). Gated
         // on the record's day so a new UTC day shows 0 until a run is played
         // (the record self-resets on the first daily of the new day).
