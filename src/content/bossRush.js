@@ -110,14 +110,26 @@ export function bossRushScore({ bossesDefeated = 0, timeSurvived = 0, cleared = 
     return Math.max(0, base + speed);
 }
 
-// ── Weekly Ember hook (NOT wired yet) ────────────────────────────────────────
-// Weekly Ember will be a seeded weekly gauntlet reusing this file + the
-// controller. It only needs a stable per-week seed; deriving it from the UTC day
-// number (see dailyChallenges.currentDayNumber) keeps it in the same calendar
-// convention as the daily modes. Left here, exported and documented, so wiring
-// Weekly Ember is: build a config `{ ...BOSS_RUSH_CONFIG, id:'weeklyEmber',
-// label:'Weekly Ember', seed: weeklyEmberSeed(day), deterministic:true }` and
-// start it through the same 'startBossRush' path. Intentionally unused today.
+// ── Weekly Ember ─────────────────────────────────────────────────────────────
+// The seeded weekly gauntlet: the SAME twelve apex bosses as Boss Rush, but in a
+// deterministic per-week shuffle — same order for everyone all UTC week, a new
+// order when the week rolls. Reuses getBossRushSequence + the BossRushController
+// unchanged (exactly the reuse the Boss Rush PR designed for).
 export function weeklyEmberSeed(dayNumber) {
     return Math.floor((Number(dayNumber) || 0) / 7);
+}
+
+// The week's config, derived from the UTC day number (same calendar convention
+// as the daily modes — see dailyChallenges.currentDayNumber). `deterministic`
+// marks the setup as same-for-everyone; the controller itself doesn't branch on
+// it (spawn/AI randomness still varies run-to-run — setup-only determinism,
+// exactly like the Daily Road / Rite Trial).
+export function getWeeklyEmberConfig(dayNumber) {
+    return {
+        ...BOSS_RUSH_CONFIG,
+        id: 'weeklyEmber',
+        label: 'Weekly Ember',
+        seed: weeklyEmberSeed(dayNumber),
+        deterministic: true,
+    };
 }

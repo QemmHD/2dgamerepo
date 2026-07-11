@@ -2282,7 +2282,7 @@ export class UISystem {
         // gauntlet result: bosses felled, whether it was cleared, the apex reached,
         // time, and score. (The hero + build/weapons are on the recap card.)
         const stats = summary.bossRush ? [
-            ['Boss Rush', summary.bossRushCleared ? 'CLEARED!' : 'Fell short'],
+            [summary.bossRushLabel || 'Boss Rush', summary.bossRushCleared ? 'CLEARED!' : 'Fell short'],
             ['Bosses felled', `${summary.bossRushBosses ?? 0}/${summary.bossRushTotal ?? 0}`],
             ['Apex reached', summary.bossRushFinalBoss || '—'],
             ['Time', formatTime(summary.time)],

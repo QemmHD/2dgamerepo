@@ -401,13 +401,13 @@ function drawBossRushCard(ctx, data, helpers) {
     drawFrame(ctx, EMBER);
     drawWordmark(ctx, 56, 66, GOLD);
 
-    // "BOSS RUSH", top-right.
+    // Mode label ("BOSS RUSH" / "WEEKLY EMBER · WEEK N"), top-right.
     ctx.save();
     ctx.font = `600 20px ${DISPLAY_FONT}`;
     ctx.fillStyle = ASH;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('BOSS RUSH', CARD_W - 56, 52);
+    ctx.fillText(String(d.modeLabel || 'BOSS RUSH'), CARD_W - 56, 52);
     ctx.restore();
 
     if (d.newBest) drawNewBestRibbon(ctx, CARD_W - 180, 150);

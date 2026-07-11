@@ -163,14 +163,17 @@ export const GameInputActionMethods = {
             // Opening a tab acknowledges its one-time "NEW" badge (staged
             // unlock — see MenuRenderer tabUnlocked + SaveSystem.markTabSeen).
             case 'tab': this.menuTab = arg; this.saveSystem.markTabSeen(arg); this.resetConfirming = false; break;
-            case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this._startRun(); break;
-            case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this.riteTrialMode = false; this.bossRushMode = false; this._startRun(); break;
+            case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false; this._startRun(); break;
+            case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false; this._startRun(); break;
             // KINDLED PR5 — launch the daily hero-locked Rite Trial (mutually
             // exclusive with the Daily Road; the trial hero is a session-local override).
-            case 'startRiteTrial': this._pressFeedback('start'); this.riteTrialMode = true; this.dailyMode = false; this.bossRushMode = false; this._startRun(); break;
+            case 'startRiteTrial': this._pressFeedback('start'); this.riteTrialMode = true; this.dailyMode = false; this.bossRushMode = false; this.weeklyEmberMode = false; this._startRun(); break;
             // BOSSFORGE — launch Boss Rush: a fixed apex-boss gauntlet using the
             // player's own hero + map. Mutually exclusive with the daily modes.
-            case 'startBossRush': this._pressFeedback('start'); this.bossRushMode = true; this.dailyMode = false; this.riteTrialMode = false; this._startRun(); break;
+            case 'startBossRush': this._pressFeedback('start'); this.bossRushMode = true; this.dailyMode = false; this.riteTrialMode = false; this.weeklyEmberMode = false; this._startRun(); break;
+            // Weekly Ember — the seeded weekly gauntlet (same controller as Boss
+            // Rush; per-UTC-week deterministic boss order, week-scoped best).
+            case 'startWeeklyEmber': this._pressFeedback('start'); this.weeklyEmberMode = true; this.bossRushMode = false; this.dailyMode = false; this.riteTrialMode = false; this._startRun(); break;
             case 'setDifficulty': this.saveSystem.setDifficulty(arg); break;
             case 'toggleModifier':
                 if (this.selectedModifiers.has(arg)) this.selectedModifiers.delete(arg);

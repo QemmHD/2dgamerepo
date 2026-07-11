@@ -178,6 +178,7 @@ export const RunStateMethods = {
         this.bossRush = null;
         this._bossRushRecorded = false;
         this.bossRushBestNew = false;
+        this.weeklyEmberBestNew = false;
         // Victory overlay shown once when the 3rd boss falls (Continue / new
         // biome / main menu). _victoryShown latches so later bosses don't reopen
         // it; _runRecorded guards against double-counting lifetime stats when a
