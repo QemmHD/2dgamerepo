@@ -59,6 +59,7 @@ import { Game } from '../../src/core/Game.js';
 import { Input } from '../../src/core/Input.js';
 import { KeyboardInput } from '../../src/core/KeyboardInput.js';
 import { TouchJoystick } from '../../src/core/TouchJoystick.js';
+import { TouchButtons } from '../../src/core/TouchButtons.js';
 import { prewarmSprites, getGlowSprite } from '../../src/assets/ProceduralSprites.js';
 import { loadLpcSprites } from '../../src/assets/LpcSprites.js';
 import { loadWorldTextures } from '../../src/assets/WorldTextures.js';
@@ -115,6 +116,10 @@ const MAP = params.get('map');                               // force selected m
 const PROFILE = parseInt(params.get('profile') || '0', 10);
 const PROFTAG = (params.get('proftag') || 'run').replace(/[^A-Za-z0-9._-]/g, '');
 const VEILSCALE = params.has('veilscale') ? parseFloat(params.get('veilscale')) : null;
+// touch=1 wires TouchButtons with supported forced on, so the touch-only HUD
+// branches (action discs, lifted pips, hidden kindle bar) are verifiable
+// headlessly — desktop Chromium never reports touch support on its own.
+const TOUCH = params.get('touch') === '1';
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -123,7 +128,9 @@ async function boot() {
     const renderer = new Renderer(canvas);
     const keyboard = new KeyboardInput();
     const touch = new TouchJoystick(renderer);
-    const input = new Input({ keyboard, touch });
+    let buttons = null;
+    if (TOUCH) { buttons = new TouchButtons(renderer); buttons.supported = true; }
+    const input = new Input({ keyboard, touch, buttons });
 
     let game;
     const loop = new GameLoop({ update: (dt) => game.update(dt), render: () => game.render() });
