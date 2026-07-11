@@ -139,6 +139,21 @@ export function tabUnlocked(id, save) {
 // developer aids, not player features — they only render in DEV_MODE (?dev=1;
 // see GameConfig.js, which also gates the debug HUD + time-jump keys).
 
+// Per-upgrade visual identity for the FORGE TRAINING grid: a fixed hue + a
+// small vector glyph (drawn by _skillGlyph) so each discipline reads at a
+// glance. Keyed by the stable save ids in PERMANENT_UPGRADES.
+const SKILL_STYLE = {
+    maxHp:         { col: '#ff7a7a', glyph: 'heart' },
+    damage:        { col: '#ff9a4a', glyph: 'flame' },
+    moveSpeed:     { col: '#6ad8ff', glyph: 'chevrons' },
+    critChance:    { col: '#ffd479', glyph: 'crosshair' },
+    xpGain:        { col: '#b9f27a', glyph: 'star' },
+    pickupRange:   { col: '#7fd0ff', glyph: 'glow' },
+    startingCoins: { col: '#ffd86b', glyph: 'coins' },
+    rerolls:       { col: '#c08bff', glyph: 'cycle' },
+    banish:        { col: '#ff5a8a', glyph: 'ban' },
+};
+
 const SETTING_TOGGLES = [
     { key: 'debug', label: 'Debug Mode', dev: true },
     { key: 'screenShake', label: 'Screen Shake' },
@@ -1553,8 +1568,10 @@ export class MenuRenderer {
             roundRectPath(ctx, x, y, cw, ch, 16); ctx.stroke();
             ctx.restore();
             // Accent side-bar so the cards read as a colour-coded gallery.
-            ctx.fillStyle = cd.accent; ctx.globalAlpha = 0.85;
-            ctx.fillRect(x, y + 14, 4, ch - 28); ctx.globalAlpha = 1;
+            // (Scale off the incoming alpha — this runs inside the tab fade.)
+            const ga = ctx.globalAlpha;
+            ctx.fillStyle = cd.accent; ctx.globalAlpha = ga * 0.85;
+            ctx.fillRect(x, y + 14, 4, ch - 28); ctx.globalAlpha = ga;
             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
             ctx.fillStyle = cd.accent;
             this._fitFont(ctx, cd.title, cw - 220, 700, 30);
@@ -1849,133 +1866,413 @@ export class MenuRenderer {
     }
 
     // ── SKILLS (permanent upgrades) ──────────────────────────────────────
+    // ── SKILLS — Forge Training ──────────────────────────────────────────
+    // Permanent-upgrade shop with its own identity: a summary rail (coin
+    // balance, forge rank, what's buyable right now, reset) beside a grid of
+    // glyph-badged discipline cards — each upgrade wears a fixed hue + vector
+    // glyph so the nine cards stop reading as clones. The gold/green afford/
+    // maxed signal stays on the border + pips; buy flow is unchanged
+    // ('buyUpgrade' → Game.buyUpgrade).
     _drawSkills(ctx, state) {
         const c = this._contentRect();
         const save = state.saveData;
-        const cols = 2, gap = 24;
-        const cardW = (c.w - gap) / cols;
-        const cardH = 96;
-        const rowGap = 16;
+        const t = this._t || 0;
         ctx.textBaseline = 'alphabetic';
+
+        // Rail totals: owned levels vs total, and what's affordable right now.
+        let ownedLv = 0, totalLv = 0, readyN = 0, cheapest = Infinity;
+        for (const u of PERMANENT_UPGRADES) {
+            const lv = save.upgrades[u.id] ?? 0;
+            ownedLv += Math.min(lv, u.maxLevel); totalLv += u.maxLevel;
+            if (lv < u.maxLevel) {
+                const cst = nextCost(u, lv);
+                if (save.totalCoins >= cst) readyN++;
+                cheapest = Math.min(cheapest, cst);
+            }
+        }
+
+        // ── Summary rail (left) ──
+        const railW = Math.min(320, Math.round(c.w * 0.24));
+        this._panel(ctx, c.x, c.y, railW, c.h, 'rgba(13,20,30,0.9)', 'rgba(127,208,255,0.25)');
+        const rx = c.x + 26, rw = railW - 52;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#7fd0ff'; this._fitFont(ctx, 'FORGE TRAINING', rw, 800, 28);
+        ctx.fillText('FORGE TRAINING', rx, c.y + 48);
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 16px ${FONT}`;
+        ctx.fillText('Bought once, kept forever —', rx, c.y + 78);
+        ctx.fillText('every run starts stronger.', rx, c.y + 100);
+        // Coin balance.
+        ctx.fillStyle = '#ffd86b'; ctx.font = `800 34px ${FONT}`;
+        ctx.fillText(`◎ ${save.totalCoins.toLocaleString()}`, rx, c.y + 152);
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `600 15px ${FONT}`;
+        ctx.fillText('COINS BANKED', rx, c.y + 174);
+        // Forge Rank progress (total owned levels across all disciplines).
+        const pr = totalLv > 0 ? ownedLv / totalLv : 0;
+        ctx.fillStyle = '#a8ddff'; ctx.font = `700 19px ${FONT}`;
+        ctx.fillText(`Forge Rank  ${ownedLv} / ${totalLv}`, rx, c.y + 218);
+        roundRectPath(ctx, rx, c.y + 230, rw, 14, 7);
+        ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fill();
+        if (pr > 0) {
+            roundRectPath(ctx, rx, c.y + 230, Math.max(8, rw * pr), 14, 7);
+            const pg = ctx.createLinearGradient(rx, 0, rx + rw, 0);
+            pg.addColorStop(0, '#4a9fd8'); pg.addColorStop(1, '#8fd7ff');
+            ctx.fillStyle = pg; ctx.fill();
+        }
+        // "Ready to forge" callout — the rail's whole job is answering
+        // "can I buy anything?" without scanning nine cards.
+        if (readyN > 0) {
+            ctx.fillStyle = `rgba(255,206,84,${0.75 + Math.sin(t * 3) * 0.25})`;
+            ctx.font = `800 21px ${FONT}`;
+            ctx.fillText(`▲ ${readyN} ready to forge`, rx, c.y + 288);
+        } else {
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 18px ${FONT}`;
+            ctx.fillText(ownedLv >= totalLv ? 'Every discipline mastered'
+                : Number.isFinite(cheapest) ? `Next costs ◎ ${cheapest}` : '', rx, c.y + 288);
+        }
+        // Reset save lives at the rail's foot — off the buy grid, so a mis-tap
+        // near a card can never start the confirm flow.
+        const rr = { x: rx, y: c.y + c.h - 76, w: rw, h: 52 };
+        this._button(ctx, rr, state.resetConfirming ? 'TAP AGAIN TO CONFIRM' : 'RESET SAVE',
+            { accent: state.resetConfirming ? '#7a2230' : 'rgba(80,30,38,0.8)', action: 'resetSave', fontSize: 20 });
+
+        // ── Discipline grid (right of the rail) ──
+        const gx = c.x + railW + 24;
+        const gw = c.w - railW - 24;
+        const cols = 2, gap = 20, rowGap = 14;
+        const rows = Math.ceil(PERMANENT_UPGRADES.length / cols);
+        const cardW = (gw - gap) / cols;
+        const cardH = Math.max(84, Math.min(110, Math.floor((c.h - rowGap * (rows - 1)) / rows)));
         for (let i = 0; i < PERMANENT_UPGRADES.length; i++) {
             const u = PERMANENT_UPGRADES[i];
+            const style = SKILL_STYLE[u.id] || { col: '#9fb0c4', glyph: 'star' };
             const col = i % cols, row = Math.floor(i / cols);
-            const x = c.x + col * (cardW + gap);
+            const x = gx + col * (cardW + gap);
             const y = c.y + row * (cardH + rowGap);
             const level = save.upgrades[u.id] ?? 0;
             const cost = nextCost(u, level);
             const maxed = level >= u.maxLevel;
             const afford = !maxed && save.totalCoins >= cost;
-            // Color-coded state: green = maxed, gold = affordable now, dim =
-            // can't afford. The card tints + gets a left accent bar so the eye
-            // is drawn to what's buyable.
+            // Border + pips keep the buy-state signal: green = maxed, gold =
+            // affordable now, dim = can't afford yet.
             const stateCol = maxed ? '#5fd36a' : afford ? '#ffce54' : 'rgba(255,255,255,0.12)';
             roundRectPath(ctx, x, y, cardW, cardH, 12);
             ctx.fillStyle = afford ? 'rgba(46,40,18,0.92)' : maxed ? 'rgba(20,34,24,0.92)' : 'rgba(22,27,36,0.9)';
             ctx.fill();
             ctx.strokeStyle = stateCol;
             ctx.lineWidth = afford || maxed ? 2.5 : 2; ctx.stroke();
-            // Left accent bar.
-            ctx.fillStyle = stateCol;
-            ctx.fillRect(x + 4, y + 12, 5, cardH - 24);
+            // Glyph plate — the discipline's own hue, independent of buy state.
+            const ps = Math.min(60, cardH - 28);
+            const px = x + 16, py = y + (cardH - ps) / 2;
+            roundRectPath(ctx, px, py, ps, ps, 10);
+            ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fill();
+            // Scale off the INCOMING alpha — tab content draws inside the
+            // 180ms slide-in fade, and a hard `= 1` here would cancel it for
+            // every card after the first.
+            const ga = ctx.globalAlpha;
+            ctx.strokeStyle = style.col; ctx.globalAlpha = ga * 0.55; ctx.lineWidth = 2; ctx.stroke();
+            ctx.globalAlpha = ga;
+            this._skillGlyph(ctx, style.glyph, px + ps / 2, py + ps / 2, ps * 0.3, style.col);
+            const tx = px + ps + 16;
             ctx.textAlign = 'left';
-            ctx.fillStyle = '#fff'; ctx.font = `700 25px ${FONT}`;
-            ctx.fillText(u.name, x + 22, y + 34);
-            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `500 19px ${FONT}`;
-            ctx.fillText(u.description, x + 22, y + 58);
+            ctx.fillStyle = '#fff'; ctx.font = `700 24px ${FONT}`;
+            ctx.fillText(u.name, tx, y + 32);
+            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `500 17px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, u.description, cardW - (tx - x) - 190), tx, y + 56);
             // Segmented level progress bar (filled = owned levels).
-            const segGap = 4, segY = y + 74, segH = 8;
-            const segW = (210 - segGap * (u.maxLevel - 1)) / u.maxLevel;
+            const segGap = 4, segY = y + cardH - 26, segH = 8;
+            const segAvail = Math.min(210, cardW - (tx - x) - 200);
+            const segW = (segAvail - segGap * (u.maxLevel - 1)) / u.maxLevel;
             for (let s = 0; s < u.maxLevel; s++) {
                 ctx.fillStyle = s < level ? stateCol : 'rgba(255,255,255,0.12)';
-                ctx.fillRect(x + 22 + s * (segW + segGap), segY, Math.max(2, segW), segH);
+                ctx.fillRect(tx + s * (segW + segGap), segY, Math.max(2, segW), segH);
             }
-            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 15px ${FONT}`;
-            ctx.fillText(`Lv ${level}/${u.maxLevel}`, x + 22, y + 90);
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 14px ${FONT}`;
+            ctx.fillText(`Lv ${level}/${u.maxLevel}`, tx + segAvail + 12, segY + 8);
             // Buy button on the right.
-            const bw = 150, bh = 56;
+            const bw = 150, bh = Math.min(56, cardH - 24);
             const br = { x: x + cardW - bw - 16, y: y + (cardH - bh) / 2, w: bw, h: bh };
             this._button(ctx, br, maxed ? 'MAX' : `◎ ${cost}`,
                 { enabled: afford, accent: afford ? '#2e6b3f' : null, action: maxed ? null : 'buyUpgrade', arg: u.id });
         }
-        // Reset save at the bottom.
-        const rr = { x: c.x + c.w / 2 - 170, y: c.y + c.h - 60, w: 340, h: 52 };
-        this._button(ctx, rr, state.resetConfirming ? 'TAP AGAIN TO CONFIRM' : 'RESET SAVE',
-            { accent: state.resetConfirming ? '#7a2230' : 'rgba(80,30,38,0.8)', action: 'resetSave', fontSize: 22 });
     }
 
-    // ── ATTUNE — Relic Attunement (the coin-fed infinite sink) ────────────
-    // A defensive/utility subset of relics can be permanently attuned with coins.
-    // Mirrors _drawSkills' coin-buy card, but reads levels from save.relicAttunement
-    // and prices via attuneCost(def, level). Deliberately no raw-damage attunements
-    // (see relics.js ATTUNABLE) so a coin hoard can't out-scale the hypergrowth wall.
+    // Small vector glyph for a Forge Training discipline, centered on (cx,cy)
+    // with half-size s, stroked/filled in the discipline's hue. Pure canvas
+    // paths — no assets, nothing to load or fall back from.
+    _skillGlyph(ctx, glyph, cx, cy, s, col) {
+        ctx.save();
+        ctx.strokeStyle = col; ctx.fillStyle = col;
+        ctx.lineWidth = Math.max(2, s * 0.22); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        switch (glyph) {
+            case 'heart': {   // Greater Ember — max HP
+                ctx.beginPath();
+                ctx.moveTo(cx, cy + s * 0.85);
+                ctx.bezierCurveTo(cx - s * 1.25, cy - s * 0.1, cx - s * 0.65, cy - s * 1.05, cx, cy - s * 0.35);
+                ctx.bezierCurveTo(cx + s * 0.65, cy - s * 1.05, cx + s * 1.25, cy - s * 0.1, cx, cy + s * 0.85);
+                ctx.fill();
+                break;
+            }
+            case 'flame': {   // Brighter Burn — damage
+                // Outer body + inner notch as ONE even-odd fill: the notch is a
+                // hole in the flame, not an erase through the card underneath.
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - s);
+                ctx.bezierCurveTo(cx + s * 0.9, cy - s * 0.2, cx + s * 0.7, cy + s * 0.6, cx, cy + s);
+                ctx.bezierCurveTo(cx - s * 0.7, cy + s * 0.6, cx - s * 0.9, cy - s * 0.2, cx, cy - s);
+                ctx.moveTo(cx, cy - s * 0.1);
+                ctx.bezierCurveTo(cx + s * 0.35, cy + s * 0.3, cx + s * 0.25, cy + s * 0.6, cx, cy + s * 0.75);
+                ctx.bezierCurveTo(cx - s * 0.25, cy + s * 0.6, cx - s * 0.35, cy + s * 0.3, cx, cy - s * 0.1);
+                ctx.fill('evenodd');
+                break;
+            }
+            case 'chevrons': {   // Quickstep — move speed
+                for (const dx of [-s * 0.55, s * 0.25]) {
+                    ctx.beginPath();
+                    ctx.moveTo(cx + dx - s * 0.3, cy - s * 0.7);
+                    ctx.lineTo(cx + dx + s * 0.4, cy);
+                    ctx.lineTo(cx + dx - s * 0.3, cy + s * 0.7);
+                    ctx.stroke();
+                }
+                break;
+            }
+            case 'crosshair': {   // Keen Ember — crit
+                ctx.beginPath(); ctx.arc(cx, cy, s * 0.7, 0, TAU); ctx.stroke();
+                for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+                    ctx.beginPath();
+                    ctx.moveTo(cx + dx * s * 0.55, cy + dy * s * 0.55);
+                    ctx.lineTo(cx + dx * s * 1.05, cy + dy * s * 1.05);
+                    ctx.stroke();
+                }
+                ctx.beginPath(); ctx.arc(cx, cy, s * 0.16, 0, TAU); ctx.fill();
+                break;
+            }
+            case 'star': {   // Soulgleam — XP
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - s);
+                ctx.quadraticCurveTo(cx + s * 0.12, cy - s * 0.12, cx + s, cy);
+                ctx.quadraticCurveTo(cx + s * 0.12, cy + s * 0.12, cx, cy + s);
+                ctx.quadraticCurveTo(cx - s * 0.12, cy + s * 0.12, cx - s, cy);
+                ctx.quadraticCurveTo(cx - s * 0.12, cy - s * 0.12, cx, cy - s);
+                ctx.fill();
+                break;
+            }
+            case 'glow': {   // Wider Glow — pickup range
+                ctx.beginPath(); ctx.arc(cx, cy, s * 0.3, 0, TAU); ctx.fill();
+                ctx.globalAlpha = 0.8;
+                ctx.beginPath(); ctx.arc(cx, cy, s * 0.75, 0, TAU); ctx.stroke();
+                ctx.globalAlpha = 0.45;
+                ctx.beginPath(); ctx.arc(cx, cy, s * 1.05, 0, TAU); ctx.stroke();
+                break;
+            }
+            case 'coins': {   // Heirloom Cinders — starting coins
+                ctx.globalAlpha = 0.55;
+                ctx.beginPath(); ctx.arc(cx + s * 0.4, cy - s * 0.35, s * 0.55, 0, TAU); ctx.stroke();
+                ctx.globalAlpha = 1;
+                ctx.beginPath(); ctx.arc(cx - s * 0.2, cy + s * 0.2, s * 0.62, 0, TAU); ctx.stroke();
+                ctx.beginPath(); ctx.arc(cx - s * 0.2, cy + s * 0.2, s * 0.3, 0, TAU); ctx.stroke();
+                break;
+            }
+            case 'cycle': {   // Second Sight — rerolls
+                ctx.beginPath(); ctx.arc(cx, cy, s * 0.7, -Math.PI * 0.35, Math.PI * 1.05); ctx.stroke();
+                const ax = cx + Math.cos(-Math.PI * 0.35) * s * 0.7;
+                const ay = cy + Math.sin(-Math.PI * 0.35) * s * 0.7;
+                ctx.beginPath();
+                ctx.moveTo(ax - s * 0.42, ay - s * 0.1);
+                ctx.lineTo(ax + s * 0.16, ay - s * 0.28);
+                ctx.lineTo(ax - s * 0.05, ay + s * 0.38);
+                ctx.closePath(); ctx.fill();
+                break;
+            }
+            case 'ban': {   // Forsake — banish
+                ctx.beginPath(); ctx.arc(cx, cy, s * 0.75, 0, TAU); ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(cx - s * 0.5, cy - s * 0.5);
+                ctx.lineTo(cx + s * 0.5, cy + s * 0.5);
+                ctx.stroke();
+                break;
+            }
+            default: {
+                ctx.beginPath(); ctx.arc(cx, cy, s * 0.5, 0, TAU); ctx.fill();
+            }
+        }
+        ctx.restore();
+    }
+
+    // ── ATTUNE — the Relic Altar (the coin-fed infinite sink) ─────────────
+    // Master-detail: the eight attunable relics as a sigil list on the left,
+    // the selected one staged on an altar pane on the right — big rarity-lit
+    // sigil, what it grants NOW vs per level, and the single ATTUNE button.
+    // Selection lives on Game (attuneSel, set by the 'attuneSelect' action) so
+    // it survives tab hops like every other menu choice; the buy path is
+    // unchanged ('attuneRelic' → Game.buyAttune → SaveSystem.attuneRelic).
+    // Deliberately no raw-damage attunements (see relics.js ATTUNABLE) so a
+    // coin hoard can't out-scale the hypergrowth wall.
     _drawAttune(ctx, state) {
         const c = this._contentRect();
         const save = state.saveData;
+        const t = this._t || 0;
         const levels = (save.relicAttunement && typeof save.relicAttunement === 'object') ? save.relicAttunement : {};
         const discovered = Array.isArray(save.discoveredRelics) ? save.discoveredRelics : [];
+        // Stale/unset selection falls back to the first attunable.
+        const sel = ATTUNABLE.find((d) => d.id === state.attuneSel) || ATTUNABLE[0];
         ctx.textBaseline = 'alphabetic';
 
-        // Intro line — what this panel does (permanent, applied at run start).
+        // ── Sigil list (left) ──
+        const listW = Math.round(c.w * 0.42);
+        this._panel(ctx, c.x, c.y, listW, c.h, 'rgba(16,11,16,0.96)', 'rgba(255,158,207,0.22)');
         ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(255,158,207,0.92)'; ctx.font = `700 21px ${HEAD}`;
-        ctx.fillText('RELIC ATTUNEMENT', c.x, c.y + 4);
-        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 17px ${FONT}`;
-        ctx.fillText('Spend coins for permanent, always-on relic bonuses — applied at the start of every run.', c.x, c.y + 28);
-
-        const gridTop = c.y + 52;
-        const cols = 2, gap = 24;
-        const cardW = (c.w - gap) / cols;
-        const cardH = 96;
-        const rowGap = 16;
+        ctx.fillStyle = '#ff9ecf'; ctx.font = `800 24px ${HEAD}`;
+        ctx.fillText('RELIC ALTAR', c.x + 26, c.y + 42);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 16px ${FONT}`;
+        ctx.fillText('Permanent bonuses, active in every run.', c.x + 26, c.y + 68);
+        const listTop = c.y + 86;
+        const rowGap = 8;
+        const rowH = Math.max(52, Math.min(74, Math.floor((c.h - (listTop - c.y) - 16 - rowGap * (ATTUNABLE.length - 1)) / ATTUNABLE.length)));
         for (let i = 0; i < ATTUNABLE.length; i++) {
             const def = ATTUNABLE[i];
             const relic = getRelic(def.id);
-            const col = i % cols, row = Math.floor(i / cols);
-            const x = c.x + col * (cardW + gap);
-            const y = gridTop + row * (cardH + rowGap);
+            const rc = relic ? rarityColor(relic.rarity) : '#ff9ecf';
             const level = levels[def.id] ?? 0;
             const maxed = level >= def.max;
-            const cost = attuneCost(def, level);
-            const afford = !maxed && save.totalCoins >= cost;
-            const rc = relic ? rarityColor(relic.rarity) : '#ff9ecf';
-            // Color-coded state (matches SKILLS): green = maxed, gold = affordable,
-            // dim = can't afford. Left accent bar uses the relic's rarity color.
-            const stateCol = maxed ? '#5fd36a' : afford ? '#ffce54' : 'rgba(255,255,255,0.12)';
-            roundRectPath(ctx, x, y, cardW, cardH, 12);
-            ctx.fillStyle = afford ? 'rgba(46,40,18,0.92)' : maxed ? 'rgba(20,34,24,0.92)' : 'rgba(22,27,36,0.9)';
+            const afford = !maxed && save.totalCoins >= attuneCost(def, level);
+            const y = listTop + i * (rowH + rowGap);
+            const x = c.x + 16, w = listW - 32;
+            const isSel = def.id === sel.id;
+            roundRectPath(ctx, x, y, w, rowH, 10);
+            ctx.fillStyle = isSel ? 'rgba(74,36,58,0.97)' : 'rgba(30,22,30,0.95)';
             ctx.fill();
-            ctx.strokeStyle = stateCol;
-            ctx.lineWidth = afford || maxed ? 2.5 : 2; ctx.stroke();
-            ctx.fillStyle = rc;
-            ctx.fillRect(x + 4, y + 12, 5, cardH - 24);
+            ctx.strokeStyle = isSel ? '#ff9ecf' : 'rgba(255,255,255,0.1)';
+            ctx.lineWidth = isSel ? 2.5 : 1.5; ctx.stroke();
+            if (isSel) this._selGlow(ctx, x, y, w, rowH, 10, '#ff9ecf', t);
+            this._relicSigil(ctx, x + 30, y + rowH / 2, rowH * 0.26, rc, relic ? relic.rarity : 'common');
             ctx.textAlign = 'left';
-            const nm = relic ? relic.name : def.id;
-            ctx.fillStyle = rc; ctx.font = `700 25px ${FONT}`;
-            ctx.fillText(nm, x + 22, y + 34);
-            const nameW = ctx.measureText(nm).width;   // measure at the title font
-            // "Discovered" tick — flavor tie-in to the Wick Roads codex (not a gate).
-            if (discovered.includes(def.id)) {
-                ctx.fillStyle = 'rgba(127,208,255,0.85)'; ctx.font = `700 15px ${FONT}`;
-                ctx.fillText('✦ found', x + 22 + nameW + 14, y + 32);
-            }
-            ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.font = `500 19px ${FONT}`;
-            ctx.fillText(def.blurb, x + 22, y + 58);
-            // Segmented level progress bar (filled = owned levels).
-            const segGap = 4, segY = y + 74, segH = 8;
-            const segW = (210 - segGap * (def.max - 1)) / def.max;
-            for (let s = 0; s < def.max; s++) {
-                ctx.fillStyle = s < level ? stateCol : 'rgba(255,255,255,0.12)';
-                ctx.fillRect(x + 22 + s * (segW + segGap), segY, Math.max(2, segW), segH);
-            }
-            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 15px ${FONT}`;
-            ctx.fillText(`Lv ${level}/${def.max}`, x + 22, y + 90);
-            // Buy button on the right.
-            const bw = 150, bh = 56;
-            const br = { x: x + cardW - bw - 16, y: y + (cardH - bh) / 2, w: bw, h: bh };
-            this._button(ctx, br, maxed ? 'MAX' : `◎ ${cost}`,
-                { enabled: afford, accent: afford ? '#2e6b3f' : null, action: maxed ? null : 'attuneRelic', arg: def.id });
+            ctx.fillStyle = rc; ctx.font = `700 21px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, relic ? relic.name : def.id, w - 210), x + 58, y + rowH / 2 - 3);
+            ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.font = `500 14px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, def.blurb, w - 210), x + 58, y + rowH / 2 + 17);
+            // Right side of the row: level + a buyable/maxed nudge.
+            ctx.textAlign = 'right';
+            ctx.fillStyle = maxed ? '#5fd36a' : afford ? '#ffce54' : 'rgba(255,255,255,0.45)';
+            ctx.font = `700 17px ${FONT}`;
+            ctx.fillText(maxed ? 'MAX' : afford ? `Lv ${level} ▲` : `Lv ${level}/${def.max}`, x + w - 16, y + rowH / 2 + 6);
+            this._hot(x, y, w, rowH, 'attuneSelect', def.id);
         }
+
+        // ── Altar pane (right) — the selected relic, staged ──
+        const ax = c.x + listW + 24;
+        const aw = c.w - listW - 24;
+        const relic = getRelic(sel.id);
+        const rc = relic ? rarityColor(relic.rarity) : '#ff9ecf';
+        const level = levels[sel.id] ?? 0;
+        const maxed = level >= sel.max;
+        const cost = attuneCost(sel, level);
+        const afford = !maxed && save.totalCoins >= cost;
+        this._panel(ctx, ax, c.y, aw, c.h, 'rgba(14,9,14,0.96)', rc, { corners: true });
+        const acx = ax + aw / 2;
+        // Sigil on its altar glow — the pane's centerpiece. A dark vignette
+        // grounds it first so the glow + name pop off the busy menu backdrop.
+        const sigY = c.y + Math.min(180, c.h * 0.27);
+        ctx.beginPath(); ctx.ellipse(acx, sigY + 20, 210, 140, 0, 0, TAU);
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        this._ember(ctx, acx, sigY, 120, rc, 0.16 + Math.sin(t * 2.2) * 0.05);
+        ctx.restore();
+        this._relicSigil(ctx, acx, sigY, Math.min(58, c.h * 0.09), rc, relic ? relic.rarity : 'common', t);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = rc;
+        const nm = relic ? relic.name : sel.id;
+        this._fitFont(ctx, nm, aw - 80, 800, 40);
+        ctx.fillText(nm, acx, sigY + 105);
+        // Rarity tag + codex tick.
+        ctx.font = `700 17px ${FONT}`;
+        const tag = (relic ? rarityName(relic.rarity).toUpperCase() : 'RELIC')
+            + (discovered.includes(sel.id) ? '   ·   ✦ found on the Wick Roads' : '');
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.fillText(tag, acx, sigY + 134);
+        // What it grants: attuned total now, and the per-level step.
+        const per = this._attunePer(sel);
+        const midY = sigY + 186;
+        ctx.fillStyle = '#fff'; ctx.font = `700 26px ${FONT}`;
+        if (per && level > 0) {
+            const tot = parseFloat((per.num * level).toFixed(2));
+            ctx.fillText(`Attuned: ${per.sign}${tot}${per.pct} ${per.what}`, acx, midY);
+        } else {
+            ctx.fillText(level > 0 ? `Attuned to level ${level}` : 'Not yet attuned', acx, midY);
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `500 19px ${FONT}`;
+        ctx.fillText(`Each level: ${sel.blurb.replace(/\s*\/\s*level$/i, '')}`, acx, midY + 32);
+        // Big segmented level bar.
+        const segGap = 6, segH = 14;
+        const segTotW = Math.min(420, aw - 120);
+        const segW = (segTotW - segGap * (sel.max - 1)) / sel.max;
+        const segX = acx - segTotW / 2, segY = midY + 58;
+        for (let s = 0; s < sel.max; s++) {
+            ctx.fillStyle = s < level ? rc : 'rgba(255,255,255,0.12)';
+            ctx.fillRect(segX + s * (segW + segGap), segY, Math.max(2, segW), segH);
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 16px ${FONT}`;
+        ctx.fillText(`Level ${level} / ${sel.max}`, acx, segY + 38);
+        // The ATTUNE button — one big, honest buy affordance. It anchors below
+        // the segment bar; on short safe-area panels the FLAVOR text yields
+        // first (footer, then the afford hint) so nothing ever overlaps it.
+        const bw = Math.min(340, aw - 120), bh = 64;
+        const br = { x: acx - bw / 2, y: segY + 62, w: bw, h: bh };
+        this._button(ctx, br, maxed ? 'FULLY ATTUNED' : `ATTUNE  ·  ◎ ${cost}`,
+            { enabled: afford, primary: afford, action: maxed ? null : 'attuneRelic', arg: sel.id, fontSize: 26 });
+        const footY = c.y + c.h - 56;
+        const footFits = footY >= br.y + bh + 44;
+        const hintY = br.y + bh + 26;
+        if (!maxed && !afford && hintY <= (footFits ? footY - 22 : c.y + c.h - 20)) {
+            ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `500 16px ${FONT}`;
+            ctx.fillText(`Bank ◎ ${(cost - save.totalCoins).toLocaleString()} more on runs to afford this`, acx, hintY);
+        }
+        // Altar footer — what attunement IS, anchored to the pane's foot.
+        if (footFits) {
+            ctx.fillStyle = 'rgba(255,158,207,0.45)'; ctx.font = `500 16px ${FONT}`;
+            ctx.fillText('The altar remembers — attunements survive every death,', acx, footY);
+            ctx.fillText('applied the moment a run begins.', acx, footY + 22);
+        }
+    }
+
+    // '+6 Max HP / level' → {sign,num,pct,what} for the altar's "Attuned now"
+    // math (display only — the real effect stays ATTUNABLE's per()). Null when
+    // a blurb doesn't match the pattern; the pane then shows generic text.
+    _attunePer(def) {
+        const m = /^([+-])(\d+(?:\.\d+)?)(%?)\s*(.+?)\s*\/\s*level$/i.exec(def.blurb || '');
+        return m ? { sign: m[1], num: parseFloat(m[2]), pct: m[3], what: m[4] } : null;
+    }
+
+    // Procedural relic sigil: a faceted gem in the relic's rarity color —
+    // diamond core, facet lines, and (epic+) an orbit ring. Pure paths, no
+    // assets. `t` (optional) adds a slow glint rotation on the big altar copy.
+    _relicSigil(ctx, cx, cy, s, col, rarity = 'common', t = 0) {
+        const tier = RARITIES[rarity] ? RARITIES[rarity].tier : 1;
+        ctx.save();
+        ctx.strokeStyle = col; ctx.fillStyle = col;
+        ctx.lineWidth = Math.max(1.5, s * 0.09); ctx.lineJoin = 'round';
+        // Gem body — a tall diamond.
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - s);
+        ctx.lineTo(cx + s * 0.72, cy);
+        ctx.lineTo(cx, cy + s);
+        ctx.lineTo(cx - s * 0.72, cy);
+        ctx.closePath();
+        ctx.globalAlpha = 0.28; ctx.fill();
+        ctx.globalAlpha = 1; ctx.stroke();
+        // Facets: a horizontal girdle + two shoulder cuts.
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath(); ctx.moveTo(cx - s * 0.72, cy); ctx.lineTo(cx + s * 0.72, cy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx - s * 0.36, cy - s * 0.5); ctx.lineTo(cx, cy); ctx.lineTo(cx + s * 0.36, cy - s * 0.5); ctx.stroke();
+        ctx.globalAlpha = 1;
+        // Epic+ relics earn an orbit ring; legendary a second, tilted one.
+        if (tier >= 4) {
+            ctx.globalAlpha = 0.55;
+            ctx.beginPath(); ctx.ellipse(cx, cy, s * 1.25, s * 0.5, t * 0.4, 0, TAU); ctx.stroke();
+            if (tier >= 5) { ctx.beginPath(); ctx.ellipse(cx, cy, s * 1.25, s * 0.5, t * 0.4 + Math.PI / 3, 0, TAU); ctx.stroke(); }
+            ctx.globalAlpha = 1;
+        }
+        ctx.restore();
     }
 
     // ── LOADOUT / CHARACTER shared grid ──────────────────────────────────
@@ -2596,13 +2893,34 @@ export class MenuRenderer {
     }
 
     // ── SETTINGS ─────────────────────────────────────────────────────────
+    // Small grouped-section header for the SETTINGS columns: accent label +
+    // a thin rule to its right. Returns the y where the section's rows start.
+    _settingsHeader(ctx, x, w, y, label) {
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#9fb0c4'; ctx.font = `800 20px ${HEAD}`;
+        ctx.fillText(label, x, y);
+        const lw = ctx.measureText(label).width;
+        ctx.strokeStyle = 'rgba(159,176,196,0.25)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x + lw + 16, y - 7); ctx.lineTo(x + w, y - 7); ctx.stroke();
+        return y + 22;
+    }
+
+    // ── SETTINGS — grouped option columns ────────────────────────────────
+    // Two labelled columns (GAMEPLAY toggles | AUDIO + HELP) instead of one
+    // undifferentiated stack, with the dev CHEATS strip across the bottom.
+    // Every action/arg is unchanged — only the arrangement is new.
     _drawSettings(ctx, state) {
         const c = this._contentRect();
         const save = state.saveData;
         this._panel(ctx, c.x, c.y, c.w, c.h, null, undefined, { corners: true });
         const innerX = c.x + 40;
         const innerW = c.w - 80;
-        let y = c.y + 40;
+        const colGap = 56;
+        const colW = (innerW - colGap) / 2;
+        const rightX = innerX + colW + colGap;
+
+        // ── Left column: GAMEPLAY toggles ──
+        let y = this._settingsHeader(ctx, innerX, colW, c.y + 48, 'GAMEPLAY');
         ctx.textBaseline = 'middle';
         for (const t of SETTING_TOGGLES) {
             // Dev-only toggles hide from players — unless one is already ON
@@ -2613,7 +2931,7 @@ export class MenuRenderer {
             ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = `600 26px ${FONT}`;
             ctx.fillText(t.label, innerX, y + 26);
             const tw = 92, th = 44;
-            const tr = { x: innerX + innerW - tw, y: y + 4, w: tw, h: th };
+            const tr = { x: innerX + colW - tw, y: y + 4, w: tw, h: th };
             roundRectPath(ctx, tr.x, tr.y, tr.w, tr.h, th / 2);
             ctx.fillStyle = val ? '#3ea65b' : 'rgba(80,86,96,0.9)'; ctx.fill();
             ctx.fillStyle = '#fff'; ctx.beginPath();
@@ -2624,57 +2942,56 @@ export class MenuRenderer {
             this._hot(tr.x, tr.y, tr.w, tr.h, 'toggleSetting', t.key);
             y += 60;
         }
-        // Volume sliders (placeholder, +/- steppers).
+
+        // ── Right column: AUDIO sliders, then HELP ──
+        let ry = this._settingsHeader(ctx, rightX, colW, c.y + 48, 'AUDIO');
+        ctx.textBaseline = 'middle';
         for (const v of [{ key: 'volMusic', label: 'Music Volume' }, { key: 'volSfx', label: 'SFX Volume' }]) {
             const val = typeof save.settings[v.key] === 'number' ? save.settings[v.key] : 0.7;
             ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = `600 26px ${FONT}`;
-            ctx.fillText(v.label, innerX, y + 26);
-            const barX = innerX + innerW - 360, barW = 240, barY = y + 16;
+            ctx.fillText(v.label, rightX, ry + 26);
+            const barX = rightX + colW - 360, barW = 240, barY = ry + 16;
             // minus
-            const mr = { x: barX - 56, y: y + 2, w: 44, h: 44 };
+            const mr = { x: barX - 56, y: ry + 2, w: 44, h: 44 };
             this._button(ctx, mr, '−', { action: 'volDown', arg: v.key, fontSize: 30 });
             roundRectPath(ctx, barX, barY, barW, 14, 7); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
             roundRectPath(ctx, barX, barY, barW * clamp01(val), 14, 7); ctx.fillStyle = '#ffce54'; ctx.fill();
-            const pr = { x: barX + barW + 12, y: y + 2, w: 44, h: 44 };
+            const pr = { x: barX + barW + 12, y: ry + 2, w: 44, h: 44 };
             this._button(ctx, pr, '+', { action: 'volUp', arg: v.key, fontSize: 30 });
             ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `600 20px ${FONT}`;
-            ctx.fillText(`${Math.round(val * 100)}%`, barX + barW + 64, y + 24);
-            y += 60;
+            ctx.fillText(`${Math.round(val * 100)}%`, barX + barW + 64, ry + 24);
+            ry += 60;
         }
         ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 18px ${FONT}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText('Themed music + sound effects. Adjust to taste; 0% mutes.', innerX, y + 20);
+        ctx.fillText('Themed music + sound effects. 0% mutes.', rightX, ry + 20);
+        ry += 56;
 
         // Replay the guided tutorial: re-runs the menu tour right away and
         // re-arms the in-run hint pills for the next vigil.
-        y += 44;
-        this._button(ctx, { x: innerX, y, w: 340, h: 52 }, 'REPLAY TUTORIAL',
+        ry = this._settingsHeader(ctx, rightX, colW, ry + 24, 'HELP');
+        this._button(ctx, { x: rightX, y: ry, w: 340, h: 52 }, 'REPLAY TUTORIAL',
             { accent: 'rgba(46,74,96,0.9)', action: 'replayTutorial', fontSize: 22 });
         ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 17px ${FONT}`;
-        ctx.textBaseline = 'middle';
-        ctx.fillText('Guided tour of the menu + hint pills on your next run.', innerX + 364, y + 27);
         ctx.textBaseline = 'alphabetic';
-        y += 30;
+        this._wrapText(ctx, 'Guided tour of the menu + hint pills on your next run.',
+            rightX + 364 + (colW - 364) / 2, ry + 22, colW - 364, 22, 3);
 
-        // ── Cheats (testing) ──────────────────────────────────────────────
+        // ── Cheats (testing) — full-width strip at the panel's foot ────────
         // Dev-only (?dev=1): hotspots only register when drawn, so hiding the
         // panel also disables the cheat actions for regular players.
         if (DEV_MODE) {
-            y += 52;
-            ctx.fillStyle = '#ff8a5c'; ctx.font = `700 22px ${HEAD}`;
-            ctx.fillText('CHEATS (testing)', innerX, y + 6);
-            ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = `500 17px ${FONT}`;
-            ctx.fillText('Grant coins / unlock everything to test cases, gear & cosmetics.', innerX + 220, y + 6);
-            y += 22;
+            const cbH = 56;
+            let cy2 = this._settingsHeader(ctx, innerX, innerW, c.y + c.h - cbH - 60, 'CHEATS (TESTING)');
             const cheats = [
                 { label: '+1,000 ◎', action: 'cheatCoins', arg: 1000 },
                 { label: '+10,000 ◎', action: 'cheatCoins', arg: 10000 },
                 { label: 'Unlock All Items', action: 'cheatUnlockAll', arg: null },
             ];
-            const cbW = (innerW - 2 * 20) / 3, cbH = 56;
+            const cbW = (innerW - 2 * 20) / 3;
             for (let i = 0; i < cheats.length; i++) {
                 const ch = cheats[i];
-                const r = { x: innerX + i * (cbW + 20), y, w: cbW, h: cbH };
+                const r = { x: innerX + i * (cbW + 20), y: cy2, w: cbW, h: cbH };
                 this._button(ctx, r, ch.label, { accent: '#5a3a22', action: ch.action, arg: ch.arg, fontSize: 22 });
             }
         }

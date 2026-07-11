@@ -187,6 +187,8 @@ export const GameInputActionMethods = {
                 break;
             case 'buyUpgrade': this._pressFeedback(`shop:${arg}`); this.buyUpgrade(arg); break;
             case 'attuneRelic': this._pressFeedback(`attune:${arg}`); this.buyAttune(arg); break;
+            // Stage a relic on the ATTUNE altar pane (selection only, no spend).
+            case 'attuneSelect': this._pressFeedback(`attuneSel:${arg}`); this.attuneSel = arg; break;
             case 'buyHeroAttune': this._pressFeedback(`heroAttune:${arg}`); this.buyHeroAttune(arg); break;
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;

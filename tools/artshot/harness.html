@@ -145,6 +145,11 @@ async function boot() {
         // Tick a few frames so menu intro animations settle.
         for (let i = 0; i < 90; i++) { try { game.update(DT); } catch (e) { ERR.push('menu ' + i + ': ' + String(e && e.stack || e)); break; } }
         game.render();
+        // The menu's tab-switch fade runs on WALL-CLOCK time (MenuRenderer._t),
+        // so the first render is frame 0 of the 180ms transition — near-fully
+        // transparent tab content. Force the transition complete and render
+        // again so menu shots show the settled screen, not the fade-in.
+        if (game.ui && game.ui.menu) { game.ui.menu._transT0 = -10; game.render(); }
     } else {
         if (MAP) { try { game.saveSystem.setSelectedMap(MAP); } catch (e) { ERR.push('map: ' + String(e)); } }
         game._startRun();                // default hero (monkey "Pyra"), default map
