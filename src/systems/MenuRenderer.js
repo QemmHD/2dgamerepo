@@ -748,10 +748,33 @@ export class MenuRenderer {
         const seen = (save.onboarding && save.onboarding.tabsSeen) || [];
         const plate = ui.btnPlate;
         const stackX = sa.left + 150;
+        // Section rows: MODES + the non-PLAY groups (built early — the fit
+        // math below needs the count before anything draws).
+        const rows = [];
+        if (tabUnlocked('modes', save)) rows.push({ label: 'MODES', accent: '#ff6a4a', target: 'modes', kids: ['modes'] });
+        for (const gDef of groups) {
+            if (gDef.id === 'gPlay') continue;
+            rows.push({ label: gDef.label, accent: gDef.accent, target: gDef.kids[0], kids: gDef.kids });
+        }
+        // Fit the stack to the vertical safe band. Cover-fit phones fold the
+        // crop + home-indicator into big safeArea insets; at fixed sizes the
+        // stack ran past the safe bottom (SETTINGS on the screen edge, the
+        // lifetime strip drawn across it). Measure, lift the start toward the
+        // tagline if needed, then compress row heights/gaps — never overflow.
+        const stripY = H - sa.bottom - 24;         // lifetime strip baseline
+        const stackBottomMax = stripY - 34;        // keep clear of the strip
+        let playH = 92, rowH = 60, gapBig = 16, gapRow = 12;
+        const need = playH + gapBig + rows.length * rowH + Math.max(0, rows.length - 1) * gapRow;
         let sy = sa.top + 356;
+        if (sy + need > stackBottomMax) {
+            sy = Math.max(ly + logoH + 76, sa.top + 300);   // tuck up under the tagline
+            const k = Math.max(0.78, Math.min(1, (stackBottomMax - sy) / need));
+            playH = Math.round(playH * k); rowH = Math.round(rowH * k);
+            gapBig = Math.round(gapBig * k); gapRow = Math.round(gapRow * k);
+        }
         // PLAY — the primary CTA (opens run setup; Space/Enter quick-starts).
         {
-            const bw = 470, bh = 92;
+            const bw = 470, bh = playH;
             ctx.save(); ctx.globalCompositeOperation = 'lighter';
             this._ember(ctx, stackX + bw / 2, sy + bh / 2, bw * 0.5, '#74e890', 0.16 + Math.sin(t * 3) * 0.05);
             ctx.restore(); ctx.globalAlpha = 1;
@@ -779,17 +802,11 @@ export class MenuRenderer {
             ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.font = `800 30px ${FONT}`; ctx.fillText('▶', stackX + bw - 28, sy + bh / 2 + 1);
             this._hot(stackX, sy, bw, bh, 'tab', 'play');
-            sy += bh + 16;
+            sy += bh + gapBig;
         }
-        // Section buttons: MODES + the non-PLAY groups, forged-plate rows.
-        const rows = [];
-        if (tabUnlocked('modes', save)) rows.push({ label: 'MODES', accent: '#ff6a4a', target: 'modes', kids: ['modes'] });
-        for (const gDef of groups) {
-            if (gDef.id === 'gPlay') continue;
-            rows.push({ label: gDef.label, accent: gDef.accent, target: gDef.kids[0], kids: gDef.kids });
-        }
+        // Section buttons: the forged-plate rows built above.
         for (const r of rows) {
-            const bw = 400, bh = 60;
+            const bw = 400, bh = rowH;
             roundRectPath(ctx, stackX, sy, bw, bh, 12);
             const bg = ctx.createLinearGradient(0, sy, 0, sy + bh);
             bg.addColorStop(0, 'rgba(30,24,21,0.92)'); bg.addColorStop(1, 'rgba(18,14,13,0.92)');
@@ -820,7 +837,7 @@ export class MenuRenderer {
                 ctx.globalAlpha = 1;
             }
             this._hot(stackX, sy, bw, bh, 'tab', r.target);
-            sy += bh + 12;
+            sy += bh + gapRow;
         }
 
         // ── Hero showcase (right) — the selected monkey on their pedestal ──
@@ -836,7 +853,9 @@ export class MenuRenderer {
         const startWeaponId = resolveStartingWeapon(save);
         const skin = resolveWeaponSkin(startWeaponId);
         const heldProp = resolveWeaponProp(startWeaponId);
-        const hx = W * 0.70, hy = sa.top + 560;
+        // Clamped so the caption ('tap to customise', hy+272) always clears
+        // the safe bottom on cover-fit phones with big folded insets.
+        const hx = W * 0.70, hy = Math.min(sa.top + 560, H - sa.bottom - 288);
         this._pedestal(ctx, hx, hy + 150, t, ch.accent || '#ff7a1e', 1.5);
         this._drawAvatar(ctx, hx, hy, 175, avatarAp, charSprite, skin, t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
