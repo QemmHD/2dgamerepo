@@ -88,9 +88,16 @@ export class MinigameOverlay {
         const a = this.caseAnim;
         if (!a) return;
         const spinTime = a.spinTime ?? 2.6;
+        const revealAt = spinTime + (a.settleHold ?? 0);
         if (a.age < spinTime) {
             a.age = spinTime;   // jump the reel to its landing; update() fires
                                 // the reveal chime after the settle beat.
+        } else if (a.age < revealAt) {
+            // A tap during the settle hold skips the held breath straight to
+            // the reveal — it must NEVER dismiss (the prize would go unseen).
+            // update()'s crossing check won't see this jump, so chime here.
+            a.age = revealAt;
+            this.game.audio.reveal(a.result?.rarity);
         } else if (pos && a._againRect && a.caseType
             && pos.x >= a._againRect.x && pos.x <= a._againRect.x + a._againRect.w
             && pos.y >= a._againRect.y && pos.y <= a._againRect.y + a._againRect.h) {
