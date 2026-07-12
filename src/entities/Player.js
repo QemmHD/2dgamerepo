@@ -12,7 +12,7 @@ import {
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { Easing } from '../core/Easing.js';
 import {
-    getHeroFrames, heroSetFrames, getGlowSprite, getSoftShadowSprite,
+    getHeroFrames, getGlowSprite, getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
 import { drawPixelCloak, drawPixelHat, HERO_BOB, HERO_GRID } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
@@ -76,7 +76,6 @@ export class Player {
         // walk:[3], cast, hurt} }. draw() picks dir+state by facing/animState.
         const ch = getCharacter(characterId);
         this.heroFrames = getHeroFrames(characterId, ch);
-        this._allHeroFrames = heroSetFrames(this.heroFrames);
         // LPC-bodied heroes get the imported cape sprite for their cloak (it
         // aligns to the LPC body); the chibi cast keeps the procedural drape.
         this.isLpcBody = !!ch.lpc;
@@ -92,8 +91,6 @@ export class Player {
         // Cosmetic trail: recent positions, drawn as a fading wake.
         this.trailPositions = [];
         this._trailTick = 0;
-        // Lazily-built fur-tint lookup (origCanvas → tinted copy), keyed by color.
-        this._tintCache = { color: null, map: null };
         // Weapon-themed skin overlay (set by Game from the starting weapon) +
         // melee swing animation state ({ age, dir } or null).
         this.weaponSkin = null;
@@ -369,30 +366,14 @@ export class Player {
         return heal;
     }
 
-    // Build fur-tinted copies of EVERY directional pose frame once per fur
-    // color, returning a Map(origCanvas → tintedCanvas). 'source-atop' tints
-    // only the sprite pixels (transparent margin stays clear). Returns null on
-    // failure (e.g. headless harness) so draw() falls back to the untinted frame.
-    _tintMap(color) {
-        if (this._tintCache.color === color) return this._tintCache.map;
-        let map = null;
-        try {
-            map = new Map();
-            for (const f of this._allHeroFrames) {
-                const c = document.createElement('canvas');
-                c.width = f.width; c.height = f.height;
-                const cx = c.getContext('2d');
-                if (!cx) throw new Error('no ctx');
-                cx.drawImage(f, 0, 0);
-                cx.globalCompositeOperation = 'source-atop';
-                cx.globalAlpha = 0.42;
-                cx.fillStyle = color;
-                cx.fillRect(0, 0, c.width, c.height);
-                map.set(f, c);
-            }
-        } catch (e) { map = null; }
-        this._tintCache = { color, map };
-        return map;
+    // Rebuild the pose frames fur-aware once the equipped cosmetics are known
+    // (the constructor runs before Game applies the appearance). Cached per
+    // (hero, fur) in ProceduralSprites, so re-application is free — and menu
+    // previews pull the exact same recolored set, so what you see is what
+    // you play. Replaces the old draw-time whole-body tint wash.
+    refreshHeroFrames() {
+        const ch = getCharacter(this.characterId);
+        this.heroFrames = getHeroFrames(this.characterId, ch, (this.appearance && this.appearance.furColor) || null);
     }
 
     // Hold the cast (attack) pose briefly; called when the primary weapon fires.
@@ -498,9 +479,9 @@ export class Player {
         }
         const dset = this.heroFrames.dirs[dir] || this.heroFrames.dirs.down;
         const poseArr = dset[state] || dset.idle;
-        const orig = poseArr[idx % poseArr.length] || poseArr[0];
-        const tintMap = ap.furColor ? this._tintMap(ap.furColor) : null;
-        const sprite = (tintMap && tintMap.get(orig)) || orig;
+        // Fur cosmetics are baked into heroFrames (refreshHeroFrames) — no
+        // draw-time tint pass any more.
+        const sprite = poseArr[idx % poseArr.length] || poseArr[0];
         // Snapshot the resolved pose for the held-weapon passes (both the
         // behind-body and over-body draws), so the wand rides the exact frame
         // the body is showing this tick.

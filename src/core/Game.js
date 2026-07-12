@@ -760,6 +760,9 @@ export class Game {
         // so multipliers compound). Cosmetics drive the player's appearance.
         applyLoadout(this.player, this.saveSystem.data);
         this.player.appearance = resolveAppearance(this.saveSystem.getEquippedCosmetics());
+        // Fur cosmetics bake into the pose frames (per-(hero,fur) cache) —
+        // rebuild now that the appearance is known.
+        this.player.refreshHeroFrames();
         // Weapon-themed skin overlay + melee-swing flag from the selected
         // starting weapon (visual identity only — see content/weaponSkins.js).
         const startWeaponId = resolveStartingWeapon(this.saveSystem.data);

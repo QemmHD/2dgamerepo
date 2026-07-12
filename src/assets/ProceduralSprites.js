@@ -234,8 +234,44 @@ function buildLpcHeroSet(model) {
     return { kind: 'lpc', dirs: { down, up, side } };
 }
 
-export function getHeroFrames(id, char = null) {
-    const key = `heroFrames:${id}`;
+// Fur-cosmetic recolor for baked/imported frame sets (AI sheets, LPC): tinted
+// COPIES of every frame — 'source-atop' keeps the transparent margin clear —
+// with shared-frame identity preserved (idle aliased into cast/hurt stays one
+// canvas). The originals are never touched: getAiHeroFrames caches them
+// internally and the natural-fur variant must stay clean. Returns the input
+// set unchanged on failure (no-DOM env) so callers always get something.
+function furWashSet(set, color) {
+    try {
+        const tinted = new Map();
+        const wash = (f) => {
+            if (!f) return f;
+            if (tinted.has(f)) return tinted.get(f);
+            const c = document.createElement('canvas');
+            c.width = f.width; c.height = f.height;
+            const g = c.getContext('2d');
+            g.drawImage(f, 0, 0);
+            g.globalCompositeOperation = 'source-atop';
+            g.globalAlpha = 0.5;
+            g.fillStyle = color;
+            g.fillRect(0, 0, c.width, c.height);
+            tinted.set(f, c);
+            return c;
+        };
+        const dirs = {};
+        for (const [dk, d] of Object.entries(set.dirs)) {
+            const nd = {};
+            for (const [pk, arr] of Object.entries(d)) nd[pk] = Array.isArray(arr) ? arr.map(wash) : arr;
+            dirs[dk] = nd;
+        }
+        return { ...set, dirs };
+    } catch (e) { return set; }
+}
+
+export function getHeroFrames(id, char = null, furColor = null) {
+    // Fur cosmetics are a first-class variant: one cached set per (hero, fur),
+    // so menu previews, the boutique mannequin and the in-run player all pull
+    // the SAME recolored frames (the old draw-time tint only ran in-game).
+    const key = `heroFrames:${id}:${furColor || 'nat'}`;
     if (cache.has(key)) return cache.get(key);
     let set = null;
     // Only use the LPC body if its sheet actually loaded; otherwise fall through
@@ -244,8 +280,16 @@ export function getHeroFrames(id, char = null) {
     // Pixel-bodied heroes prefer the HQ AI body sheets (shared base + per-hero
     // tint/feature composite); null until loaded / on failure → procedural.
     if (!set) set = getAiHeroFrames(id, char);
+    // Baked/imported bodies can't palette-swap — recolor via the fur wash.
+    if (set && furColor) set = furWashSet(set, furColor);
     if (!set) {
-        const opts = char ? { palette: char.palette, feature: char.feature, accent: char.accent } : {};
+        // Procedural tier gets the REAL thing: the fur cosmetic replaces the
+        // palette's fur before generation, so only true fur pixels recolor
+        // (shaded furD/furL variants derive from it correctly).
+        const pal = char ? char.palette : null;
+        const opts = char
+            ? { palette: furColor ? { ...pal, fur: furColor } : pal, feature: char.feature, accent: char.accent }
+            : (furColor ? { palette: { fur: furColor } } : {});
         set = buildPixelHeroSet(opts);
     }
     cache.set(key, set);
