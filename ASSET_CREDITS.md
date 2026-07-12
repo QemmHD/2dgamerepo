@@ -176,7 +176,7 @@ the hand prop always renders.
 | `src/assets/ui/corner_bracket.png` | Generated | higgsfield (Nano Banana 2) | Ornate wrought-iron corner bracket with a glowing molten seam. Keyed transparent; drawn (mirrored) at the four corners of large panels via `_panel`/`_forgeCorners`. |
 | `src/assets/ui/btn_plate.png` | Generated | higgsfield (Nano Banana 2) | Neutral forged-metal button plate (bevel + rivets + copper rim). Keyed transparent; overlaid additively on button fills and the active tab so each element's accent colour still reads. |
 | `src/assets/ui/logo.png` | Generated | higgsfield (Nano Banana 2) | The game LOGO: chibi pixel monkey wick-keeper raising an ember-flame wand inside a forged rune ring. Background keyed to transparent; drawn above the HOME wordmark. |
-| `favicon.png`, `apple-touch-icon.png` | Generated | higgsfield (Nano Banana 2) | Opaque master of the same logo (dark charcoal background), downscaled to 64px browser favicon + 180px iOS/Android home-screen icon (linked from `index.html`). |
+| `favicon.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | Generated | higgsfield (Nano Banana 2) | Opaque master of the same logo (dark charcoal background), downscaled to the 64px browser favicon, 180px iOS home-screen icon, and 192/512px web-app-manifest icons (`site.webmanifest`), all linked from `index.html`. |
 
 These load lazily via `src/assets/MenuImages.js`; every consumer in
 `MenuRenderer.js` falls back to the existing procedural drawing (cached
