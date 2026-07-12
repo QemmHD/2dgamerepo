@@ -234,37 +234,94 @@ function buildLpcHeroSet(model) {
     return { kind: 'lpc', dirs: { down, up, side } };
 }
 
-// Fur-cosmetic recolor for baked/imported frame sets (AI sheets, LPC): tinted
-// COPIES of every frame — 'source-atop' keeps the transparent margin clear —
-// with shared-frame identity preserved (idle aliased into cast/hurt stays one
-// canvas). The originals are never touched: getAiHeroFrames caches them
-// internally and the natural-fur variant must stay clean. Returns the input
-// set unchanged on failure (no-DOM env) so callers always get something.
-function furWashSet(set, color) {
+// ── True fur recolor for baked/imported frame sets (AI sheets, LPC) ──────
+// Per-pixel HUE REMAP: pixels whose hue sits near the hero's own base fur
+// (and carry real saturation) move to the cosmetic color while KEEPING each
+// pixel's luminance, so all baked shading survives and it reads as actual
+// fur — not a translucent wash over the whole sprite (the previous approach,
+// which looked like a second aura). Eyes, dark outlines and props stay put:
+// they're near-black / desaturated and never enter the mask. Works on COPIES
+// (getAiHeroFrames caches the originals internally; the natural variant must
+// stay clean) with shared-frame identity preserved.
+
+function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return [0, 0, l];
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+    return [h, s, l];
+}
+function hslToRgb(h, s, l) {
+    if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const f = (t) => {
+        if (t < 0) t += 1; if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    };
+    return [Math.round(f(h + 1 / 3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1 / 3) * 255)];
+}
+function hexToRgb(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b); return Math.min(d, 1 - d); };
+
+function furRecolorSet(set, color, baseFurHex) {
     try {
+        const target = hexToRgb(color);
+        const base = hexToRgb(baseFurHex || '#8b5a2b');
+        if (!target || !base) return set;
+        const [tH, tS] = rgbToHsl(...target);
+        const [bH, bS] = rgbToHsl(...base);
+        // A grey base fur has no meaningful hue to key on — leave the set as
+        // generated (the procedural tier already palette-swapped upstream).
+        if (bS < 0.08) return set;
         const tinted = new Map();
-        const wash = (f) => {
+        const recolor = (f) => {
             if (!f) return f;
             if (tinted.has(f)) return tinted.get(f);
             const c = document.createElement('canvas');
             c.width = f.width; c.height = f.height;
             const g = c.getContext('2d');
             g.drawImage(f, 0, 0);
-            g.globalCompositeOperation = 'source-atop';
-            g.globalAlpha = 0.5;
-            g.fillStyle = color;
-            g.fillRect(0, 0, c.width, c.height);
+            const img = g.getImageData(0, 0, c.width, c.height);
+            const d = img.data;
+            for (let i = 0; i < d.length; i += 4) {
+                if (d[i + 3] < 12) continue;
+                const [h, s, l] = rgbToHsl(d[i], d[i + 1], d[i + 2]);
+                // Fur mask: hue within ~40° of the hero's base fur, with real
+                // saturation, and not near-black (outline/eyes) or blown white.
+                if (s < 0.14 || l < 0.09 || l > 0.97 || hueDist(h, bH) > 0.11) continue;
+                // Remap hue+saturation to the cosmetic; keep the pixel's own
+                // luminance so every shading step of the original art survives.
+                const ns = tS * (0.55 + 0.45 * s);
+                const [nr, ng, nb] = hslToRgb(tH, ns, l);
+                d[i] = nr; d[i + 1] = ng; d[i + 2] = nb;
+            }
+            g.putImageData(img, 0, 0);
             tinted.set(f, c);
             return c;
         };
         const dirs = {};
-        for (const [dk, d] of Object.entries(set.dirs)) {
+        for (const [dk, dd] of Object.entries(set.dirs)) {
             const nd = {};
-            for (const [pk, arr] of Object.entries(d)) nd[pk] = Array.isArray(arr) ? arr.map(wash) : arr;
+            for (const [pk, arr] of Object.entries(dd)) nd[pk] = Array.isArray(arr) ? arr.map(recolor) : arr;
             dirs[dk] = nd;
         }
         return { ...set, dirs };
-    } catch (e) { return set; }
+    } catch (e) { return set; }   // no-DOM env → uncolored fallback
 }
 
 export function getHeroFrames(id, char = null, furColor = null) {
@@ -280,8 +337,9 @@ export function getHeroFrames(id, char = null, furColor = null) {
     // Pixel-bodied heroes prefer the HQ AI body sheets (shared base + per-hero
     // tint/feature composite); null until loaded / on failure → procedural.
     if (!set) set = getAiHeroFrames(id, char);
-    // Baked/imported bodies can't palette-swap — recolor via the fur wash.
-    if (set && furColor) set = furWashSet(set, furColor);
+    // Baked/imported bodies can't regenerate — recolor their fur pixels via
+    // the per-pixel hue remap (true recolor, shading preserved).
+    if (set && furColor) set = furRecolorSet(set, furColor, char && char.palette && char.palette.fur);
     if (!set) {
         // Procedural tier gets the REAL thing: the fur cosmetic replaces the
         // palette's fur before generation, so only true fur pixels recolor
