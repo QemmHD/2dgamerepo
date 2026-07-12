@@ -16,8 +16,12 @@ const FILES = {
     // framing large panels, and a neutral forged-metal button plate overlaid
     // (additively) on button fills so each button's accent colour still reads.
     corner: 'corner_bracket.png', btnPlate: 'btn_plate.png',
+    // The game LOGO emblem (monkey wick-keeper in a forged ember ring) —
+    // keyed transparent for the HOME title screen; the opaque master also
+    // ships as the favicon / iOS home-screen icon (see index.html).
+    logo: 'logo.png',
 };
-const _imgs = { bg: null, title: null, crest: null, corner: null, btnPlate: null };
+const _imgs = { bg: null, title: null, crest: null, corner: null, btnPlate: null, logo: null };
 let _started = false;
 
 export function getMenuImages() {
