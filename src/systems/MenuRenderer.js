@@ -754,10 +754,11 @@ export class MenuRenderer {
         const seen = (save.onboarding && save.onboarding.tabsSeen) || [];
         const plate = ui.btnPlate;
         const stackX = sa.left + 150;
-        // Section rows: MODES + the non-PLAY groups (built early — the fit
-        // math below needs the count before anything draws).
+        // Section rows: the non-PLAY groups (built early — the fit math below
+        // needs the count before anything draws). MODES has no row of its own:
+        // it lives inside PLAY as a sibling pill, so a HOME row would be the
+        // same door twice.
         const rows = [];
-        if (tabUnlocked('modes', save)) rows.push({ label: 'MODES', accent: '#ff6a4a', target: 'modes', kids: ['modes'] });
         for (const gDef of groups) {
             if (gDef.id === 'gPlay') continue;
             rows.push({ label: gDef.label, accent: gDef.accent, target: gDef.kids[0], kids: gDef.kids });
@@ -804,10 +805,20 @@ export class MenuRenderer {
             ctx.fillStyle = '#ffffff'; this._fitFont(ctx, 'PLAY', 300, 800, 40);
             ctx.fillText('PLAY', stackX + 34, sy + bh / 2 - 8);
             ctx.font = `600 15px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            ctx.fillText('set up your run  ·  Space / Enter quick-starts', stackX + 34, sy + bh / 2 + 22);
+            ctx.fillText('runs & game modes  ·  Space / Enter quick-starts', stackX + 34, sy + bh / 2 + 22);
             ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.font = `800 30px ${FONT}`; ctx.fillText('▶', stackX + bw - 28, sy + bh / 2 + 1);
             this._hot(stackX, sy, bw, bh, 'tab', 'play');
+            // Undone-dailies nudge (was the MODES row's dot — MODES now lives
+            // inside PLAY, so its "come back today" signal rides here).
+            const dDay = currentDayNumber();
+            const dDd = save.daily || { day: 0, completed: [] };
+            const dDone = dDd.day === dDay && Array.isArray(dDd.completed) ? dDd.completed.length : 0;
+            if (((save.stats?.runs ?? 0) >= 1) && dDone < pickDailyChallenges(dDay).length) {
+                ctx.beginPath(); ctx.arc(stackX + bw - 10, sy + 10, 7, 0, TAU);
+                ctx.fillStyle = '#ff6a4a'; ctx.fill();
+                ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+            }
             sy += bh + gapBig;
         }
         // Section buttons: the forged-plate rows built above.
@@ -853,7 +864,7 @@ export class MenuRenderer {
         let charSprite = null;
         const castFlash = !ch.lpc && (t % 3.6) > 3.0;
         try {
-            const d = getHeroFrames(ch.id, ch).dirs.down;
+            const d = getHeroFrames(ch.id, ch, ap.furColor).dirs.down;
             charSprite = (t % 3.6) > 3.0 ? d.cast[0] : d.idle[0];
         } catch (e) { charSprite = null; }
         const startWeaponId = resolveStartingWeapon(save);
@@ -1125,7 +1136,7 @@ export class MenuRenderer {
         // cast fist with the body (LPC bodies alias cast to idle — no jump).
         const castFlash = !ch.lpc && (this._t % 3.6) > 3.0;
         try {
-            const d = getHeroFrames(ch.id, ch).dirs.down;
+            const d = getHeroFrames(ch.id, ch, ap.furColor).dirs.down;
             charSprite = (this._t % 3.6) > 3.0 ? d.cast[0] : d.idle[0];
         } catch (e) { charSprite = null; }
         // The selected starting weapon drives the themed skin overlay so the
@@ -2399,7 +2410,7 @@ export class MenuRenderer {
         let charSprite = null;
         const castFlash = !ch.lpc && (this._t % 4.0) > 3.4;
         try {
-            const d = getHeroFrames(ch.id, ch).dirs.down;
+            const d = getHeroFrames(ch.id, ch, ap.furColor).dirs.down;
             charSprite = (this._t % 4.0) > 3.4 ? d.cast[0] : d.idle[0];
         } catch (e) { charSprite = null; }
         const startWeaponId = resolveStartingWeapon(save);
@@ -2758,7 +2769,7 @@ export class MenuRenderer {
         const ch = getCharacter(save.selectedCharacter);
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let charSprite = null;
-        try { charSprite = getHeroFrames(ch.id, ch).dirs.down.idle[0]; } catch (e) { charSprite = null; }
+        try { charSprite = getHeroFrames(ch.id, ch, ap.furColor).dirs.down.idle[0]; } catch (e) { charSprite = null; }
         // Mannequin radius scales with the panel (fixed 105 collided with the
         // caption once phone insets + the sub-tab row shrank c.h to ~557), and
         // the caption anchors BELOW the sprite box, whichever is lower.
