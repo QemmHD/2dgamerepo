@@ -723,10 +723,21 @@ export class MenuRenderer {
         // Coin bank stays top-right (the lobby shows your currency).
         this._coinBank(ctx, W - sa.right - 56, sa.top + 54, save.totalCoins);
 
+        // Game logo emblem (monkey wick-keeper in the forged ember ring),
+        // centred above the wordmark. When the art hasn't loaded the wordmark
+        // keeps its original position — nothing shifts twice.
+        const hasLogo = !!ui.logo;
+        if (hasLogo) {
+            const es = 92;
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            this._ember(ctx, W / 2, sa.top + 10 + es / 2, es * 0.8, '#ff8a3a', 0.16 + Math.sin(t * 1.6) * 0.05);
+            ctx.restore(); ctx.globalAlpha = 1;
+            ctx.drawImage(ui.logo, W / 2 - es / 2, sa.top + 10, es, es);
+        }
         // Big centred wordmark with a breathing under-glow + ember rule.
         const logoH = 132;
         const logoW = ui.title ? ui.title.width * (logoH / ui.title.height) : 720;
-        const lx = W / 2 - logoW / 2, ly = sa.top + 64;
+        const lx = W / 2 - logoW / 2, ly = sa.top + (hasLogo ? 110 : 64);
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
         this._ember(ctx, W / 2, ly + logoH * 0.55, 300, '#ff7a1e', 0.26 + Math.sin(t * 1.2) * 0.06);
         ctx.restore(); ctx.globalAlpha = 1;
