@@ -1,0 +1,15 @@
+{
+    "name": "EMBERWAKE — Hold the Last Light",
+    "short_name": "EMBERWAKE",
+    "description": "Survive the vigil. Kindle the flame. A dark-fantasy ember/forge survivor game.",
+    "start_url": ".",
+    "scope": ".",
+    "display": "standalone",
+    "orientation": "landscape",
+    "background_color": "#0d0a09",
+    "theme_color": "#000000",
+    "icons": [
+        { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+        { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    ]
+}
