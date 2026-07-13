@@ -22,7 +22,7 @@ import {
 } from '../content/cosmetics.js';
 import { CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining, CASE_PITY, WAGER_BETS } from './CaseSystem.js';
 import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
-import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
+import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, BP_EVERFLAME_COINS, bpProgress, bpThreshold } from '../content/battlePass.js';
 import { rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { ATTUNABLE, getRelic, attuneCost } from '../content/relics.js';
@@ -97,9 +97,9 @@ export const TAB_DESCRIPTIONS = {
     loadout: 'Gear won from cases, worn in four slots — each piece is a small permanent bonus.',
     attune: 'Spend coins to strengthen discovered relics and each hero’s gifts.',
     character: 'Choose who you play and dress them up — looks are cosmetic only.',
-    shop: 'Spend run coins on cases and coin games. No real money, ever.',
+    shop: 'Spend run coins only — no real money. Cosmetic cases favor unowned drops.',
     boutique: 'Try looks on before you buy — single pieces or whole themed sets.',
-    battlepass: 'The free reward track — every run you finish earns progress.',
+    battlepass: 'The free reward track — every valid finished run earns progress.',
     stats: 'Your lifetime records, bests and achievements.',
     settings: 'Options, accessibility and save management.',
 };
@@ -1668,7 +1668,7 @@ export class MenuRenderer {
                 ctx.fillStyle = got ? '#5fd36a' : '#fff'; ctx.font = `800 16px ${FONT}`;
                 ctx.fillText(this._ellip(ctx, `${got ? '✓ ' : ''}${cc.name}`, dChipW - 24), dcx + 14, dTop + 22);
                 ctx.fillStyle = got ? 'rgba(95,211,106,0.8)' : '#ffce54'; ctx.font = `800 13px ${FONT}`;
-                ctx.fillText(got ? 'CLAIMED' : `+${cc.coins} coins`, dcx + 14, dTop + 43);
+                ctx.fillText(got ? 'CLAIMED' : `+${cc.coins} coins  ·  +${cc.vigilXp} XP`, dcx + 14, dTop + 43);
             }
         }
         const daily = getDailySetup(day);
@@ -2460,6 +2460,10 @@ export class MenuRenderer {
                 else if (unlocked) {
                     statusText = rarityName(item.rarity); statusCol = col;
                     action = kind === 'gear' ? 'equipGear' : 'equipCosmetic';
+                } else if (kind === 'cosmetic' && item.passLevel) {
+                    statusText = `✦ Vigil Path · Lv ${item.passLevel}`;
+                    statusCol = 'rgba(255,154,74,0.95)';
+                    action = 'tab';
                 } else if (kind === 'cosmetic' && item.coinCost) {
                     // Buying moved to the BOUTIQUE (tab exclusivity: CHARACTER
                     // equips, the shop sells) — tapping stages the item in the
@@ -2476,13 +2480,16 @@ export class MenuRenderer {
                     statusCol = 'rgba(255,255,255,0.5)';
                 }
                 const buyable = action === 'tryInBoutique';   // boutique-linked coin item
-                const lit = unlocked || buyable;       // full-opacity (vs faded-locked)
+                const routed = buyable || action === 'tab';
+                const lit = unlocked || routed;       // full-opacity (vs faded-locked)
                 const dim = lit ? 1 : 0.4;
                 roundRectPath(ctx, x + 12, iy, innerW, ih, 10);
                 ctx.fillStyle = equippedHere ? 'rgba(255,206,84,0.16)'
+                    : action === 'tab' ? 'rgba(255,120,50,0.08)'
                     : buyable ? 'rgba(255,216,107,0.06)' : 'rgba(255,255,255,0.04)';
                 ctx.fill();
                 ctx.strokeStyle = equippedHere ? '#ffce54' : unlocked ? col
+                    : action === 'tab' ? 'rgba(255,154,74,0.65)'
                     : buyable ? 'rgba(255,216,107,0.5)' : 'rgba(255,255,255,0.08)';
                 ctx.lineWidth = equippedHere ? 3 : 2; ctx.stroke();
                 ctx.textAlign = 'left';
@@ -2537,7 +2544,8 @@ export class MenuRenderer {
                     for (let li = 0; li < lines.length; li++) ctx.fillText(lines[li], x + 26, iy + 68 + li * 16);
                 }
                 ctx.globalAlpha = 1;
-                if (action) this._hot(x + 12, iy, innerW, ih, action, { category: cat, id: item.id });
+                if (action) this._hot(x + 12, iy, innerW, ih, action,
+                    action === 'tab' ? 'battlepass' : { category: cat, id: item.id });
                 iy += ih + ig;
             }
         }
@@ -2893,7 +2901,7 @@ export class MenuRenderer {
         ctx.fillText('✦ FEATURED PRESTIGE', c.x + 24, featY + 30);
         ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 15px ${FONT}`;
         ctx.fillText('— earn the look', c.x + 360, featY + 29);
-        const feat = ['aura_prism', 'aura_inferno', 'hat_halo', 'trail_rainbow', 'fur_galaxy'];
+        const feat = ['aura_mythic', 'aura_prism', 'hat_halo', 'trail_rainbow', 'fur_galaxy'];
         const fcGap = 16, fcTop = featY + 42, fcH = featH - 42 - 12;
         const fcW = (c.w - 48 - fcGap * (feat.length - 1)) / feat.length;
         for (let i = 0; i < feat.length; i++) {
@@ -2913,6 +2921,7 @@ export class MenuRenderer {
             ctx.fillText(this._ellip(ctx, item.name, tw), tx, bcy - 3);
             let pathTxt;
             if (save.cosmetics.unlocked.includes(item.id)) pathTxt = '✓ Owned';
+            else if (item.passLevel) pathTxt = `✦ Vigil Lv ${item.passLevel}`;
             else if (item.coinCost) pathTxt = `◎ ${cosmeticCoinCost(item)}`;
             else if (item.achievement) { const ach = ACHIEVEMENTS.find((a) => a.id === item.achievement); pathTxt = `🏆 ${ach ? ach.name : 'Achievement'}`; }
             else pathTxt = '🔒 Case drop';
@@ -2921,7 +2930,7 @@ export class MenuRenderer {
             // Coin items live in the boutique's stock; case/achievement drops
             // aren't sold there — those cards route to the customizer, which
             // lists every cosmetic with its unlock path.
-            this._hot(fx, fcTop, fcW, fcH, 'tab', item.coinCost ? 'boutique' : 'character');
+            this._hot(fx, fcTop, fcW, fcH, 'tab', item.passLevel ? 'battlepass' : item.coinCost ? 'boutique' : 'character');
         }
 
         // ── Cinder Wager strip: a skill coin-gamble. Pick a stake, then STOP
@@ -3008,6 +3017,7 @@ export class MenuRenderer {
             let path, pcol;
             if (owned(id)) { path = '✓ owned'; pcol = '#5fd36a'; equippableN++; }
             else if (price) { path = `◎ ${price}`; pcol = '#ffd86b'; total += price; equippableN++; }
+            else if (item.passLevel) { path = `✦ Vigil Lv ${item.passLevel}`; pcol = '#ff9a4a'; }
             else if (item.achievement) { path = '🏆 achievement'; pcol = 'rgba(168,213,247,0.9)'; }
             else { path = '🔒 case drop'; pcol = 'rgba(255,255,255,0.5)'; }
             ctx.fillStyle = rarityColor(item.rarity); ctx.font = `700 16px ${FONT}`;
@@ -3033,7 +3043,7 @@ export class MenuRenderer {
               action: trying && !previewOnly ? 'buyTryOn' : null, fontSize: 24 });
         if (previewOnly) {
             ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 14px ${FONT}`;
-            ctx.fillText('These pieces drop from cases or achievements', mcx, by2 - 10);
+            ctx.fillText('Earn these through the Vigil Path, cases, or achievements', mcx, by2 - 10);
         }
         if (total > 0 && !afford) {
             ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 14px ${FONT}`;
@@ -3108,69 +3118,276 @@ export class MenuRenderer {
 
     // ── BATTLE PASS ──────────────────────────────────────────────────────
     _drawBattlePass(ctx, state) {
-        const c = this._contentRect();
-        const save = state.saveData;
-        const prog = bpProgress(save.battlePass.xp);
+        this._drawVigilPath(ctx, state);
+    }
 
-        // Ornate ember crest (higgsfield) crowning the pass, centered above the
-        // progress bar; the header labels sit at the far edges and the bar draws
-        // over its base, so it reads as a forged crown rising behind the track.
-        const ui = getMenuImages();
-        if (ui.crest) {
-            const chH = 66, chW = ui.crest.width * (chH / ui.crest.height);
-            ctx.save(); ctx.globalAlpha = 0.9;
-            ctx.drawImage(ui.crest, c.x + c.w / 2 - chW / 2, c.y - 14, chW, chH);
+    _drawPassBackdrop(ctx, c, ui) {
+        this._panel(ctx, c.x, c.y, c.w, c.h, 'rgba(9,7,13,0.97)', 'rgba(255,128,58,0.35)');
+        if (ui.passBg) {
+            ctx.save();
+            roundRectPath(ctx, c.x + 2, c.y + 2, c.w - 4, c.h - 4, 15); ctx.clip();
+            const scale = Math.max(c.w / ui.passBg.width, c.h / ui.passBg.height);
+            const dw = ui.passBg.width * scale, dh = ui.passBg.height * scale;
+            ctx.globalAlpha = 0.9;
+            ctx.drawImage(ui.passBg, c.x + (c.w - dw) / 2, c.y + (c.h - dh) / 2, dw, dh);
+            ctx.globalAlpha = 1;
+            const veil = ctx.createLinearGradient(0, c.y, 0, c.y + c.h);
+            veil.addColorStop(0, 'rgba(5,4,10,0.64)');
+            veil.addColorStop(0.23, 'rgba(5,4,10,0.18)');
+            veil.addColorStop(0.56, 'rgba(5,4,10,0.12)');
+            veil.addColorStop(1, 'rgba(5,4,10,0.8)');
+            ctx.fillStyle = veil; ctx.fillRect(c.x, c.y, c.w, c.h);
             ctx.restore();
         }
+        roundRectPath(ctx, c.x + 1.5, c.y + 1.5, c.w - 3, c.h - 3, 15);
+        ctx.strokeStyle = 'rgba(255,142,70,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+        if (!this._forgeCorners(ctx, c.x, c.y, c.w, c.h)) this._cornerTicks(ctx, c.x, c.y, c.w, c.h);
+    }
 
-        // Progress header + bar.
+    _drawPassHeader(ctx, c, ui, prog, pending) {
+        const hx = c.x + 24, hy = c.y + 18, hw = c.w - 48, hh = 116;
+        roundRectPath(ctx, hx, hy, hw, hh, 14);
+        ctx.fillStyle = 'rgba(8,6,11,0.88)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,177,92,0.32)'; ctx.lineWidth = 2; ctx.stroke();
+        let titleX = hx + 24;
+        if (ui.crest) {
+            const crestH = 82, crestW = ui.crest.width * (crestH / ui.crest.height);
+            ctx.save(); ctx.globalAlpha = 0.92;
+            ctx.drawImage(ui.crest, hx + 12, hy - 6, crestW, crestH);
+            ctx.restore();
+            titleX = hx + Math.min(118, crestW + 26);
+        }
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#fff'; ctx.font = `700 30px ${HEAD}`;
-        ctx.fillText(`Vigil Level ${prog.level} / ${BP_MAX_LEVEL}`, c.x, c.y + 20);
-        ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `600 22px ${FONT}`;
-        ctx.fillText(prog.atMax ? 'MAX' : `${prog.levelXp} / ${prog.levelNeed} XP`, c.x + c.w, c.y + 20);
-        roundRectPath(ctx, c.x, c.y + 36, c.w, 20, 10); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
-        roundRectPath(ctx, c.x, c.y + 36, c.w * clamp01(prog.fraction), 20, 10); ctx.fillStyle = '#9a6cff'; ctx.fill();
+        ctx.fillStyle = '#fff2dc'; ctx.font = `800 30px ${HEAD}`;
+        ctx.fillText('THE LAST LIGHT VIGIL', titleX, hy + 39);
+        const chipX = titleX, chipY = hy + 52, chipW = 170, chipH = 27;
+        roundRectPath(ctx, chipX, chipY, chipW, chipH, chipH / 2);
+        ctx.fillStyle = 'rgba(95,211,106,0.16)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(95,211,106,0.55)'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#8cef98'; ctx.font = `800 14px ${FONT}`;
+        ctx.fillText('FREE  ·  NO EXPIRY', chipX + chipW / 2, chipY + chipH / 2 + 1);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = 'rgba(255,245,228,0.72)'; ctx.font = `600 16px ${FONT}`;
+        ctx.fillText('Every valid finished run moves the flame.', chipX + chipW + 16, chipY + 19);
 
-        // Level grid: show a window around the current level (10 cells).
-        const start = Math.max(1, Math.min(prog.level - 2, BP_MAX_LEVEL - 9));
-        const cols = 5, rows = 2, gap = 16;
-        const gridY = c.y + 80;
-        const cellW = (c.w - gap * (cols - 1)) / cols;
-        const cellH = (c.h - 80 - 80 - gap) / rows;
-        for (let n = 0; n < cols * rows; n++) {
-            const level = start + n;
-            if (level > BP_MAX_LEVEL) break;
-            const col = n % cols, row = Math.floor(n / cols);
-            const x = c.x + col * (cellW + gap);
-            const y = gridY + row * (cellH + gap);
-            const reached = level <= prog.level;
-            const claimed = save.battlePass.claimed.includes(level);
-            const claimable = reached && !claimed;
-            const entry = BATTLE_PASS_LEVELS[level - 1];
-            roundRectPath(ctx, x, y, cellW, cellH, 12);
-            ctx.fillStyle = claimed ? 'rgba(40,70,46,0.6)' : reached ? 'rgba(40,46,58,0.95)' : 'rgba(20,24,32,0.8)';
-            ctx.fill();
-            ctx.strokeStyle = claimable ? '#ffce54' : claimed ? '#5fd36a' : 'rgba(255,255,255,0.1)';
-            ctx.lineWidth = claimable ? 3 : 2; ctx.stroke();
-            ctx.textAlign = 'left';
-            ctx.fillStyle = level === BP_MAX_LEVEL ? '#ff6d8a' : '#ffce54';
-            ctx.font = `800 24px ${FONT}`;
-            ctx.fillText(`Lv ${level}`, x + 18, y + 34);
-            ctx.fillStyle = 'rgba(255,255,255,0.82)'; ctx.font = `600 18px ${FONT}`;
-            ctx.fillText(rewardLabel(entry.reward), x + 18, y + 62);
-            if (claimable) {
-                const br = { x: x + 18, y: y + cellH - 46, w: cellW - 36, h: 34 };
-                this._button(ctx, br, 'CLAIM', { accent: '#2e6b3f', action: 'claimBP', arg: level, fontSize: 18 });
-            } else {
-                ctx.fillStyle = claimed ? '#5fd36a' : 'rgba(255,255,255,0.4)';
-                ctx.font = `700 18px ${FONT}`;
-                ctx.fillText(claimed ? '✓ CLAIMED' : '🔒 LOCKED', x + 18, y + cellH - 22);
+        const nextLevel = pending[0] || (prog.atMax ? BP_MAX_LEVEL : Math.min(BP_MAX_LEVEL, prog.level + 1));
+        const nextEntry = BATTLE_PASS_LEVELS[nextLevel - 1];
+        ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#ffb257'; ctx.font = `800 25px ${HEAD}`;
+        ctx.fillText(prog.atMax ? `EVERFLAME ${prog.everflameRank}` : `VIGIL LEVEL ${prog.level} / ${BP_MAX_LEVEL}`, hx + hw - 22, hy + 35);
+        ctx.fillStyle = 'rgba(255,245,228,0.7)'; ctx.font = `600 16px ${FONT}`;
+        const nextText = pending.length
+            ? `READY TO CLAIM · Lv ${nextLevel} ${rewardLabel(nextEntry.reward)}`
+            : prog.atMax
+                ? `Next cache: ${BP_EVERFLAME_COINS} coins`
+                : `Next: Lv ${nextLevel} · ${rewardLabel(nextEntry.reward)}`;
+        ctx.fillText(this._ellip(ctx, nextText, 510), hx + hw - 22, hy + 67);
+
+        const barX = hx + 22, barY = hy + 88, barW = hw - 44, barH = 14;
+        const barFraction = prog.atMax ? prog.everflameFraction : prog.fraction;
+        roundRectPath(ctx, barX, barY, barW, barH, 7); ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fill();
+        if (barFraction > 0) {
+            const fillW = Math.max(barH, barW * clamp01(barFraction));
+            const pg = ctx.createLinearGradient(barX, 0, barX + fillW, 0);
+            pg.addColorStop(0, '#ff713f'); pg.addColorStop(0.55, '#ffad4d'); pg.addColorStop(1, '#ff5f91');
+            roundRectPath(ctx, barX, barY, fillW, barH, 7); ctx.fillStyle = pg; ctx.fill();
+        }
+        ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `700 13px ${FONT}`;
+        ctx.fillText(prog.atMax
+            ? `${prog.everflameXp} / ${prog.everflameNeed} overflow XP`
+            : `${prog.levelXp} / ${prog.levelNeed} XP`, barX + barW, barY - 4);
+    }
+
+    _drawPassReceipt(ctx, c, last) {
+        const y = c.y + 146, h = 40;
+        roundRectPath(ctx, c.x + 36, y, c.w - 72, h, 10);
+        ctx.fillStyle = 'rgba(8,6,11,0.82)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,154,74,0.3)'; ctx.lineWidth = 1.5; ctx.stroke();
+        let text = 'FINISH A RUN  ·  XP comes from Kindling, Endurance, Hunt and Deeds  ·  Trials and Threat add visible bonuses';
+        if (last && last.gained > 0 && last.breakdown) {
+            const b = last.breakdown;
+            text = `LAST RUN  +${last.gained} XP  ·  Kindling ${b.kindling}  ·  Endurance ${b.endurance}  ·  Hunt ${b.hunt}  ·  Deeds ${b.deeds}`;
+            if (b.trials > 0) text += `  ·  Trials +${b.trials}`;
+            if (b.threat > 0) text += `  ·  Threat +${b.threat}`;
+            if (last.everflameCaches > 0) text += `  ·  Everflame +${last.everflameCoins} coins`;
+        }
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd7a0'; ctx.font = `700 16px ${FONT}`;
+        ctx.fillText(this._ellip(ctx, text, c.w - 110), c.x + c.w / 2, y + h / 2 + 1);
+    }
+
+    _drawPassMilestones(ctx, c, save, prog) {
+        const levels = [10, 20, 30, 40, 50];
+        const ids = ['fur_vigil', 'cloak_vigil', 'hat_vigil', 'trail_vigil', 'aura_mythic'];
+        const owned = save.cosmetics?.unlocked || [];
+        const ownedN = ids.filter((id) => owned.includes(id)).length;
+        const compact = c.h < 700;
+        const top = c.y + (compact ? 198 : 212), lineY = top + (compact ? 46 : 62);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#ffb257'; ctx.font = `800 18px ${HEAD}`;
+        ctx.fillText(`LAST LIGHT REGALIA  ${ownedN}/5`, c.x + 54, top + 8);
+        ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.58)'; ctx.font = `700 14px ${FONT}`;
+        ctx.fillText('COSMETIC ONLY  ·  NO STAT BONUS', c.x + c.w - 54, top + 8);
+        const x0 = c.x + 150, x1 = c.x + c.w - 150;
+        ctx.strokeStyle = 'rgba(255,128,56,0.38)'; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(x0, lineY); ctx.lineTo(x1, lineY); ctx.stroke();
+        const next = levels.find((level) => level > prog.level) || 50;
+        for (let i = 0; i < levels.length; i++) {
+            const level = levels[i], item = COSMETICS[ids[i]];
+            const x = x0 + (x1 - x0) * (i / (levels.length - 1));
+            const reached = level <= prog.level, hasItem = owned.includes(item.id);
+            const pulse = level === next ? 0.5 + Math.sin((this._t || 0) * 3) * 0.18 : 0;
+            ctx.save();
+            if (pulse > 0) this._forgeGlow(ctx, x, lineY, 86, '#ff8a3a', pulse, this._t || 0);
+            const radius = compact ? 30 : 38;
+            const swatch = compact ? 40 : 50;
+            ctx.beginPath(); ctx.arc(x, lineY, radius, 0, TAU);
+            ctx.fillStyle = hasItem ? 'rgba(76,45,24,0.98)' : reached ? 'rgba(42,29,25,0.96)' : 'rgba(11,9,15,0.92)'; ctx.fill();
+            ctx.strokeStyle = hasItem ? '#5fd36a' : reached ? '#ffb257' : 'rgba(255,255,255,0.28)';
+            ctx.lineWidth = hasItem ? 4 : 2.5; ctx.stroke();
+            ctx.globalAlpha = reached || hasItem ? 1 : 0.48;
+            this._cosmeticSwatch(ctx, item.category, item, x - swatch / 2, lineY - swatch / 2, swatch);
+            ctx.restore();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = hasItem ? '#77e584' : reached ? '#ffcc83' : 'rgba(255,255,255,0.58)';
+            ctx.font = `800 16px ${FONT}`; ctx.fillText(`LV ${level}`, x, lineY + (compact ? 46 : 58));
+            if (!compact) {
+                ctx.fillStyle = 'rgba(255,245,228,0.72)'; ctx.font = `600 14px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, item.name, 220), x, lineY + 79);
             }
         }
-        // Claim all.
-        const ca = { x: c.x + c.w / 2 - 160, y: c.y + c.h - 58, w: 320, h: 50 };
-        this._button(ctx, ca, 'CLAIM ALL AVAILABLE', { accent: '#3a3158', action: 'claimAllBP', fontSize: 22 });
+    }
+
+    _passRewardInfo(reward) {
+        const parts = reward?.type === 'bundle' ? (reward.rewards || []) : [reward];
+        const cosmeticReward = parts.find((part) => part?.type === 'cosmetic');
+        const focus = cosmeticReward || parts[0] || null;
+        const cosmetic = focus?.type === 'cosmetic' ? COSMETICS[focus.itemId] : null;
+        const gear = focus?.type === 'gear' ? GEAR[focus.itemId] : null;
+        const color = cosmetic ? rarityColor(cosmetic.rarity)
+            : gear ? rarityColor(gear.rarity)
+            : focus?.type === 'case' ? (focus.caseType === 'royal' ? '#ffd35a' : focus.caseType === 'mystic' ? '#b15cff' : '#c99a68')
+            : '#ffd86b';
+        return { parts, focus, cosmetic, gear, color };
+    }
+
+    _drawPassRewardIcon(ctx, info, cx, cy, size, bright = true) {
+        const { focus, cosmetic, gear, color } = info;
+        ctx.save(); ctx.globalAlpha = bright ? 1 : 0.48;
+        if (cosmetic) {
+            this._cosmeticSwatch(ctx, cosmetic.category, cosmetic, cx - size / 2, cy - size / 2, size);
+        } else if (gear) {
+            const emblem = getGearEmblem(gear.category);
+            if (emblem) ctx.drawImage(emblem, cx - size / 2, cy - size / 2, size, size);
+            else ctx.drawImage(getRarityIcon('shield', gear.rarity), cx - size / 2, cy - size / 2, size, size);
+        } else if (focus?.type === 'case') {
+            const art = getCaseArt(focus.caseType);
+            if (art) ctx.drawImage(art, cx - size * 0.62, cy - size * 0.55, size * 1.24, size * 1.05);
+            else {
+                ctx.beginPath(); ctx.arc(cx, cy, size * 0.42, 0, TAU); ctx.fillStyle = color; ctx.fill();
+            }
+        } else {
+            ctx.beginPath(); ctx.arc(cx, cy, size * 0.42, 0, TAU); ctx.fillStyle = 'rgba(255,216,107,0.18)'; ctx.fill();
+            ctx.strokeStyle = '#ffd86b'; ctx.lineWidth = 3; ctx.stroke();
+            ctx.fillStyle = '#ffd86b'; ctx.font = `800 ${Math.round(size * 0.54)}px ${FONT}`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('◎', cx, cy + 1);
+        }
+        ctx.restore();
+    }
+
+    _drawPassChapter(ctx, c, save, pass, prog, claimed, pending) {
+        const anchor = pending[0] || (prog.atMax ? 46 : Math.min(BP_MAX_LEVEL, prog.level + 1));
+        const start = Math.max(1, Math.min(46, Math.floor((anchor - 1) / 5) * 5 + 1));
+        const trayX = c.x + 20;
+        const trayY = Math.max(c.y + (c.h < 700 ? 315 : 420), c.y + c.h - 302);
+        const trayW = c.w - 40, trayH = c.y + c.h - trayY - 20;
+        roundRectPath(ctx, trayX, trayY, trayW, trayH, 16);
+        ctx.fillStyle = 'rgba(7,6,10,0.9)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,154,74,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffcf91'; ctx.font = `800 18px ${HEAD}`;
+        ctx.fillText(`REWARD CHAPTER  ·  LEVELS ${start}–${start + 4}`, trayX + 22, trayY + 27);
+        const claimW = 260, claimH = 38;
+        this._button(ctx, { x: trayX + trayW - claimW - 14, y: trayY + 8, w: claimW, h: claimH },
+            pending.length ? `CLAIM ALL  ·  ${pending.length}` : 'ALL REACHED CLAIMED',
+            { enabled: pending.length > 0, accent: '#6f3728', action: pending.length ? 'claimAllBP' : null, fontSize: 17 });
+
+        const cols = 5, gap = 14, gridX = trayX + 14, gridY = trayY + 52;
+        const cellW = (trayW - 28 - gap * (cols - 1)) / cols;
+        const cellH = trayH - 66;
+        const ownedCosmetics = save.cosmetics?.unlocked || [];
+        for (let n = 0; n < cols; n++) {
+            const level = start + n;
+            if (level > BP_MAX_LEVEL) break;
+            const x = gridX + n * (cellW + gap), y = gridY;
+            const reached = level <= prog.level;
+            const isClaimed = claimed.includes(level);
+            const claimable = reached && !isClaimed;
+            const entry = BATTLE_PASS_LEVELS[level - 1];
+            const info = this._passRewardInfo(entry.reward);
+            const special = entry.reward.special || level % 10 === 0 || level === BP_MAX_LEVEL;
+            roundRectPath(ctx, x, y, cellW, cellH, 12);
+            ctx.fillStyle = isClaimed ? 'rgba(24,50,34,0.94)' : claimable ? 'rgba(60,37,24,0.97)' : 'rgba(16,15,22,0.94)'; ctx.fill();
+            ctx.strokeStyle = claimable ? '#ffb257' : isClaimed ? '#5fd36a' : special ? `${info.color}bb` : 'rgba(255,255,255,0.16)';
+            ctx.lineWidth = claimable || special ? 3 : 2; ctx.stroke();
+            if (claimable) this._selGlow(ctx, x, y, cellW, cellH, 12, '#ff8a3a', this._t || 0);
+
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = special ? '#ffb257' : '#ffcf91'; ctx.font = `800 20px ${HEAD}`;
+            ctx.fillText(`LV ${level}`, x + 14, y + 28);
+            ctx.textAlign = 'right'; ctx.font = `800 12px ${FONT}`;
+            ctx.fillStyle = claimable ? '#ffd07a' : isClaimed ? '#77e584' : 'rgba(255,255,255,0.45)';
+            ctx.fillText(claimable ? 'READY' : isClaimed ? 'OWNED' : 'LOCKED', x + cellW - 14, y + 27);
+
+            const iconSize = Math.max(42, Math.min(62, cellH - 114));
+            const iconX = x + cellW / 2, iconY = y + 44 + iconSize / 2;
+            this._drawPassRewardIcon(ctx, info, iconX, iconY, iconSize, reached || isClaimed);
+            if (info.parts.length > 1) {
+                ctx.beginPath(); ctx.arc(iconX + iconSize * 0.45, y + 50, 15, 0, TAU);
+                ctx.fillStyle = '#ff8a3a'; ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.font = `800 12px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(`+${info.parts.length - 1}`, iconX + iconSize * 0.45, y + 51);
+            }
+            ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = info.color; ctx.font = `700 16px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, rewardLabel(entry.reward), cellW - 24), x + cellW / 2, y + cellH - 55);
+
+            const button = { x: x + 12, y: y + cellH - 43, w: cellW - 24, h: 34 };
+            if (claimable) {
+                this._button(ctx, button, 'CLAIM REWARD', { accent: '#7a3e27', action: 'claimBP', arg: level, fontSize: 16 });
+            } else if (isClaimed && info.cosmetic && ownedCosmetics.includes(info.cosmetic.id)) {
+                const equipped = save.cosmetics?.equipped?.[info.cosmetic.category] === info.cosmetic.id;
+                this._button(ctx, button, equipped ? 'EQUIPPED ✓' : 'EQUIP LOOK', {
+                    enabled: !equipped, accent: '#2d5a3a', action: equipped ? null : 'equipCosmetic',
+                    arg: { category: info.cosmetic.category, id: info.cosmetic.id }, fontSize: 15,
+                });
+            } else {
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillStyle = isClaimed ? '#77e584' : 'rgba(255,255,255,0.48)';
+                ctx.font = `800 13px ${FONT}`;
+                const remaining = Math.max(0, bpThreshold(level) - (pass.xp || 0));
+                ctx.fillText(isClaimed ? '✓ CLAIMED' : `${remaining.toLocaleString()} XP TO REACH`,
+                    button.x + button.w / 2, button.y + button.h / 2);
+            }
+        }
+    }
+
+    _drawVigilPath(ctx, state) {
+        const c = this._contentRect();
+        const save = state.saveData || {};
+        const pass = save.battlePass || { xp: 0, claimed: [] };
+        const claimed = Array.isArray(pass.claimed) ? pass.claimed : [];
+        const prog = bpProgress(pass.xp || 0);
+        const pending = [];
+        for (let level = 1; level <= prog.level; level++) if (!claimed.includes(level)) pending.push(level);
+        const ui = getMenuImages();
+        this._drawPassBackdrop(ctx, c, ui);
+        this._drawPassHeader(ctx, c, ui, prog, pending);
+        this._drawPassReceipt(ctx, c, state.bpResult);
+        this._drawPassMilestones(ctx, c, save, prog);
+        this._drawPassChapter(ctx, c, save, pass, prog, claimed, pending);
     }
 
     // ── SETTINGS ─────────────────────────────────────────────────────────

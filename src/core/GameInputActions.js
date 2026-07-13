@@ -148,7 +148,7 @@ export const GameInputActionMethods = {
         // e.g. Gloambound on a fresh save): refuse honestly, KEEP the try-on.
         if (!buys.length && !ownedN) {
             this.audio.deny();
-            this._setToast('Preview only — these pieces drop from cases or achievements');
+            this._setToast('Preview only — earn these through the Vigil Path, cases, or achievements');
             return;
         }
         if (total > 0 && !this.saveSystem.spendCoins(total)) {
@@ -161,10 +161,10 @@ export const GameInputActionMethods = {
         for (const [cat, id] of entries) {
             if (this.saveSystem.isCosmeticUnlocked(id)) { this.saveSystem.equipCosmetic(cat, id); equippedN++; }
         }
-        // Honest toast: name what was bought AND what stayed locked (a set can
-        // mix coin pieces with case/achievement drops the spend can't cover).
+        // Honest toast: name what was bought AND what stayed source-locked (a
+        // set can mix coin pieces with Vigil/case/achievement rewards).
         const skipped = entries.length - equippedN;
-        const skipTxt = skipped > 0 ? ` (${skipped} case/achievement piece${skipped > 1 ? 's' : ''} skipped)` : '';
+        const skipTxt = skipped > 0 ? ` (${skipped} source-locked piece${skipped > 1 ? 's' : ''} skipped)` : '';
         if (buys.length) { this.audio.cosmeticReward(); this._setToast(`Unlocked ${buys.length} piece${buys.length > 1 ? 's' : ''} — look equipped${skipTxt}`); }
         else { this.audio.equip(); this._setToast(`Look equipped${skipTxt}`); }
         this.tryOn = {};
@@ -283,8 +283,11 @@ export const GameInputActionMethods = {
                 break;
             }
             case 'claimAllBP': {
-                const n = claimAllBattlePass(this.saveSystem);
-                this._setToast(n > 0 ? `Claimed ${n} reward${n > 1 ? 's' : ''}` : 'Nothing to claim');
+                const r = claimAllBattlePass(this.saveSystem);
+                const recent = r.labels.slice(-2).join(' · ');
+                this._setToast(r.count > 0
+                    ? `Claimed ${r.count} reward${r.count > 1 ? 's' : ''}${recent ? ` · ${recent}` : ''}`
+                    : 'Nothing to claim');
                 break;
             }
             case 'caseContinue': this.minigame.dismissCase(); break;

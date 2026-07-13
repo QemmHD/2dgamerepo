@@ -1,9 +1,9 @@
-// MenuImages — loads the main-menu art set (higgsfield / Nano Banana 2, committed
+// MenuImages — loads the main-menu art set (Higgsfield-generated, committed
 // under assets/ui/): the full-screen ember-forge backdrop, the EMBERWAKE title
 // wordmark (transparent), and the ornate ember crest used on the Battle Pass tab.
 //
 // Each image loads lazily and independently; getMenuImages() returns
-// { bg, title, crest } where any entry is null until its image loads (and
+// { bg, title, crest, passBg } where any entry is null until its image loads (and
 // permanently null if it fails). Every consumer falls back to the existing
 // procedural drawing (cached ember-forge gradient, gradient text title, plain
 // header), so the menu renders identically if the art is missing or still loading.
@@ -11,6 +11,7 @@
 
 const FILES = {
     bg: 'menu_bg.jpg', title: 'title_emberwake.png', crest: 'bp_crest.png',
+    passBg: 'bp_vigil_path.png',
     // Forged UI chrome (wired into the shared _panel / _button primitives so the
     // whole menu is reskinned from one place): an ornate ember corner bracket
     // framing large panels, and a neutral forged-metal button plate overlaid
@@ -21,7 +22,7 @@ const FILES = {
     // ships as the favicon / iOS home-screen icon (see index.html).
     logo: 'logo.png',
 };
-const _imgs = { bg: null, title: null, crest: null, corner: null, btnPlate: null, logo: null };
+const _imgs = { bg: null, title: null, crest: null, passBg: null, corner: null, btnPlate: null, logo: null };
 let _started = false;
 
 export function getMenuImages() {

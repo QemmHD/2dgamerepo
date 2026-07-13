@@ -5,7 +5,10 @@
 <title>EMBERWAKE art harness</title>
 <style>
   html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
-  #stage { position: fixed; inset: 0; }
+  /* Mirror the shipped stage centering. Cover-fit phone canvases are taller
+     than the viewport; without flex centering the harness crops only the foot
+     while Renderer.safeArea correctly assumes an even top/bottom crop. */
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
   canvas { display: block; }
 </style>
 </head>
@@ -28,6 +31,7 @@
     seconds  game-time to simulate before the shot (default 12)
     badge    "1" stamps an EXC:<n> exception-count badge top-left (self-check)
     screen   "menu" to shoot the main menu instead of a run; with tab=<name>
+    bpxp / bpclaimthrough / bpreceipt  seed Battle-Pass QA states (menu only)
     tp       teleport before the shot: "building" (just south of the first
              placed building, doorway in view) or "x,y" world coords
     skipOnboarding  forced to "1" here (deterministic frames); pass "=0"
@@ -71,6 +75,8 @@ import { clearHeroFrameCache, clearDecorationCache } from '../../src/assets/Proc
 import { loadObstacleSprites } from '../../src/assets/ObstacleSprites.js';
 import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
 import { loadRenderedProps } from '../../src/assets/RenderedWeaponProps.js';
+import { getMenuImages } from '../../src/assets/MenuImages.js';
+import { PASS_COSMETIC_MILESTONES, bpProgress } from '../../src/content/battlePass.js';
 import { Enemy } from '../../src/entities/Enemy.js';
 import { XPGem } from '../../src/entities/XPGem.js';
 import { Coin } from '../../src/entities/Coin.js';
@@ -120,6 +126,9 @@ const VEILSCALE = params.has('veilscale') ? parseFloat(params.get('veilscale')) 
 // branches (action discs, lifted pips, hidden kindle bar) are verifiable
 // headlessly — desktop Chromium never reports touch support on its own.
 const TOUCH = params.get('touch') === '1';
+const BPXP = params.has('bpxp') ? Math.max(0, parseInt(params.get('bpxp'), 10) || 0) : null;
+const BPCLAIMTHROUGH = Math.max(0, parseInt(params.get('bpclaimthrough') || '0', 10) || 0);
+const BPRECEIPT = params.get('bpreceipt') === '1';
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -149,6 +158,33 @@ async function boot() {
     if (SCREEN === 'menu') {
         game.screen = 'start';
         game.menuTab = TAB;
+        if (BPXP != null) {
+            game.saveSystem.data.battlePass.xp = BPXP;
+            game.saveSystem.data.battlePass.claimed = Array.from({ length: Math.min(50, BPCLAIMTHROUGH) }, (_, i) => i + 1);
+            for (const [levelText, id] of Object.entries(PASS_COSMETIC_MILESTONES)) {
+                if (Number(levelText) <= BPCLAIMTHROUGH && !game.saveSystem.data.cosmetics.unlocked.includes(id)) {
+                    game.saveSystem.data.cosmetics.unlocked.push(id);
+                }
+            }
+            if (BPRECEIPT) {
+                game.bpResult = {
+                    gained: 932, levelAfter: bpProgress(BPXP).level, leveledUp: true,
+                    everflameCaches: 0, everflameCoins: 0,
+                    breakdown: { kindling: 60, endurance: 210, hunt: 230, deeds: 282, trials: 75, threat: 75 },
+                };
+            }
+        }
+        // Menu art is intentionally lazy in the shipped loop. The harness only
+        // renders a few explicit frames, so wait briefly for the relevant art
+        // before its final frame instead of capturing the procedural fallback.
+        const menuImages = getMenuImages();
+        const menuDeadline = performance.now() + 3000;
+        while (performance.now() < menuDeadline) {
+            const coreReady = menuImages.bg && menuImages.title;
+            const tabReady = TAB !== 'battlepass' || menuImages.passBg;
+            if (coreReady && tabReady) break;
+            await new Promise((resolve) => setTimeout(resolve, 40));
+        }
         // Tick a few frames so menu intro animations settle.
         for (let i = 0; i < 90; i++) { try { game.update(DT); } catch (e) { ERR.push('menu ' + i + ': ' + String(e && e.stack || e)); break; } }
         game.render();
