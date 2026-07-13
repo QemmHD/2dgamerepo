@@ -33,6 +33,7 @@ import { Coin } from '../entities/Coin.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
 import { AUTO_AIM_RANGE } from '../systems/WeaponSystem.js';
 import { HazardSystem } from '../systems/HazardSystem.js';
+import { nextMusicState } from '../systems/MusicDirector.js';
 
 // Second Wind only regenerates when no enemy is within this radius.
 const SECOND_WIND_RADIUS = 340;
@@ -288,7 +289,9 @@ export const GameUpdateMethods = {
         }
         // Drain any queued boss summon requests into themed, capped spawns.
         if (this.bossSummons.length) {
-            for (const s of this.bossSummons) this._spawnBossSupport(s.x, s.y, s.count, s.types);
+            for (const s of this.bossSummons) {
+                this._spawnBossSupport(s.x, s.y, s.count, s.types, s.bossOwnerId ?? null);
+            }
             this.bossSummons.length = 0;
         }
         // Boss HP-threshold phases (75/50/25%) — one-shot support + aggression.
@@ -407,7 +410,20 @@ export const GameUpdateMethods = {
             // P1.3 bomber plant/boom, summoner call, teleporter blink, and
             // lieutenant specials all ride the same before/after check.
             const wasWinding = e.windupTimer > 0;
+            const wasBossWinding = !!e.boss && e.bossWindupTimer > 0;
+            const wasPhaseBreaking = !!e.boss && e.bossPhaseBreakTimer > 0;
             e.update(dt, this.player, this.enemyProjectiles, this.obstacleSystem);
+            if (e.boss) {
+                // Apex casts use their own timer, so they never reached the
+                // regular-enemy transition cues below. Announce both the honest
+                // windup and its commit; phase two gets a distinct stinger.
+                if (!wasBossWinding && e.bossWindupTimer > 0) {
+                    if (this._inView(e.x, e.y, 0)) this.audio.bossTelegraph();
+                } else if (wasBossWinding && e.bossWindupTimer <= 0) {
+                    if (this._inView(e.x, e.y, 80)) this.audio.bossAttack();
+                }
+                if (!wasPhaseBreaking && e.bossPhaseBreakTimer > 0) this.audio.enrage();
+            }
             if (e.type === 'charger' && this._inView(e.x, e.y, 0)) {
                 if (!wasWinding && e.windupTimer > 0) this.audio.chargerWindup();
                 else if (wasWinding && e.windupTimer <= 0) this.audio.chargerDash();
@@ -668,12 +684,16 @@ export const GameUpdateMethods = {
         // over from an older weaker one; the lieutenant ref stays separate so
         // it never feeds the arena safety-net (which keys on activeBossRef).
         let nearestEnemy = null, nearestD2 = Infinity;
+        let activeEnemies = 0, nearbyEnemies = 0, eliteThreats = 0;
         this.activeBossRef = null;
         this.activeLieutenantRef = null;
         for (const e of this.enemies) {
             if (!e.active) continue;
+            activeEnemies++;
             const dx = e.x - this.player.x, dy = e.y - this.player.y;
             const d2 = dx * dx + dy * dy;
+            if (d2 <= 660 * 660) nearbyEnemies++;
+            if (e.elite || e.lieutenant) eliteThreats++;
             if (d2 < nearestD2) { nearestD2 = d2; nearestEnemy = e; }
             if (e.boss) {
                 if (!this.activeBossRef || e.maxHp > this.activeBossRef.maxHp) {
@@ -684,7 +704,9 @@ export const GameUpdateMethods = {
                 // flip happens inside the boss AI; this only fires the one-shot FX.
                 if (e.phase2Entered && !e.enrageShouted) {
                     e.enrageShouted = true;
-                    this.waveDirector.announce('ENRAGED!', 1.2);
+                    const voiceCaption = this.audio.musicEvent('phase2', { bossId: e.type });
+                    const caption = voiceCaption ? ` · “${voiceCaption}”` : '';
+                    this.waveDirector.announce(`SECOND ACT — ${e.name.toUpperCase()}${caption}`, 2.2, '#ff3326');
                     this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
                     this._spawnRing(e.x, e.y, { maxR: 300, width: 12, life: 0.5, color: '#ff3b4e', ease: 'outCubic' });
                 }
@@ -714,16 +736,25 @@ export const GameUpdateMethods = {
         // any means), lift the arena so the player isn't trapped.
         if (this.arena && !this.activeBossRef) this.arena = null;
 
-        // Drive the music's dynamic intensity from how hectic the floor is
-        // (enemy density) and, during a duel, how close the boss is to death.
-        let intensity = Math.min(1, this.enemies.length / 90);
-        if (this.activeBossRef) {
-            intensity = Math.max(intensity, 0.55 + 0.45 * (1 - this.activeBossRef.hp / this.activeBossRef.maxHp));
-        }
-        // Near death the world closes in: cap the music brightness so the
-        // heartbeat + dimmed groove read as danger without any alarm sound.
-        const lowHp = this.player.hp > 0 && this.player.hp < this.player.maxHp * 0.25;
-        this.audio.setIntensity(lowHp ? Math.min(intensity, 0.25) : intensity);
+        // Adaptive score: use the already-consolidated scan plus hostile geometry
+        // that is available in O(1). Proximity, elites, volleys, hazards, wave
+        // pressure and the boss phase now matter; off-screen array length alone
+        // no longer makes the soundtrack pretend the player is surrounded.
+        const boss = this.activeBossRef;
+        this.musicState = nextMusicState(this.musicState, {
+            activeEnemies,
+            nearbyEnemies,
+            elites: eliteThreats,
+            hostileProjectiles: this.enemyProjectiles.length,
+            hazards: this.hazards.length,
+            wavePressure: this.waveState?.pressure ?? 0,
+            bossActive: !!boss,
+            bossHpFraction: boss && boss.maxHp > 0 ? boss.hp / boss.maxHp : 1,
+            bossPhase: boss?.phase ?? 1,
+            playerHpFraction: this.player.maxHp > 0 ? this.player.hp / this.player.maxHp : 0,
+        }, dt);
+        if (this.audio.setCombatState) this.audio.setCombatState(this.musicState);
+        else this.audio.setIntensity(this.musicState.intensity);
 
         compactInPlace(this.enemies);
         // Return dead bolts to the pool in the SAME pass that compacts them out

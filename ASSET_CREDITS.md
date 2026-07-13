@@ -70,7 +70,7 @@ Per-asset notes: [`src/assets/icons/CREDITS.md`](src/assets/icons/CREDITS.md).
 ### SFX one-shots — `src/assets/audio/sfx/`
 Real **CC0** one-shot samples layered over the procedural audio engine for the
 most tactile cues (a punch on kill/hurt, coin/purchase handling, a metal
-equip/latch, UI click/hover, gem ping, reroll scratch). Music and all fanfares
+equip/latch, UI click/hover, gem ping, reroll scratch). Combat music and fanfares
 stay **fully procedural**; if a sample isn't loaded the cue falls back to its
 synthesized voice, so audio never goes silent. All from **Kenney.nl** (CC0 1.0,
 attribution appreciated but not required), copied unchanged and pitch-jittered /
@@ -83,6 +83,26 @@ gain-trimmed at runtime.
 | `click_*.ogg`, `tick_*.ogg`, `glass_*.ogg`, `scratch_*.ogg` | [Kenney — Interface Sounds](https://kenney.nl/assets/interface-sounds) | Kenney (Kenney.nl) | CC0 1.0 |
 
 Per-asset notes: [`src/assets/audio/CREDITS.md`](src/assets/audio/CREDITS.md).
+
+### Music and boss narration — `src/assets/audio/{music,voice}/`
+
+The adaptive combat score is original code-authored tracker data in
+`src/content/music.js` (three 16-bar A/B/C/D menu compositions, two per biome,
+four boss suites, and a victory form). It uses no external music sample. The
+menu playlist also contains one human-authored CC0 feature, streamed lazily as
+the full one-shot MP3 so its roughly 53MB decoded PCM form is never held in an
+AudioBuffer. It returns to the no-repeat procedural playlist on natural end.
+
+| File | Source | Author / Tool | License / provenance |
+|---|---|---|---|
+| `music/menu/the_bards_tale.mp3` | [Medieval: The Bard's Tale](https://opengameart.org/content/medieval-the-bards-tale) | RandomMind | CC0 1.0; unchanged 2:38 full-track MP3, not the separate loop WAV |
+| `voice/dark_found_you.mp3` | Original line generated for EMBERWAKE | Higgsfield Audio | Project-generated AI voice; general boss-arrival fallback |
+| `voice/hollow_answers.mp3` | Original line generated for EMBERWAKE | Higgsfield Audio | Project-generated AI voice; Crypt/void bosses only |
+| `voice/warden_wakes.mp3` | Original line generated for EMBERWAKE | Higgsfield Audio | Project-generated AI voice; Rimewarden only |
+| `voice/only_embers_remain.mp3` | Original line generated for EMBERWAKE | Higgsfield Audio | Project-generated AI voice; Solnakh phase two only |
+
+Detailed provenance, runtime fallback behavior, direct attachment URL, and
+Higgsfield terms link: [`src/assets/audio/CREDITS.md`](src/assets/audio/CREDITS.md).
 
 ## Customization pipeline
 

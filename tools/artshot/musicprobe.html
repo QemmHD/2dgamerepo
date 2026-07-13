@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>adaptive score probe</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#100d0c;color:#f1dfb5;font:15px/1.5 ui-monospace,monospace}
+main{width:min(720px,90vw);padding:32px;border:1px solid #8a6338;background:#1b1512;box-shadow:0 20px 80px #000}
+button{font:700 18px inherit;padding:14px 22px;color:#17110c;background:#e8b954;border:0;border-radius:8px;cursor:pointer}
+pre{white-space:pre-wrap;color:#b9efbd}
+</style>
+</head>
+<body>
+<main>
+  <button id="start" type="button">Run live adaptive-score probe</button>
+  <pre id="log">Waiting for a real user gesture…</pre>
+</main>
+<script type="module">
+const log = document.querySelector('#log');
+const errors = [];
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const assert = (condition, message) => { if (!condition) throw new Error(message); };
+window.addEventListener('error', (event) => errors.push(String(event.error?.message || event.message)));
+window.addEventListener('unhandledrejection', (event) => errors.push(String(event.reason?.message || event.reason)));
+
+document.querySelector('#start').addEventListener('click', async (event) => {
+  event.currentTarget.disabled = true;
+  try {
+    const { AudioSystem } = await import('../../src/systems/AudioSystem.js');
+    const { MENU_COMPOSITIONS } = await import('../../src/content/music.js');
+    const audio = new AudioSystem();
+    window.__musicProbe = audio;
+    audio.setVolumes(0.16, 0.18);
+    assert(await audio.unlock(), 'AudioContext did not unlock');
+    assert(audio.ctx?.state === 'running', `unexpected context state: ${audio.ctx?.state}`);
+
+    audio.playMusic('menu');
+    await wait(500);
+    const streamedFeature = MENU_COMPOSITIONS.find((score) => score.kind === 'recorded');
+    audio._applyScore(streamedFeature);
+    await wait(450);
+    assert(audio._recorded && audio._recordedSource && !audio._recorded.paused,
+      'streamed menu feature did not start through the live music graph');
+    audio.setBiome('emberwood');
+    audio.playMusic('gameplay');
+    await wait(180);
+    assert(!audio._recorded, 'streamed menu feature did not release on score change');
+    audio.setCombatState({ intensity: 0.24, scene: 'hunt' });
+    await wait(450);
+    audio.setCombatState({ intensity: 0.64, scene: 'swarm' });
+    await wait(450);
+    audio.setCombatState({ intensity: 0.93, scene: 'onslaught', lastStand: true });
+    await wait(450);
+
+    audio.playMusic('boss', 'solnakh');
+    await audio.prefetchBoss('solnakh');
+    audio.musicEvent('bossArrival', { bossId: 'solnakh' });
+    await wait(250);
+    const caption = audio.musicEvent('phase2', { bossId: 'solnakh' });
+    assert(caption === 'Only embers remain.', `boss voice/caption mismatch: ${caption}`);
+    await wait(1300);
+    assert(audio._schedId != null, 'look-ahead scheduler did not start');
+    assert(audio._activeScore?.kind === 'tracker', 'boss score did not use the tracker engine');
+    assert(audio._combatScene === 'bossFinal', 'phase-two score state did not engage');
+
+    audio.playMusic('menu');
+    assert(audio._combatScene === 'calm' && audio._intensity === 0 && !audio._lastStand,
+      'menu inherited the boss-final mix');
+    await wait(2200);
+    assert(audio.theme === 'menu' && audio._activeScore?.id !== 'boss_last_sun',
+      'bar-quantized boss-to-menu transition did not complete');
+    const report = {
+      context: audio.ctx.state,
+      scheduler: 'running',
+      streamedFeature: streamedFeature.id,
+      menuScore: audio._activeScore?.id,
+      layers: { ...audio._layerTargets },
+      bossCaption: caption,
+      pendingCleanupGraphs: audio._cleanupQueue.length,
+    };
+    audio.dispose();
+    assert(audio._cleanupQueue.length === 0, 'dispose left transient audio graphs queued');
+    log.textContent = JSON.stringify(report, null, 2);
+    document.title = `DONE EXC:${errors.length} score:${report.menuScore} voice:exact`;
+  } catch (error) {
+    errors.push(String(error?.message || error));
+    log.textContent = errors.join('\n');
+    document.title = `DONE EXC:${errors.length}`;
+  }
+}, { once: true });
+</script>
+</body>
+</html>

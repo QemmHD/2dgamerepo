@@ -7,7 +7,7 @@
 // world-bounds clamping would otherwise spawn an enemy on top of the
 // player. Enemy type and elite roll come from waveState too.
 
-import { SPAWN, WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig.js';
+import { SPAWN, WORLD_WIDTH, WORLD_HEIGHT, ENEMY, ELITE } from '../config/GameConfig.js';
 import {
     clamp,
     TWO_PI,
@@ -56,9 +56,14 @@ export class Spawner {
         const type = pickWeightedType(waveState.typeWeights);
         if (!type) return;
         const elite = Math.random() < (waveState.eliteChance ?? 0);
+        // Validate the body that will actually spawn. The old fixed 46px probe
+        // admitted every larger enemy (and all large elites) partially into a
+        // wall; e.g. an elite dreadhulk is 132.6px wide at collision radius.
+        const spawnRadius = Math.max(1, (ENEMY[type]?.radius ?? 46) * (elite ? ELITE.sizeMul : 1));
 
-        const halfW = WORLD_WIDTH / 2 - 80;
-        const halfH = WORLD_HEIGHT / 2 - 80;
+        const edgeClearance = Math.max(80, spawnRadius);
+        const halfW = WORLD_WIDTH / 2 - edgeClearance;
+        const halfH = WORLD_HEIGHT / 2 - edgeClearance;
         const minDistSq = this.minSpawnDistance * this.minSpawnDistance;
 
         for (let attempt = 0; attempt < this.placementAttempts; attempt++) {
@@ -68,7 +73,7 @@ export class Spawner {
             const y = clamp(player.y + Math.sin(angle) * dist, -halfH, halfH);
             if (distanceSq(x, y, player.x, player.y) < minDistSq) continue;
             // Never spawn an enemy inside a wall/building — retry another spot.
-            if (obstacleSystem && obstacleSystem.isBlocked(x, y, 46)) continue;
+            if (obstacleSystem && obstacleSystem.isBlocked(x, y, spawnRadius)) continue;
             enemies.push(new Enemy(type, x, y, {
                 healthMul: waveState.healthMul,
                 speedMul: waveState.speedMul,

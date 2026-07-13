@@ -13,6 +13,7 @@ import { keystoneBreadcrumbs } from '../content/keystones.js';
 import { comboDraftHints } from '../content/elements.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { getRelic } from '../content/relics.js';
+import { bossAttackLabel } from './BossChoreographer.js';
 
 export function buildUIState(game) {
     // Fields every screen needs. Press/feedback animation state is
@@ -193,16 +194,31 @@ export function buildUIState(game) {
     base.waveSpawned = game.waveDirector.spawnedThisWave ?? 0;
     base.waveTimeIn = game.waveDirector.timeInWave ?? 0;
     base.waveAnnouncement = game.waveDirector.announcement;
-    base.activeBoss = game.activeBossRef ? {
-        name: game.activeBossRef.name,
-        epithet: game.activeBossRef.epithet ?? null,
-        tier: game.activeBossRef.tier ?? null,
-        hp: game.activeBossRef.hp,
-        maxHp: game.activeBossRef.maxHp,
-        phase: game.activeBossRef.phase ?? 1,
-        enraged: !!game.activeBossRef.phase2Entered,
-        x: game.activeBossRef.x,
-        y: game.activeBossRef.y,
+    const _bossRef = game.activeBossRef;
+    const _castTotal = _bossRef?.bossWindupDuration ?? 0;
+    const _openingTotal = _bossRef?.bossRecoveryDuration ?? 0;
+    base.activeBoss = _bossRef ? {
+        name: _bossRef.name,
+        epithet: _bossRef.epithet ?? null,
+        tier: _bossRef.tier ?? null,
+        hp: _bossRef.hp,
+        maxHp: _bossRef.maxHp,
+        phase: _bossRef.phase ?? 1,
+        enraged: !!_bossRef.phase2Entered,
+        x: _bossRef.x,
+        y: _bossRef.y,
+        phaseBreak: (_bossRef.bossPhaseBreakTimer ?? 0) > 0,
+        casting: _bossRef.activeAttack && _bossRef.bossWindupTimer > 0 ? {
+            label: _bossRef.activeAttackLabel || bossAttackLabel(_bossRef.activeAttack),
+            progress: _castTotal > 0
+                ? Math.max(0, Math.min(1, 1 - _bossRef.bossWindupTimer / _castTotal))
+                : 0,
+        } : null,
+        opening: _bossRef.bossRecoveryTimer > 0 ? {
+            progress: _openingTotal > 0
+                ? Math.max(0, Math.min(1, 1 - _bossRef.bossRecoveryTimer / _openingTotal))
+                : 0,
+        } : null,
     } : null;
     base.bossWarning = game.bossWarning
         ? { name: game.bossWarning.name, epithet: game.bossWarning.epithet ?? null,

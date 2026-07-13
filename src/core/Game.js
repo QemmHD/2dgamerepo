@@ -2184,11 +2184,13 @@ export class Game {
         this.enemies.push(boss);
         this.waveDirector.announce(`${def.bossName} approaches!`, 3.0, '#ff5a4a');
         this.audio.bossSpawn();
-        this.audio.playMusic('boss');
+        this.audio.playMusic('boss', id);
+        const voiceCaption = this.audio.musicEvent('bossArrival', { bossId: id });
+        if (voiceCaption) this.waveDirector.announce(`“${voiceCaption}”`, 2.4, '#ffd0b8');
         // A heavier, longer shake than a normal hit to telegraph the arrival.
         this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
         // The boss arrives flanked by a themed opening group (capped).
-        this._spawnBossSupport(boss.x, boss.y, BOSS.openingSupport, def.supportTypes);
+        this._spawnBossSupport(boss.x, boss.y, BOSS.openingSupport, def.supportTypes, boss.type);
     }
 
     // Open the "BOSS INCOMING" warning window. The boss spawns when it expires
@@ -2197,6 +2199,9 @@ export class Game {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
         this.bossWarning = { id, name: def.bossName ?? id, epithet: def.epithet ?? null, tier: def.tier ?? null, timer: BOSS.warningDuration, total: BOSS.warningDuration };
+        // Select the encounter suite and decode its short voice cues during the
+        // warning window, not on the first vulnerable frame of the fight.
+        this.audio.setBossProfile(id);
         this.waveDirector.announce('⚠  BOSS INCOMING  ⚠', BOSS.warningDuration, '#ff4040');
         this.audio.bossTelegraph();
         this._shake(SCREEN_SHAKE.intensity * 0.4, 0.3);
@@ -2262,7 +2267,7 @@ export class Game {
     // Spawn `count` themed support enemies on a ring around (x,y), respecting
     // the live alive cap so a boss wave pressures without flooding. `types` is
     // a weight map ({ bat: 3, crawler: 1 }); falls back to slimes.
-    _spawnBossSupport(x, y, count, types) {
+    _spawnBossSupport(x, y, count, types, bossOwnerId = null) {
         if (!count || count <= 0) return;
         const cap = this.waveState?.maxAlive ?? 120;
         const weights = types || { slime: 1 };
@@ -2279,12 +2284,25 @@ export class Game {
             for (const k of ids) { r -= weights[k]; if (r <= 0) { type = k; break; } }
             const a = (i / count) * TWO_PI + Math.random() * 0.6;
             const rad = BOSS.supportRing * (0.6 + Math.random() * 0.6);
-            const sp = this._clearSpot(x + Math.cos(a) * rad, y + Math.sin(a) * rad, 46);
-            this.enemies.push(new Enemy(type, sp.x, sp.y, {
+            // Clear for the creature we are actually spawning. The fixed 46px
+            // probe let brutes/chargers begin intersecting houses even though
+            // their collision body was substantially wider.
+            const supportRadius = ENEMY[type]?.radius ?? 30;
+            const sp = this._clearSpot(
+                x + Math.cos(a) * rad,
+                y + Math.sin(a) * rad,
+                supportRadius + 8,
+            );
+            const support = new Enemy(type, sp.x, sp.y, {
                 healthMul: this.waveState.healthMul,
                 speedMul: this.waveState.speedMul,
                 contactDamageMul: this.waveState.damageMul ?? 1,
-            }));
+            });
+            // A boss-owned add belongs to the duel and leaves with its caller.
+            // Ordinary summoners use the same capped spawn helper without an
+            // owner, so their creatures retain normal combat/reward behavior.
+            support.bossOwnerId = bossOwnerId;
+            this.enemies.push(support);
             live++;
         }
     }
@@ -2300,21 +2318,21 @@ export class Game {
             if (!e.thresholds.t75 && frac <= 0.75) {
                 e.thresholds.t75 = true;
                 e.bossCadenceMul = BOSS.thresholdCadence.t75;
-                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t75, def.supportTypes);
+                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t75, def.supportTypes, e.type);
                 this.waveDirector.announce(`${e.name.toUpperCase()} CALLS FOR AID`, 1.6, '#ffae5a');
             }
             if (!e.thresholds.t50 && frac <= 0.5) {
                 e.thresholds.t50 = true;
                 e.bossCadenceMul = BOSS.thresholdCadence.t50;
-                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t50, def.supportTypes);
+                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t50, def.supportTypes, e.type);
             }
             if (!e.thresholds.t25 && frac <= 0.25) {
                 e.thresholds.t25 = true;
                 e.bossCadenceMul = BOSS.thresholdCadence.t25;
                 // Move speed now ramps continuously with the low-HP enrage
                 // scalar (see BOSS.enrage + Enemy.update), so no discrete bump here.
-                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t25, def.supportTypes);
-                this.waveDirector.announce(`${e.name.toUpperCase()} ENRAGES!`, 2.0, '#ff3326');
+                this._spawnBossSupport(e.x, e.y, BOSS.thresholdSupport.t25, def.supportTypes, e.type);
+                this.waveDirector.announce(`${e.name.toUpperCase()} — FINAL FURY!`, 2.0, '#ff3326');
                 this.audio.enrage();
                 this._shake(SCREEN_SHAKE.intensity * 0.9, 0.5);
             }

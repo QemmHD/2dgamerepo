@@ -172,6 +172,7 @@ export const GameInputActionMethods = {
     requestResetSave() {
         if (this.resetConfirming) {
             this.saveSystem.reset();
+            this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
             this.resetConfirming = false;
             this.resetConfirmTimer = 0;
             return true;

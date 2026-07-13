@@ -828,6 +828,45 @@ export class UISystem {
             INTERNAL_WIDTH / 2,
             padTop + barH / 2 + 1
         );
+
+        // Boss grammar, surfaced where the player's eyes already are: the
+        // current cast names the threat; recovery advertises the real damage
+        // opening; the clean phase pause reads as a second-act beat.
+        let actionText = null;
+        let actionColor = '#ffc56e';
+        let actionProgress = null;
+        if (boss.phaseBreak) {
+            actionText = '✦  SECOND ACT  ✦';
+            actionColor = '#ff5a4a';
+        } else if (boss.casting) {
+            actionText = `CASTING  ·  ${boss.casting.label}`;
+            actionColor = enraged ? '#ff765e' : '#ffc56e';
+            actionProgress = boss.casting.progress;
+        } else if (boss.opening) {
+            actionText = 'OPENING  ·  STRIKE NOW';
+            actionColor = '#7be8a2';
+            actionProgress = 1 - boss.opening.progress;
+        }
+        if (actionText) {
+            const actionY = padTop + barH + 8;
+            const pillW = Math.min(barW * 0.62, 420);
+            const pillH = actionProgress == null ? 26 : 31;
+            ctx.fillStyle = 'rgba(12, 8, 8, 0.78)';
+            roundRectPath(ctx, INTERNAL_WIDTH / 2 - pillW / 2, actionY, pillW, pillH, 10);
+            ctx.fill();
+            ctx.font = `bold 14px ${FONT}`;
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = actionColor;
+            ctx.fillText(actionText, INTERNAL_WIDTH / 2, actionY + 5);
+            if (actionProgress != null) {
+                const meterW = pillW - 24;
+                const meterX = INTERNAL_WIDTH / 2 - meterW / 2;
+                ctx.fillStyle = 'rgba(255,255,255,0.12)';
+                ctx.fillRect(meterX, actionY + 24, meterW, 3);
+                ctx.fillStyle = actionColor;
+                ctx.fillRect(meterX, actionY + 24, meterW * Math.max(0, Math.min(1, actionProgress)), 3);
+            }
+        }
         ctx.restore();
     }
 

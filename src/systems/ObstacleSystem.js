@@ -10,6 +10,7 @@
 //   generate(worldW, worldH)
 //   resolveCircle(x, y, r)            → { x, y } pushed out of walls (slides)
 //   isBlocked(x, y, clearance)        → true if a circle there hits a wall
+//   movementBlocked(ax, ay, bx, by, r) → true if a moving circle hits a wall
 //   hasLineOfSight(ax, ay, bx, by)    → false if a sight-blocking wall is between
 //   forVisible(cam, vw, vh, fn)       → fn(obstacle) for on-screen obstacles
 //   drawDebug(ctx, cam, vw, vh)
@@ -334,25 +335,38 @@ export class ObstacleSystem {
         }
         // rect (AABB) vs circle
         const hw = ob.def.col.hw, hh = ob.def.col.hh;
-        const qx = Math.max(ob.x - hw, Math.min(cx, ob.x + hw));
-        const qy = Math.max(ob.y - hh, Math.min(cy, ob.y + hh));
+        const minX = ob.x - hw, maxX = ob.x + hw;
+        const minY = ob.y - hh, maxY = ob.y + hh;
+
+        // Handle a center inside the rectangle BEFORE the closest-point test.
+        // In the old ordering d2 was zero, so the intended inside branch was
+        // unreachable and the circle was pushed north by only its radius. A
+        // body embedded in a long side wall could remain overlapping for
+        // several frames (and be pushed toward a building corner/interior).
+        if (cx > minX && cx < maxX && cy > minY && cy < maxY) {
+            const left = cx - minX, right = maxX - cx;
+            const top = cy - minY, bottom = maxY - cy;
+            const m = Math.min(left, right, top, bottom);
+            if (m === left) return { nx: -1, ny: 0, depth: left + cr };
+            if (m === right) return { nx: 1, ny: 0, depth: right + cr };
+            if (m === top) return { nx: 0, ny: -1, depth: top + cr };
+            return { nx: 0, ny: 1, depth: bottom + cr };
+        }
+
+        const qx = Math.max(minX, Math.min(cx, maxX));
+        const qy = Math.max(minY, Math.min(cy, maxY));
         let dx = cx - qx, dy = cy - qy;
         const d2 = dx * dx + dy * dy;
-        if (d2 >= cr * cr) {
-            // Center may be INSIDE the box (closest point == center).
-            if (cx > ob.x - hw && cx < ob.x + hw && cy > ob.y - hh && cy < ob.y + hh) {
-                const left = (cx - (ob.x - hw)), right = ((ob.x + hw) - cx);
-                const top = (cy - (ob.y - hh)), bottom = ((ob.y + hh) - cy);
-                const m = Math.min(left, right, top, bottom);
-                if (m === left) return { nx: -1, ny: 0, depth: left + cr };
-                if (m === right) return { nx: 1, ny: 0, depth: right + cr };
-                if (m === top) return { nx: 0, ny: -1, depth: top + cr };
-                return { nx: 0, ny: 1, depth: bottom + cr };
-            }
-            return null;
-        }
+        if (d2 >= cr * cr) return null;
         const d = Math.sqrt(d2);
-        if (d < 1e-4) return { nx: 0, ny: -1, depth: cr };
+        if (d < 1e-4) {
+            // Center exactly on an edge/corner. Push away from the rectangle,
+            // never in a hard-coded world direction.
+            let ex = cx <= minX ? -1 : (cx >= maxX ? 1 : 0);
+            let ey = cy <= minY ? -1 : (cy >= maxY ? 1 : 0);
+            const el = Math.hypot(ex, ey) || 1;
+            return { nx: ex / el, ny: ey / el, depth: cr };
+        }
         return { nx: dx / d, ny: dy / d, depth: cr - d };
     }
 
@@ -362,7 +376,9 @@ export class ObstacleSystem {
     resolveCircle(x, y, r) {
         if (this.obstacles.length === 0) return { x, y };
         let cx = x, cy = y;
-        for (let pass = 0; pass < 2; pass++) {
+        // Four is still constant-time and only overlapping bodies reach the
+        // later passes. It resolves adjoining house-wall corners in one frame.
+        for (let pass = 0; pass < 4; pass++) {
             const near = this._nearby(cx - r, cy - r, cx + r, cy + r);
             if (near.length === 0) break;
             let moved = false;
@@ -380,6 +396,39 @@ export class ObstacleSystem {
         const near = this._nearby(x - clearance, y - clearance, x + clearance, y + clearance);
         for (const ob of near) {
             if (this._penetration(x, y, Math.max(1, clearance), ob)) return true;
+        }
+        return false;
+    }
+
+    // Swept-circle query used by local enemy navigation. Rectangles are
+    // expanded by the mover's clearance (Minkowski sum) and circles grow by it,
+    // then a single segment query catches thin walls that an endpoint-only
+    // probe can skip. The broadphase and scratch storage are the same GC-clean
+    // grid used by collision resolution.
+    movementBlocked(ax, ay, bx, by, clearance = 0) {
+        const dx = bx - ax, dy = by - ay;
+        const len = Math.hypot(dx, dy);
+        const r = Math.max(0, clearance);
+        if (len < 1e-6) return this.isBlocked(ax, ay, r);
+
+        // Start a couple pixels along the proposed move. A resolved body may be
+        // exactly tangent to a wall; excluding that t=0 contact lets an outward
+        // or wall-parallel heading count as clear while an inward one still
+        // intersects immediately.
+        const inset = Math.min(2, len * 0.1);
+        const sx = ax + dx / len * inset;
+        const sy = ay + dy / len * inset;
+        const near = this._nearby(
+            Math.min(sx, bx) - r, Math.min(sy, by) - r,
+            Math.max(sx, bx) + r, Math.max(sy, by) + r,
+        );
+        for (const ob of near) {
+            if (ob.shape === 'circle') {
+                if (this._segmentHitsCircle(sx, sy, bx, by, ob.x, ob.y, ob.def.col.r + r)) return true;
+            } else if (this._segmentHitsRect(
+                sx, sy, bx, by, ob.x, ob.y,
+                ob.def.col.hw + r, ob.def.col.hh + r,
+            )) return true;
         }
         return false;
     }

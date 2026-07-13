@@ -4,6 +4,7 @@
 #   2b. node tools/validate-bosses.js (apex phase-2 pools resolve + keep their
 #       signature; every attack telegraphs) — guards the silent revert-to-full-
 #       kit failure where a typo'd phase2Attacks id passes every smoke test
+#   2c. progression, house navigation, and adaptive-audio data/policy gates
 #   3. headless-Chromium harness smoke: boot the REAL game for 20 sim-seconds
 #      via tools/artshot/harness.html and assert zero exceptions (EXC: 0)
 #      and a live swarm (enemies > 0), read from the harness's document.title
@@ -47,6 +48,15 @@ jobs:
 
       - name: Validate boss kits (phase-2 integrity + telegraphs)
         run: node tools/validate-bosses.js
+
+      - name: Validate progression economy
+        run: node tools/validate-progression.js
+
+      - name: Validate house-safe enemy navigation
+        run: node tools/validate-navigation.js
+
+      - name: Validate adaptive score catalog and policy
+        run: node tools/validate-audio.js
 
       - name: Harness smoke (EXC 0, enemies alive)
         run: |

@@ -147,6 +147,32 @@
       "modifications": "Copied a curated subset of the pack's OGG one-shots unchanged; pitch-jittered + gain-trimmed at runtime. Files in this set: click_001.ogg, click_002.ogg, tick_001.ogg, tick_002.ogg, glass_001.ogg, glass_003.ogg, glass_005.ogg, scratch_001.ogg, scratch_003.ogg — same source/author/license."
     },
     {
+      "id": "music-bards-tale",
+      "file": "src/assets/audio/music/menu/the_bards_tale.mp3",
+      "usedFor": "One-shot featured main-menu composition, streamed lazily and followed by the original procedural playlist",
+      "type": "audio",
+      "source": "Medieval: The Bard's Tale — OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/medieval-the-bards-tale",
+      "authors": ["RandomMind"],
+      "license": "CC0-1.0",
+      "attributionRequired": false,
+      "modified": false,
+      "modifications": "MP3 attachment used unchanged. The full 2:38 track plays once through a lazy HTMLAudioElement; it is not presented as the separate seamless-loop WAV and is never decoded into a large AudioBuffer. Direct attachment: https://opengameart.org/sites/default/files/The_Bards_Tale.mp3"
+    },
+    {
+      "id": "higgsfield-boss-voice",
+      "file": "src/assets/audio/voice/dark_found_you.mp3",
+      "usedFor": "Four optional, captioned boss-arrival/phase stingers with semantically restricted boss mappings",
+      "type": "audio",
+      "source": "Higgsfield Audio output from original EMBERWAKE-written lines",
+      "sourceUrl": "https://higgsfield.ai/audio",
+      "authors": ["EMBERWAKE project (original text and prompt direction); Higgsfield Audio (generation tool)"],
+      "license": "HIGGSFIELD-TERMS-2025-08-30",
+      "attributionRequired": false,
+      "modified": false,
+      "modifications": "Generated files used unchanged: dark_found_you.mp3, hollow_answers.mp3, warden_wakes.mp3, only_embers_remain.mp3. Terms reviewed 2026-07-13: commercial use is not restricted, while originality/legality/non-infringement are not warranted; exact lines, semantic mappings, captions, and silent fallbacks are documented in src/assets/audio/CREDITS.md."
+    },
+    {
       "id": "cinzel_display_font",
       "file": "src/assets/ui/fonts/cinzel.woff2",
       "usedFor": "Main-menu display face — the EMBERWAKE wordmark, tab labels, and button labels (headings only; body text keeps the system stack)",
