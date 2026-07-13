@@ -17,6 +17,8 @@
 // HOLD-DRAG fires along the drag; a slow release near centre cancels (refund).
 
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT, KINDLE } from '../config/GameConfig.js';
+import { getGlowSprite } from '../assets/ProceduralSprites.js';
+import { DISPLAY_FONT } from '../assets/MenuFont.js';
 
 const QUICK_TAP_MS = 150;   // <this held → quick-fire (never a cancel)
 const DEADZONE = 30;        // slow release within this of the button centre → cancel
@@ -209,36 +211,76 @@ export class TouchButtons {
     }
 
     _drawButton(ctx, c, color, frac, label, ready, active) {
-        ctx.save();
-        // Base disc.
-        ctx.globalAlpha = active ? 0.36 : 0.22;
-        ctx.fillStyle = color;
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fill();
-        // Dim ring track.
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.stroke();
-        // Progress rim (meter fill / cooldown recharge) from the top, clockwise.
         const f = Math.max(0, Math.min(1, frac));
-        if (f > 0) {
-            ctx.globalAlpha = ready ? 0.95 : 0.8;
-            ctx.strokeStyle = color; ctx.lineWidth = 7;
+        const pulse = 0.5 + 0.5 * Math.sin(nowMs() * 0.007);
+        ctx.save();
+
+        // Cached aura + dark forged bezel: visually matches the HUD's smoked
+        // plates while retaining the exact existing hit circle and centres.
+        if (ready || active) {
+            const glowR = c.r + 30 + pulse * 7;
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = active ? 0.38 : 0.18 + pulse * 0.15;
+            ctx.drawImage(getGlowSprite(color), c.x - glowR, c.y - glowR, glowR * 2, glowR * 2);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+        ctx.globalAlpha = 0.94;
+        ctx.fillStyle = 'rgba(8, 8, 12, 0.92)';
+        ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 205, 160, 0.24)';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(c.x, c.y, c.r - 1.5, 0, Math.PI * 2); ctx.stroke();
+
+        // A quiet colour bed keeps BLINK and KINDLE distinguishable even when
+        // neither is ready, without turning the controls into neon stickers.
+        ctx.globalAlpha = active ? 0.30 : 0.16;
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(c.x, c.y, c.r - 12, 0, Math.PI * 2); ctx.fill();
+
+        // Cardinal forge ticks make the action surface read as a deliberate
+        // instrument rather than a generic mobile circle.
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+            const a = -Math.PI / 2 + i * Math.PI / 2;
+            const r0 = c.r - 18, r1 = c.r - 10;
             ctx.beginPath();
-            ctx.arc(c.x, c.y, c.r, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2);
+            ctx.moveTo(c.x + Math.cos(a) * r0, c.y + Math.sin(a) * r0);
+            ctx.lineTo(c.x + Math.cos(a) * r1, c.y + Math.sin(a) * r1);
+            ctx.stroke();
+        }
+
+        // Dark meter track and bright progress sweep from twelve o'clock.
+        ctx.globalAlpha = 0.9;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 9; ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+        ctx.beginPath(); ctx.arc(c.x, c.y, c.r - 7, 0, Math.PI * 2); ctx.stroke();
+        // Progress rim (meter fill / cooldown recharge) from the top, clockwise.
+        if (f > 0) {
+            ctx.globalAlpha = ready ? 1 : 0.88;
+            ctx.strokeStyle = color; ctx.lineWidth = ready ? 9 : 8;
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, c.r - 7, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2);
             ctx.stroke();
         }
         // Ready pulse ring.
         if (ready) {
-            ctx.globalAlpha = 0.5;
-            ctx.lineWidth = 3; ctx.strokeStyle = '#ffffff';
-            ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 5, 0, Math.PI * 2); ctx.stroke();
+            ctx.globalAlpha = 0.34 + pulse * 0.38;
+            ctx.lineWidth = 3; ctx.strokeStyle = '#fff4dc';
+            ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 6 + pulse * 3, 0, Math.PI * 2); ctx.stroke();
         }
-        // Label.
-        ctx.globalAlpha = 0.92;
+
+        // Two-line hierarchy: action name first, state/meter second.
+        ctx.globalAlpha = 0.96;
         ctx.fillStyle = '#ffffff';
-        ctx.font = '700 20px sans-serif';
+        ctx.font = `700 ${c.r > 80 ? 25 : 20}px ${DISPLAY_FONT}`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(label, c.x, c.y);
+        ctx.fillText(label, c.x, c.y - 7);
+        ctx.globalAlpha = ready ? 0.95 : 0.68;
+        ctx.fillStyle = ready ? '#fff0ca' : 'rgba(255,255,255,0.84)';
+        ctx.font = `800 ${c.r > 80 ? 13 : 11}px ui-monospace, Consolas, monospace`;
+        ctx.fillText(active ? 'RELEASE' : ready ? 'READY' : `${Math.round(f * 100)}%`, c.x, c.y + 20);
         ctx.restore();
     }
 }

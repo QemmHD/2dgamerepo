@@ -19,7 +19,9 @@ import {
     easeOutQuad,
 } from '../render/DrawUtils.js';
 import { getChestSprite, getCoinSprite, getGlowSprite } from '../assets/ProceduralSprites.js';
+import { getRarityIcon } from '../assets/CustomIcons.js';
 import { MenuRenderer } from './MenuRenderer.js';
+import { computeHUDLayout } from './HUDLayout.js';
 import { DISPLAY_FONT } from '../assets/MenuFont.js';
 
 const DEBUG_BUTTON_SIZE = 96;
@@ -83,6 +85,27 @@ export class UISystem {
         this.bossSlideT = 0;
         this._lastLevel = player?.level ?? 1;
         this._xpFlash = -1;
+    }
+
+    _layoutFor(state) {
+        // cssWidth is the physical CSS footprint of the fixed 1920-wide game.
+        // Below tablet width, increase logical sizes and use the touch-safe
+        // top-left cockpit even if a coarse pointer was not reported.
+        const cssW = this.renderer.cssWidth || INTERNAL_WIDTH;
+        const compact = !!state.touchMode || cssW < 1100;
+        return computeHUDLayout({
+            width: INTERNAL_WIDTH,
+            height: INTERNAL_HEIGHT,
+            safeArea: this.renderer.safeArea,
+            touchMode: !!state.touchMode,
+            compact,
+            hasBoss: !!state.activeBoss,
+            hasLieutenant: !!state.activeLieutenant,
+            hasBossRush: !!state.bossRush,
+            loadoutCount: (state.ownedWeapons?.length ?? 0) + (state.ownedPassives?.length ?? 0),
+            relicCount: state.runRelics?.length ?? 0,
+            abilityCount: state.abilityCooldowns?.length ?? 0,
+        });
     }
 
     // ── HUD "ember forge" primitives (local — do NOT reuse MenuRenderer's, which
@@ -385,29 +408,30 @@ export class UISystem {
             return;
         }
 
-        this._drawTopReadout(ctx, gameState);
+        const hud = this._layoutFor(gameState);
+        this._drawCommandRail(ctx, gameState, hud);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
-            this._drawComboMeter(ctx, gameState);
+            this._drawComboMeter(ctx, gameState, hud);
         }
-        this._drawWaveLabel(ctx, gameState);
-        this._drawBossHpBar(ctx, gameState);
-        this._drawLieutenantBar(ctx, gameState);
+        this._drawBossPlate(ctx, gameState, hud);
+        this._drawLieutenantBar(ctx, gameState, hud);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
             this._drawBossArrow(ctx, gameState);
         }
-        this._drawLoadoutChips(ctx, gameState);
+        this._drawLoadoutChips(ctx, gameState, hud);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar && !gameState.paused) {
-            this._drawAbilityCooldowns(ctx, gameState);
-            this._drawKindleMeter(ctx, gameState);
+            this._drawAbilityCooldowns(ctx, gameState, hud);
+            this._drawKindleMeter(ctx, gameState, hud);
             // KINDLED: the Focus reticle over the locked enemy, the world-space
             // ult aim arrow + ground template while aiming, and the slow-mo
             // vignette. Kept in the live-play gate (no overlay/pause).
             this._drawFocusReticle(ctx, gameState);
             this._drawKindleAim(ctx, gameState);
             this._drawFocusVignette(ctx, gameState);
+            this._drawPlayerLocator(ctx, gameState, hud);
         }
-        this._drawHpBar(ctx, gameState);
-        this._drawXPBar(ctx, gameState);
+        this._drawHpBar(ctx, gameState, hud);
+        this._drawXPBar(ctx, gameState, hud);
         this._drawDebugPanel(ctx, gameState);
         this._drawProfiler(ctx, gameState);
         this._drawDebugButton(ctx, gameState);
@@ -419,7 +443,7 @@ export class UISystem {
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
             this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
             this._drawBossWarning(ctx, gameState);
-            this._drawBossRushHud(ctx, gameState);
+            this._drawBossRushHud(ctx, gameState, hud);
         }
 
         // Low-HP danger vignette during live play.
@@ -449,6 +473,91 @@ export class UISystem {
     }
 
     // ── Top-center readout: big tabular timer + kills/coins ────────────
+    _drawCommandRail(ctx, state, hud) {
+        const r = hud.header;
+        const ws = state.waveState;
+        const boss = state.activeBoss;
+        const compact = hud.compact;
+        const timer = formatTime(state.time);
+        const coinSprite = getCoinSprite();
+        const coinW = coinSprite.width / SPRITE_SS;
+        const coinH = coinSprite.height / SPRITE_SS;
+
+        ctx.save();
+        this._hudGlassPlate(ctx, r.x, r.y, r.w, r.h, 19, {
+            stroke: boss ? 'rgba(255,92,65,0.34)' : 'rgba(255,180,120,0.16)',
+        });
+        roundRectPath(ctx, r.x, r.y, r.w, r.h, 19); ctx.clip();
+
+        const rowY = r.y + (boss ? r.h / 2 : 36);
+        const timerX = r.x + 24;
+        const statRight = r.x + r.w - 24;
+        const tf = compact ? 46 : 42;
+        ctx.textBaseline = 'middle';
+
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._hudGlow(ctx, timerX + 72, rowY, 80, '#ff7a1e', 0.11);
+        ctx.restore();
+        ctx.font = `850 ${tf}px ${MONO}`;
+        ctx.textAlign = 'left';
+        this._textWithShadow(ctx, timer, timerX, rowY, '#fff7e8');
+
+        // The vigil identity lives in the command rail instead of a separately
+        // positioned label. In a duel it contracts so the boss plate beneath
+        // it becomes the clear primary hierarchy.
+        const waveText = ws
+            ? (boss ? `VIGIL ${ws.index + 1}` : `WAVE ${ws.index + 1}  ·  ${ws.name}`)
+            : 'THE VIGIL';
+        ctx.textAlign = 'center';
+        ctx.font = `700 ${compact ? 22 : 19}px ${DISPLAY_FONT}`;
+        this._textWithShadow(ctx, waveText, r.x + r.w * 0.53, rowY,
+            boss ? '#ffc0a2' : '#ffd786');
+
+        // Stable icon counters at the right edge.
+        const coinVal = `${state.runCoins ?? 0}`;
+        const killsVal = `${state.kills ?? 0}`;
+        ctx.font = `800 ${compact ? 21 : 19}px ${MONO}`;
+        ctx.textAlign = 'right';
+        this._textWithShadow(ctx, coinVal, statRight, rowY + 1, '#ffd166');
+        const coinX = statRight - ctx.measureText(coinVal).width - coinW - 7;
+        ctx.drawImage(coinSprite, coinX, rowY - coinH / 2, coinW, coinH);
+        const killRight = coinX - 18;
+        this._textWithShadow(ctx, killsVal, killRight, rowY + 1, '#fff');
+        const killValueW = ctx.measureText(killsVal).width;
+        ctx.font = `700 ${compact ? 15 : 13}px ${FONT}`;
+        ctx.textAlign = 'right';
+        this._textWithShadow(ctx, 'KILLS', killRight - killValueW - 7, rowY + 1,
+            'rgba(255,255,255,0.58)');
+
+        // Pressure is an explicitly named THREAT band. A boss duel suppresses
+        // it because boss HP and cast state are the authoritative threat signal.
+        if (!boss && ws && hud.threat.w > 0) {
+            const p = clamp01(state.wavePressure ?? 0);
+            const tr = hud.threat;
+            const labelW = compact ? 82 : 72;
+            const pctW = 42;
+            const threatColor = p > 0.7 ? '#ff6b4a' : p > 0.35 ? '#ffaf4a' : '#ffd786';
+            ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+            ctx.font = `800 ${compact ? 16 : 14}px ${FONT}`;
+            this._textWithShadow(ctx, 'THREAT', tr.x, tr.y + tr.h / 2, threatColor);
+            const bx = tr.x + labelW;
+            const bw = Math.max(40, tr.w - labelW - pctW);
+            roundRectPath(ctx, bx, tr.y + 1, bw, tr.h - 2, 5);
+            ctx.fillStyle = 'rgba(0,0,0,0.58)'; ctx.fill();
+            if (p > 0.002) {
+                roundRectPath(ctx, bx, tr.y + 1, Math.max(3, bw * p), tr.h - 2, 5);
+                ctx.fillStyle = threatColor; ctx.fill();
+            }
+            ctx.textAlign = 'right';
+            ctx.font = `800 ${compact ? 15 : 13}px ${MONO}`;
+            this._textWithShadow(ctx, `${Math.round(p * 100)}%`, tr.x + tr.w,
+                tr.y + tr.h / 2, 'rgba(255,255,255,0.72)');
+        }
+        ctx.restore();
+    }
+
+    // Legacy top readout retained for isolated comparison tooling; live HUD
+    // renders through _drawCommandRail above.
     _drawTopReadout(ctx, state) {
         const sa = this.renderer.safeArea;
         const cx = INTERNAL_WIDTH / 2;
@@ -516,14 +625,13 @@ export class UISystem {
     // Kill-streak meter: an escalating, color-shifting counter under the timer
     // with a draining window bar. Pops in scale on each milestone tier and
     // pulses faster the hotter the streak — the core "keep going" feedback.
-    _drawComboMeter(ctx, state) {
+    _drawComboMeter(ctx, state, hud) {
         const combo = state.combo ?? 0;
         if (combo < (COMBO.minToShow ?? 3)) return;
-        const sa = this.renderer.safeArea;
         // Anchored to the upper-RIGHT (right-aligned), below the debug/pause
         // buttons, so it never collides with the center timer/wave/boss stack.
-        const rx = INTERNAL_WIDTH - sa.right - 40;
-        const y = sa.top + 150;
+        const rx = hud.combo.x + hud.combo.w;
+        const y = hud.combo.y + 10;
         // Pick the hottest tier the streak has reached.
         let color = COMBO.tiers[0].color;
         for (const t of COMBO.tiers) if (combo >= t.at) color = t.color;
@@ -602,14 +710,17 @@ export class UISystem {
     // HARD height clamp (the old 34px pill column was uncapped and grew
     // straight into the HP bar on phones), and relics as a single row of
     // rarity gems beneath — visible without six more rows of text.
-    _drawLoadoutChips(ctx, state) {
-        const sa = this.renderer.safeArea;
+    _drawLoadoutChips(ctx, state, hud) {
         const weapons = state.ownedWeapons ?? [];
         const passives = state.ownedPassives ?? [];
         const relics = state.runRelics ?? [];
         if (!weapons.length && !passives.length && !relics.length) return;
+        if (hud.compact) {
+            this._drawCompactLoadout(ctx, state, hud);
+            return;
+        }
 
-        const x0 = sa.left + 18, y0 = sa.top + 16;
+        const x0 = hud.loadout.x, y0 = hud.loadout.y;
         const chipH = 26, gap = 6, colW = 192, colGap = 10;
         const relicRowH = relics.length ? 32 : 0;
 
@@ -632,7 +743,7 @@ export class UISystem {
         }
 
         // Height clamp: the strip may NEVER reach the vitals console below.
-        const consoleTop = this._bottomBarLayout().y;
+        const consoleTop = hud.vitals.y;
         const maxH = Math.max(4 * (chipH + gap), consoleTop - 24 - y0 - relicRowH - 16);
         const maxRows = Math.max(4, Math.floor((maxH + gap) / (chipH + gap)));
         const cap = maxRows * 2;                     // at most two columns
@@ -714,14 +825,98 @@ export class UISystem {
     // Compact HP bar for the Lieutenant mini-boss — narrower than the boss bar
     // and tucked just below it, in the ember color, so it reads as "elite threat"
     // without impersonating a boss. Also shows its brief warning fill.
-    _drawLieutenantBar(ctx, state) {
+    _drawCompactLoadout(ctx, state, hud) {
+        const r = hud.loadout;
+        const weapons = state.ownedWeapons ?? [];
+        const passives = state.ownedPassives ?? [];
+        const relics = state.runRelics ?? [];
+        const entries = [
+            ...weapons.map((item) => ({ ...item, slotKind: 'weapon' })),
+            ...passives.map((item) => ({ ...item, slotKind: 'passive' })),
+        ];
+        if (!entries.length && !relics.length) return;
+
+        const shown = entries.slice(0, Math.max(0, r.shown));
+        const overflow = entries.length - shown.length;
+        const colorFor = (item) => item.element === 'fire' ? '#ff7a33'
+            : item.element === 'frost' ? '#7fe0ff'
+                : item.element === 'shock' ? '#ffe066'
+                    : item.evolved ? '#d88cff'
+                        : item.slotKind === 'weapon' ? '#ffd166' : '#5fc7ff';
+        const iconFor = (item) => item.element === 'fire' ? 'fire'
+            : item.element === 'frost' ? 'frost'
+                : item.element === 'shock' ? 'lightning'
+                    : item.slotKind === 'weapon' ? 'staff'
+                        : (item.id === 'ironHeart' ? 'shield' : 'spark');
+
+        ctx.save();
+        this._hudGlassPlate(ctx, r.x - 8, r.y - 8, r.w + 16, r.h + 16, 14,
+            { stroke: 'rgba(255,180,120,0.13)' });
+        for (let i = 0; i < shown.length; i++) {
+            const item = shown[i];
+            const col = i % r.cols;
+            const row = Math.floor(i / r.cols);
+            const x = r.x + 10 + col * (r.cellW + r.gap);
+            const y = r.y + 10 + row * (r.cellH + r.gap);
+            const color = colorFor(item);
+            roundRectPath(ctx, x, y, r.cellW, r.cellH, 10);
+            ctx.fillStyle = 'rgba(10,10,14,0.84)'; ctx.fill();
+            ctx.strokeStyle = color; ctx.globalAlpha = item.evolved ? 0.85 : 0.42;
+            ctx.lineWidth = item.evolved ? 2.5 : 1.5; ctx.stroke(); ctx.globalAlpha = 1;
+
+            const icon = getRarityIcon(iconFor(item), item.evolved ? 'legendary'
+                : item.slotKind === 'weapon' ? 'rare' : 'uncommon');
+            const iconSize = 38;
+            ctx.drawImage(icon, x + 5, y + (r.cellH - iconSize) / 2, iconSize, iconSize);
+
+            ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+            ctx.font = `800 18px ${MONO}`;
+            this._textWithShadow(ctx, item.evolved ? 'E' : `${item.level ?? 1}`,
+                x + r.cellW - 7, y + r.cellH / 2, color);
+        }
+
+        if (overflow > 0 && shown.length) {
+            // Preserve the stable fifteen-slot footprint; the final badge says
+            // how much build detail moved to the pause/upgrade surfaces.
+            const i = shown.length - 1;
+            const col = i % r.cols, row = Math.floor(i / r.cols);
+            const x = r.x + 10 + col * (r.cellW + r.gap);
+            const y = r.y + 10 + row * (r.cellH + r.gap);
+            ctx.fillStyle = 'rgba(8,8,12,0.82)';
+            roundRectPath(ctx, x, y, r.cellW, r.cellH, 10); ctx.fill();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = `800 20px ${MONO}`;
+            this._textWithShadow(ctx, `+${overflow + 1}`, x + r.cellW / 2, y + r.cellH / 2,
+                'rgba(255,255,255,0.8)');
+        }
+
+        if (relics.length) {
+            const rows = Math.max(1, Math.ceil(Math.max(1, shown.length) / r.cols));
+            const gy = r.y + 10 + rows * r.cellH + Math.max(0, rows - 1) * r.gap + 14;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.font = `700 15px ${FONT}`;
+            this._textWithShadow(ctx, `RELICS  ${relics.length}`, r.x + 12, gy,
+                'rgba(255,224,170,0.72)');
+            let gx = r.x + 108;
+            for (const relic of relics.slice(0, 9)) {
+                const rc = RARITY_COLORS[relic.rarity] ?? RARITY_COLORS.common;
+                ctx.beginPath(); ctx.moveTo(gx, gy - 7); ctx.lineTo(gx + 6, gy);
+                ctx.lineTo(gx, gy + 7); ctx.lineTo(gx - 6, gy); ctx.closePath();
+                ctx.fillStyle = rc.border; ctx.globalAlpha = 0.55; ctx.fill();
+                ctx.globalAlpha = 1; gx += 18;
+            }
+        }
+        ctx.restore();
+    }
+
+    _drawLieutenantBar(ctx, state, hud) {
         const lt = state.activeLieutenant;
         if (!lt || !(lt.maxHp > 0)) return;
-        const sa = this.renderer.safeArea;
-        const barW = INTERNAL_WIDTH * 0.32;
+        const r = hud.lieutenant;
+        const barW = r.w;
         const barH = 16;
-        const barX = (INTERNAL_WIDTH - barW) / 2;
-        const barY = sa.top + 210;   // below the boss-bar band
+        const barX = r.x;
+        const barY = r.y + 22;
         const pct = Math.max(0, Math.min(1, lt.hp / lt.maxHp));
         ctx.save();
         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -737,6 +932,103 @@ export class UISystem {
         ctx.restore();
     }
 
+    _drawBossPlate(ctx, state, hud) {
+        const boss = state.activeBoss;
+        if (!boss) {
+            this.bossName = null;
+            return;
+        }
+        if (this.bossName !== boss.name) {
+            this.bossName = boss.name;
+            this.bossSlideT = 0;
+            this.dispBossRatio = 1;
+        }
+        this.bossSlideT = Math.min(1, this.bossSlideT + 0.06);
+
+        const pct = clamp01(boss.hp / Math.max(1, boss.maxHp));
+        this.dispBossRatio = this.dispBossRatio < pct
+            ? pct
+            : lerp(this.dispBossRatio, pct, 0.12);
+        const r = hud.boss;
+        const compact = hud.compact;
+        const enraged = !!boss.enraged;
+        const eased = easeOutCubic(this.bossSlideT);
+        const y = r.y - (1 - eased) * 48;
+        const barX = r.x + 24;
+        const barW = r.w - 48;
+        const barH = compact ? 28 : 26;
+        const barY = y + (compact ? 58 : 54);
+
+        ctx.save();
+        ctx.globalAlpha = eased;
+        this._hudGlassPlate(ctx, r.x, y, r.w, r.h, 16, {
+            stroke: enraged ? 'rgba(255,62,38,0.72)' : 'rgba(255,105,80,0.48)',
+        });
+
+        const tierMeta = BOSS_TIERS[boss.tier];
+        const pips = tierMeta ? '◆'.repeat(tierMeta.pips) + '◇'.repeat(3 - tierMeta.pips) : '';
+        const title = enraged ? `${boss.name.toUpperCase()}  —  ENRAGED` : boss.name.toUpperCase();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = `800 ${compact ? 29 : 25}px ${DISPLAY_FONT}`;
+        this._textWithShadow(ctx, title, r.x + r.w / 2, y + 21,
+            enraged ? '#ff6d50' : '#ffb09a');
+
+        const meta = [
+            tierMeta ? `${pips} ${tierMeta.label}` : null,
+            boss.epithet || null,
+            `PHASE ${boss.phase ?? 1}`,
+        ].filter(Boolean).join('  ·  ');
+        ctx.font = `${tierMeta ? 700 : 600} ${compact ? 17 : 15}px ${FONT}`;
+        this._textWithShadow(ctx, meta, r.x + r.w / 2, y + 42,
+            tierMeta ? tierMeta.color : 'rgba(255,225,210,0.78)');
+
+        this._hudBarTrack(ctx, barX, barY, barW, barH);
+        drawStatBar(ctx, barX, barY, barW, barH, pct,
+            enraged ? { from: '#ff2a1e', to: '#ffae3c' } : { from: '#ff4757', to: '#ff8c40' },
+            {
+                radius: 8,
+                track: 'rgba(30,4,4,0.9)',
+                chip: this.dispBossRatio,
+                chipColor: 'rgba(255,180,120,0.58)',
+                border: enraged ? '#ff4d34' : '#ff806d',
+                borderWidth: 2,
+            });
+        this._hudBarTicks(ctx, barX, barY, barW, barH, 4);
+        ctx.font = `800 ${compact ? 19 : 17}px ${MONO}`;
+        this._textWithShadow(ctx, `${Math.ceil(boss.hp)} / ${Math.ceil(boss.maxHp)}`,
+            r.x + r.w / 2, barY + barH / 2 + 1, '#fff');
+
+        let actionText = `PHASE ${boss.phase ?? 1}  ·  HOLD THE LINE`;
+        let actionColor = 'rgba(255,225,200,0.62)';
+        let actionProgress = null;
+        if (boss.phaseBreak) {
+            actionText = '✦  SECOND ACT  ✦';
+            actionColor = '#ff765e';
+        } else if (boss.casting) {
+            actionText = `CASTING  ·  ${boss.casting.label}`;
+            actionColor = enraged ? '#ff8066' : '#ffc56e';
+            actionProgress = boss.casting.progress;
+        } else if (boss.opening) {
+            actionText = 'OPENING  ·  STRIKE NOW';
+            actionColor = '#7be8a2';
+            actionProgress = 1 - boss.opening.progress;
+        }
+        const actionY = y + r.h - (compact ? 17 : 16);
+        ctx.font = `800 ${compact ? 17 : 15}px ${FONT}`;
+        this._textWithShadow(ctx, actionText, r.x + r.w / 2, actionY, actionColor);
+        if (actionProgress != null) {
+            const mw = Math.min(420, r.w * 0.44);
+            const mx = r.x + (r.w - mw) / 2;
+            const my = y + r.h - 6;
+            ctx.fillStyle = 'rgba(255,255,255,0.13)'; ctx.fillRect(mx, my, mw, 3);
+            ctx.fillStyle = actionColor;
+            ctx.fillRect(mx, my, mw * clamp01(actionProgress), 3);
+        }
+        ctx.restore();
+    }
+
+    // Legacy boss-bar implementation retained for isolated comparison tooling;
+    // live HUD renders through _drawBossPlate above.
     _drawBossHpBar(ctx, state) {
         const boss = state.activeBoss;
         // Track boss identity so a fresh boss re-triggers the slide-in.
@@ -1091,16 +1383,12 @@ export class UISystem {
     // BOSSFORGE — compact Boss Rush banner: mode label + progress (boss X/N),
     // then a second line previewing the incoming/next apex with the prep
     // countdown. Top-center, under the timer readout; only in Boss Rush.
-    _drawBossRushHud(ctx, state) {
+    _drawBossRushHud(ctx, state, hud) {
         const br = state.bossRush;
         if (!br) return;
-        const cx = INTERNAL_WIDTH / 2;
-        const sa = this.renderer.safeArea;
-        // Sit just under the timer during prep (nothing else up there); drop below
-        // the boss-bar band once a boss/warning occupies the top so they never
-        // overlap.
-        const bossBandUp = !!(state.activeBoss || state.bossWarning);
-        const y = (sa?.top ?? 0) + (bossBandUp ? 236 : 104);
+        const rr = hud.bossRush;
+        const cx = rr.x + rr.w / 2;
+        const y = rr.y + rr.h / 2;
         const line1 = `${(br.label || 'BOSS RUSH').toUpperCase()}  ·  ${br.bossNumber}/${br.total}`;
         let line2 = '';
         if (br.cleared) {
@@ -1118,7 +1406,7 @@ export class UISystem {
         const w1 = ctx.measureText(line1).width;
         ctx.font = `600 18px ${FONT}`;
         const w2 = line2 ? ctx.measureText(line2).width : 0;
-        const pw = Math.max(w1, w2) + 48;
+        const pw = Math.min(rr.w, Math.max(w1, w2) + 48);
         const ph = line2 ? 64 : 40;
         roundRectPath(ctx, cx - pw / 2, y - ph / 2, pw, ph, 12);
         ctx.fillStyle = 'rgba(40,12,12,0.82)'; ctx.fill();
@@ -1199,7 +1487,7 @@ export class UISystem {
     // recharge: a dark wedge shrinks clockwise as it cools, the remaining
     // seconds sit in the center, and a ready ability gets a bright pulsing
     // ring + its initial. Readable at 1920×1080 and within iPhone safe-area.
-    _drawAbilityCooldowns(ctx, state) {
+    _drawAbilityCooldowns(ctx, state, hud) {
         // On touch, the BLINK disc's recharge rim already shows the blink
         // cooldown — drop the duplicate pip, and lift the weapon pips above
         // the KINDLE disc zone (disc top ≈ H − sa.bottom − 284, −290 with the
@@ -1208,13 +1496,15 @@ export class UISystem {
             ? (state.abilityCooldowns || []).filter((a) => a.id !== 'blink')
             : state.abilityCooldowns;
         if (!list || list.length === 0) return;
-        const sa = this.renderer.safeArea;
         const R = 30;
         const gap = 22;
-        const cy = INTERNAL_HEIGHT - sa.bottom - (state.touchMode ? 352 : 104);
-        let cx = INTERNAL_WIDTH - sa.right - 28 - R;
+        const rr = hud.abilities;
+        const cy = rr.y + 38;
+        let cx = rr.x + rr.w - 14 - R;
         const now = performanceNowSafe();
         ctx.save();
+        this._hudGlassPlate(ctx, rr.x, rr.y, rr.w, rr.h, 14,
+            { stroke: 'rgba(143,208,255,0.16)' });
         ctx.textAlign = 'center';
         for (let i = list.length - 1; i >= 0; i--) {
             const a = list[i];
@@ -1260,7 +1550,7 @@ export class UISystem {
             // Short name beneath — truncated to fit the 82px pip pitch, so
             // adjacent labels can't run together ("Shadow DasCinder Aur…").
             ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
-            ctx.font = `600 13px ${FONT}`;
+            ctx.font = `600 ${hud.compact ? 15 : 13}px ${FONT}`;
             ctx.textBaseline = 'top';
             const nm = a.name.length > 9 ? a.name.slice(0, 8) + '…' : a.name;
             ctx.fillText(nm, cx, cy + R + 5);
@@ -1272,22 +1562,23 @@ export class UISystem {
     // KINDLED — the Kindle ult meter: a flat wand-shaped bar sitting just above
     // the ability-cooldown pip cluster (bottom-right). Fills 0→max; when full it
     // pulses READY. No per-frame gradient (cached-glow / flat-fill discipline).
-    _drawKindleMeter(ctx, state) {
+    _drawKindleMeter(ctx, state, hud) {
         const k = state.kindle;
         if (!k) return;
         // Touch devices: the KINDLE action disc's rim IS this meter
         // (TouchButtons.rimFrac) — drawing the bar too doubles the signal
         // and physically overlaps the disc. Desktop keeps the bar.
         if (state.touchMode) return;
-        const sa = this.renderer.safeArea;
-        const w = 300, h = 16;
-        const x = INTERNAL_WIDTH - sa.right - 28 - w;
-        // Above the pip discs (pips: cy = H - sa.bottom - 104, R = 30).
-        const y = INTERNAL_HEIGHT - sa.bottom - 104 - 30 - 42;
+        const r = hud.kindle;
+        const w = r.w, h = 16;
+        const x = r.x;
+        const y = r.y;
         const frac = clamp01(k.fill / (k.max || 1));
         const now = performanceNowSafe();
         const col = k.ready ? '#ffd27a' : (k.ultColor || '#ff8c4a');
         ctx.save();
+        this._hudGlassPlate(ctx, x - 10, y - 25, w + 20, h + 37, 12,
+            { stroke: 'rgba(255,180,120,0.14)' });
         // Track.
         roundRectPath(ctx, x, y, w, h, 8);
         ctx.fillStyle = 'rgba(12, 16, 24, 0.82)';
@@ -1436,21 +1727,75 @@ export class UISystem {
     // old full-width bars whose right-side readout pills sat exactly where
     // the touch BLINK disc (and the blink cooldown pip) live — the HUD's
     // worst overlap. Everything bottom-left keys off this one rect.
-    _bottomBarLayout() {
-        const sa = this.renderer.safeArea;
-        const x = sa.left + 16;
-        const w = 560;
-        const h = 92;
-        const y = INTERNAL_HEIGHT - sa.bottom - 12 - h;
-        // Bar column right of the LV badge.
-        const lvW = 66;
-        const bx = x + 16 + lvW + 14;
-        const bw = w - 16 * 2 - lvW - 14;
-        return { x, y, w, h, lvW, bx, bw, hpH: 26, xpH: 12 };
+    // Dense encounters can bury the hero under enemy silhouettes, particles,
+    // and damage numbers. This restrained locator appears only when the field
+    // is crowded or HP is low, then disappears during readable play.
+    _drawPlayerLocator(ctx, state, hud) {
+        const player = state.player;
+        if (!player || !(player.maxHp > 0)) return;
+        const hpRatio = clamp01(player.hp / player.maxHp);
+        const crowded = (state.enemyCount ?? 0) >= hud.playerLocator.denseEnemyThreshold;
+        const endangered = hpRatio > 0 && hpRatio <= hud.playerLocator.lowHpThreshold;
+        if (!crowded && !endangered) return;
+
+        const [px, py] = this._worldToScreen(state, player.x, player.y);
+        const now = performanceNowSafe() * 0.001;
+        const pulse = 0.5 + 0.5 * Math.sin(now * (endangered ? 7.5 : 4.5));
+        const radius = Math.max(28, (player.radius ?? 18) + 13) + pulse * 3;
+        const color = endangered ? '#ff655f' : '#ffd166';
+        const glowR = radius + 24;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = endangered ? 0.22 + 0.16 * pulse : 0.13 + 0.09 * pulse;
+        ctx.drawImage(getGlowSprite(color), px - glowR, py - glowR, glowR * 2, glowR * 2);
+        ctx.globalCompositeOperation = 'source-over';
+
+        // A broken ring preserves sight of the avatar while reading cleanly
+        // through a swarm. Cached glow avoids per-frame shadow blur work.
+        ctx.strokeStyle = color;
+        ctx.lineWidth = endangered ? 3.5 : 2.5;
+        ctx.globalAlpha = endangered ? 0.9 : 0.72;
+        for (let i = 0; i < 4; i++) {
+            const start = -Math.PI / 2 + i * Math.PI / 2 + 0.18;
+            ctx.beginPath();
+            ctx.arc(px, py, radius, start, start + Math.PI / 2 - 0.36);
+            ctx.stroke();
+        }
+
+        // A small downward chevron remains visible when a large enemy covers
+        // most of the ring, without adding another label to parse in combat.
+        const chevronY = py - radius - 17 - pulse * 4;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.92;
+        ctx.beginPath();
+        ctx.moveTo(px, chevronY + 12);
+        ctx.lineTo(px - 11, chevronY - 3);
+        ctx.lineTo(px - 4, chevronY - 3);
+        ctx.lineTo(px, chevronY + 3);
+        ctx.lineTo(px + 4, chevronY - 3);
+        ctx.lineTo(px + 11, chevronY - 3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
     }
 
-    _drawHpBar(ctx, state) {
-        const L = this._bottomBarLayout();
+    _bottomBarLayout(hud) {
+        const vr = hud.vitals;
+        const x = vr.x;
+        const w = vr.w;
+        const h = vr.h;
+        const y = vr.y;
+        // Bar column right of the LV badge.
+        const lvW = vr.lvW;
+        const bx = x + 16 + lvW + 14;
+        const bw = w - 16 * 2 - lvW - 14;
+        return { x, y, w, h, lvW, bx, bw, hpH: vr.hpH, xpH: vr.xpH,
+            compact: hud.compact, docked: vr.docked };
+    }
+
+    _drawHpBar(ctx, state, hud) {
+        const L = this._bottomBarLayout(hud);
         const barY = L.y + 14;
         const barLeft = L.bx, barW = L.bw;
 
@@ -1482,16 +1827,22 @@ export class UISystem {
         // reads as part of the display frame, not a card floating in the
         // arena — cover-fit crop + insets made an inset plate hover visibly
         // mid-screen on phones. Only its top-right corner rounds on screen.
-        this._hudGlassPlate(ctx, -40, L.y, L.x + L.w + 40, INTERNAL_HEIGHT + 80 - L.y, 16, { stroke: 'rgba(255,180,120,0.14)' });
+        if (L.docked) {
+            this._hudGlassPlate(ctx, -40, L.y, L.x + L.w + 40, INTERNAL_HEIGHT + 80 - L.y, 16,
+                { stroke: 'rgba(255,180,120,0.14)' });
+        } else {
+            this._hudGlassPlate(ctx, L.x - 8, L.y - 8, L.w + 16, L.h + 16, 16,
+                { stroke: 'rgba(255,180,120,0.16)' });
+        }
         // LV badge column: big gold level over a small LV tag.
         const lvCx = L.x + 16 + L.lvW / 2;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
         this._hudGlow(ctx, lvCx, L.y + L.h / 2 - 4, 26, '#ffd06a', 0.14);
         ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
-        ctx.font = `800 34px ${MONO}`;
+        ctx.font = `800 ${L.compact ? 40 : 34}px ${MONO}`;
         this._textWithShadow(ctx, `${state.player.level}`, lvCx, L.y + L.h / 2 - 8, '#ffd06a');
-        ctx.font = `700 12px ${FONT}`;
+        ctx.font = `700 ${L.compact ? 15 : 12}px ${FONT}`;
         this._textWithShadow(ctx, 'LEVEL', lvCx, L.y + L.h - 16, 'rgba(255,255,255,0.55)');
 
         // Low-HP frame glow (additive, same 9Hz pulse as the border).
@@ -1515,12 +1866,16 @@ export class UISystem {
         // "872 / 1160" is ~102px wide, so a fixed skip zone under-covers and
         // the heart lands on the leading digit through a whole HP band.
         const readout = `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`;
-        ctx.font = `700 17px ${MONO}`;
+        ctx.font = `800 ${L.compact ? 21 : 17}px ${MONO}`;
         const roW = ctx.measureText(readout).width;
+        ctx.font = `800 ${L.compact ? 17 : 14}px ${DISPLAY_FONT}`;
+        const hpLabelW = ctx.measureText('HP').width;
         // Heart end-cap riding the fill tip (tinted to the HP band). Skipped
         // once the tip (±13px of heart + glow fringe) would enter the digits.
         const capX = Math.max(barLeft + 9, Math.min(barLeft + barW - 9, barLeft + barW * target));
-        if (target > 0.02 && capX + 13 < barLeft + barW - 14 - roW) {
+        if (target > 0.02
+            && capX - 13 > barLeft + 12 + hpLabelW + 10
+            && capX + 13 < barLeft + barW - 14 - roW) {
             const tint = target < 0.3 ? '#ff5a4a' : target < 0.6 ? '#ff8a3a' : '#74e890';
             const lp = 0.5 + 0.5 * Math.sin(state.time * 9);
             ctx.save(); ctx.globalCompositeOperation = 'lighter';
@@ -1528,7 +1883,12 @@ export class UISystem {
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
             this._hudHeartSigil(ctx, capX, midY, 16, tint);
         }
-        // Numbers INSIDE the bar (right end) — no readout pill to collide with.
+        // Explicit labels + numbers live inside the bars so compact players do
+        // not need to infer meaning by colour alone.
+        ctx.font = `800 ${L.compact ? 17 : 14}px ${DISPLAY_FONT}`;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        this._textWithShadow(ctx, 'HP', barLeft + 12, midY, 'rgba(255,255,255,0.86)');
+        ctx.font = `800 ${L.compact ? 21 : 17}px ${MONO}`;
         ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
         this._textWithShadow(ctx, readout, barLeft + barW - 12, midY, '#fff');
         ctx.restore();
@@ -1536,8 +1896,8 @@ export class UISystem {
 
     // XP row of the vitals console — a thin cool-blue strip under the HP bar
     // (hard hue split from the warm HP). LV badge + plate live in _drawHpBar.
-    _drawXPBar(ctx, state) {
-        const L = this._bottomBarLayout();
+    _drawXPBar(ctx, state, hud) {
+        const L = this._bottomBarLayout(hud);
         const barLeft = L.bx, barW = L.bw;
         const barY = L.y + 14 + L.hpH + 12;
 
@@ -1571,6 +1931,15 @@ export class UISystem {
             ctx.drawImage(getGlowSprite('#ffd06a'), barLeft - 30, barY - 24, barW + 60, L.xpH + 48);
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
         }
+        const readout = `${Math.ceil(state.player.xp)} / ${state.player.xpToNext}`;
+        const midY = barY + L.xpH / 2;
+        ctx.textBaseline = 'middle';
+        ctx.font = `800 ${L.compact ? 14 : 11}px ${DISPLAY_FONT}`;
+        ctx.textAlign = 'left';
+        this._textWithShadow(ctx, 'XP', barLeft + 10, midY, 'rgba(225,245,255,0.92)');
+        ctx.font = `800 ${L.compact ? 15 : 12}px ${MONO}`;
+        ctx.textAlign = 'right';
+        this._textWithShadow(ctx, readout, barLeft + barW - 10, midY, '#f2fbff');
         ctx.restore();
     }
 
@@ -1887,7 +2256,13 @@ export class UISystem {
             // Hint text can be multi-line (\n): the non-gamer copy runs long, so
             // it's authored as 1–2 lines and drawn line-by-line (fillText ignores
             // \n). The done-flash is always a single short line.
-            const bodyLines = done ? ['✓  Nice!'] : String(lesson.text).split('\n');
+            let bodyLines = done ? ['✓  Nice!'] : String(lesson.text).split('\n');
+            if (state.touchMode && !done && lesson.n === 1) {
+                bodyLines = [
+                    'Drag the left side to move. Enemies chase you — keep moving.',
+                    'Tap the right side to focus; use BLINK when you get surrounded.',
+                ];
+            }
             const bodyFontPx = done ? 27 : 22;
             ctx.save();
             ctx.textAlign = 'center';
@@ -1943,8 +2318,11 @@ export class UISystem {
         ctx.font = `20px ${FONT}`;
         // No dev-tool talk here: the debug pointer moved behind ?dev=1 (see
         // MenuRenderer DEV_MODE) — a new player's teach line is play-only.
+        const controlLine = state.touchMode
+            ? 'Drag the left side to move  •  Tap the right side to focus'
+            : 'WASD / Arrows to move  •  Space to blink';
         ctx.fillText(
-            'WASD / Arrows to move  •  Touch left half to move',
+            controlLine,
             INTERNAL_WIDTH / 2,
             INTERNAL_HEIGHT - 22 - sa.bottom
         );

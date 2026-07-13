@@ -49,6 +49,19 @@ function strHash(s) {
     return h >>> 0;
 }
 
+// Cosmetic-only structure seed. It is derived from already-chosen placement
+// data and never consumes the generation RNG, so variants cannot move collision
+// walls, doorway gaps, props, or later buildings.
+function structureVisualSeed(styleType, x, y, index) {
+    let h = strHash(styleType || 'structure') ^ Math.imul((Math.round(x * 8) | 0), 0x45d9f3b);
+    h = (h ^ Math.imul((Math.round(y * 8) | 0), 0x119de1f3)) >>> 0;
+    h = (h ^ Math.imul((index + 1) | 0, 0x9e3779b1)) >>> 0;
+    h ^= h >>> 16;
+    h = Math.imul(h, 0x7feb352d) >>> 0;
+    h ^= h >>> 15;
+    return h >>> 0;
+}
+
 // ── Biome colour tinting ─────────────────────────────────────────────────
 function hexToRgb(h) {
     h = h.replace('#', '');
@@ -75,6 +88,9 @@ function tintPalette(p, tint) {
 export class ObstacleSystem {
     constructor() {
         this.obstacles = [];
+        // Visual structure records never enter the collision grid. Physical
+        // authority remains the ordinary wall obstacles below.
+        this.structures = [];
         this.grid = new Map();     // cellKey(gx,gy) → [obstacle, ...]
         this.worldW = 0;
         this.worldH = 0;
@@ -91,6 +107,7 @@ export class ObstacleSystem {
         this.worldW = worldW;
         this.worldH = worldH;
         this.obstacles = [];
+        this.structures = [];
         this.grid.clear();
 
         const theme = BIOME_THEME[biomeId] || BIOME_THEME[DEFAULT_BIOME_THEME];
@@ -145,6 +162,7 @@ export class ObstacleSystem {
 
         // Painter's order: lower baseY drawn first (further "back").
         this.obstacles.sort((a, b) => a.baseY - b.baseY);
+        this.structures.sort((a, b) => a.frontBaseY - b.frontBaseY);
         this._buildGrid();
         return this.obstacles;
     }
@@ -196,6 +214,36 @@ export class ObstacleSystem {
         const spanHW = iHW + T;       // horizontal walls cover the corners
         const dHalf = style.door / 2;
 
+        // Group the unchanged collision pieces under one visual identity.
+        // All variety is coordinate-hashed, so it cannot advance placement RNG.
+        const structureIndex = this.structures.length;
+        const visualSeed = structureVisualSeed(style.type, cx, cy, structureIndex);
+        const structureId = `structure-${structureIndex}`;
+        this.structures.push({
+            id: structureId,
+            x: cx,
+            y: cy,
+            styleType: style.type,
+            doorSide, // metadata only; collision keeps its north/south openings
+            interiorW: style.interiorW,
+            interiorH: style.interiorH,
+            wall: T,
+            wallH: H,
+            door: style.door,
+            palette,
+            tint,
+            visualSeed,
+            variant: visualSeed % 3,
+            mirror: ((visualSeed >>> 3) & 1) ? -1 : 1,
+            wear: (visualSeed >>> 8) / 0x00ffffff,
+            // Exact rear-wall collision feet line. The visual standing queue
+            // inserts the rear/roof plane here and the front/sides plane below.
+            rearBaseY: cy - iHH,
+            // Exact current front-wall painter baseline: wall center is
+            // cy+iHH+T/2 and its collision half-depth is T/2.
+            frontBaseY: cy + iHH + T,
+        });
+
         const addWall = (x, y, hw, hh) => {
             if (hw <= 4 || hh <= 2) return;
             const def = {
@@ -204,6 +252,7 @@ export class ObstacleSystem {
                 blocksLOS: true, palette, styleType: style.type,
             };
             const ob = new Obstacle(def, x, y);
+            ob.structureId = structureId;
             ob.palette = palette;
             // Raw biome tint for the wall-texture wash (the pattern PNGs are
             // untinted; the tinted palette only covers coping/edges).
@@ -242,6 +291,7 @@ export class ObstacleSystem {
             blocksLOS: false, palette, styleType: style.type,
         };
         const fob = new Obstacle(floor, cx, cy);
+        fob.structureId = structureId;
         fob.palette = palette;
         fob.tint = tint;
         fob.baseY = cy - iHH;   // sort behind the player/walls (floor layer)
@@ -504,6 +554,24 @@ export class ObstacleSystem {
             if (ob.x + w < left || ob.x - w > right) continue;
             if (ob.y < top || ob.y - h > bottom) continue;
             fn(ob);
+        }
+    }
+
+    // Cohesive building art rises above the collision shell and its path extends
+    // below it, so it gets an explicit asymmetric visual cull. This collection
+    // is visual-only and already sorted by front painter baseline.
+    forVisibleStructures(cam, vw, vh, fn) {
+        if (!this.structures || !this.structures.length) return;
+        const left = cam.x - vw / 2 - 120, right = cam.x + vw / 2 + 120;
+        const top = cam.y - vh / 2 - 180, bottom = cam.y + vh / 2 + 180;
+        for (const structure of this.structures) {
+            const outHW = structure.interiorW / 2 + structure.wall + 100;
+            const outHH = structure.interiorH / 2 + structure.wall;
+            const artTop = structure.y - outHH - structure.wallH - 140;
+            const artBottom = structure.y + outHH + 150;
+            if (structure.x + outHW < left || structure.x - outHW > right) continue;
+            if (artBottom < top || artTop > bottom) continue;
+            fn(structure);
         }
     }
 

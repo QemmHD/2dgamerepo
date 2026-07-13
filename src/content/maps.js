@@ -8,7 +8,7 @@
 //   grade        an optional extra multiply tint for mood (over groundFill).
 //   darkness     a per-map multiplier on the Emberlight veil strength — the
 //                big DAY↔NIGHT lever (day ≈ 0.5 = bright, night = 1.0 = darkest).
-//   weather      'embers' (warm rising motes) | 'snow' (pale falling flecks).
+//   weather      'embers' | 'snow' | 'cryptDust' | 'sandGust'.
 // `unlockBosses` gates a biome behind lifetime boss kills.
 //
 // P1.2 "Living Biomes" — two more per-map levers, both data-only here:
@@ -35,6 +35,15 @@ export const MAPS = {
         unlockBosses: 0,
         accent: '#ffd27a',
         weather: 'embers',      // warm drifting pollen/embers
+        // Deterministic world dressing consumed by MapRenderer. Each biome
+        // owns its prop mix, density, clustered scatter and ground motifs so
+        // the same chunk coordinates no longer produce the same scenery.
+        dressing: {
+            density: [6, 10], clusterChance: 0.58,
+            weights: { grass: 18, fern: 15, wildflower: 12, mushroom: 8, branch: 8, rock: 6, ruin: 3, candle: 1 },
+            motifs: ['leafBed', 'rootTrail', 'mossRing'],
+            ground: '#4e632e', accent: '#d6a952', detail: '#253a22',
+        },
         tier: 1,                // difficulty rung (1 = easiest); folds into boss + enemy scaling
         bosses: ['stormwingAlpha', 'vinebackGoliath', 'gloomMaw'],
         // Verdant swarm: gels, snakes, and bees teem in the glade; splitters
@@ -55,6 +64,12 @@ export const MAPS = {
         unlockBosses: 3,
         accent: '#bfe3ff',
         weather: 'snow',        // falling flecks
+        dressing: {
+            density: [5, 9], clusterChance: 0.46,
+            weights: { iceShard: 18, snowTuft: 15, crackedStone: 11, rock: 8, branch: 5, ruin: 4, bones: 2 },
+            motifs: ['snowDrift', 'iceCrack', 'frostHalo'],
+            ground: '#b7ccdf', accent: '#e8f7ff', detail: '#6f91ad',
+        },
         tier: 2,
         bosses: ['hoarfang', 'rimewarden', 'aurorath'],
         // Frozen waste: hardy shelled heavies + wings that don't mind the
@@ -74,7 +89,13 @@ export const MAPS = {
         darkness: 1.0,          // NIGHT — darkest; the veil presses in fully
         unlockBosses: 6,
         accent: '#b9a8e0',
-        weather: 'snow',        // pale motes read as drifting crypt-dust
+        weather: 'cryptDust',   // slow ash + violet dust in the lantern dark
+        dressing: {
+            density: [6, 10], clusterChance: 0.52,
+            weights: { urn: 16, runeStone: 14, bones: 13, skull: 10, crackedStone: 9, ruin: 8, candle: 6, rock: 3 },
+            motifs: ['flagstones', 'graveSoil', 'runeCircle'],
+            ground: '#25202e', accent: '#8f7fb5', detail: '#0f0c16',
+        },
         tier: 3,
         bosses: ['mourndrift', 'ossuar', 'nihagault'],
         // Sunless night: bats + watching eyeballs + the risen dead; the
@@ -94,7 +115,13 @@ export const MAPS = {
         darkness: 0.46,         // SANDY — bright scorching daylight
         unlockBosses: 9,
         accent: '#ffdf9a',
-        weather: 'embers',      // shimmering heat / blown sand motes
+        weather: 'sandGust',    // low wind-streaks + heat shimmer
+        dressing: {
+            density: [5, 9], clusterChance: 0.42,
+            weights: { dryTuft: 18, sunStone: 14, rock: 10, crackedStone: 8, branch: 6, bones: 4, ruin: 4, skull: 1 },
+            motifs: ['duneRipples', 'scrubPatch', 'fossilTrace'],
+            ground: '#a98243', accent: '#f0cf82', detail: '#6a4b25',
+        },
         tier: 4,
         bosses: ['cindermaw', 'dunescourge', 'solnakh'],
         // Scorched expanse: snakes + burst predators rule the sand; bombers

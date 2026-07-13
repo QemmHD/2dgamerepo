@@ -13,16 +13,33 @@ prewarmSprites();
 const ok = await loadDecorSprites();
 if (ok) clearDecorationCache();
 const cv = document.getElementById('c');
+const entries = MAP.decorationTypes.map((type) => ({ type, sprite: getDecorationSprite(type) }));
+const maxRowW = 1800;
+const pad = 10;
+let cursorX = pad, cursorY = 40, rowH = 0, usedW = 0;
+for (const entry of entries) {
+  const cellW = Math.max(90, entry.sprite.width + 16);
+  const cellH = entry.sprite.height + 64;
+  if (cursorX > pad && cursorX + cellW > maxRowW) {
+    cursorX = pad;
+    cursorY += rowH;
+    rowH = 0;
+  }
+  entry.x = cursorX;
+  entry.y = cursorY;
+  cursorX += cellW;
+  rowH = Math.max(rowH, cellH);
+  usedW = Math.max(usedW, cursorX);
+}
+cv.width = Math.max(320, Math.min(maxRowW, usedW + pad));
+cv.height = Math.max(180, cursorY + rowH + pad);
 const ctx = cv.getContext('2d');
 ctx.fillStyle = '#dd00dd'; ctx.fillRect(0, 0, cv.width, cv.height);
 ctx.font = '12px monospace';
-let x = 10;
-for (const t of MAP.decorationTypes) {
-  const s = getDecorationSprite(t);
-  ctx.drawImage(s, x, 40);
+for (const { type: t, sprite: s, x, y } of entries) {
+  ctx.drawImage(s, x, y);
   ctx.fillStyle = '#000';
-  ctx.fillText(t + ' ' + s.width + 'x' + s.height, x, 30);
-  x += Math.max(90, s.width + 16);
+  ctx.fillText(t + ' ' + s.width + 'x' + s.height, x, y - 10);
 }
 cv.toBlob(async (b) => {
   await fetch('/__save/decprobe.png', { method: 'PUT', body: b });

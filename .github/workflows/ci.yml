@@ -4,7 +4,8 @@
 #   2b. node tools/validate-bosses.js (apex phase-2 pools resolve + keep their
 #       signature; every attack telegraphs) — guards the silent revert-to-full-
 #       kit failure where a typo'd phase2Attacks id passes every smoke test
-#   2c. progression, house navigation, and adaptive-audio data/policy gates
+#   2c. progression, world/HUD cohesion, house navigation, and adaptive-audio
+#       data/policy gates
 #   3. headless-Chromium harness smoke: boot the REAL game for 20 sim-seconds
 #      via tools/artshot/harness.html and assert zero exceptions (EXC: 0)
 #      and a live swarm (enemies > 0), read from the harness's document.title
@@ -52,6 +53,12 @@ jobs:
       - name: Validate progression economy
         run: node tools/validate-progression.js
 
+      - name: Validate biome dressing and structure cohesion
+        run: node tools/validate-world.js
+
+      - name: Validate HUD layout contracts
+        run: node tools/validate-hud-layout.js
+
       - name: Validate house-safe enemy navigation
         run: node tools/validate-navigation.js
 
@@ -85,3 +92,35 @@ jobs:
           ENEMIES=$(echo "$TITLE" | grep -o 'enemies:[0-9-]*' | cut -d: -f2)
           [ "${ENEMIES:-0}" -gt 0 ] || { echo "FAIL: no live enemies after 20s (enemies=$ENEMIES)"; exit 1; }
           echo "Harness smoke OK ($TITLE)"
+
+          # Fast render-branch matrix: every biome must boot as the requested
+          # map, and the two house camera branches must remain exception-free.
+          # Combining those branches into the first two biome rows keeps this
+          # to four short browser starts rather than six full simulations.
+          MATRIX_INDEX=0
+          while IFS='|' read -r EXPECTED_MAP QUERY; do
+            MATRIX_INDEX=$((MATRIX_INDEX + 1))
+            MATRIX_DOM="/tmp/harness-matrix-${MATRIX_INDEX}.html"
+            MATRIX_PROFILE=$(mktemp -d)
+            "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+              --autoplay-policy=no-user-gesture-required \
+              --disable-background-networking --disable-component-update \
+              --force-device-scale-factor=1 --window-size=1280,720 \
+              --virtual-time-budget=7000 --user-data-dir="$MATRIX_PROFILE" \
+              --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&badge=1&${QUERY}" \
+              > "$MATRIX_DOM"
+            MATRIX_TITLE=$(grep -o '<title>[^<]*</title>' "$MATRIX_DOM" | head -1)
+            echo "Matrix ${MATRIX_INDEX}: $MATRIX_TITLE"
+            echo "$MATRIX_TITLE" | grep -q 'DONE EXC:0 ' || {
+              echo "FAIL: matrix scenario '${QUERY}' reported exceptions (or never finished)"; exit 1;
+            }
+            echo "$MATRIX_TITLE" | grep -q "map:${EXPECTED_MAP}" || {
+              echo "FAIL: matrix scenario '${QUERY}' did not render requested map '${EXPECTED_MAP}'"; exit 1;
+            }
+          done <<'MATRIX'
+          emberwood|map=emberwood&tp=buildingInside
+          hollowreach|map=hollowreach&tp=buildingExterior
+          crypts|map=crypts
+          dunes|map=dunes
+          MATRIX
+          echo "Harness render matrix OK (4 biomes, interior + exterior house branches)"

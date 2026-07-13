@@ -863,6 +863,10 @@ export class Game {
             this.obstacleSystem.generate(WORLD_WIDTH, WORLD_HEIGHT, biome.id);
             this._obstacleBiome = biome.id;
         }
+        // World dressing is generated independently from physical obstacles,
+        // then masked at draw time so cached biome props never contaminate an
+        // enterable room or its north/south doorway lanes.
+        this.mapRenderer.setStructureExclusions?.(this.obstacleSystem.structures);
         // Per-map darkness multiplier on the Emberlight veil (day ≈ 0.5 bright,
         // night = 1.0 darkest). Routed through the governor below so an FPS
         // quality change can't reset it back to the global strength.
