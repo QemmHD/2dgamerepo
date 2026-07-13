@@ -48,14 +48,46 @@ function hashChunk(cx, cy) {
     return (h ^ (h >>> 16)) >>> 0;
 }
 
+function hashString(s) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+}
+
+function pickWeighted(weights, rng) {
+    const entries = Object.entries(weights || {});
+    if (!entries.length) return MAP.decorationTypes[(rng() * MAP.decorationTypes.length) | 0];
+    let total = 0;
+    for (const [, weight] of entries) total += Math.max(0, weight || 0);
+    let roll = rng() * Math.max(1, total);
+    for (const [type, weight] of entries) {
+        roll -= Math.max(0, weight || 0);
+        if (roll <= 0) return type;
+    }
+    return entries[0][0];
+}
+
 export class MapRenderer {
     constructor() {
         this.tilePattern = null;
         this.tilePatternFailed = false;
-        // chunkCache: 'cx,cy' → array of {type, x, y, scale, rot}.
-        // Built lazily as chunks come into view and never cleared — total
-        // memory is bounded by world size (4800×2700 / 512² ≈ 50 chunks).
+        // chunkCache: 'biome:cx,cy' → { decs, motifs }.
+        // Built lazily as chunks come into view and cleared when the active
+        // biome changes; total memory remains bounded by the finite world grid.
         this.chunkCache = new Map();
+        // Transparent biome-specific microtexture overlays. Generated once per
+        // biome into small seamless canvases, then stamped as CanvasPatterns;
+        // this breaks the old "same grass tile under four color filters" look
+        // without adding network assets or per-frame procedural work.
+        this.surfacePatterns = new Map();
+        // Structure records are supplied by Game after deterministic obstacle
+        // generation. They are visual exclusion masks only: standing scenery
+        // stays out of rooms and both usable door approaches without changing
+        // collision, placement RNG, or the cached chunk catalog.
+        this.structureExclusions = [];
         // Set by Game from reducedEffects / the FPS governor: when true, the
         // cosmetic decoration contact shadows are skipped to shed fill cost.
         // (Weather is NOT gated by this — the governor thins it via weatherScale
@@ -67,6 +99,85 @@ export class MapRenderer {
         // Active biome theme ({ bg, grade, gradeAlpha }); null = default dusk.
         // Set by Game at run start from the selected map.
         this.theme = null;
+    }
+
+    setStructureExclusions(structures) {
+        this.structureExclusions = Array.isArray(structures) ? structures : [];
+    }
+
+    _insideStructureExclusion(x, y, padding = 0, entranceReach = 0) {
+        for (const s of this.structureExclusions) {
+            if (!s) continue;
+            const outHW = s.interiorW / 2 + s.wall;
+            const outHH = s.interiorH / 2 + s.wall;
+            const dx = Math.abs(x - s.x);
+            const dy = Math.abs(y - s.y);
+            // Keep the authored floor, walls and immediate foundation clean.
+            if (dx <= outHW + padding && dy <= outHH + padding) return true;
+            // Both collision openings are real routes. Preserve a readable
+            // approach north and south instead of scattering walk-through props
+            // across the threshold/path artwork.
+            if (entranceReach > 0
+                && dx <= s.door / 2 + padding
+                && dy <= outHH + entranceReach) return true;
+        }
+        return false;
+    }
+
+    _surfacePattern(ctx) {
+        const id = this.theme?.id || 'default';
+        if (this.surfacePatterns.has(id)) return this.surfacePatterns.get(id);
+        let pattern = null;
+        try {
+            if (typeof document === 'undefined') return null;
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const x = c.getContext('2d');
+            const profile = this.theme?.dressing || {};
+            const ground = profile.ground || '#65704a';
+            const accent = profile.accent || '#b6a86d';
+            const detail = profile.detail || '#303827';
+            x.lineCap = 'round';
+            if (id === 'hollowreach') {
+                // Broad, quiet wind shelves read as snow instead of scanlines.
+                x.strokeStyle = accent; x.globalAlpha = 0.11; x.lineWidth = 2;
+                for (let i = 0; i < 6; i++) {
+                    const yy = 10 + i * 45;
+                    x.beginPath(); x.moveTo(-30, yy); x.bezierCurveTo(48, yy - 12, 166, yy + 12, 286, yy - 2); x.stroke();
+                }
+                x.fillStyle = ground; x.globalAlpha = 0.14;
+                for (let i = 0; i < 24; i++) { x.beginPath(); x.arc((i * 83) % 256, (i * 47) % 256, 1 + (i % 3), 0, TWO_PI); x.fill(); }
+            } else if (id === 'crypts') {
+                x.strokeStyle = accent; x.globalAlpha = 0.18; x.lineWidth = 2;
+                for (let yy = 0; yy <= 256; yy += 48) {
+                    x.beginPath(); x.moveTo(0, yy); x.lineTo(256, yy); x.stroke();
+                    const off = ((yy / 48) & 1) * 36;
+                    for (let xx = off; xx <= 256; xx += 72) { x.beginPath(); x.moveTo(xx, yy); x.lineTo(xx, yy + 48); x.stroke(); }
+                }
+                x.strokeStyle = detail; x.globalAlpha = 0.22;
+                for (let i = 0; i < 7; i++) { const xx = (i * 71) % 256, yy = (i * 113) % 256; x.beginPath(); x.moveTo(xx, yy); x.lineTo(xx + 14, yy + 9); x.lineTo(xx + 8, yy + 21); x.stroke(); }
+            } else if (id === 'dunes') {
+                // Sparse dune contours keep the sand alive without becoming a
+                // repeating wallpaper over enemies and telegraphs.
+                x.strokeStyle = accent; x.globalAlpha = 0.13; x.lineWidth = 2;
+                for (let i = 0; i < 7; i++) {
+                    const yy = i * 39;
+                    x.beginPath(); x.moveTo(-30, yy); x.bezierCurveTo(38, yy - 12, 110, yy + 12, 178, yy); x.bezierCurveTo(214, yy - 7, 244, yy - 4, 286, yy + 2); x.stroke();
+                }
+                x.fillStyle = detail; x.globalAlpha = 0.10;
+                for (let i = 0; i < 18; i++) x.fillRect((i * 97) % 256, (i * 61) % 256, 8 + (i % 4) * 5, 2);
+            } else {
+                x.fillStyle = ground; x.globalAlpha = 0.17;
+                for (let i = 0; i < 28; i++) { const xx = (i * 79) % 256, yy = (i * 43) % 256; x.beginPath(); x.ellipse(xx, yy, 7 + (i % 4) * 3, 3 + (i % 2) * 2, i * 0.31, 0, TWO_PI); x.fill(); }
+                x.strokeStyle = detail; x.globalAlpha = 0.13; x.lineWidth = 3;
+                for (let i = 0; i < 6; i++) { const yy = 18 + i * 43; x.beginPath(); x.moveTo(-10, yy); x.bezierCurveTo(54, yy - 20, 138, yy + 18, 266, yy - 5); x.stroke(); }
+            }
+            pattern = ctx.createPattern(c, 'repeat');
+        } catch (_) {
+            pattern = null;
+        }
+        this.surfacePatterns.set(id, pattern);
+        return pattern;
     }
 
     _ensureTilePattern(ctx) {
@@ -115,6 +226,14 @@ export class MapRenderer {
             ctx.restore();
         }
 
+        const surface = this._surfacePattern(ctx);
+        if (surface) {
+            ctx.save();
+            ctx.fillStyle = surface;
+            ctx.fillRect(left, top, viewW, viewH);
+            ctx.restore();
+        }
+
         // Biome color grade: a translucent tint multiplied over the ground so
         // an alternate map reads as a different place without new sprite art.
         if (theme && theme.grade && theme.gradeAlpha > 0) {
@@ -128,28 +247,200 @@ export class MapRenderer {
     }
 
     _getChunkDecorations(cx, cy) {
-        const key = `${cx},${cy}`;
+        const theme = this.theme;
+        const biomeId = theme?.id || 'default';
+        if (this._cacheBiomeId !== biomeId) {
+            this.chunkCache.clear();
+            this._cacheBiomeId = biomeId;
+        }
+        const key = `${biomeId}:${cx},${cy}`;
         const cached = this.chunkCache.get(key);
         if (cached) return cached;
 
-        const seed = hashChunk(cx, cy);
+        const seed = hashChunk(cx, cy) ^ hashString(biomeId);
         const rng = mulberry32(seed);
-        const count = MAP.decorationsPerChunkMin +
-            Math.floor(rng() * (MAP.decorationsPerChunkMax - MAP.decorationsPerChunkMin + 1));
+        const dressing = theme?.dressing || null;
+        const min = dressing?.density?.[0] ?? MAP.decorationsPerChunkMin;
+        const max = dressing?.density?.[1] ?? MAP.decorationsPerChunkMax;
+        const count = min + Math.floor(rng() * (Math.max(min, max) - min + 1));
 
         const decs = [];
+        const motifs = [];
         const baseX = cx * CHUNK_SIZE;
         const baseY = cy * CHUNK_SIZE;
+        const anchors = [{ x: baseX + rng() * CHUNK_SIZE, y: baseY + rng() * CHUNK_SIZE }];
+        if (rng() > 0.62) anchors.push({ x: baseX + rng() * CHUNK_SIZE, y: baseY + rng() * CHUNK_SIZE });
         for (let i = 0; i < count; i++) {
-            const type = MAP.decorationTypes[Math.floor(rng() * MAP.decorationTypes.length)];
-            const x = baseX + rng() * CHUNK_SIZE;
-            const y = baseY + rng() * CHUNK_SIZE;
-            const scale = 0.8 + rng() * 0.4;
+            const type = dressing ? pickWeighted(dressing.weights, rng)
+                : MAP.decorationTypes[Math.floor(rng() * MAP.decorationTypes.length)];
+            const cluster = dressing && rng() < (dressing.clusterChance ?? 0);
+            const anchor = anchors[i % anchors.length];
+            const a = rng() * TWO_PI;
+            const radius = 26 + rng() * 118;
+            const x = cluster ? anchor.x + Math.cos(a) * radius : baseX + rng() * CHUNK_SIZE;
+            const y = cluster ? anchor.y + Math.sin(a) * radius * 0.58 : baseY + rng() * CHUNK_SIZE;
+            const scale = 0.72 + rng() * 0.62;
             const rot = (rng() - 0.5) * 0.4;
             decs.push({ type, x, y, scale, rot });
         }
-        this.chunkCache.set(key, decs);
-        return decs;
+        if (dressing?.motifs?.length) {
+            const motifCount = 1 + (rng() > 0.55 ? 1 : 0);
+            for (let i = 0; i < motifCount; i++) {
+                motifs.push({
+                    type: dressing.motifs[(rng() * dressing.motifs.length) | 0],
+                    x: baseX + 70 + rng() * (CHUNK_SIZE - 140),
+                    y: baseY + 70 + rng() * (CHUNK_SIZE - 140),
+                    scale: 0.72 + rng() * 0.72,
+                    rot: rng() * TWO_PI,
+                    variant: (rng() * 997) | 0,
+                    ground: dressing.ground,
+                    accent: dressing.accent,
+                    detail: dressing.detail,
+                });
+            }
+        }
+        const result = { decs, motifs };
+        this.chunkCache.set(key, result);
+        return result;
+    }
+
+    _drawGroundMotif(ctx, m) {
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        ctx.rotate(m.rot);
+        ctx.scale(m.scale, m.scale);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        const g = m.ground || '#596040';
+        const a = m.accent || '#c0b27a';
+        const d = m.detail || '#303526';
+        const v = m.variant || 0;
+        switch (m.type) {
+            case 'leafBed':
+                ctx.globalAlpha = 0.28;
+                for (let i = 0; i < 18; i++) {
+                    const ang = (i * 2.399 + v * 0.07) % TWO_PI;
+                    const r = 16 + ((i * 37 + v) % 72);
+                    ctx.fillStyle = i % 3 === 0 ? a : (i % 2 ? g : d);
+                    ctx.save();
+                    ctx.translate(Math.cos(ang) * r, Math.sin(ang) * r * 0.48);
+                    ctx.rotate(ang);
+                    ctx.fillRect(-5, -2, 10, 4);
+                    ctx.restore();
+                }
+                break;
+            case 'rootTrail':
+                ctx.globalAlpha = 0.24;
+                ctx.strokeStyle = d;
+                ctx.lineWidth = 5;
+                for (let i = -1; i <= 1; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(-92, i * 18);
+                    ctx.bezierCurveTo(-42, -22 + i * 10, 24, 28 + i * 8, 96, i * 14);
+                    ctx.stroke();
+                }
+                break;
+            case 'mossRing':
+                ctx.globalAlpha = 0.25;
+                ctx.strokeStyle = g;
+                ctx.lineWidth = 14;
+                ctx.setLineDash([18, 11]);
+                ctx.beginPath(); ctx.ellipse(0, 0, 86, 42, 0, 0, TWO_PI); ctx.stroke();
+                ctx.setLineDash([]);
+                break;
+            case 'snowDrift':
+                ctx.globalAlpha = 0.24;
+                ctx.fillStyle = a;
+                for (let i = 0; i < 4; i++) {
+                    ctx.beginPath(); ctx.ellipse(-64 + i * 42, (i % 2) * 12, 52, 14, -0.12, 0, TWO_PI); ctx.fill();
+                }
+                break;
+            case 'iceCrack':
+                ctx.globalAlpha = 0.34;
+                ctx.strokeStyle = d;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(-92, -15); ctx.lineTo(-34, 2); ctx.lineTo(4, -18); ctx.lineTo(48, 8); ctx.lineTo(96, -5); ctx.stroke();
+                ctx.lineWidth = 1.5;
+                for (const [x, y, dx, dy] of [[-34, 2, -18, 30], [4, -18, 8, -27], [48, 8, 17, 25]]) {
+                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.stroke();
+                }
+                break;
+            case 'frostHalo':
+                ctx.globalAlpha = 0.22;
+                ctx.strokeStyle = a;
+                ctx.lineWidth = 4;
+                ctx.setLineDash([8, 13]);
+                ctx.beginPath(); ctx.ellipse(0, 0, 78, 36, 0, 0, TWO_PI); ctx.stroke();
+                ctx.setLineDash([]);
+                break;
+            case 'flagstones':
+                ctx.globalAlpha = 0.22;
+                ctx.strokeStyle = a;
+                ctx.lineWidth = 2;
+                for (let yy = -46; yy <= 46; yy += 32) {
+                    for (let xx = -78; xx <= 78; xx += 42) {
+                        const off = ((yy / 32) & 1) * 18;
+                        ctx.strokeRect(xx + off, yy, 34 + ((xx + v) & 5), 22);
+                    }
+                }
+                break;
+            case 'graveSoil':
+                ctx.globalAlpha = 0.25;
+                ctx.fillStyle = d;
+                ctx.beginPath(); ctx.ellipse(0, 0, 94, 40, 0, 0, TWO_PI); ctx.fill();
+                ctx.globalAlpha = 0.24;
+                ctx.strokeStyle = g;
+                ctx.lineWidth = 3;
+                for (let i = -3; i <= 3; i++) {
+                    ctx.beginPath(); ctx.moveTo(-70, i * 8); ctx.quadraticCurveTo(0, i * 11 + (i % 2) * 5, 70, i * 7); ctx.stroke();
+                }
+                break;
+            case 'runeCircle':
+                ctx.globalAlpha = 0.25;
+                ctx.strokeStyle = a;
+                ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.ellipse(0, 0, 72, 36, 0, 0, TWO_PI); ctx.stroke();
+                for (let i = 0; i < 8; i++) {
+                    const ang = i * TWO_PI / 8;
+                    ctx.beginPath();
+                    ctx.moveTo(Math.cos(ang) * 58, Math.sin(ang) * 29);
+                    ctx.lineTo(Math.cos(ang) * 76, Math.sin(ang) * 38);
+                    ctx.stroke();
+                }
+                break;
+            case 'duneRipples':
+                ctx.globalAlpha = 0.26;
+                ctx.strokeStyle = a;
+                ctx.lineWidth = 3;
+                for (let i = -3; i <= 3; i++) {
+                    ctx.beginPath(); ctx.moveTo(-100, i * 15); ctx.bezierCurveTo(-48, i * 15 - 12, 42, i * 15 + 12, 100, i * 15); ctx.stroke();
+                }
+                break;
+            case 'scrubPatch':
+                ctx.globalAlpha = 0.30;
+                ctx.strokeStyle = d;
+                ctx.lineWidth = 3;
+                for (let i = 0; i < 13; i++) {
+                    const x = -80 + ((i * 43 + v) % 160);
+                    const y = -28 + ((i * 29 + v) % 56);
+                    ctx.beginPath(); ctx.moveTo(x, y + 8); ctx.lineTo(x + (i % 3 - 1) * 7, y - 8); ctx.stroke();
+                }
+                break;
+            case 'fossilTrace':
+                ctx.globalAlpha = 0.25;
+                ctx.strokeStyle = a;
+                ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.arc(-18, 0, 48, -1.2, 1.1); ctx.stroke();
+                for (let i = 0; i < 6; i++) {
+                    const ang = -0.9 + i * 0.34;
+                    const x = -18 + Math.cos(ang) * 48;
+                    const y = Math.sin(ang) * 48;
+                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(ang) * 24, y + Math.sin(ang) * 24); ctx.stroke();
+                }
+                break;
+        }
+        ctx.restore();
     }
 
     // `lighting` (optional) is the LightingSystem; lit decorations (candles)
@@ -177,15 +468,28 @@ export class MapRenderer {
 
         for (let cy = cy0; cy <= cy1; cy++) {
             for (let cx = cx0; cx <= cx1; cx++) {
-                const decs = this._getChunkDecorations(cx, cy);
-                for (const d of decs) {
+                const chunk = this._getChunkDecorations(cx, cy);
+                for (const m of chunk.motifs) {
+                    if (m.x < left - 160 || m.x > right + 160 || m.y < top - 100 || m.y > bottom + 100) continue;
+                    // Motifs can be ~150px wide after scale. Keep their full
+                    // authored mark inside the palisade and away from houses;
+                    // unlike props, motifs have no sprite bounds to catch later.
+                    if (m.x - 160 < -halfW || m.x + 160 > halfW
+                        || m.y - 110 < -halfH || m.y + 110 > halfH) continue;
+                    if (this._insideStructureExclusion(m.x, m.y, 155, 120)) continue;
+                    this._drawGroundMotif(ctx, m);
+                }
+                for (const d of chunk.decs) {
                     if (d.x < -halfW || d.x > halfW || d.y < -halfH || d.y > halfH) continue;
+                    if (this._insideStructureExclusion(d.x, d.y, 30, 150)) continue;
                     const sprite = getDecorationSprite(d.type);
                     if (!sprite) continue;
                     // Decoration sources are supersampled (SPRITE_SS×); draw
                     // at logical world size so the footprint + cull stay right.
                     const w = (sprite.width / SPRITE_SS) * d.scale;
                     const h = (sprite.height / SPRITE_SS) * d.scale;
+                    if (d.x - w / 2 < -halfW || d.x + w / 2 > halfW
+                        || d.y - h / 2 < -halfH || d.y + h / 2 > halfH) continue;
                     // Cull anything fully off-screen so big sprites
                     // (ruin/branch) don't pay the cost when out of view.
                     if (d.x + w / 2 < left || d.x - w / 2 > right) continue;
@@ -257,7 +561,7 @@ export class MapRenderer {
     drawWeather(ctx, screenW, screenH, time) {
         if (!this.theme || this.weatherScale <= 0) return;
         const kind = this.theme.weather;
-        if (kind !== 'embers' && kind !== 'snow') return;
+        if (!['embers', 'snow', 'cryptDust', 'sandGust'].includes(kind)) return;
         const N = Math.round(56 * this.weatherScale);
         const span = screenH + 80;
         ctx.save();
@@ -287,7 +591,7 @@ export class MapRenderer {
                 ctx.arc(x, y, r, 0, TWO_PI);
                 ctx.fill();
             }
-        } else {
+        } else if (kind === 'snow') {
             ctx.fillStyle = 'rgba(214, 234, 255, 0.55)';
             for (let i = 0; i < N; i++) {
                 const speed = 34 + (i % 6) * 12;
@@ -298,6 +602,31 @@ export class MapRenderer {
                 ctx.beginPath();
                 ctx.arc(x, y, r, 0, TWO_PI);
                 ctx.fill();
+            }
+        } else if (kind === 'cryptDust') {
+            // Sunless crypt: sparse pale ash with a slow violet sideways drift.
+            // Source-over keeps it dusty rather than sparkling like snow.
+            for (let i = 0; i < N; i++) {
+                const speed = 8 + (i % 7) * 3;
+                const x = ((i * 127.7 + time * speed) % (screenW + 80)) - 40;
+                const y = ((i * 61.3) % screenH) + Math.sin(time * 0.35 + i) * 24;
+                ctx.globalAlpha = 0.12 + 0.15 * (0.5 + 0.5 * Math.sin(time * 0.7 + i * 1.9));
+                ctx.fillStyle = i % 5 === 0 ? '#aa8dcc' : '#d4cedd';
+                ctx.beginPath(); ctx.arc(x, y, 1 + (i % 3) * 0.7, 0, TWO_PI); ctx.fill();
+            }
+        } else {
+            // Dunes: short horizontal grains traveling in layered gust bands.
+            ctx.strokeStyle = '#f0cf82';
+            ctx.lineCap = 'round';
+            for (let i = 0; i < Math.round(N * 0.72); i++) {
+                const speed = 78 + (i % 8) * 16;
+                const x = ((time * speed + i * 149) % (screenW + 180)) - 90;
+                const band = (i * 83) % screenH;
+                const y = band + Math.sin(time * 0.9 + i) * 18;
+                const len = 12 + (i % 5) * 8;
+                ctx.globalAlpha = 0.10 + (i % 4) * 0.035;
+                ctx.lineWidth = 1 + (i % 3) * 0.55;
+                ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y - 3); ctx.stroke();
             }
         }
         ctx.restore();
@@ -348,8 +677,8 @@ export class MapRenderer {
         ctx.fillStyle = 'rgba(255, 209, 102, 0.7)';
         for (let cy = cy0; cy <= cy1; cy++) {
             for (let cx = cx0; cx <= cx1; cx++) {
-                const decs = this._getChunkDecorations(cx, cy);
-                for (const d of decs) {
+                const chunk = this._getChunkDecorations(cx, cy);
+                for (const d of chunk.decs) {
                     ctx.beginPath();
                     ctx.arc(d.x, d.y, 2, 0, TWO_PI);
                     ctx.fill();

@@ -35,7 +35,9 @@
     boss=1 / bossid=<id> / bosshp=<0..1> / bossattack=<move id> / bosskill=1
              spawn a live apex directly and stage its choreography state
     tp       teleport before the shot: "building" (just south of the first
-             placed building, doorway in view) or "x,y" world coords
+             placed building), "buildingInside" (inside its cutaway),
+             "buildingExterior" (offset view of the first intact house), or
+             "x,y" world coords
     skipOnboarding  forced to "1" here (deterministic frames); pass "=0"
              explicitly to shoot the guided-first-run hint pill itself
 -->
@@ -202,7 +204,15 @@ async function boot() {
         // again so menu shots show the settled screen, not the fade-in.
         if (game.ui && game.ui.menu) { game.ui.menu._transT0 = -10; game.render(); }
     } else {
-        if (MAP) { try { game.saveSystem.setSelectedMap(MAP); } catch (e) { ERR.push('map: ' + String(e)); } }
+        if (MAP) {
+            try {
+                // QA profiles are fresh, so campaign-gated maps would silently
+                // fall back to Emberwood. Unlock only inside this dev harness,
+                // then fail loudly if the requested biome still cannot select.
+                game.saveSystem.setSetting('unlockMaps', true);
+                if (!game.saveSystem.setSelectedMap(MAP)) ERR.push(`map: could not select '${MAP}'`);
+            } catch (e) { ERR.push('map: ' + String(e)); }
+        }
         game._startRun();                // default hero (monkey "Pyra"), default map
         game.player.damageTakenMul = 0;  // harness godmode: survive the swarm for the shot
 
@@ -246,9 +256,22 @@ async function boot() {
         const TP = params.get('tp');
         if (TP) {
             try {
-                if (TP === 'building') {
-                    const b = game.obstacleSystem.obstacles.find((o) => o.type === 'buildingFloor');
-                    if (b) { game.player.x = b.x; game.player.y = b.y + 240; }
+                if (TP === 'building' || TP === 'buildingInside' || TP === 'buildingExterior') {
+                    const floors = game.obstacleSystem.obstacles.filter((o) => o.type === 'buildingFloor');
+                    const b = TP === 'buildingExterior'
+                        ? floors.find((o) => o.def.styleType !== 'ruin') || floors[0]
+                        : floors[0];
+                    if (b) {
+                        if (TP === 'buildingExterior') {
+                            // Frame the whole landmark clear of the HUD while
+                            // keeping the player nearby for a useful scale cue.
+                            game.player.x = b.x - 500;
+                            game.player.y = b.y + 20;
+                        } else {
+                            game.player.x = b.x;
+                            game.player.y = TP === 'buildingInside' ? b.y : b.y + 240;
+                        }
+                    }
                 } else {
                     const [tx, ty] = TP.split(',').map(Number);
                     if (Number.isFinite(tx) && Number.isFinite(ty)) { game.player.x = tx; game.player.y = ty; }
@@ -444,11 +467,18 @@ async function boot() {
     // build never loads this harness). Lets a Playwright test start Boss Rush and
     // step/inspect the sim after boot.
     window.__game = game;
-    document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1) + qaBossSummary;
+    document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1) +
+        ' map:' + (game._obstacleBiome || 'unknown') + qaBossSummary;
     window.__done = true;
 }
 
-boot().catch((e) => { ERR.push('boot: ' + String(e && e.stack || e)); document.title = 'BOOTFAIL'; });
+boot().catch((e) => {
+    const message = 'boot: ' + String(e && e.stack || e);
+    ERR.push(message);
+    window.__bootError = message;
+    console.error(message);
+    document.title = 'BOOTFAIL ' + message.slice(0, 120);
+});
 </script>
 </body>
 </html>

@@ -34,6 +34,11 @@ export class Obstacle {
     }
 
     draw(ctx) {
+        // Building collision segments are now skinned once by StructureRenderer.
+        // Keeping these Obstacle instances invisible preserves every physical
+        // wall/LOS/nav query while removing six shadows, seams, caps, and outlines
+        // that previously made one house look like unrelated slabs.
+        if (this.type === 'buildingWall' && this.structureId) return;
         const size = this.def.size;
         // Per-instance palette wins (biome tinting / building walls set it);
         // otherwise fall back to the archetype's own palette.

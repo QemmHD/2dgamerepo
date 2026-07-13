@@ -3547,6 +3547,14 @@ function drawDecoration(type) {
         case 'branch':       return drawBranch();
         case 'crackedStone': return drawCrackedStone();
         case 'bones':        return drawBones();
+        case 'fern':         return drawFern();
+        case 'wildflower':   return drawWildflower();
+        case 'iceShard':     return drawIceShard();
+        case 'snowTuft':     return drawSnowTuft();
+        case 'urn':          return drawUrn();
+        case 'runeStone':    return drawRuneStone();
+        case 'dryTuft':      return drawDryTuft();
+        case 'sunStone':     return drawSunStone();
         default:             return drawRock();
     }
 }
@@ -3920,5 +3928,131 @@ function drawBones() {
     ctx.fill();
     ctx.restore();
 
+    return canvas;
+}
+
+// Biome-signature ground props. These deliberately stay small and flat enough
+// to live in MapRenderer's below-entity decoration pass; tall silhouettes are
+// reserved for collision-aware obstacles.
+function drawFern() {
+    const W = 48, H = 38, canvas = newDecCanvas(W, H), ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(W / 2, H - 4, 18, 4, 0, 0, TWO_PI); ctx.fill();
+    const stems = [[24, 35, 22, 5], [20, 35, 8, 12], [28, 35, 41, 14]];
+    ctx.lineCap = 'round';
+    for (let s = 0; s < stems.length; s++) {
+        const [x0, y0, x1, y1] = stems[s];
+        ctx.strokeStyle = s === 0 ? '#507c42' : '#3e6538'; ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo((x0 + x1) / 2, y1 + 8, x1, y1); ctx.stroke();
+        for (let i = 1; i <= 5; i++) {
+            const t = i / 6, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+            const a = Math.atan2(y1 - y0, x1 - x0), side = i % 2 ? 1 : -1;
+            ctx.strokeStyle = i % 2 ? '#6e9b54' : '#5b8848'; ctx.lineWidth = 2.8;
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a + side * 1.15) * 8, y + Math.sin(a + side * 1.15) * 8); ctx.stroke();
+        }
+    }
+    return canvas;
+}
+
+function drawWildflower() {
+    const W = 42, H = 40, canvas = newDecCanvas(W, H), ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(W / 2, H - 3, 15, 3, 0, 0, TWO_PI); ctx.fill();
+    const blooms = [[9, 18, '#f5d66a'], [20, 9, '#e9a8d0'], [31, 17, '#b7d9ff'], [24, 23, '#fff0b8']];
+    for (const [x, y, col] of blooms) {
+        ctx.strokeStyle = '#486b38'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(W / 2, H - 3); ctx.quadraticCurveTo(x, y + 10, x, y); ctx.stroke();
+        ctx.fillStyle = col;
+        for (let i = 0; i < 5; i++) {
+            const a = i * TWO_PI / 5;
+            ctx.beginPath(); ctx.arc(x + Math.cos(a) * 3.2, y + Math.sin(a) * 3.2, 2.3, 0, TWO_PI); ctx.fill();
+        }
+        ctx.fillStyle = '#a66a2d'; ctx.beginPath(); ctx.arc(x, y, 2, 0, TWO_PI); ctx.fill();
+    }
+    return canvas;
+}
+
+function drawIceShard() {
+    const W = 44, H = 54, canvas = newDecCanvas(W, H), ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(54,91,120,0.24)';
+    ctx.beginPath(); ctx.ellipse(W / 2, H - 4, 17, 4, 0, 0, TWO_PI); ctx.fill();
+    const shard = (x, y, w, h, c1, c2) => {
+        ctx.fillStyle = c1; ctx.beginPath(); ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - 4); ctx.lineTo(x, y); ctx.lineTo(x - w * 0.7, y - 5); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = c2; ctx.beginPath(); ctx.moveTo(x, y - h); ctx.lineTo(x, y); ctx.lineTo(x - w * 0.7, y - 5); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#dff6ff'; ctx.lineWidth = 1.2; ctx.stroke();
+    };
+    shard(22, 50, 10, 42, '#8fd3ed', '#5799bd');
+    shard(10, 50, 7, 25, '#a9e0f4', '#6daac9');
+    shard(34, 50, 6, 20, '#7fc5e2', '#4f8bab');
+    return canvas;
+}
+
+function drawSnowTuft() {
+    const W = 52, H = 28, canvas = newDecCanvas(W, H), ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(40,62,82,0.18)';
+    ctx.beginPath(); ctx.ellipse(W / 2, H - 3, 21, 4, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = '#d9e9f5';
+    ctx.beginPath(); ctx.ellipse(25, 19, 21, 8, -0.08, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = '#f4fbff';
+    ctx.beginPath(); ctx.ellipse(20, 16, 13, 5, -0.16, 0, TWO_PI); ctx.fill();
+    ctx.strokeStyle = '#7596a8'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    for (const [x, h, lean] of [[15, 13, -4], [25, 17, 2], [35, 11, 4]]) {
+        ctx.beginPath(); ctx.moveTo(x, 20); ctx.quadraticCurveTo(x + lean, 13, x + lean, 20 - h); ctx.stroke();
+    }
+    return canvas;
+}
+
+function drawUrn() {
+    const W = 38, H = 48, canvas = newDecCanvas(W, H), ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(W / 2, H - 3, 13, 3, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = '#51465d';
+    ctx.beginPath(); ctx.moveTo(11, 16); ctx.quadraticCurveTo(6, 29, 12, 42); ctx.lineTo(26, 42); ctx.quadraticCurveTo(32, 29, 27, 16); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#77678a'; ctx.fillRect(10, 12, 18, 6); ctx.fillRect(13, 8, 12, 5);
+    ctx.strokeStyle = '#2a2430'; ctx.lineWidth = 2; ctx.strokeRect(10, 12, 18, 6);
+    ctx.strokeStyle = '#a18bb5'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(12, 27); ctx.quadraticCurveTo(19, 22, 26, 27); ctx.quadraticCurveTo(19, 32, 12, 27); ctx.stroke();
+    return canvas;
+}
+
+function drawRuneStone() {
+    const W = 44, H = 50, canvas = newDecCanvas(W, H), ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(W / 2, H - 3, 16, 4, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = '#3c3946';
+    ctx.beginPath(); ctx.moveTo(9, 43); ctx.lineTo(12, 12); ctx.lineTo(21, 6); ctx.lineTo(33, 13); ctx.lineTo(35, 43); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#1c1922'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = '#9d86cf'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(21, 15); ctx.lineTo(16, 25); ctx.lineTo(25, 25); ctx.lineTo(20, 36); ctx.stroke();
+    ctx.fillStyle = '#b79ce8'; ctx.beginPath(); ctx.arc(26, 17, 2, 0, TWO_PI); ctx.fill();
+    return canvas;
+}
+
+function drawDryTuft() {
+    const W = 46, H = 34, canvas = newDecCanvas(W, H), ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(70,45,20,0.2)';
+    ctx.beginPath(); ctx.ellipse(W / 2, H - 3, 17, 3, 0, 0, TWO_PI); ctx.fill();
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 9; i++) {
+        const x = 7 + i * 4, bend = (i % 3 - 1) * 7, hh = 12 + (i * 7) % 17;
+        ctx.strokeStyle = i % 2 ? '#b88a47' : '#806035'; ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.moveTo(x, H - 3); ctx.quadraticCurveTo(x + bend, H - hh * 0.45, x + bend * 0.7, H - hh); ctx.stroke();
+    }
+    return canvas;
+}
+
+function drawSunStone() {
+    const W = 48, H = 38, canvas = newDecCanvas(W, H), ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(70,45,20,0.22)';
+    ctx.beginPath(); ctx.ellipse(W / 2, H - 3, 18, 4, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = '#9a7138';
+    ctx.beginPath(); ctx.moveTo(7, 30); ctx.lineTo(13, 11); ctx.lineTo(31, 6); ctx.lineTo(42, 18); ctx.lineTo(38, 31); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#5c3f20'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = '#e7bd62'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(25, 19, 6, 0, TWO_PI); ctx.stroke();
+    for (let i = 0; i < 8; i++) {
+        const a = i * TWO_PI / 8;
+        ctx.beginPath(); ctx.moveTo(25 + Math.cos(a) * 8, 19 + Math.sin(a) * 8); ctx.lineTo(25 + Math.cos(a) * 12, 19 + Math.sin(a) * 12); ctx.stroke();
+    }
     return canvas;
 }

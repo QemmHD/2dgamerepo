@@ -1433,7 +1433,13 @@ export const MAP = {
     decorationsPerChunkMin: 2,
     decorationsPerChunkMax: 5,
     backgroundColor: '#0c1410',
-    decorationTypes: ['rock', 'mushroom', 'skull', 'grass', 'candle', 'ruin', 'branch', 'crackedStone', 'bones'],
+    // Union of every biome's prop vocabulary. MapRenderer chooses from the
+    // active map's weighted dressing profile; this list remains the prewarm /
+    // procedural-fallback contract.
+    decorationTypes: [
+        'rock', 'mushroom', 'skull', 'grass', 'candle', 'ruin', 'branch', 'crackedStone', 'bones',
+        'fern', 'wildflower', 'iceShard', 'snowTuft', 'urn', 'runeStone', 'dryTuft', 'sunStone',
+    ],
 };
 
 // Soft corner darkening drawn AFTER the world but BEFORE the UI so the

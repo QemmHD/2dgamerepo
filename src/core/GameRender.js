@@ -37,11 +37,44 @@ import { getBorderStrip, getBorderPattern } from '../assets/ObstacleSprites.js';
 import { HazardSystem } from '../systems/HazardSystem.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
 import { gemLightColor } from './GameUpdate.js';
+import { structureRenderer } from '../render/StructureRenderer.js';
 
 // Half the largest sprite (~91) + bar/label headroom + max camera shake. Anything
 // whose center is farther than this from the view edge can't contribute a visible
 // pixel and is skipped at draw time.
 const CULL_MARGIN = 160;
+
+// Visible world objects share one painter queue. Houses contribute two depth
+// planes (rear/roof and front/sides), which lets actors on opposite sides of
+// the same house layer independently. Entries are pooled on Game so the swarm
+// cap does not turn y-sorting into a per-frame allocation source.
+const STAND_STRUCTURE_REAR = 0;
+const STAND_OBSTACLE = 1;
+const STAND_STRUCTURE_FRONT = 2;
+const STAND_GEM = 3;
+const STAND_COIN = 4;
+const STAND_HEALTH = 5;
+const STAND_CHEST = 6;
+const STAND_SHRINE = 7;
+const STAND_ENEMY = 8;
+const STAND_PLAYER = 9;
+
+function addStanding(queue, pool, index, kind, value, baseY, actorRank, order) {
+    let entry = pool[index];
+    if (!entry) entry = pool[index] = { kind: 0, value: null, baseY: 0, actorRank: 0, order: 0 };
+    entry.kind = kind;
+    entry.value = value;
+    entry.baseY = baseY;
+    // World planes win exact ties, matching the old `ob.baseY <= playerBaseY`
+    // contract: an actor standing exactly on a wall's feet line paints over it.
+    entry.actorRank = actorRank;
+    entry.order = order;
+    queue.push(entry);
+}
+
+function standingOrder(a, b) {
+    return (a.baseY - b.baseY) || (a.actorRank - b.actorRank) || (a.order - b.order);
+}
 
 export const GameRenderMethods = {
     render() {
@@ -98,6 +131,15 @@ export const GameRenderMethods = {
         this.profiler.end('particles');
         this._drawWorldBounds(ctx, this.showDebug);
 
+        // Houses are visual groups layered over the unchanged collision walls.
+        // Yard and the single footprint shadow are true ground art. House mood
+        // lights register only after combat emitters, near the end of the pass.
+        this.profiler.begin('obstacles');
+        this.obstacleSystem.forVisibleStructures(this.camera, viewW, viewH, (structure) => {
+            structureRenderer.drawGround(ctx, structure);
+        });
+        this.profiler.end('obstacles');
+
         // Decorative floors (building interiors) are GROUND — always drawn
         // behind every entity/wall, never y-sorted against the player (else a
         // player above the building would push the floor into the in-front pass
@@ -109,18 +151,9 @@ export const GameRenderMethods = {
         );
         this.profiler.end('obstacles');
 
-        // Obstacles are painter's-ordered against the player: those whose feet
-        // line sits ABOVE the player draw now (behind entities); those below
-        // the player draw after the player so they correctly occlude them.
+        // Visible standing art is assembled after ground hazards so every actor
+        // can resolve independently against both house depth planes.
         // (Decorative floors are excluded — drawn in the ground pass above.)
-        const playerBaseY = this.player.y + this.player.radius;
-        this.profiler.begin('obstacles');
-        this.obstacleSystem.forVisible(
-            this.camera, viewW, viewH,
-            (ob) => ob.draw(ctx), (ob) => !ob.def.decorative && ob.baseY <= playerBaseY
-        );
-        this.profiler.end('obstacles');
-
         // Off-screen culling: only entities within the camera view (plus a
         // sprite-half + shake margin) are worth a draw call (enemies spawn
         // ~1100-1350px out, cap up to 145). Lights are registered in the
@@ -170,56 +203,119 @@ export const GameRenderMethods = {
             L.addLight(this.player.x, this.player.y, Lc.playerRadius * gloomK, lightColor, lightInten, 0);
         }
 
-        this.profiler.begin('entities');
+        // One localized standing queue replaces the old player-global split.
+        // A rear and a front house plane enter independently, so an enemy north
+        // of a house, the hero inside it, and a chest south of it all resolve in
+        // one frame without redrawing any actor or its additive glow.
+        const standingQueue = this._standingRenderQueue || (this._standingRenderQueue = []);
+        const standingPool = this._standingRenderPool || (this._standingRenderPool = []);
+        standingQueue.length = 0;
+        let standingCount = 0;
+        let standingSerial = 0;
+
+        this.obstacleSystem.forVisibleStructures(this.camera, viewW, viewH, (structure) => {
+            const rearBaseY = structure.rearBaseY ?? (structure.y - structure.interiorH / 2);
+            addStanding(standingQueue, standingPool, standingCount++, STAND_STRUCTURE_REAR,
+                structure, rearBaseY, 0, standingSerial++);
+            addStanding(standingQueue, standingPool, standingCount++, STAND_STRUCTURE_FRONT,
+                structure, structure.frontBaseY, 0, standingSerial++);
+        });
+        this.obstacleSystem.forVisible(
+            this.camera, viewW, viewH,
+            (ob) => addStanding(standingQueue, standingPool, standingCount++, STAND_OBSTACLE,
+                ob, ob.baseY, 0, standingSerial++),
+            // Structure walls keep their collision/LOS authority but cohesive
+            // shell art owns their pixels. Decorative floors already drew.
+            (ob) => !ob.def.decorative && !(ob.type === 'buildingWall' && ob.structureId),
+        );
         for (const g of this.gems) {
             if (!cull(g)) continue;
-            g.draw(ctx);
-            if (L) L.addLight(g.x, g.y, Lc.gemRadius, gemLightColor(g.tier), 0.85, 1);
+            addStanding(standingQueue, standingPool, standingCount++, STAND_GEM,
+                g, g.y + g.radius, 1, standingSerial++);
         }
         for (const c of this.coins) {
             if (!cull(c)) continue;
-            c.draw(ctx);
-            if (L) L.addLight(c.x, c.y, Lc.coinRadius, LIGHT_COLORS.coin, 0.8, 1);
+            addStanding(standingQueue, standingPool, standingCount++, STAND_COIN,
+                c, c.y + c.radius, 1, standingSerial++);
         }
         for (const h of this.healthOrbs) {
             if (!cull(h)) continue;
-            h.draw(ctx);
-            if (L) L.addLight(h.x, h.y, Lc.coinRadius, '#6bff8a', 0.85, 1);
+            addStanding(standingQueue, standingPool, standingCount++, STAND_HEALTH,
+                h, h.y + h.radius, 1, standingSerial++);
         }
         for (const c of this.chests) {
             if (!cull(c)) continue;
-            c.draw(ctx);
-            if (L) L.addLight(c.x, c.y, Lc.chestRadius, LIGHT_COLORS.chest, 0.9, 1);
+            addStanding(standingQueue, standingPool, standingCount++, STAND_CHEST,
+                c, c.y + Math.min(c.radius || 0, 28), 1, standingSerial++);
         }
         for (const s of this.shrines) {
             if (!cull(s)) continue;
-            s.draw(ctx);
-            if (L) L.addLight(s.x, s.y, Lc.chestRadius, LIGHT_COLORS.shrine, 0.9, 1);
+            // Shrine art's stone plinth ends at y+16; its interaction radius is
+            // intentionally much larger and is not a painter baseline.
+            addStanding(standingQueue, standingPool, standingCount++, STAND_SHRINE,
+                s, s.y + 16, 1, standingSerial++);
         }
         for (const e of this.enemies) {
             if (!cull(e)) continue;
-            e.draw(ctx);
-            e.drawHpBar(ctx);
-            if (L) {
-                if (e.boss) L.addLight(e.x, e.y, Lc.bossRadius, LIGHT_COLORS.boss, 0.95, 0);
-                else L.addLight(e.x, e.y - e.radius * 0.3, Lc.enemyEyeRadius, LIGHT_COLORS.enemyEye, 0.7, 2);
-                // A burning enemy casts a warm glow. Priority 2 (low tier,
-                // shares the global maxLights budget like the enemy-eye light)
-                // — NOT priority 1, which is the separate pickup-light cap.
-                if (e.burnTimer > 0) L.addLight(e.x, e.y, Lc.burnRadius, LIGHT_COLORS.fire, 0.7, 2);
+            addStanding(standingQueue, standingPool, standingCount++, STAND_ENEMY,
+                e, e.y + e.radius, 1, standingSerial++);
+        }
+        addStanding(standingQueue, standingPool, standingCount++, STAND_PLAYER,
+            this.player, this.player.y + this.player.radius, 1, standingSerial++);
+
+        standingQueue.sort(standingOrder);
+        this.profiler.begin('entities');
+        for (const entry of standingQueue) {
+            const value = entry.value;
+            switch (entry.kind) {
+                case STAND_STRUCTURE_REAR:
+                    structureRenderer.drawRear(ctx, value, this.player);
+                    break;
+                case STAND_OBSTACLE:
+                    value.draw(ctx);
+                    break;
+                case STAND_STRUCTURE_FRONT:
+                    structureRenderer.drawFront(ctx, value);
+                    break;
+                case STAND_GEM:
+                    value.draw(ctx);
+                    if (L) L.addLight(value.x, value.y, Lc.gemRadius, gemLightColor(value.tier), 0.85, 1);
+                    break;
+                case STAND_COIN:
+                    value.draw(ctx);
+                    if (L) L.addLight(value.x, value.y, Lc.coinRadius, LIGHT_COLORS.coin, 0.8, 1);
+                    break;
+                case STAND_HEALTH:
+                    value.draw(ctx);
+                    if (L) L.addLight(value.x, value.y, Lc.coinRadius, '#6bff8a', 0.85, 1);
+                    break;
+                case STAND_CHEST:
+                    value.draw(ctx);
+                    if (L) L.addLight(value.x, value.y, Lc.chestRadius, LIGHT_COLORS.chest, 0.9, 1);
+                    break;
+                case STAND_SHRINE:
+                    value.draw(ctx);
+                    if (L) L.addLight(value.x, value.y, Lc.chestRadius, LIGHT_COLORS.shrine, 0.9, 1);
+                    break;
+                case STAND_ENEMY:
+                    value.draw(ctx);
+                    value.drawHpBar(ctx);
+                    if (L) {
+                        if (value.boss) L.addLight(value.x, value.y, Lc.bossRadius, LIGHT_COLORS.boss, 0.95, 0);
+                        else L.addLight(value.x, value.y - value.radius * 0.3,
+                            Lc.enemyEyeRadius, LIGHT_COLORS.enemyEye, 0.7, 2);
+                        if (value.burnTimer > 0) {
+                            L.addLight(value.x, value.y, Lc.burnRadius, LIGHT_COLORS.fire, 0.7, 2);
+                        }
+                    }
+                    break;
+                case STAND_PLAYER:
+                    value.draw(ctx);
+                    value.drawHpBar(ctx);
+                    break;
             }
         }
-        this.player.draw(ctx);
-        this.player.drawHpBar(ctx);
         this.profiler.end('entities');
-        // Obstacles whose feet sit below the player draw on top of them, so the
-        // player is occluded when standing behind a wall/building.
-        this.profiler.begin('obstacles');
-        this.obstacleSystem.forVisible(
-            this.camera, viewW, viewH,
-            (ob) => ob.draw(ctx), (ob) => !ob.def.decorative && ob.baseY > playerBaseY
-        );
-        this.profiler.end('obstacles');
         this.weaponSystem.drawWeaponVisuals(ctx, this.player);
         this.profiler.begin('projectiles');
         for (const p of this.projectiles) {
@@ -247,6 +343,13 @@ export const GameRenderMethods = {
                 if (!fx.active) continue;
                 L.addLight(fx.x, fx.y, Lc.effectRadius, LIGHT_COLORS.effect, 0.8, 0);
             }
+
+            // Mood emitters are deliberately last. Priority-2 house windows can
+            // fill spare atmosphere budget, but never claim a slot before enemy
+            // eyes/burns or any always-on projectile, boss, hazard, or effect.
+            this.obstacleSystem.forVisibleStructures(this.camera, viewW, viewH, (structure) => {
+                structureRenderer.registerLights(L, structure);
+            });
         }
 
         // Expanding shockwave rings (kills / boss death / level-up) — additive
