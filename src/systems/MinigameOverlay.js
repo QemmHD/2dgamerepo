@@ -65,14 +65,16 @@ export class MinigameOverlay {
         const { reel, landingIndex } = buildCaseReel(caseType, res);
         // Anticipation: a better pull takes LONGER to settle (tenser slow-down),
         // so the reveal feels earned. Tier drives spin time + the overlay's FX.
-        // Timing follows the CS-case doctrine: a long ease-out tail (~4-6s), a
+        // Timing follows the case-reel doctrine: a readable ease-out tail, a
         // NEAR-MISS landing offset (the marker rarely stops dead-centre — the
         // winner sits just off, as if it "almost" was the neighbour), and a
         // dead-air settle pause before the reveal fires (see settleHold).
         const tier = ({ common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, mythic: 5 })[res.rarity] ?? 0;
-        const spinTime = 4.2 + tier * 0.35;
+        // The old 4.2–6s reel overstayed its welcome on repeat opens. This keeps
+        // the suspenseful slow tail while making the open-again loop feel snappy.
+        const spinTime = 3.65 + tier * 0.28;
         const landOff = (Math.random() * 0.7 - 0.35);   // ±0.35 cell widths
-        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier, landOff, settleHold: 0.45 };
+        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier, landOff, settleHold: 0.52 };
     }
 
     dismissCase() { this.caseAnim = null; }

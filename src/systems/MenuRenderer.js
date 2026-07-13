@@ -720,155 +720,246 @@ export class MenuRenderer {
         // the return trip pops in with no transition).
         this._transTab = null;
 
-        // Coin bank stays top-right (the lobby shows your currency).
-        this._coinBank(ctx, W - sa.right - 56, sa.top + 54, save.totalCoins);
+        const left = sa.left + 56, right = W - sa.right - 56;
+        const visibleMid = (left + right) / 2;
 
-        // Game logo emblem (monkey wick-keeper in the forged ember ring),
-        // centred above the wordmark. When the art hasn't loaded the wordmark
-        // keeps its original position — nothing shifts twice.
-        const hasLogo = !!ui.logo;
-        if (hasLogo) {
-            const es = 92;
-            ctx.save(); ctx.globalCompositeOperation = 'lighter';
-            this._ember(ctx, W / 2, sa.top + 10 + es / 2, es * 0.8, '#ff8a3a', 0.16 + Math.sin(t * 1.6) * 0.05);
-            ctx.restore(); ctx.globalAlpha = 1;
-            ctx.drawImage(ui.logo, W / 2 - es / 2, sa.top + 10, es, es);
-        }
-        // Big centred wordmark with a breathing under-glow + ember rule.
-        const logoH = 132;
-        const logoW = ui.title ? ui.title.width * (logoH / ui.title.height) : 720;
-        const lx = W / 2 - logoW / 2, ly = sa.top + (hasLogo ? 110 : 64);
+        // Coin bank stays top-right (the lobby shows your currency).
+        this._coinBank(ctx, right, sa.top + 52, save.totalCoins);
+
+        // Compact crest + wordmark lockup. Keeping the emblem beside the title
+        // leaves the lower two-thirds free for the actual choices while still
+        // giving the brand a premium, unmistakable first read.
+        const titleH = 96;
+        const titleW = ui.title ? ui.title.width * (titleH / ui.title.height) : 620;
+        const crestS = ui.logo ? 78 : 0;
+        const lockGap = ui.logo ? 18 : 0;
+        const lockW = crestS + lockGap + titleW;
+        const lockX = visibleMid - lockW / 2;
+        const titleY = sa.top + 54;
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        this._ember(ctx, W / 2, ly + logoH * 0.55, 300, '#ff7a1e', 0.26 + Math.sin(t * 1.2) * 0.06);
+        this._ember(ctx, visibleMid, titleY + titleH * 0.56, 300, '#ff7a1e', 0.22 + Math.sin(t * 1.2) * 0.05);
+        if (ui.logo) this._ember(ctx, lockX + crestS / 2, titleY + crestS / 2, crestS * 0.78, '#ff8a3a', 0.17 + Math.sin(t * 1.7) * 0.04);
         ctx.restore(); ctx.globalAlpha = 1;
+        if (ui.logo) ctx.drawImage(ui.logo, lockX, titleY + 6, crestS, crestS);
+        const lx = lockX + crestS + lockGap;
         if (ui.title) {
-            ctx.drawImage(ui.title, lx, ly, logoW, logoH);
+            ctx.drawImage(ui.title, lx, titleY, titleW, titleH);
         } else {
-            ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-            const tg = ctx.createLinearGradient(W / 2 - 360, 0, W / 2 + 360, 0);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            const tg = ctx.createLinearGradient(lx, 0, lx + titleW, 0);
             const off = Math.sin(t * 1.2) * 0.5 + 0.5;
             tg.addColorStop(Math.max(0, off - 0.3), '#ffb43a');
             tg.addColorStop(off, '#fff1b8');
             tg.addColorStop(Math.min(1, off + 0.3), '#ffb43a');
-            ctx.fillStyle = tg; ctx.font = `800 104px ${HEAD}`;
-            ctx.fillText('EMBERWAKE', W / 2, ly + 104);
+            ctx.fillStyle = tg; ctx.font = `800 82px ${HEAD}`;
+            ctx.fillText('EMBERWAKE', lx, titleY + 80);
         }
-        const ruleG = ctx.createLinearGradient(W / 2 - 300, 0, W / 2 + 300, 0);
-        ruleG.addColorStop(0, 'rgba(255,122,30,0)'); ruleG.addColorStop(0.5, 'rgba(255,122,30,0.55)'); ruleG.addColorStop(1, 'rgba(255,122,30,0)');
-        ctx.fillStyle = ruleG; ctx.fillRect(W / 2 - 300, ly + logoH + 14, 600, 2);
+        const ruleW = Math.min(650, lockW);
+        const ruleG = ctx.createLinearGradient(visibleMid - ruleW / 2, 0, visibleMid + ruleW / 2, 0);
+        ruleG.addColorStop(0, 'rgba(255,122,30,0)'); ruleG.addColorStop(0.5, 'rgba(255,173,92,0.68)'); ruleG.addColorStop(1, 'rgba(255,122,30,0)');
+        ctx.fillStyle = ruleG; ctx.fillRect(visibleMid - ruleW / 2, titleY + titleH + 10, ruleW, 2);
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = 'rgba(255,224,180,0.6)'; ctx.font = `500 19px ${FONT}`;
-        ctx.fillText('Survive the vigil. Kindle the flame.', W / 2, ly + logoH + 44);
+        ctx.fillStyle = '#ffd28f'; ctx.font = `700 14px ${FONT}`;
+        ctx.fillText('HOLD THE LAST LIGHT', visibleMid, titleY - 10);
+        ctx.fillStyle = 'rgba(255,230,195,0.72)'; ctx.font = `500 18px ${FONT}`;
+        ctx.fillText('Survive the vigil. Kindle the flame.', visibleMid, titleY + titleH + 38);
 
-        // ── The menu stack (left) ──
+        // ── Forged command deck (left) ──
         const groups = this._visibleGroups(save);
         const seen = (save.onboarding && save.onboarding.tabsSeen) || [];
         const plate = ui.btnPlate;
-        const stackX = sa.left + 150;
-        // Section rows: the non-PLAY groups (built early — the fit math below
-        // needs the count before anything draws). MODES has no row of its own:
-        // it lives inside PLAY as a sibling pill, so a HOME row would be the
-        // same door twice.
         const rows = [];
         for (const gDef of groups) {
             if (gDef.id === 'gPlay') continue;
             rows.push({ label: gDef.label, accent: gDef.accent, target: gDef.kids[0], kids: gDef.kids });
         }
-        // Fit the stack to the vertical safe band. Cover-fit phones fold the
-        // crop + home-indicator into big safeArea insets; at fixed sizes the
-        // stack ran past the safe bottom (SETTINGS on the screen edge, the
-        // lifetime strip drawn across it). Measure, lift the start toward the
-        // tagline if needed, then compress row heights/gaps — never overflow.
-        const stripY = H - sa.bottom - 24;         // lifetime strip baseline
-        const stackBottomMax = stripY - 34;        // keep clear of the strip
-        let playH = 92, rowH = 60, gapBig = 16, gapRow = 12;
-        const need = playH + gapBig + rows.length * rowH + Math.max(0, rows.length - 1) * gapRow;
-        let sy = sa.top + 356;
-        if (sy + need > stackBottomMax) {
-            sy = Math.max(ly + logoH + 76, sa.top + 300);   // tuck up under the tagline
-            const k = Math.max(0.78, Math.min(1, (stackBottomMax - sy) / need));
-            playH = Math.round(playH * k); rowH = Math.round(rowH * k);
-            gapBig = Math.round(gapBig * k); gapRow = Math.round(gapRow * k);
-        }
-        // PLAY — the primary CTA (opens run setup; Space/Enter quick-starts).
+        const statusH = 54;
+        const statusY = H - sa.bottom - statusH - 18;
+        const mainTop = Math.max(sa.top + 230, titleY + titleH + 64);
+        const mainBottom = statusY - 20;
+        // On cover-fit phones the vertical safe band can be much shorter than
+        // desktop. Respect the real available height; the hook below may drop
+        // out, and the keeper stage scales, instead of forcing content offscreen.
+        const mainH = Math.max(500, mainBottom - mainTop);
+        const navW = 570;
+        const heroW = 650;
+        const navX = left + 70;
+        const heroX = right - heroW - 70;
+        this._panel(ctx, navX - 24, mainTop, navW + 48, mainH, 'rgba(10,8,9,0.70)', 'rgba(255,158,80,0.22)', { corners: true });
+
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#ffbd68'; ctx.font = `800 14px ${FONT}`;
+        ctx.fillText('THE FORGE IS CALLING', navX, mainTop + 34);
+        ctx.fillStyle = '#fff4df'; this._fitFont(ctx, 'BEGIN YOUR NEXT VIGIL', navW, 700, 30);
+        ctx.fillText('BEGIN YOUR NEXT VIGIL', navX, mainTop + 70);
+        ctx.fillStyle = 'rgba(236,224,210,0.62)'; ctx.font = `500 16px ${FONT}`;
+        ctx.fillText('Choose a path, sharpen your keeper, then step into the dark.', navX, mainTop + 96);
+
+        // PLAY — the singular warm focal point. It opens run setup; the existing
+        // Space/Enter shortcut still starts immediately for returning players.
+        const playR = { x: navX, y: mainTop + 118, w: navW, h: 116 };
         {
-            const bw = 470, bh = playH;
             ctx.save(); ctx.globalCompositeOperation = 'lighter';
-            this._ember(ctx, stackX + bw / 2, sy + bh / 2, bw * 0.5, '#74e890', 0.16 + Math.sin(t * 3) * 0.05);
+            this._ember(ctx, playR.x + playR.w / 2, playR.y + playR.h / 2, playR.w * 0.58, '#ff7a1e', 0.20 + Math.sin(t * 2.4) * 0.05);
             ctx.restore(); ctx.globalAlpha = 1;
-            const sweep = Math.sin(t * 1.5) * 0.5 + 0.5;
-            const g = ctx.createLinearGradient(stackX, sy, stackX + bw, sy);
-            g.addColorStop(Math.max(0, sweep - 0.28), '#33a356');
-            g.addColorStop(sweep, '#74e890');
-            g.addColorStop(Math.min(1, sweep + 0.28), '#33a356');
-            roundRectPath(ctx, stackX, sy, bw, bh, 14);
+            const g = ctx.createLinearGradient(playR.x, playR.y, playR.x + playR.w, playR.y + playR.h);
+            g.addColorStop(0, '#8d2f14'); g.addColorStop(0.48, '#e06122'); g.addColorStop(1, '#7a2413');
+            roundRectPath(ctx, playR.x, playR.y, playR.w, playR.h, 18);
             ctx.fillStyle = g; ctx.fill();
             if (plate) {
-                ctx.save(); roundRectPath(ctx, stackX, sy, bw, bh, 14); ctx.clip();
-                ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.20;
-                ctx.drawImage(plate, stackX, sy, bw, bh); ctx.restore();
+                ctx.save(); roundRectPath(ctx, playR.x, playR.y, playR.w, playR.h, 18); ctx.clip();
+                ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.34;
+                ctx.drawImage(plate, playR.x, playR.y, playR.w, playR.h);
+                // A narrow travelling highlight makes the CTA feel hot, not neon.
+                const sweepX = playR.x - 100 + ((t * 95) % (playR.w + 200));
+                const sg = ctx.createLinearGradient(sweepX - 70, 0, sweepX + 70, 0);
+                sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.5, 'rgba(255,239,199,0.18)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = sg; ctx.fillRect(sweepX - 70, playR.y, 140, playR.h);
+                ctx.restore();
             }
-            ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 1.6);
-            ctx.strokeStyle = '#ffce7a'; ctx.lineWidth = 3;
-            roundRectPath(ctx, stackX, sy, bw, bh, 14); ctx.stroke();
+            ctx.globalAlpha = 0.72 + 0.20 * Math.sin(t * 2.1);
+            ctx.strokeStyle = '#ffd27d'; ctx.lineWidth = 3;
+            roundRectPath(ctx, playR.x, playR.y, playR.w, playR.h, 18); ctx.stroke();
             ctx.globalAlpha = 1;
+            this._emberRim(ctx, playR.x + 10, playR.y, playR.w - 20, playR.h, t, 1.7);
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#ffffff'; this._fitFont(ctx, 'PLAY', 300, 800, 40);
-            ctx.fillText('PLAY', stackX + 34, sy + bh / 2 - 8);
-            ctx.font = `600 15px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            ctx.fillText('runs & game modes  ·  Space / Enter quick-starts', stackX + 34, sy + bh / 2 + 22);
-            ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.8)';
-            ctx.font = `800 30px ${FONT}`; ctx.fillText('▶', stackX + bw - 28, sy + bh / 2 + 1);
-            this._hot(stackX, sy, bw, bh, 'tab', 'play');
-            // Undone-dailies nudge (was the MODES row's dot — MODES now lives
-            // inside PLAY, so its "come back today" signal rides here).
+            ctx.fillStyle = '#ffffff'; this._fitFont(ctx, 'BEGIN VIGIL', playR.w - 150, 800, 38);
+            ctx.fillText('BEGIN VIGIL', playR.x + 32, playR.y + 45);
+            ctx.font = `600 16px ${FONT}`; ctx.fillStyle = 'rgba(255,247,231,0.88)';
+            ctx.fillText('Choose hero, biome & pact', playR.x + 32, playR.y + 78);
+            ctx.fillStyle = 'rgba(255,240,208,0.58)'; ctx.font = `700 13px ${FONT}`;
+            ctx.fillText('SPACE / ENTER  •  QUICK START', playR.x + 32, playR.y + 99);
+            const pcx = playR.x + playR.w - 58, pcy = playR.y + playR.h / 2;
+            ctx.beginPath(); ctx.arc(pcx, pcy, 31, 0, TAU);
+            ctx.fillStyle = 'rgba(24,10,6,0.48)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(255,236,194,0.72)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = '#fff4d8';
+            ctx.beginPath(); ctx.moveTo(pcx - 7, pcy - 13); ctx.lineTo(pcx + 13, pcy); ctx.lineTo(pcx - 7, pcy + 13); ctx.closePath(); ctx.fill();
+            this._hot(playR.x, playR.y, playR.w, playR.h, 'tab', 'play');
+
+            // Undone-dailies nudge rides the primary play action.
             const dDay = currentDayNumber();
             const dDd = save.daily || { day: 0, completed: [] };
             const dDone = dDd.day === dDay && Array.isArray(dDd.completed) ? dDd.completed.length : 0;
             if (((save.stats?.runs ?? 0) >= 1) && dDone < pickDailyChallenges(dDay).length) {
-                ctx.beginPath(); ctx.arc(stackX + bw - 10, sy + 10, 7, 0, TAU);
+                ctx.beginPath(); ctx.arc(playR.x + playR.w - 10, playR.y + 10, 8, 0, TAU);
                 ctx.fillStyle = '#ff6a4a'; ctx.fill();
                 ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
             }
-            sy += bh + gapBig;
         }
-        // Section buttons: the forged-plate rows built above.
-        for (const r of rows) {
-            const bw = 400, bh = rowH;
-            roundRectPath(ctx, stackX, sy, bw, bh, 12);
-            const bg = ctx.createLinearGradient(0, sy, 0, sy + bh);
+
+        // Section cards: two columns keep every destination visible without
+        // turning HOME into a tall settings list. Each card states its purpose.
+        const sectionCopy = {
+            gHero: 'keepers & rites', gArmory: 'skills & gear', gShop: 'cases & styles',
+            gProgress: 'pass & records', gSettings: 'options & access',
+        };
+        const cols = 2, cardGap = 12;
+        const sectionTop = playR.y + playR.h + 20;
+        const sectionRows = Math.max(1, Math.ceil(rows.length / cols));
+        const sectionBottom = mainTop + mainH - 24;
+        const cardH = Math.max(68, Math.min(84, (sectionBottom - sectionTop - cardGap * (sectionRows - 1)) / sectionRows));
+        const cardW = (navW - cardGap) / cols;
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const colIdx = i % cols, rowIdx = Math.floor(i / cols);
+            const x = navX + colIdx * (cardW + cardGap);
+            const y = sectionTop + rowIdx * (cardH + cardGap);
+            roundRectPath(ctx, x, y, cardW, cardH, 14);
+            const bg = ctx.createLinearGradient(0, y, 0, y + cardH);
             bg.addColorStop(0, 'rgba(30,24,21,0.92)'); bg.addColorStop(1, 'rgba(18,14,13,0.92)');
             ctx.fillStyle = bg; ctx.fill();
             if (plate) {
-                ctx.save(); roundRectPath(ctx, stackX, sy, bw, bh, 12); ctx.clip();
-                ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.10;
-                ctx.drawImage(plate, stackX, sy, bw, bh); ctx.restore();
+                ctx.save(); roundRectPath(ctx, x, y, cardW, cardH, 14); ctx.clip();
+                ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.14;
+                ctx.drawImage(plate, x, y, cardW, cardH); ctx.restore();
             }
-            roundRectPath(ctx, stackX, sy, bw, bh, 12);
-            ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1.5; ctx.stroke();
+            roundRectPath(ctx, x, y, cardW, cardH, 14);
+            ctx.strokeStyle = 'rgba(255,255,255,0.13)'; ctx.lineWidth = 1.5; ctx.stroke();
             ctx.fillStyle = r.accent; ctx.globalAlpha = 0.9;
-            ctx.fillRect(stackX, sy + 10, 4, bh - 20); ctx.globalAlpha = 1;
+            ctx.fillRect(x, y + 10, 4, cardH - 20); ctx.globalAlpha = 1;
+            const iconX = x + 35, iconY = y + cardH / 2;
+            ctx.beginPath(); ctx.arc(iconX, iconY, 20, 0, TAU);
+            ctx.fillStyle = 'rgba(255,255,255,0.035)'; ctx.fill();
+            ctx.strokeStyle = `${r.accent}88`; ctx.lineWidth = 1.5; ctx.stroke();
+            const groupId = MENU_GROUPS.find((g) => g.label === r.label)?.id;
+            this._drawHomeGroupGlyph(ctx, groupId, iconX, iconY, 11, r.accent);
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = 'rgba(240,244,250,0.92)'; this._fitFont(ctx, r.label, bw - 120, 700, 24);
-            ctx.fillText(r.label, stackX + 28, sy + bh / 2 + 1);
+            ctx.fillStyle = 'rgba(248,241,232,0.96)'; this._fitFont(ctx, r.label, cardW - 95, 700, 20);
+            ctx.fillText(r.label, x + 64, y + cardH / 2 - 10);
+            ctx.fillStyle = 'rgba(220,216,210,0.52)'; ctx.font = `600 12px ${FONT}`;
+            ctx.fillText(sectionCopy[groupId] || 'open section', x + 64, y + cardH / 2 + 13);
             ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
-            ctx.font = `700 20px ${FONT}`; ctx.fillText('›', stackX + bw - 20, sy + bh / 2 + 1);
+            ctx.font = `700 20px ${FONT}`; ctx.fillText('›', x + cardW - 16, y + cardH / 2 + 1);
             const isNew = r.kids.some((k) => !seen.includes(k) && k !== 'play' && k !== 'settings');
             if (isNew) {
-                const bx = stackX + bw - 66, by2 = sy - 8, bw2 = 42, bh2 = 20;
+                const bx = x + cardW - 57, by2 = y - 7, bw2 = 40, bh2 = 18;
                 ctx.globalAlpha = 0.85 + Math.sin(t * 3) * 0.15;
                 roundRectPath(ctx, bx, by2, bw2, bh2, 10);
                 ctx.fillStyle = '#ffce54'; ctx.fill();
-                ctx.fillStyle = '#221604'; ctx.font = `800 12px ${FONT}`;
+                ctx.fillStyle = '#221604'; ctx.font = `800 11px ${FONT}`;
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 ctx.fillText('NEW', bx + bw2 / 2, by2 + bh2 / 2 + 0.5);
                 ctx.globalAlpha = 1;
             }
-            this._hot(stackX, sy, bw, bh, 'tab', r.target);
-            sy += bh + gapRow;
+            this._hot(x, y, cardW, cardH, 'tab', r.target);
         }
 
-        // ── Hero showcase (right) — the selected monkey on their pedestal ──
+        // The lower half becomes a small narrative hook rather than dead panel
+        // space. New players get a clean three-beat promise; veterans get a
+        // live reason to return through today's trial progress.
+        const sectionEnd = sectionTop + sectionRows * cardH + (sectionRows - 1) * cardGap;
+        const hookY = sectionEnd + 18;
+        const hookH = mainTop + mainH - hookY - 24;
+        if (hookH >= 110) {
+            roundRectPath(ctx, navX, hookY, navW, hookH, 15);
+            const hg = ctx.createLinearGradient(0, hookY, 0, hookY + hookH);
+            hg.addColorStop(0, 'rgba(22,16,15,0.72)'); hg.addColorStop(1, 'rgba(50,20,9,0.60)');
+            ctx.fillStyle = hg; ctx.fill();
+            ctx.strokeStyle = 'rgba(255,142,62,0.20)'; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            this._ember(ctx, navX + navW - 42, hookY + hookH - 18, 118, '#ff6b1f', 0.09);
+            ctx.restore(); ctx.globalAlpha = 1;
+
+            const isFirst = (save.stats?.runs ?? 0) === 0;
+            const day = currentDayNumber();
+            const daily = save.daily || { day: 0, completed: [] };
+            const done = daily.day === day && Array.isArray(daily.completed) ? daily.completed.length : 0;
+            const dailyTotal = pickDailyChallenges(day).length;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = '#ffad55'; ctx.font = `800 12px ${FONT}`;
+            ctx.fillText(isFirst ? 'FIRST VIGIL' : `TODAY'S TRIALS  ${done}/${dailyTotal}`, navX + 22, hookY + 30);
+            ctx.fillStyle = '#fff0d7';
+            const hookTitle = isFirst ? '15 MINUTES. ONE LAST LIGHT.' : 'THE DARK RETURNS.';
+            this._fitFont(ctx, hookTitle, navW - 44, 700, 24);
+            ctx.fillText(hookTitle, navX + 22, hookY + 62);
+            ctx.fillStyle = 'rgba(244,230,210,0.62)'; ctx.font = `500 14px ${FONT}`;
+            const hookCopy = isFirst
+                ? 'Move, grow stronger, and hold Emberwood until dawn.'
+                : 'Complete the daily rites, deepen your build, hold the light again.';
+            this._fitFont(ctx, hookCopy, navW - 44, 500, 14, FONT, 11);
+            ctx.fillText(hookCopy, navX + 22, hookY + 88);
+
+            if (hookH >= 132) {
+                const beats = isFirst ? ['MOVE', 'GROW', 'ENDURE'] : ['ENTER', 'KINDLE', 'ASCEND'];
+                const beatY = hookY + hookH - 30;
+                const beatW = (navW - 44) / beats.length;
+                for (let i = 0; i < beats.length; i++) {
+                    const bx = navX + 22 + i * beatW;
+                    ctx.beginPath(); ctx.arc(bx + 6, beatY, 4, 0, TAU);
+                    ctx.fillStyle = isFirst || i < done ? '#ff8a3a' : 'rgba(255,255,255,0.18)'; ctx.fill();
+                    if (i < beats.length - 1) {
+                        ctx.fillStyle = 'rgba(255,154,74,0.18)';
+                        ctx.fillRect(bx + 18, beatY - 1, beatW - 26, 2);
+                    }
+                    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                    ctx.fillStyle = 'rgba(255,239,218,0.70)'; ctx.font = `800 10px ${FONT}`;
+                    ctx.fillText(beats[i], bx + 16, beatY + 1);
+                }
+            }
+        }
+
+        // ── Keeper showcase (right) — hero, weapon, biome and difficulty ──
         const ch = getCharacter(save.selectedCharacter);
         const ap = resolveAppearance(save.cosmetics.equipped);
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
@@ -881,26 +972,134 @@ export class MenuRenderer {
         const startWeaponId = resolveStartingWeapon(save);
         const skin = resolveWeaponSkin(startWeaponId);
         const heldProp = resolveWeaponProp(startWeaponId);
-        // Clamped so the caption ('tap to customise', hy+272) always clears
-        // the safe bottom on cover-fit phones with big folded insets.
-        const hx = W * 0.70, hy = Math.min(sa.top + 560, H - sa.bottom - 288);
-        this._pedestal(ctx, hx, hy + 150, t, ch.accent || '#ff7a1e', 1.5);
-        this._drawAvatar(ctx, hx, hy, 175, avatarAp, charSprite, skin, t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
-        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#fff';
-        this._fitFont(ctx, `${ch.name} — ${ch.title}`, 460, 700, 32);
-        ctx.fillText(`${ch.name} — ${ch.title}`, hx, hy + 246);
-        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 15px ${FONT}`;
-        ctx.fillText('tap to customise', hx, hy + 272);
-        this._hot(hx - 230, hy - 160, 460, 440, 'tab', 'character');
+        const heroAccent = ch.accent || '#ff7a1e';
+        this._panel(ctx, heroX, mainTop, heroW, mainH, 'rgba(10,8,9,0.66)', `${heroAccent}55`, { corners: true });
+        ctx.fillStyle = heroAccent; ctx.globalAlpha = 0.82;
+        ctx.fillRect(heroX + 32, mainTop + 28, 42, 2); ctx.globalAlpha = 1;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(255,232,202,0.70)'; ctx.font = `800 13px ${FONT}`;
+        ctx.fillText('CURRENT WICK-KEEPER', heroX + 84, mainTop + 29);
+        ctx.textAlign = 'right'; ctx.fillStyle = `${heroAccent}`; ctx.font = `700 12px ${FONT}`;
+        ctx.fillText('READY FOR THE VIGIL', heroX + heroW - 30, mainTop + 29);
 
-        // ── Lifetime strip (bottom-left) — a small lobby flourish ──
+        const heroScale = Math.max(0.76, Math.min(1, (mainH - 470) / 220));
+        const factY = mainTop + mainH - 92;
+        const hx = heroX + heroW / 2, hy = mainTop + Math.min(285, mainH * 0.41);
+        // Rotating broken rune arcs give the hero a deliberate portrait stage.
+        ctx.save(); ctx.translate(hx, hy + 12); ctx.rotate(t * 0.08);
+        ctx.strokeStyle = `${heroAccent}55`; ctx.lineWidth = 2;
+        for (let i = 0; i < 8; i++) {
+            ctx.beginPath(); ctx.arc(0, 0, 198 * heroScale, i * TAU / 8 + 0.05, i * TAU / 8 + 0.43); ctx.stroke();
+        }
+        ctx.rotate(-t * 0.17); ctx.strokeStyle = 'rgba(255,205,135,0.20)';
+        for (let i = 0; i < 6; i++) {
+            ctx.beginPath(); ctx.arc(0, 0, 174 * heroScale, i * TAU / 6 + 0.12, i * TAU / 6 + 0.68); ctx.stroke();
+        }
+        ctx.restore();
+        this._pedestal(ctx, hx, hy + 152 * heroScale, t, heroAccent, 1.48 * heroScale);
+        this._drawAvatar(ctx, hx, hy, 172 * heroScale, avatarAp, charSprite, skin, t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#fff7e8';
+        this._fitFont(ctx, `${ch.name} — ${ch.title}`, heroW - 80, 700, 31);
+        ctx.fillText(`${ch.name} — ${ch.title}`, hx, hy + 205 * heroScale);
+        ctx.fillStyle = 'rgba(255,255,255,0.58)';
+        this._fitFont(ctx, ch.description || 'Keeper of the last light.', heroW - 54, 600, 14, FONT, 10);
+        ctx.fillText(ch.description || 'Keeper of the last light.', hx, hy + 229 * heroScale);
+
+        const customW = 190, customH = 36, customY = hy + 276;
+        const fittedCustomY = Math.min(customY, factY - customH - 14);
+        roundRectPath(ctx, hx - customW / 2, fittedCustomY, customW, customH, 18);
+        ctx.fillStyle = 'rgba(18,14,15,0.86)'; ctx.fill();
+        ctx.strokeStyle = `${heroAccent}88`; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = '#f8e8d2'; ctx.font = `800 12px ${FONT}`; ctx.textBaseline = 'middle';
+        ctx.fillText('CUSTOMISE HERO  ›', hx, fittedCustomY + customH / 2 + 1);
+        this._hot(hx - customW / 2, fittedCustomY, customW, customH, 'tab', 'character');
+
+        const map = MAPS[save.selectedMap] || MAPS[MAP_ORDER[0]];
+        const diff = DIFFICULTY[save.difficulty] || DIFFICULTY.normal;
+        const weapon = GEAR[save.gear?.equipped?.weapon] || GEAR.w_cinderbolt;
+        const facts = [
+            { label: 'BIOME', value: map.name, color: map.accent || '#ffd27a' },
+            { label: 'WAND', value: weapon.name, color: rarityColor(weapon.rarity || 'common') },
+            { label: 'THREAT', value: diff.label, color: diff.color || '#cdd6e2' },
+        ];
+        const factGap = 10, factX = heroX + 24;
+        const factW = (heroW - 48 - factGap * 2) / 3;
+        for (let i = 0; i < facts.length; i++) {
+            const f = facts[i], x = factX + i * (factW + factGap);
+            roundRectPath(ctx, x, factY, factW, 62, 11);
+            ctx.fillStyle = 'rgba(18,15,16,0.88)'; ctx.fill();
+            ctx.strokeStyle = `${f.color}66`; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = f.color; ctx.font = `800 10px ${FONT}`; ctx.fillText(f.label, x + 12, factY + 20);
+            ctx.fillStyle = '#fff4e3'; this._fitFont(ctx, f.value, factW - 24, 700, 15, FONT, 11);
+            ctx.fillText(f.value, x + 12, factY + 45);
+        }
+        this._hot(factX, factY, heroW - 48, 62, 'tab', 'play');
+
+        // ── Living status rail ──
         const st = (save && save.stats) || {};
         const mm = Math.floor((st.bestTime ?? 0) / 60), ss = Math.floor((st.bestTime ?? 0) % 60);
-        const strip = `RUNS ${st.runs ?? 0}   ·   BEST ${mm}:${String(ss).padStart(2, '0')}   ·   ${(st.totalKills ?? 0).toLocaleString()} FOES FELLED`;
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = 'rgba(235,240,248,0.45)'; ctx.font = `600 15px ${FONT}`;
-        ctx.fillText(strip, sa.left + 56, H - sa.bottom - 24);
+        this._panel(ctx, left, statusY, right - left, statusH, 'rgba(9,7,8,0.84)', 'rgba(255,150,70,0.18)');
+        const liveA = 0.55 + 0.45 * Math.sin(t * 2.4);
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        this._ember(ctx, left + 25, statusY + statusH / 2, 24, '#ff7a1e', 0.16 + liveA * 0.08);
+        ctx.restore(); ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(left + 25, statusY + statusH / 2, 5 + liveA * 1.5, 0, TAU);
+        ctx.fillStyle = '#ff8a3a'; ctx.fill();
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd49a'; ctx.font = `800 12px ${FONT}`;
+        ctx.fillText((st.runs ?? 0) > 0 ? 'THE LAST LIGHT ENDURES' : 'YOUR FIRST VIGIL AWAITS', left + 48, statusY + statusH / 2 + 1);
+        const stats = [
+            ['RUNS', st.runs ?? 0],
+            ['BEST', `${mm}:${String(ss).padStart(2, '0')}`],
+            ['FOES FELLED', (st.totalKills ?? 0).toLocaleString()],
+        ];
+        const statW = 145;
+        for (let i = 0; i < stats.length; i++) {
+            const x = right - stats.length * statW + i * statW;
+            if (i > 0) { ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(x, statusY + 13, 1, statusH - 26); }
+            ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.42)'; ctx.font = `800 9px ${FONT}`;
+            ctx.fillText(stats[i][0], x + statW / 2, statusY + 18);
+            ctx.fillStyle = '#fff1df'; ctx.font = `800 15px ${FONT}`;
+            ctx.fillText(String(stats[i][1]), x + statW / 2, statusY + 37);
+        }
+    }
+
+    // Small vector sigils for HOME's section cards. They stay crisp at every
+    // DPR and make the destinations recognisable before the labels are read.
+    _drawHomeGroupGlyph(ctx, id, cx, cy, s, color) {
+        ctx.save();
+        ctx.strokeStyle = color; ctx.fillStyle = color;
+        ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        if (id === 'gHero') {
+            ctx.beginPath(); ctx.arc(cx, cy - s * 0.35, s * 0.38, 0, TAU); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy + s * 0.8, s * 0.78, Math.PI * 1.12, Math.PI * 1.88); ctx.stroke();
+        } else if (id === 'gArmory') {
+            ctx.beginPath(); ctx.moveTo(cx - s * 0.75, cy + s * 0.75); ctx.lineTo(cx + s * 0.72, cy - s * 0.72); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(cx + s * 0.75, cy + s * 0.75); ctx.lineTo(cx - s * 0.72, cy - s * 0.72); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(cx - s * 0.9, cy + s * 0.45); ctx.lineTo(cx - s * 0.45, cy + s * 0.9); ctx.moveTo(cx + s * 0.9, cy + s * 0.45); ctx.lineTo(cx + s * 0.45, cy + s * 0.9); ctx.stroke();
+        } else if (id === 'gShop') {
+            roundRectPath(ctx, cx - s * 0.82, cy - s * 0.15, s * 1.64, s * 0.98, 3); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy - s * 0.12, s * 0.82, Math.PI, TAU); ctx.stroke();
+            ctx.fillRect(cx - 1.5, cy + s * 0.16, 3, s * 0.36);
+        } else if (id === 'gProgress') {
+            ctx.beginPath();
+            for (let i = 0; i < 10; i++) {
+                const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? s * 0.42 : s;
+                const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath(); ctx.stroke();
+        } else {
+            ctx.beginPath(); ctx.arc(cx, cy, s * 0.42, 0, TAU); ctx.stroke();
+            for (let i = 0; i < 8; i++) {
+                const a = i * TAU / 8;
+                ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * s * 0.62, cy + Math.sin(a) * s * 0.62);
+                ctx.lineTo(cx + Math.cos(a) * s, cy + Math.sin(a) * s); ctx.stroke();
+            }
+        }
+        ctx.restore();
     }
 
     // Section chrome + content: the corner wordmark, screen title/description,
@@ -2585,7 +2784,8 @@ export class MenuRenderer {
             const col = i % cols, row = Math.floor(i / cols);
             const x = c.x + col * (cardW + gap);
             const y = c.y + row * (rowH + gap);
-            this._panel(ctx, x, y, cardW, rowH, 'rgba(18,22,30,0.9)');
+            const topR = caseTopRarity(def.id);
+            this._panel(ctx, x, y, cardW, rowH, 'rgba(18,22,30,0.9)', `${rarityColor(topR)}55`);
             const midX = x + cardW / 2;
             const innerX = x + 30, innerW = cardW - 60;
             ctx.textAlign = 'center';
@@ -2593,7 +2793,6 @@ export class MenuRenderer {
             ctx.fillText(def.name, midX, y + 34);
             // "up to ★ <TOP RARITY>" aspiration tag under the title — the ceiling
             // reward, in its own colour, so the chase target reads at a glance.
-            const topR = caseTopRarity(def.id);
             ctx.font = `800 14px ${FONT}`; ctx.fillStyle = rarityColor(topR);
             ctx.fillText(`up to ★ ${rarityName(topR).toUpperCase()}`, midX, y + 53);
             // OPEN button anchored at the card bottom; everything above adapts to
@@ -2672,7 +2871,7 @@ export class MenuRenderer {
                 const ay = (artTop + artBot) / 2 + bob;
                 if (afford) {
                     ctx.save(); ctx.globalCompositeOperation = 'lighter';
-                    this._ember(ctx, midX, ay, size * 0.72, '#ff9a3c', 0.13 + Math.sin(t * 2.2 + i) * 0.04);
+                    this._ember(ctx, midX, ay, size * 0.72, rarityColor(topR), 0.14 + Math.sin(t * 2.2 + i) * 0.04);
                     ctx.restore(); ctx.globalAlpha = 1;
                 }
                 ctx.drawImage(chest, midX - size / 2, ay - size / 2, size, size);
@@ -2680,7 +2879,8 @@ export class MenuRenderer {
             // Always clickable: an unaffordable tap surfaces a "Not enough
             // coins" toast rather than silently doing nothing.
             this._button(ctx, br, `OPEN  ◎ ${def.cost}`,
-                { primary: afford, enabled: true, accent: afford ? null : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: Math.round(Math.min(24, btnH * 0.44)) });
+                { primary: false, enabled: true, accent: afford ? `${rarityColor(topR)}aa` : 'rgba(60,66,78,0.9)', action: 'openCase', arg: def.id, fontSize: Math.round(Math.min(24, btnH * 0.44)) });
+            if (afford) this._emberRim(ctx, br.x + 8, br.y, br.w - 16, br.h, this._t || 0, i * 0.8);
         }
 
         // ── Featured Prestige: a spotlight on grind-worthy cosmetics with a
@@ -3103,11 +3303,24 @@ export class MenuRenderer {
         const tier = result && result.rarity && RARITIES[result.rarity] ? RARITIES[result.rarity].tier : 1;
         const revealAge = Math.max(0, t - reveal);
         const caseDef = CASES[anim.caseType];
+        const vaultCol = rarityColor(caseTopRarity(anim.caseType));
+        const settling = t >= spinEnd && t < reveal;
         // Overshoot ease (lands on 1 but drifts past first) — the near-miss.
         const backOut = (x, s = 0.9) => 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2);
 
-        ctx.fillStyle = 'rgba(0,0,0,0.82)';
+        // Deep vault curtain: the shop remains faintly visible, but a central
+        // light well and forged screen rim make the open feel like its own room.
+        ctx.fillStyle = 'rgba(0,0,0,0.86)';
         ctx.fillRect(0, 0, W, H);
+        const vault = ctx.createRadialGradient(cx, cy, 90, cx, cy, 780);
+        vault.addColorStop(0, 'rgba(72,34,15,0.22)');
+        vault.addColorStop(0.56, 'rgba(18,10,10,0.12)');
+        vault.addColorStop(1, 'rgba(0,0,0,0.56)');
+        ctx.fillStyle = vault; ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = 'rgba(255,144,66,0.18)'; ctx.lineWidth = 2;
+        ctx.strokeRect(18, 18, W - 36, H - 36);
+        ctx.strokeStyle = 'rgba(255,218,154,0.08)'; ctx.lineWidth = 1;
+        ctx.strokeRect(26, 26, W - 52, H - 52);
 
         // High-tier reveals physically SHAKE the overlay (decays over ~0.4s).
         let shx = 0, shy = 0;
@@ -3120,7 +3333,7 @@ export class MenuRenderer {
 
         if (t < reveal && anim.reel) {
             // ── SPIN: a framed reel tray of real item cards ──
-            const cellW = 176, cellH = 172, gap = 12, stride = cellW + gap;
+            const cellW = 184, cellH = 190, gap = 14, stride = cellW + gap;
             const p = clamp01(t / spinEnd);   // p=1 through the settle hold
             // NEAR-MISS landing: the reel rests up to ±0.35 cells off-centre
             // (rolled per open), so the winner "almost" was its neighbour — the
@@ -3128,29 +3341,45 @@ export class MenuRenderer {
             // unaffected; the reveal then names the true prize.
             const offset = backOut(p) * anim.landingIndex * stride
                 + easeOutCubic(p) * (anim.landOff || 0) * stride;
-            const bandY = cy - cellH / 2;
-            // Tray frame (case name up top, glass band, warm floor glow).
-            const trayX = 48, trayW = W - 96;
-            roundRectPath(ctx, trayX, bandY - 64, trayW, cellH + 112, 22);
-            ctx.fillStyle = 'rgba(12,9,8,0.94)'; ctx.fill();
-            ctx.strokeStyle = 'rgba(255,150,70,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+            const bandY = cy - cellH / 2 + 18;
+            // Tray frame (vault label, glass band, hot floor and progress rail).
+            const trayX = 40, trayW = W - 80;
+            const trayY = bandY - 104, trayH = cellH + 178;
+            roundRectPath(ctx, trayX, trayY, trayW, trayH, 24);
+            const trayG = ctx.createLinearGradient(0, trayY, 0, trayY + trayH);
+            trayG.addColorStop(0, 'rgba(21,15,14,0.98)'); trayG.addColorStop(0.52, 'rgba(8,8,10,0.98)'); trayG.addColorStop(1, 'rgba(22,12,9,0.98)');
+            ctx.fillStyle = trayG; ctx.fill();
+            ctx.strokeStyle = 'rgba(255,150,70,0.40)'; ctx.lineWidth = 2; ctx.stroke();
+            roundRectPath(ctx, trayX + 7, trayY + 7, trayW - 14, trayH - 14, 19);
+            ctx.strokeStyle = 'rgba(255,224,176,0.08)'; ctx.lineWidth = 1; ctx.stroke();
             ctx.save(); ctx.globalCompositeOperation = 'lighter';
-            this._ember(ctx, cx, bandY + cellH + 30, 320, '#ff7a1e', 0.10 + p * 0.08);
+            this._ember(ctx, cx, bandY + cellH + 36, 360, '#ff7a1e', 0.10 + p * 0.10);
             ctx.restore(); ctx.globalAlpha = 1;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#ffd8b0';
-            this._fitFont(ctx, (caseDef?.name || 'CASE').toUpperCase(), 500, 700, 26);
-            ctx.fillText((caseDef?.name || 'CASE').toUpperCase(), cx, bandY - 36);
+            ctx.fillStyle = vaultCol; ctx.font = `800 12px ${FONT}`;
+            const vaultLabel = caseDef?.poolKind === 'cosmetic' ? 'COSMETIC VAULT' : 'ARMORY VAULT';
+            ctx.fillText(`${vaultLabel}  •  UNSEALING`, cx, trayY + 24);
+            ctx.fillStyle = '#ffe2bd';
+            this._fitFont(ctx, (caseDef?.name || 'CASE').toUpperCase(), 520, 700, 28);
+            ctx.fillText((caseDef?.name || 'CASE').toUpperCase(), cx, trayY + 52);
             // The case's own chest art flanks its name (which box you're opening).
             const trayChest = getCaseArt(anim.caseType);
             if (trayChest) {
                 const nW = ctx.measureText((caseDef?.name || 'CASE').toUpperCase()).width;
-                ctx.drawImage(trayChest, cx - nW / 2 - 62, bandY - 62, 52, 52);
-                ctx.drawImage(trayChest, cx + nW / 2 + 10, bandY - 62, 52, 52);
+                ctx.drawImage(trayChest, cx - nW / 2 - 62, trayY + 27, 50, 50);
+                ctx.drawImage(trayChest, cx + nW / 2 + 12, trayY + 27, 50, 50);
             }
+            const progW = 430, progH = 4, progX = cx - progW / 2, progY = trayY + 76;
+            ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(progX, progY, progW, progH);
+            const progG = ctx.createLinearGradient(progX, 0, progX + progW, 0);
+            progG.addColorStop(0, '#8b3017'); progG.addColorStop(0.72, '#ff8a32'); progG.addColorStop(1, '#ffe0a0');
+            ctx.fillStyle = progG; ctx.fillRect(progX, progY, progW * p, progH);
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            this._ember(ctx, progX + progW * p, progY + 2, 18, '#ffd47d', 0.22 + p * 0.20);
+            ctx.restore(); ctx.globalAlpha = 1;
             // Cells (clipped to the tray).
             ctx.save();
-            ctx.beginPath(); ctx.rect(trayX + 10, bandY - 6, trayW - 20, cellH + 12); ctx.clip();
+            ctx.beginPath(); ctx.rect(trayX + 10, bandY - 10, trayW - 20, cellH + 20); ctx.clip();
             for (let i = 0; i < anim.reel.length; i++) {
                 const cellX = cx - offset + i * stride - cellW / 2;
                 if (cellX > W + cellW || cellX < -cellW) continue;
@@ -3158,38 +3387,42 @@ export class MenuRenderer {
                 const cc = rarityColor(cell.rarity);
                 const ctier = RARITIES[cell.rarity] ? RARITIES[cell.rarity].tier : 1;
                 const near = 1 - Math.min(1, Math.abs(cellX + cellW / 2 - cx) / (stride * 0.6));
+                const cardY = bandY - near * 7;
+                ctx.globalAlpha = 0.68 + near * 0.32;
                 // Near-centre glow so the passing cards feel lit by the marker.
                 if (near > 0.25) {
                     ctx.save(); ctx.globalCompositeOperation = 'lighter';
                     ctx.globalAlpha = (near - 0.25) * 0.5;
-                    ctx.drawImage(getGlowSprite(cc), cellX - 18, bandY - 18, cellW + 36, cellH + 36);
-                    ctx.restore(); ctx.globalAlpha = 1;
+                    ctx.drawImage(getGlowSprite(cc), cellX - 18, cardY - 18, cellW + 36, cellH + 36);
+                    ctx.restore(); ctx.globalAlpha = 0.68 + near * 0.32;
                 }
                 // Rarity-tinted glass card.
-                roundRectPath(ctx, cellX, bandY, cellW, cellH, 14);
-                const cg = ctx.createLinearGradient(0, bandY, 0, bandY + cellH);
+                roundRectPath(ctx, cellX, cardY, cellW, cellH, 14);
+                const cg = ctx.createLinearGradient(0, cardY, 0, cardY + cellH);
                 cg.addColorStop(0, 'rgba(30,26,24,0.96)'); cg.addColorStop(1, 'rgba(16,13,12,0.96)');
                 ctx.fillStyle = cg; ctx.fill();
                 ctx.save(); ctx.globalAlpha = 0.14 + near * 0.10;
-                roundRectPath(ctx, cellX, bandY, cellW, cellH, 14);
+                roundRectPath(ctx, cellX, cardY, cellW, cellH, 14);
                 ctx.fillStyle = cc; ctx.fill(); ctx.restore();
-                roundRectPath(ctx, cellX, bandY, cellW, cellH, 14);
+                ctx.globalAlpha = 0.68 + near * 0.32;
+                roundRectPath(ctx, cellX, cardY, cellW, cellH, 14);
                 ctx.strokeStyle = cc; ctx.lineWidth = 2.5 + near * 2.5; ctx.stroke();
                 // The item's face: gear emblem art / cosmetic category medallion.
-                this._itemFace(ctx, cellX + cellW / 2, bandY + 60, 36, cell);
+                this._itemFace(ctx, cellX + cellW / 2, cardY + 66, 40, cell);
                 // Name (auto-fit) + rarity pips.
                 ctx.fillStyle = '#fff';
                 this._fitFont(ctx, cell.name, cellW - 22, 700, 18, FONT, 12);
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(cell.name, cellX + cellW / 2, bandY + cellH - 48);
-                this._tierPips(ctx, cellX + cellW / 2, bandY + cellH - 26, ctier, cc);
+                ctx.fillText(cell.name, cellX + cellW / 2, cardY + cellH - 48);
+                this._tierPips(ctx, cellX + cellW / 2, cardY + cellH - 26, ctier, cc);
                 // CS-style rarity strip along the card's BOTTOM edge — the loot
                 // grammar players already know: colour = quality, at a glance.
                 ctx.save();
-                roundRectPath(ctx, cellX, bandY, cellW, cellH, 14); ctx.clip();
+                roundRectPath(ctx, cellX, cardY, cellW, cellH, 14); ctx.clip();
                 ctx.fillStyle = cc;
-                ctx.fillRect(cellX, bandY + cellH - 8, cellW, 8);
+                ctx.fillRect(cellX, cardY + cellH - 8, cellW, 8);
                 ctx.restore();
+                ctx.globalAlpha = 1;
             }
             ctx.restore();
             // Edge fades so the strip melts into the tray instead of hard-cutting.
@@ -3199,8 +3432,15 @@ export class MenuRenderer {
                 const fg = ctx.createLinearGradient(fx, 0, fx + fadeW, 0);
                 fg.addColorStop(side === 0 ? 0 : 1, 'rgba(12,9,8,0.95)');
                 fg.addColorStop(side === 0 ? 1 : 0, 'rgba(12,9,8,0)');
-                ctx.fillStyle = fg; ctx.fillRect(fx, bandY - 6, fadeW, cellH + 12);
+                ctx.fillStyle = fg; ctx.fillRect(fx, bandY - 10, fadeW, cellH + 20);
             }
+            // Forged rails bracket the moving strip and hide card lift at the edge.
+            const railG = ctx.createLinearGradient(trayX + 20, 0, trayX + trayW - 20, 0);
+            railG.addColorStop(0, 'rgba(255,134,54,0)'); railG.addColorStop(0.18, 'rgba(255,165,78,0.42)');
+            railG.addColorStop(0.5, 'rgba(255,224,166,0.62)'); railG.addColorStop(0.82, 'rgba(255,165,78,0.42)'); railG.addColorStop(1, 'rgba(255,134,54,0)');
+            ctx.fillStyle = railG;
+            ctx.fillRect(trayX + 20, bandY - 12, trayW - 40, 2);
+            ctx.fillRect(trayX + 20, bandY + cellH + 10, trayW - 40, 2);
             // Ember needle marker: glow + gradient line + arrows, brightening
             // as the reel slows toward the win.
             const mk = 0.6 + 0.4 * p;
@@ -3216,8 +3456,10 @@ export class MenuRenderer {
             ctx.beginPath(); ctx.moveTo(cx - 13, bandY + cellH + 18); ctx.lineTo(cx + 13, bandY + cellH + 18); ctx.lineTo(cx, bandY + cellH + 2); ctx.closePath(); ctx.fill();
             ctx.globalAlpha = 1;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `600 17px ${FONT}`;
-            ctx.fillText('Tap to skip', cx, bandY + cellH + 84);
+            const settlePulse = 0.68 + 0.32 * Math.sin(t * 9);
+            ctx.fillStyle = settling ? `rgba(255,216,107,${settlePulse})` : 'rgba(255,255,255,0.58)';
+            ctx.font = `700 15px ${FONT}`;
+            ctx.fillText(settling ? 'EMBER LOCKED  •  REVEALING…' : 'TAP TO SKIP  •  HOLD FOR THE REVEAL', cx, bandY + cellH + 50);
         } else if (result) {
             // ── REVEAL: spectacle scaled by rarity tier ──
             const k = easeOutCubic(clamp01(revealAge / 0.4));
@@ -3227,22 +3469,24 @@ export class MenuRenderer {
                 ctx.save(); ctx.globalAlpha = flash * (0.18 + tier * 0.1);
                 ctx.fillStyle = tier >= 4 ? '#ffffff' : col; ctx.fillRect(0, 0, W, H); ctx.restore();
             }
-            // (2) Rotating light rays behind the card for epic+ pulls.
-            if (tier >= 4) {
-                ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.16 * k;
-                ctx.translate(cx, cy); ctx.rotate(revealAge * 0.5); ctx.fillStyle = col;
-                const rays = 12;
-                for (let i = 0; i < rays; i++) {
-                    ctx.rotate((Math.PI * 2) / rays);
-                    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(520, -26); ctx.lineTo(520, 26); ctx.closePath(); ctx.fill();
-                }
-                ctx.restore();
+            // (2) Rotating vault rays. Every reward gets a restrained ceremony;
+            // Epic+ simply widens and brightens it instead of being the first
+            // tier that looks intentionally designed.
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = (0.016 + tier * 0.016) * k;
+            ctx.translate(cx, cy); ctx.rotate(revealAge * (0.18 + tier * 0.025)); ctx.fillStyle = col;
+            const rays = 8 + tier;
+            const rayHalf = 12 + tier * 3;
+            for (let i = 0; i < rays; i++) {
+                ctx.rotate(TAU / rays);
+                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(620, -rayHalf); ctx.lineTo(620, rayHalf); ctx.closePath(); ctx.fill();
             }
+            ctx.restore();
             // (3) Radial glow bloom.
-            const g = ctx.createRadialGradient(cx, cy, 30, cx, cy, 380);
+            const g = ctx.createRadialGradient(cx, cy, 30, cx, cy, 430);
             g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.save(); ctx.globalAlpha = 0.5; ctx.globalCompositeOperation = 'lighter';
-            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 380, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+            ctx.save(); ctx.globalAlpha = 0.26 + tier * 0.045; ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 430, 0, TAU); ctx.fill(); ctx.restore();
             // (4) Expanding shock ring.
             const ring = revealAge / 0.6;
             if (ring < 1) {
@@ -3266,46 +3510,79 @@ export class MenuRenderer {
                 ctx.lineTo(sxp - sr * 0.4, syp); ctx.closePath(); ctx.fill();
             }
             ctx.restore();
-            // (6) The prize card — pops in with a bouncy overshoot.
+            // A persistent orbit of tiny vault runes keeps the reveal alive after
+            // the one-shot spark burst has faded.
+            ctx.save(); ctx.translate(cx, cy); ctx.rotate(revealAge * 0.22);
+            ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = col;
+            for (let i = 0; i < 10; i++) {
+                const a = i * TAU / 10;
+                const rr = 285 + Math.sin(revealAge * 1.7 + i) * 9;
+                const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+                ctx.save(); ctx.translate(x, y); ctx.rotate(a + Math.PI / 4);
+                ctx.globalAlpha = (0.10 + tier * 0.025) * k;
+                ctx.fillRect(-3, -3, 6, 6); ctx.restore();
+            }
+            ctx.restore();
+
+            // (6) The prize dossier — pops in with a bouncy overshoot.
             const ks = backOut(clamp01(revealAge / 0.45), 1.4);
-            const cardW = 500 * ks, cardH = 320 * ks;
-            roundRectPath(ctx, cx - cardW / 2, cy - cardH / 2, cardW, cardH, 18);
-            ctx.fillStyle = 'rgba(18,15,14,0.98)'; ctx.fill();
+            const baseCardW = 560, baseCardH = 370;
+            const cardW = baseCardW * ks, cardH = baseCardH * ks;
+            const cardX = cx - cardW / 2, cardY = cy - cardH / 2;
+            roundRectPath(ctx, cardX, cardY, cardW, cardH, 20);
+            const cardG = ctx.createLinearGradient(0, cardY, 0, cardY + cardH);
+            cardG.addColorStop(0, 'rgba(31,25,24,0.99)'); cardG.addColorStop(0.55, 'rgba(14,12,13,0.99)'); cardG.addColorStop(1, 'rgba(22,14,13,0.99)');
+            ctx.fillStyle = cardG; ctx.fill();
             ctx.strokeStyle = col; ctx.lineWidth = 4 + tier; ctx.stroke();
+            roundRectPath(ctx, cardX + 9, cardY + 9, cardW - 18, cardH - 18, 14);
+            ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.save(); roundRectPath(ctx, cardX, cardY, cardW, cardH, 20); ctx.clip();
+            ctx.fillStyle = col; ctx.globalAlpha = 0.80; ctx.fillRect(cardX, cardY, cardW, 7);
+            const sheen = ctx.createLinearGradient(cardX, 0, cardX + cardW, 0);
+            sheen.addColorStop(0, 'rgba(255,255,255,0)'); sheen.addColorStop(0.5, 'rgba(255,255,255,0.08)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = sheen; ctx.fillRect(cardX, cardY + 7, cardW, 54); ctx.restore();
             if (k > 0.55) {
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 const isItem = result.kind === 'gear' || result.kind === 'cosmetic';
-                // Tags above the card: PITY guarantee.
-                if (result.pity) {
-                    ctx.fillStyle = '#ffd86b'; ctx.font = `800 22px ${FONT}`;
-                    ctx.fillText('✦ BAD-LUCK GUARANTEE ✦', cx, cy - cardH / 2 - 26);
-                }
+                const kindLabel = result.kind === 'gear' ? 'GEAR UNLOCK'
+                    : result.kind === 'cosmetic' ? 'COSMETIC UNLOCK'
+                    : result.kind === 'duplicate' ? 'DUPLICATE CONVERSION'
+                    : result.kind === 'bpxp' ? 'VIGIL XP' : 'COIN CACHE';
+                // One decisive line above the dossier; pity upgrades the copy.
+                ctx.fillStyle = result.pity ? '#ffd86b' : 'rgba(255,232,203,0.72)';
+                ctx.font = `800 ${result.pity ? 18 : 15}px ${FONT}`;
+                ctx.fillText(result.pity ? '✦ BAD-LUCK GUARANTEE — YOU PULLED ✦' : `${(caseDef?.name || 'CASE').toUpperCase()}  •  YOU PULLED`, cx, cardY - 28);
+                ctx.textAlign = 'left';
+                ctx.fillStyle = col; ctx.font = `800 11px ${FONT}`;
+                ctx.fillText(kindLabel, cardX + 24, cardY + 29);
+                ctx.textAlign = 'center';
                 // The item's face in a rarity medallion.
                 ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5;
-                ctx.drawImage(getGlowSprite(col), cx - 66, cy - 188, 132, 132);
+                ctx.drawImage(getGlowSprite(col), cx - 74, cy - 186, 148, 148);
                 ctx.restore(); ctx.globalAlpha = 1;
-                ctx.beginPath(); ctx.arc(cx, cy - 122, 44, 0, Math.PI * 2);
+                ctx.beginPath(); ctx.arc(cx, cy - 112, 50, 0, TAU);
                 ctx.fillStyle = 'rgba(10,8,7,0.9)'; ctx.fill();
                 ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.stroke();
-                this._itemFace(ctx, cx, cy - 122, 30, result);
+                this._itemFace(ctx, cx, cy - 112, 34, result);
                 // Rarity word + tier pips.
-                ctx.fillStyle = col; ctx.font = `800 28px ${FONT}`;
-                ctx.fillText(rarityName(result.rarity).toUpperCase(), cx, cy - 58);
-                this._tierPips(ctx, cx, cy - 34, tier, col);
+                ctx.fillStyle = col; ctx.font = `800 29px ${HEAD}`;
+                ctx.fillText(rarityName(result.rarity).toUpperCase(), cx, cy - 43);
+                this._tierPips(ctx, cx, cy - 18, tier, col);
                 // Name.
-                ctx.fillStyle = '#fff';
-                this._fitFont(ctx, result.name || result.label || '', cardW - 60, 800, 38, FONT, 22);
-                ctx.fillText(result.kind === 'duplicate' ? result.name : (result.name || result.label), cx, cy + 4);
+                const displayName = result.kind === 'duplicate' ? result.name : (result.name || result.label || 'Reward');
+                ctx.fillStyle = '#fff8ea';
+                this._fitFont(ctx, displayName, baseCardW - 70, 800, 38, HEAD, 21);
+                ctx.fillText(displayName, cx, cy + 25);
                 // What it IS: the item's own card text (wrapped, muted).
                 if (result.description) {
                     ctx.fillStyle = 'rgba(235,240,248,0.7)'; ctx.font = `500 16px ${FONT}`;
-                    const lines = this._wrapLines(ctx, result.description, cardW - 80, 2);
-                    lines.forEach((ln, i) => ctx.fillText(ln, cx, cy + 34 + i * 21));
+                    const lines = this._wrapLines(ctx, result.description, baseCardW - 90, 2);
+                    lines.forEach((ln, i) => ctx.fillText(ln, cx, cy + 57 + i * 21));
                 }
-                const stateY = result.description ? cy + 86 : cy + 44;
+                const stateY = result.description ? cy + 112 : cy + 72;
                 if (isItem) {
                     ctx.fillStyle = '#5fe87a'; ctx.font = `800 23px ${FONT}`;
-                    ctx.fillText('★ NEW — UNLOCKED! ★', cx, stateY);
+                    ctx.fillText('★ NEW — ADDED TO YOUR COLLECTION ★', cx, stateY);
                 } else if (result.kind === 'duplicate') {
                     ctx.fillStyle = '#ffd86b'; ctx.font = `700 23px ${FONT}`;
                     ctx.fillText(`DUPLICATE → +${result.amount} ◎`, cx, stateY);
@@ -3323,20 +3600,34 @@ export class MenuRenderer {
                 const coins = state?.saveData?.totalCoins ?? 0;
                 anim._againRect = null;
                 if (caseDef && coins >= caseDef.cost && revealAge > 0.5) {
-                    const bw = 300, bh = 56, bx = cx - bw / 2, by = cy + cardH / 2 + 24;
-                    roundRectPath(ctx, bx, by, bw, bh, 12);
+                    const againW = 340, closeW = 190, bh = 58, btnGap = 14;
+                    const totalW = againW + closeW + btnGap;
+                    const bx = cx - totalW / 2, by = cy + baseCardH / 2 + 26;
+                    roundRectPath(ctx, bx, by, againW, bh, 13);
                     const bg2 = ctx.createLinearGradient(bx, by, bx, by + bh);
-                    bg2.addColorStop(0, '#33a356'); bg2.addColorStop(1, '#1d6b3a');
+                    bg2.addColorStop(0, '#b64b20'); bg2.addColorStop(1, '#712214');
                     ctx.fillStyle = bg2; ctx.fill();
-                    ctx.strokeStyle = '#7be08a'; ctx.lineWidth = 2; ctx.stroke();
-                    ctx.fillStyle = '#fff'; ctx.font = `800 21px ${FONT}`;
-                    ctx.fillText(`OPEN ANOTHER — ◎ ${caseDef.cost}`, bx + bw / 2, by + bh / 2 + 1);
-                    anim._againRect = { x: bx, y: by, w: bw, h: bh };
-                    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 18px ${FONT}`;
-                    ctx.fillText('Tap anywhere else to close', cx, by + bh + 30);
+                    ctx.strokeStyle = '#ffb562'; ctx.lineWidth = 2; ctx.stroke();
+                    this._emberRim(ctx, bx + 8, by, againW - 16, bh, this._t || 0, 5.2);
+                    ctx.fillStyle = '#fff8e9'; ctx.font = `800 19px ${FONT}`;
+                    ctx.fillText(`OPEN AGAIN  •  ◎ ${caseDef.cost}`, bx + againW / 2, by + bh / 2 + 1);
+                    anim._againRect = { x: bx, y: by, w: againW, h: bh };
+
+                    const closeX = bx + againW + btnGap;
+                    roundRectPath(ctx, closeX, by, closeW, bh, 13);
+                    ctx.fillStyle = 'rgba(29,25,26,0.96)'; ctx.fill();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.24)'; ctx.lineWidth = 1.5; ctx.stroke();
+                    ctx.fillStyle = 'rgba(255,244,228,0.86)'; ctx.font = `800 17px ${FONT}`;
+                    ctx.fillText('CONTINUE', closeX + closeW / 2, by + bh / 2 + 1);
+                    ctx.fillStyle = 'rgba(255,255,255,0.46)'; ctx.font = `700 13px ${FONT}`;
+                    ctx.fillText(`BALANCE  ◎ ${coins}`, cx, by + bh + 28);
                 } else {
-                    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 20px ${FONT}`;
-                    ctx.fillText('Tap / Space to continue', cx, cy + cardH / 2 + 38);
+                    const bw = 230, bh = 58, bx = cx - bw / 2, by = cy + baseCardH / 2 + 26;
+                    roundRectPath(ctx, bx, by, bw, bh, 13);
+                    ctx.fillStyle = 'rgba(31,27,28,0.96)'; ctx.fill();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.5; ctx.stroke();
+                    ctx.fillStyle = '#fff2de'; ctx.font = `800 18px ${FONT}`;
+                    ctx.fillText('CONTINUE', cx, by + bh / 2 + 1);
                 }
             }
         }
