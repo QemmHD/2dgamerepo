@@ -15,6 +15,27 @@ import { findEligibleEvolutions } from '../content/evolutions.js';
 import { getRelic } from '../content/relics.js';
 import { bossAttackLabel } from './BossChoreographer.js';
 
+// The gameplay tutorial is world guidance, never modal content. Keeping this
+// gate pure and centralized prevents its banner/pointer from being painted
+// beneath a level-up, reward, shrine, pause, victory, death, or Lens surface.
+export function onboardingModalActive(game) {
+    return !!(game.upgradeChoices || game.chestReward || game.altar || game.paused
+        || game.victory || game.gameOver || game.photoMode);
+}
+
+// Pause confirmations expire on wall time because gameplay update is frozen.
+// A stale stored object is harmless; callers receive null after its deadline,
+// and requestPauseExit re-arms it rather than executing.
+export function pauseExitConfirmSnapshot(game, now = Date.now()) {
+    const pending = game.pauseExitConfirm;
+    if (!game.paused || !pending || (pending.action !== 'restart' && pending.action !== 'menu')
+        || !(pending.expiresAt > now)) return null;
+    return {
+        action: pending.action,
+        seconds: Math.max(1, Math.ceil((pending.expiresAt - now) / 1000)),
+    };
+}
+
 export function buildUIState(game) {
     // Fields every screen needs. Press/feedback animation state is
     // always included so flashes can play across transitions.
@@ -325,9 +346,12 @@ export function buildUIState(game) {
     // text + ✓ done-flash; null when done/veteran), the world-space point the
     // lesson is about (the HUD draws a chevron pointer over it), and the extra
     // reassurance line on the first level-up overlay.
-    base.onboardingLesson = game._onboardingLessonState();
-    base.tutorialTarget = game._tutorialTarget || null;
-    base.onboardingLevelUp = !!(game.onboarding && game.onboarding.step >= 3 && game.upgradeChoices);
+    const onboardingBlocked = onboardingModalActive(game);
+    base.onboardingLesson = onboardingBlocked ? null : game._onboardingLessonState();
+    base.tutorialTarget = onboardingBlocked ? null : (game._tutorialTarget || null);
+    // The reassurance belongs only to the tutorial's FIRST level-up lesson.
+    // `>= 3` repeated it behind every later draft while onboarding was alive.
+    base.onboardingLevelUp = !!(game.onboarding && game.onboarding.step === 3 && game.upgradeChoices);
     base.gameOver = game.gameOver;
     base.gameOverAge = game.gameOverAge;
     base.bossesDefeated = game.bossesDefeated;
@@ -342,6 +366,9 @@ export function buildUIState(game) {
     base.mintedCard = game.mintedCard;
     base.shareToast = game.shareToast;
     base.paused = game.paused;
+    base.victory = !!game.victory;
+    base.photoMode = !!game.photoMode;
+    base.pauseExitConfirm = pauseExitConfirmSnapshot(game);
     base.shakeEnabled = game.shakeEnabled;
     base.rerolls = game.rerolls;
     base.banishes = game.banishes;

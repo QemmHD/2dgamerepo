@@ -46,7 +46,7 @@ export class EnemyProjectile {
     // Returns the damage dealt to the player this frame (0 if none), so the
     // caller can drive feedback. Deactivates on hit, expiry, or leaving the
     // world.
-    update(dt, player) {
+    update(dt, player, obstacleSystem = null) {
         // Homing steer: rotate the velocity toward the player by at most
         // turnRate·dt, holding (capped) speed — a lazy seek the player can
         // out-turn but not ignore.
@@ -73,6 +73,8 @@ export class EnemyProjectile {
             this.trailHead = (this.trailHead + 1) % 6;
             if (this.trailLen < 6) this.trailLen++;
         }
+        const fromX = this.x;
+        const fromY = this.y;
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.age += dt;
@@ -81,6 +83,16 @@ export class EnemyProjectile {
         const halfW = WORLD_WIDTH / 2 + WORLD_MARGIN;
         const halfH = WORLD_HEIGHT / 2 + WORLD_MARGIN;
         if (this.x < -halfW || this.x > halfW || this.y < -halfH || this.y > halfH) {
+            this.active = false;
+            return 0;
+        }
+
+        // Cover is authoritative BEFORE a player hit. The old caller checked
+        // this swept segment only after update() had already applied damage,
+        // allowing a bolt whose endpoint overlapped a player behind a house
+        // wall to hurt them and then disappear. Keep this optional so focused
+        // entity tests and non-world callers retain the open-field fallback.
+        if (obstacleSystem && obstacleSystem.segmentBlocked(fromX, fromY, this.x, this.y)) {
             this.active = false;
             return 0;
         }

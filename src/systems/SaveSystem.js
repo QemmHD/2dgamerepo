@@ -9,6 +9,7 @@ import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR, GEAR_LIST } from '../cont
 import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST } from '../content/cosmetics.js';
 import { CHARACTER_IDS, DEFAULT_CHARACTER } from '../content/characters.js';
 import { MAPS, DEFAULT_MAP, isMapUnlocked } from '../content/maps.js';
+import { PERMANENT_UPGRADES } from '../content/permanentUpgrades.js';
 import { getAttunable, attuneCost } from '../content/relics.js';
 import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
 import { riteIdsFor, ritesCompletedCount } from '../content/rites.js';
@@ -18,6 +19,9 @@ import {
 } from '../content/battlePass.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
+const UPGRADE_MAX_BY_ID = Object.freeze(Object.fromEntries(
+    PERMANENT_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxLevel]),
+));
 
 function defaultData() {
     return {
@@ -65,6 +69,7 @@ function defaultData() {
             comboProcs: 0,           // lifetime element-combo procs
             blinks: 0,               // lifetime aimed blinks
             riteTrialBest: 0,        // lifetime best Rite-Trial score
+            weeklyEmberBest: 0,      // lifetime best Weekly Ember score
         },
         settings: {
             screenShake: true,
@@ -233,7 +238,11 @@ export class SaveSystem {
         if (data.upgrades && typeof data.upgrades === 'object') {
             for (const key of Object.keys(upgrades)) {
                 const v = data.upgrades[key];
-                if (Number.isFinite(v) && v >= 0) upgrades[key] = Math.floor(v);
+                if (Number.isFinite(v) && v >= 0) {
+                    const level = Math.floor(v);
+                    const max = UPGRADE_MAX_BY_ID[key];
+                    upgrades[key] = Number.isFinite(max) ? Math.min(level, max) : level;
+                }
             }
         }
         const stats = { ...def.stats };
@@ -653,7 +662,12 @@ export class SaveSystem {
 
     incrementUpgrade(id) {
         if (!(id in this.data.upgrades)) return false;
-        this.data.upgrades[id] += 1;
+        const current = Number.isFinite(this.data.upgrades[id])
+            ? Math.max(0, Math.floor(this.data.upgrades[id]))
+            : 0;
+        const max = UPGRADE_MAX_BY_ID[id];
+        if (Number.isFinite(max) && current >= max) return false;
+        this.data.upgrades[id] = current + 1;
         this.save();
         return true;
     }
@@ -716,7 +730,10 @@ export class SaveSystem {
 
     equipCosmetic(category, id) {
         if (!(category in this.data.cosmetics.equipped)) return false;
-        if (id !== null && !this.isCosmeticUnlocked(id)) return false;
+        if (id !== null) {
+            const item = COSMETIC_LIST.find((entry) => entry.id === id);
+            if (!item || item.category !== category || !this.isCosmeticUnlocked(id)) return false;
+        }
         this.data.cosmetics.equipped[category] = id;
         this.save();
         return true;
@@ -740,7 +757,10 @@ export class SaveSystem {
 
     equipGear(category, id) {
         if (!(category in this.data.gear.equipped)) return false;
-        if (id !== null && !this.isGearUnlocked(id)) return false;
+        if (id !== null) {
+            const item = GEAR_LIST.find((entry) => entry.id === id);
+            if (!item || item.category !== category || !this.isGearUnlocked(id)) return false;
+        }
         this.data.gear.equipped[category] = id;
         this.save();
         return true;

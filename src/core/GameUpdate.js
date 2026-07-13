@@ -526,13 +526,9 @@ export const GameUpdateMethods = {
         // contact damage.
         for (const ep of this.enemyProjectiles) {
             if (!ep.active) continue;
-            const epx = ep.x, epy = ep.y;
-            const dealt = ep.update(dt, this.player);
-            // Enemy/boss bolts also collide with walls — no damage through cover.
-            if (ep.active && this.obstacleSystem.segmentBlocked(epx, epy, ep.x, ep.y)) {
-                ep.active = false;
-                continue;
-            }
+            // EnemyProjectile resolves its swept wall segment BEFORE player
+            // overlap, so cover can never be damaged through on this frame.
+            const dealt = ep.update(dt, this.player, this.obstacleSystem);
             if (dealt > 0) {
                 if (ep.sourceLabel) this.lastHitBy = ep.sourceLabel;   // death-card attribution
                 this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);

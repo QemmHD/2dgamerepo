@@ -15,7 +15,7 @@ import { GEAR, applyBuffs } from '../content/gear.js';
 export function resolveStartingWeapon(save) {
     const equipped = save?.gear?.equipped ?? {};
     const item = GEAR[equipped.weapon];
-    return item && item.weaponId ? item.weaponId : 'arcaneBolt';
+    return item && item.category === 'weapon' && item.weaponId ? item.weaponId : 'arcaneBolt';
 }
 
 // Apply buffs from every equipped gear slot. Safe to call once per run AFTER
@@ -24,7 +24,7 @@ export function applyLoadout(player, save) {
     const equipped = save?.gear?.equipped ?? {};
     for (const slot of Object.keys(equipped)) {
         const item = GEAR[equipped[slot]];
-        if (item) applyBuffs(player, item.buffs);
+        if (item && item.category === slot) applyBuffs(player, item.buffs);
     }
 }
 

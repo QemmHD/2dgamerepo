@@ -133,6 +133,10 @@ export class Game {
         this.screen = 'start';
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
+        // Pause's destructive exits use a short, action-specific second-press
+        // confirmation. Wall-clock expiry keeps the prompt ticking while the
+        // simulation is intentionally frozen. Session-only: never persisted.
+        this.pauseExitConfirm = null;
 
         // Main-menu state: active tab + transient case-opening animation +
         // a short-lived toast for claim/case feedback. The menu lands on the
@@ -284,6 +288,13 @@ export class Game {
                     // While the guided tour is up, Space/Enter advances it
                     // (matching the NEXT button) instead of launching a run.
                     if (this.menuTour) { this._menuAction('tourNext', null); return; }
+                    // HOME promises an explicit setup before the first guided
+                    // vigil. Match the pointer CTA: the first activation opens
+                    // PLAY; a second activation there launches the run.
+                    if ((this.saveSystem.data.stats?.runs ?? 0) === 0 && this.menuTab === 'home') {
+                        this.menuTab = 'play';
+                        return;
+                    }
                     this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false;   // keyboard start is always a NORMAL run
                     this._startRun();
                 }
@@ -507,11 +518,21 @@ export class Game {
             // Exact bounds (no slop): these stacked buttons are large and
             // adjacent, so slop padding would let an edge tap fire the wrong
             // (destructive) action.
-            if (inRect(pos, this.ui.getResumeButtonRect(), 0)) { this._pressFeedback('resume'); this.togglePause(); return true; }
-            if (inRect(pos, this.ui.getPauseRestartRect(), 0)) { this._pressFeedback('restart'); this.restart(); return true; }
-            if (inRect(pos, this.ui.getPauseShopRect(), 0)) { this._pressFeedback('returnShop'); this.returnToShop(); return true; }
-            if (inRect(pos, this.ui.getShakeToggleRect(), 0)) { this._pressFeedback('shake'); this.toggleScreenShake(); return true; }
-            if (inRect(pos, this.ui.getPauseLensRect(), 0)) { this._pressFeedback('lens'); this._enterPhotoMode('paused'); return true; }
+            if (inRect(pos, this.ui.getResumeButtonRect(), 0)) {
+                this._pressFeedback('resume'); this.cancelPauseExitConfirm(); this.togglePause(); return true;
+            }
+            if (inRect(pos, this.ui.getPauseRestartRect(), 0)) {
+                this._pressFeedback('restart'); this.requestPauseExit('restart'); return true;
+            }
+            if (inRect(pos, this.ui.getPauseShopRect(), 0)) {
+                this._pressFeedback('returnShop'); this.requestPauseExit('menu'); return true;
+            }
+            if (inRect(pos, this.ui.getShakeToggleRect(), 0)) {
+                this._pressFeedback('shake'); this.cancelPauseExitConfirm(); this.toggleScreenShake(); return true;
+            }
+            if (inRect(pos, this.ui.getPauseLensRect(), 0)) {
+                this._pressFeedback('lens'); this.cancelPauseExitConfirm(); this._enterPhotoMode('paused'); return true;
+            }
             return true; // consume all taps while paused
         };
 
@@ -663,22 +684,19 @@ export class Game {
             if (document.hidden) autoPause();
         });
 
-        // ── First-run onboarding: a brand-new save (zero recorded runs) skips
-        // the tabbed menu entirely and drops straight into a guided first run —
-        // _startRun arms the contextual hint sequence (see _tickOnboarding).
-        // The menu waits until the first death, when its tabs unlock staged
-        // (MenuRenderer). ?skipOnboarding=1 keeps harness/CI shots on the menu.
-        if (!SKIP_ONBOARDING && (this.saveSystem.data.stats?.runs ?? 0) === 0) {
-            this._startRun();
-        } else if (!SKIP_ONBOARDING && !this.saveSystem.isTourDone()) {
+        // First contact belongs to the player: a brand-new save now lands on
+        // HOME, where the FIRST VIGIL · GUIDED treatment leads into run setup.
+        // _startRun still arms the contextual lessons because runs === 0; only
+        // the involuntary auto-launch is gone. Veteran saves with an unfinished
+        // menu tour continue exactly where they left off.
+        if (!SKIP_ONBOARDING && (this.saveSystem.data.stats?.runs ?? 0) > 0
+            && !this.saveSystem.isTourDone()) {
             // Booting onto the menu with the guided tour still owed (e.g. the
             // player closed the game right after their first run) → resume it.
             this._armMenuTour();
         }
-        // Gate the touch controls to the boot screen: on a MENU boot this disables
-        // (and clears) the touch buttons + joystick, so a menu tap can't latch a
-        // blink/focus that then fires on the first gameplay frame. A gameplay boot
-        // (brand-new save → _startRun above) already re-enabled them.
+        // Every boot now lands on the menu, so disable and clear the touch
+        // controls until an explicit launch. _startRun re-enables them.
         this._updateJoystickEnabled();
     }
 
@@ -705,6 +723,8 @@ export class Game {
     // the canonical "begin a fresh game" entry point. Used by the START RUN
     // shop button AND the RESTART game-over button.
     _startRun() {
+        // A confirmed pause exit can never bleed into the new run it creates.
+        this.pauseExitConfirm = null;
         // Daily Road: resolve the day's curated setup BEFORE _initRunState reads the
         // map (BossDirector/tier). Overrides map + Trials locally; the forced road is
         // applied at the end of _startRun. Never touches the persisted selections.
@@ -932,6 +952,7 @@ export class Game {
     }
 
     returnToShop() {
+        this.pauseExitConfirm = null;
         this._bankRunCoins();
         this.audio.playMusic('menu');
         this.screen = 'start';
@@ -1118,7 +1139,7 @@ export class Game {
             case 5: return 'Defeat several enemies quickly in a row to build a "combo" (a kill\nstreak). Longer streaks reward you with bonus coins.';
             case 6: return 'A glowing shrine can appear on the ground. Stand on it to choose a\n"relic" — a special power that lasts for the rest of this run.';
             case 7: return 'A "boss" is a big, powerful enemy. Stay alive until it appears and\ndefeat it. Beating three bosses clears the whole area.';
-            case 8: return 'That\'s it: collect shards to level up, grab relics, and beat bosses.\nWhen your health runs out the run ends — then spend your coins. Good luck!';
+            case 8: return 'That\'s it: collect shards to level up, grab relics, and beat bosses.\nYour movement, blink, Kindle and focus controls are always shown below. Good luck!';
             default: return null;
         }
     }

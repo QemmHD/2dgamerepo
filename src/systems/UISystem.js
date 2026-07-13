@@ -2144,10 +2144,17 @@ export class UISystem {
 
         const restart = this.getPauseRestartRect();
         const shop = this.getPauseShopRect();
-        this._drawSummaryButton(ctx, restart, 'RESTART', '#ffd166',
-            'rgba(255, 209, 102, 0.14)', this._pressAmt(state, 'restart'), false);
-        this._drawSummaryButton(ctx, shop, 'SHOP', '#5fc7ff',
-            'rgba(95, 199, 255, 0.12)', this._pressAmt(state, 'returnShop'), false);
+        const confirm = state.pauseExitConfirm;
+        const restartArmed = confirm?.action === 'restart';
+        const menuArmed = confirm?.action === 'menu';
+        this._drawSummaryButton(ctx, restart, restartArmed ? 'CONFIRM RESTART' : 'RESTART',
+            restartArmed ? '#ff8b80' : '#ffd166',
+            restartArmed ? 'rgba(122, 34, 48, 0.82)' : 'rgba(255, 209, 102, 0.14)',
+            this._pressAmt(state, 'restart'), false);
+        this._drawSummaryButton(ctx, shop, menuArmed ? 'CONFIRM LEAVE' : 'LEAVE TO MENU',
+            menuArmed ? '#ff8b80' : '#5fc7ff',
+            menuArmed ? 'rgba(122, 34, 48, 0.82)' : 'rgba(95, 199, 255, 0.12)',
+            this._pressAmt(state, 'returnShop'), false);
 
         // Screen-shake accessibility toggle.
         const tg = this.getShakeToggleRect();
@@ -2197,7 +2204,10 @@ export class UISystem {
         ctx.font = `22px ${FONT}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText('P / Esc to resume', INTERNAL_WIDTH / 2, INTERNAL_HEIGHT - 60 - this.renderer.safeArea.bottom);
+        const pauseHint = confirm
+            ? `Activate ${confirm.action === 'restart' ? 'CONFIRM RESTART' : 'CONFIRM LEAVE'} again within ${confirm.seconds}s  ·  P / Esc cancels`
+            : 'P / Esc to resume';
+        ctx.fillText(pauseHint, INTERNAL_WIDTH / 2, INTERNAL_HEIGHT - 60 - this.renderer.safeArea.bottom);
         ctx.restore();
     }
 
@@ -2240,7 +2250,8 @@ export class UISystem {
     }
 
     _drawControlHint(ctx, state) {
-        if (state.upgradeChoices || state.gameOver || state.chestReward || state.paused) return;
+        if (state.upgradeChoices || state.gameOver || state.chestReward || state.altar
+            || state.paused || state.victory || state.photoMode) return;
         const sa = this.renderer.safeArea;
         // First-run TUTORIAL banner — a framed, clearly-labelled "LESSON n/9"
         // card with progress dots + a ✓ done-flash, plus a world pointer at the
@@ -2261,6 +2272,11 @@ export class UISystem {
                 bodyLines = [
                     'Drag the left side to move. Enemies chase you — keep moving.',
                     'Tap the right side to focus; use BLINK when you get surrounded.',
+                ];
+            } else if (!state.touchMode && !done && lesson.n === 9) {
+                bodyLines = [
+                    'Space blinks out of danger. Hold Q to aim, then release Kindle.',
+                    'Press Tab to focus a priority enemy; press again to cycle targets.',
                 ];
             }
             const bodyFontPx = done ? 27 : 22;
@@ -2320,7 +2336,7 @@ export class UISystem {
         // MenuRenderer DEV_MODE) — a new player's teach line is play-only.
         const controlLine = state.touchMode
             ? 'Drag the left side to move  •  Tap the right side to focus'
-            : 'WASD / Arrows to move  •  Space to blink';
+            : 'WASD / Arrows move  •  Space blink  •  Hold Q Kindle  •  Tab focus';
         ctx.fillText(
             controlLine,
             INTERNAL_WIDTH / 2,
@@ -2441,21 +2457,15 @@ export class UISystem {
         ctx.fillStyle = slotsFull ? '#ffd166' : 'rgba(255,255,255,0.78)';
         const slotText = state.weaponSlotCap
             ? `  •  SLOTS ${state.ownedWeaponCount}/${state.weaponSlotCap}${slotsFull ? ' (FULL)' : ''}` : '';
-        const sub = `Choose an upgrade  •  LV ${state.player.level}${slotText}`
+        const choiceLead = state.onboardingLevelUp
+            ? 'Choose your first upgrade — every choice helps'
+            : 'Choose an upgrade';
+        const sub = `${choiceLead}  •  LV ${state.player.level}${slotText}`
             + (state.pendingLevelUps > 0 ? `  (${state.pendingLevelUps + 1} pending)` : '');
         ctx.fillText(sub, INTERNAL_WIDTH / 2, 290);
-        // First-run onboarding: one warm reassurance line on the very first
-        // level-up so a new player commits instead of freezing at the choice.
-        if (state.onboardingLevelUp) {
-            ctx.fillStyle = '#ffd166';
-            ctx.font = `bold 25px ${FONT}`;
-            ctx.fillText('You "leveled up"! Collecting shards fills a bar; when it\'s full you pick one upgrade.',
-                INTERNAL_WIDTH / 2, 330);
-            ctx.font = `600 20px ${FONT}`;
-            ctx.fillStyle = 'rgba(255,233,176,0.9)';
-            ctx.fillText('Tap any card below — every one makes you stronger, so there are no wrong choices.',
-                INTERNAL_WIDTH / 2, 358);
-        }
+        // The first-draft guidance intentionally stays inside the normal
+        // subtitle line. Extra tutorial rows used to sit underneath the card
+        // tops and compete with the choices they were meant to explain.
         ctx.globalAlpha = 1;
 
         const rects = this.getLevelUpCardRects(choices.length);
@@ -3001,7 +3011,12 @@ export class UISystem {
         ctx.shadowBlur = 0;
         ctx.stroke();
         ctx.fillStyle = '#fff';
-        ctx.font = `bold 36px ${FONT}`;
+        let fontSize = 36;
+        ctx.font = `bold ${fontSize}px ${FONT}`;
+        while (fontSize > 18 && ctx.measureText(label).width > btn.w - 24) {
+            fontSize -= 2;
+            ctx.font = `bold ${fontSize}px ${FONT}`;
+        }
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2);

@@ -24,6 +24,16 @@ export const TOUR_STEPS = [
         ],
     },
     {
+        tab: 'modes',
+        title: 'Modes — fresh ways to face the dark',
+        lines: [
+            'After your first run, this screen opens daily and weekly challenges.',
+            'Daily Road gives everyone the same route; Rite Trial chooses your hero.',
+            'Boss Rush skips the waves for back-to-back apex fights, while Weekly',
+            'Ember gives every player the same shuffled boss order for the week.',
+        ],
+    },
+    {
         tab: 'skills',
         title: 'Skills — get permanently stronger',
         highlightAction: 'buyUpgrade',
@@ -45,6 +55,16 @@ export const TOUR_STEPS = [
             'and a counter guarantees a good one if you\'ve had bad luck for a while.',
             'MINES is an optional little coin game. None of this costs real money —',
             'it all runs on the coins you earn by playing.',
+        ],
+    },
+    {
+        tab: 'boutique',
+        title: 'Boutique — try a look before buying',
+        lines: [
+            'The Boutique sells individual cosmetic pieces and matching themed sets.',
+            'Try anything on first: the preview changes, but your saved look does not.',
+            'Buying uses only coins earned in the game, and cosmetics never add power.',
+            'Pieces earned from the Vigil Path or achievements stay clearly marked.',
         ],
     },
     {

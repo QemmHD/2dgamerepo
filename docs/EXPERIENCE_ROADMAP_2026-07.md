@@ -1,5 +1,8 @@
 # EMBERWAKE Experience Roadmap - July 2026
 
+The versioned release sequence that grows this audit into major 2.0, 3.0, and
+4.0 milestones lives in [`VERSION_ROADMAP_1_TO_4.md`](VERSION_ROADMAP_1_TO_4.md).
+
 Status: code-grounded implementation baseline and update plan, 2026-07-13. It
 reconciles the current game with
 [the 2026-07-04 master roadmap](ROADMAP.md) and
@@ -64,7 +67,7 @@ inventory context, not a quality claim.
 | Long-term goals | 50 battle-pass levels; 16 achievements; 10 daily challenge templates; 11 run objectives; 9 permanent upgrades |
 | Modes | Standard run, Daily Road, Rite Trial, Boss Rush (12 apex fights), and Weekly Ember |
 | World dressing | 13 prop types; 4 structure styles; 4 biome themes; 11 generated structures per world by default |
-| Presentation | 8 photo filters; photo mode; recap/share cards; 10 menu-tour steps; 11 screens grouped into 6 navigation sections |
+| Presentation | 8 photo filters; photo mode; recap/share cards; 12 menu-tour steps; 11 screens grouped into 6 navigation sections |
 | Difficulty | 3 difficulty tiers; 9 run modifiers/trials; 6 wave bands; 6 elite affixes |
 | Cases | 6 coin-only cases: gear/cosmetic variants of Basic, Mystic, and Royal |
 
@@ -191,7 +194,7 @@ but is stale as a current backlog. Its major claims now resolve as follows:
 | 6 weapons, about 4 behavior kinds | 40 weapons across 9 kinds, 11 evolutions, 15 fusions | Identity/balance pass; reduce visually redundant choices rather than add quantity |
 | 16 trash enemies on 5 behaviors; global mix | 20 trash enemies, 7 tagged behavior groups, biome enemy mixes, hazards, lieutenants | Role composition, house tactics, and clearer counters |
 | 3 roads | 11 roads | Improve discovery/route clarity before adding more |
-| No onboarding and 9-tab dump | 10-step tour; staged unlocks; 11 screens grouped into 6 sections | Controller/keyboard focus, text scaling, short first-run comprehension tests |
+| No onboarding and 9-tab dump | 12-step tour; staged unlocks; 11 screens grouped into 6 sections | Controller/keyboard focus, text scaling, short first-run comprehension tests |
 | Battle-pass run receipt is dead | Post-run XP buckets, claims, milestones, migration, and Everflame are live | Pacing measurement, collection/source filters, reward-preview polish |
 | Heirloom Cinders is a no-op | Starting-economy flow was repaired and all 9 permanent upgrades are surfaced | Make old upgrades more interesting at cap without breaking save IDs |
 | `Game.js` is 4,119 lines | About 2,831 lines after update/render/input/combat/photo/run-state splits | Continue seam extraction only when a feature needs it |

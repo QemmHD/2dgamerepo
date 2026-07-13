@@ -19,17 +19,48 @@ import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { getMap } from '../content/maps.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 
+export const PAUSE_EXIT_CONFIRM_MS = 3000;
+
 export const GameInputActionMethods = {
     // Pause is only meaningful during live gameplay (overlays already
     // freeze the world). Toggling re-enables/disables the joystick.
     togglePause() {
         if (this.screen !== 'gameplay' || this.gameOver ||
             this.upgradeChoices || this.chestReward) return;
+        // Resume, Esc/P, and a fresh pause all cancel any half-armed exit.
+        // Confirmation is intentionally session-only and action-specific.
+        this.cancelPauseExitConfirm();
         this.paused = !this.paused;
         // The hearth damps down while paused (soft whoosh + held music dim).
         if (this.paused) this.audio.pauseIn(); else this.audio.pauseOut();
         this.audio.setPaused(this.paused);
         this._updateJoystickEnabled();
+    },
+    cancelPauseExitConfirm() {
+        this.pauseExitConfirm = null;
+    },
+    // RESTART and LEAVE TO MENU both bank/end a live run. The first activation
+    // only arms the named action; the same action must be activated again before
+    // the wall-clock deadline. Switching actions re-arms instead of executing,
+    // preventing an edge tap between adjacent buttons from finalizing a run.
+    requestPauseExit(action) {
+        if (this.screen !== 'gameplay' || !this.paused || this.gameOver
+            || (action !== 'restart' && action !== 'menu')) return false;
+        const now = Date.now();
+        const armed = this.pauseExitConfirm;
+        if (!armed || armed.action !== action || !(armed.expiresAt > now)) {
+            this.pauseExitConfirm = { action, expiresAt: now + PAUSE_EXIT_CONFIRM_MS };
+            if (this.audio?.uiTick) this.audio.uiTick();
+            return false;
+        }
+
+        // Clear BEFORE dispatch. restart()/returnToShop() retain their existing
+        // bankedThisRun guard, and a rapid third event sees a different screen or
+        // unpaused state, so the run can be finalized at most once.
+        this.pauseExitConfirm = null;
+        if (action === 'restart') this.restart();
+        else this.returnToShop();
+        return true;
     },
     toggleScreenShake() {
         this.shakeEnabled = !this.shakeEnabled;

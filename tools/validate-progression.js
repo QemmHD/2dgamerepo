@@ -13,10 +13,13 @@ import {
 } from '../src/content/battlePass.js';
 import { COSMETICS, COSMETIC_SETS } from '../src/content/cosmetics.js';
 import { GEAR } from '../src/content/gear.js';
+import { PERMANENT_UPGRADES } from '../src/content/permanentUpgrades.js';
+import { DAILY_POOL, pickDailyChallenges } from '../src/content/dailyChallenges.js';
 import {
     awardRun, claim, claimAll, runXp, runXpBreakdown,
 } from '../src/systems/BattlePassSystem.js';
 import { openCase } from '../src/systems/CaseSystem.js';
+import { applyLoadout, resolveStartingWeapon } from '../src/systems/LoadoutSystem.js';
 
 // Node 26 exposes an experimental localStorage getter that warns unless a file
 // is configured. A tiny in-memory implementation keeps this validator quiet
@@ -138,6 +141,65 @@ check(cacheResult.everflameCaches === 1, 'Everflame cache did not cross once');
 check(cacheResult.everflameCoins === BP_EVERFLAME_COINS && save.data.totalCoins === BP_EVERFLAME_COINS, 'Everflame cache payout is wrong');
 const veteran = save._validate({ battlePass: { xp: 2000, claimed: [10, 20, 30, 40, 50] } });
 for (const id of Object.values(PASS_COSMETIC_MILESTONES)) check(veteran.cosmetics.unlocked.includes(id), `veteran did not receive ${id}`);
+
+// Save normalization enforces authored upgrade caps, and live increments cannot
+// step past them even if a caller bypasses the shop UI.
+const overcapped = save._validate({ upgrades: Object.fromEntries(PERMANENT_UPGRADES.map((u) => [u.id, 999999])) });
+for (const u of PERMANENT_UPGRADES) {
+    check(overcapped.upgrades[u.id] === u.maxLevel, `${u.id} was not clamped to its authored max`);
+}
+const maxHpUpgrade = PERMANENT_UPGRADES.find((u) => u.id === 'maxHp');
+save.data.upgrades.maxHp = maxHpUpgrade.maxLevel;
+check(save.incrementUpgrade('maxHp') === false && save.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
+    'a permanent upgrade incremented past its cap');
+save.data.upgrades.maxHp = maxHpUpgrade.maxLevel - 1;
+check(save.incrementUpgrade('maxHp') === true && save.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
+    'a valid final permanent-upgrade increment was rejected');
+
+// Equipment APIs reject cross-slot ids immediately, and the run-start bridge
+// independently ignores a malformed raw loadout instead of applying its buffs.
+save.unlockGear('t_emberband');
+const armorBefore = save.data.gear.equipped.armor;
+check(save.equipGear('armor', 't_emberband') === false && save.data.gear.equipped.armor === armorBefore,
+    'wrong-slot gear was equipped');
+check(save.equipGear('trinket', 't_emberband') === true, 'valid trinket equip was rejected');
+save.unlockCosmetic('hat_wool');
+const cloakBefore = save.data.cosmetics.equipped.cloak;
+check(save.equipCosmetic('cloak', 'hat_wool') === false && save.data.cosmetics.equipped.cloak === cloakBefore,
+    'wrong-slot cosmetic was equipped');
+check(save.equipCosmetic('hat', 'hat_wool') === true, 'valid hat equip was rejected');
+const malformedPlayer = { coinMul: 1 };
+applyLoadout(malformedPlayer, { gear: { equipped: { armor: 't_emberband' } } });
+check(malformedPlayer.coinMul === 1, 'applyLoadout applied a wrong-slot item');
+applyLoadout(malformedPlayer, { gear: { equipped: { trinket: 't_emberband' } } });
+check(Math.abs(malformedPlayer.coinMul - 1.1) < 1e-9, 'applyLoadout skipped valid matching-slot gear');
+check(resolveStartingWeapon({ gear: { equipped: { weapon: 't_emberband' } } }) === 'arcaneBolt',
+    'wrong-slot starting gear escaped the weapon fallback');
+
+// Weekly Ember's lifetime best must survive the same save/reload normalization
+// every other lifetime stat uses.
+storage.clear();
+const weeklySave = new SaveSystem();
+weeklySave.recordWeeklyEmber(123, 4567);
+const weeklyReload = new SaveSystem();
+check(weeklyReload.data.weeklyEmber.best === 4567, 'Weekly Ember record did not survive reload');
+check(weeklyReload.data.stats.weeklyEmberBest === 4567, 'Weekly Ember lifetime best did not survive reload');
+
+// Daily rotations remain deterministic while avoiding duplicate metric families
+// in the normal three-goal offering.
+const dailySignatures = new Set();
+for (let day = 1; day <= 1000; day++) {
+    const first = pickDailyChallenges(day);
+    const again = pickDailyChallenges(day);
+    check(first.length === 3, `day ${day} did not produce three challenges`);
+    check(new Set(first.map((c) => c.id)).size === 3, `day ${day} repeated a challenge id`);
+    check(new Set(first.map((c) => c.metric)).size === 3, `day ${day} repeated a challenge metric`);
+    check(first.map((c) => c.id).join('|') === again.map((c) => c.id).join('|'), `day ${day} was not deterministic`);
+    dailySignatures.add(first.map((c) => c.id).join('|'));
+}
+check(dailySignatures.size > 100, 'daily challenge rotation has too little variety');
+check(pickDailyChallenges(42, 0).length === 0, 'zero-count daily request returned challenges');
+check(pickDailyChallenges(42, DAILY_POOL.length).length === DAILY_POOL.length, 'full daily request lost overflow challenges');
 
 // A fresh free cosmetic case can no longer land on a starter duplicate.
 storage.clear();
