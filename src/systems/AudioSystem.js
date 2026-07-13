@@ -19,6 +19,22 @@ import {
 const A4 = 440;
 const hz = (midi) => A4 * Math.pow(2, (midi - 69) / 12);
 
+// Internal gain staging. User sliders stay linear and fully authoritative;
+// these trims calibrate the very different source levels of tracker voices and
+// stacked combat SFX. Keeping the policy exported lets the headless validator
+// guard the actual shipped mix instead of duplicating magic numbers.
+export const AUDIO_MIX = Object.freeze({
+    musicTrim: 0.68,
+    sfxTrim: 0.55,
+    voiceTrim: 0.68,
+    duckDepth: 0.65,
+    duckFloor: 0.55,
+    textureBudgetDesktop: 6,
+    textureBudgetMobile: 4,
+    calmMotionFloor: 0.42,
+    calmCutoff: 4000,
+});
+
 // Resolve a scale degree (can be negative or span octaves) to a MIDI note.
 function degToMidi(root, scale, deg) {
     const len = scale.length;
@@ -120,6 +136,7 @@ export class AudioSystem {
         this.musicPause = null;   // independent pause gate (SFX ducking cannot undo it)
         this.musicFilter = null;  // music-only tone color; never dulls gameplay SFX
         this.sfxBus = null;
+        this.sfxCompressor = null; // catches dense stacks before the full-mix limiter
         this.voiceBus = null;
         this.verbSend = null;
         this.volMusic = 0.7;
@@ -130,6 +147,8 @@ export class AudioSystem {
         this._step = 0;
         this._bar = 0;
         this._lastSfx = {};
+        this._sfxWindowT = -Infinity;
+        this._sfxWindowN = 0;
         this._noiseBuf = null;
         this._intensity = 0;
         this._lastStand = false;
@@ -143,6 +162,7 @@ export class AudioSystem {
         this._bossId = null;
         this._musicLayers = {};
         this._layerTargets = {};
+        this._toneTarget = null;
         this._unlockPromise = null;
         this._paused = false;
         this._recorded = null;
@@ -177,6 +197,11 @@ export class AudioSystem {
         if (!this.enabled || this.ctx) return;
         try {
             this.ctx = new this._AC();
+            // A disposed system may be unlocked again by an embedding shell.
+            // Targets belong to the old AudioContext and must not suppress the
+            // first automation pass on the freshly-created graph.
+            this._layerTargets = {};
+            this._toneTarget = null;
             // Master has only clip protection. Tone shaping belongs to music,
             // otherwise a low-HP color pass also muffles hit and warning cues.
             this.master = this.ctx.createGain();
@@ -204,7 +229,7 @@ export class AudioSystem {
             this.verbSend.connect(delay);
 
             this.musicBus = this.ctx.createGain();
-            this.musicBus.gain.value = this.volMusic * 0.4;
+            this.musicBus.gain.value = this.volMusic * AUDIO_MIX.musicTrim;
             this.musicBus.connect(this.master);
             this.musicBus.connect(this.verbSend);
             // Tracker/stream → duck → pause → MUSIC-ONLY filter → music bus.
@@ -214,13 +239,13 @@ export class AudioSystem {
             this.musicPause.gain.value = this._paused ? 0.45 : 1;
             this.musicFilter = this.ctx.createBiquadFilter();
             this.musicFilter.type = 'lowpass';
-            this.musicFilter.frequency.value = 6200;
+            this.musicFilter.frequency.value = AUDIO_MIX.calmCutoff;
             this.musicFilter.Q.value = 0.35;
             this.musicDuck.connect(this.musicPause);
             this.musicPause.connect(this.musicFilter);
             this.musicFilter.connect(this.musicBus);
 
-            for (const [name, initial] of Object.entries({ bed: 1, motion: 0.18, swarm: 0, apex: 0 })) {
+            for (const [name, initial] of Object.entries({ bed: 1, motion: AUDIO_MIX.calmMotionFloor, swarm: 0, apex: 0 })) {
                 const layer = this.ctx.createGain();
                 layer.gain.value = initial;
                 layer.connect(this.musicDuck);
@@ -228,10 +253,17 @@ export class AudioSystem {
             }
 
             this.sfxBus = this.ctx.createGain();
-            this.sfxBus.gain.value = this.volSfx;
-            this.sfxBus.connect(this.master);
+            this.sfxBus.gain.value = this.volSfx * AUDIO_MIX.sfxTrim;
+            this.sfxCompressor = this.ctx.createDynamicsCompressor();
+            this.sfxCompressor.threshold.value = -9;
+            this.sfxCompressor.knee.value = 6;
+            this.sfxCompressor.ratio.value = 4;
+            this.sfxCompressor.attack.value = 0.003;
+            this.sfxCompressor.release.value = 0.09;
+            this.sfxBus.connect(this.sfxCompressor);
+            this.sfxCompressor.connect(this.master);
             this.voiceBus = this.ctx.createGain();
-            this.voiceBus.gain.value = this.volSfx * 0.78;
+            this.voiceBus.gain.value = this.volSfx * AUDIO_MIX.voiceTrim;
             this.voiceBus.connect(this.master);
 
             const len = Math.floor(this.ctx.sampleRate);
@@ -445,17 +477,24 @@ export class AudioSystem {
         if (typeof music === 'number') this.volMusic = Math.max(0, Math.min(1, music));
         if (typeof sfx === 'number') this.volSfx = Math.max(0, Math.min(1, sfx));
         const now = this.ctx?.currentTime ?? 0;
-        this._rampParam(this.musicBus?.gain, this.volMusic * 0.4, now, 0.04);
-        this._rampParam(this.sfxBus?.gain, this.volSfx, now, 0.04);
-        this._rampParam(this.voiceBus?.gain, this.volSfx * 0.78, now, 0.04);
-        if (this._recorded && !this._recordedSource) this._recorded.volume = this.volMusic * 0.32;
+        this._rampParam(this.musicBus?.gain, this.volMusic * AUDIO_MIX.musicTrim, now, 0.04);
+        this._rampParam(this.sfxBus?.gain, this.volSfx * AUDIO_MIX.sfxTrim, now, 0.04);
+        this._rampParam(this.voiceBus?.gain, this.volSfx * AUDIO_MIX.voiceTrim, now, 0.04);
+        if (this._recorded && !this._recordedSource) this._recorded.volume = this.volMusic * AUDIO_MIX.musicTrim;
     }
 
     _rampParam(param, value, now = 0, duration = 0.2) {
         if (!param) return;
         try {
-            param.cancelScheduledValues(now);
-            param.setValueAtTime(param.value, now);
+            // `AudioParam.value` is its intrinsic value, not necessarily the
+            // instantaneous value of scheduled automation. Holding the real
+            // curve prevents rapid adaptive updates from snapping gains/tone
+            // back to their construction values on every frame.
+            if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(now);
+            else {
+                param.cancelScheduledValues(now);
+                param.setValueAtTime(param.value, now);
+            }
             param.linearRampToValueAtTime(value, now + duration);
         } catch (e) { param.value = value; }
     }
@@ -637,8 +676,8 @@ export class AudioSystem {
             : scene === 'boss' ? { bed: 1, motion: 1, swarm: 0.72, apex: 0.88 }
                 : scene === 'onslaught' ? { bed: 1, motion: 1, swarm: 1, apex: 0.68 }
                     : scene === 'swarm' ? { bed: 1, motion: 0.9, swarm: 0.72, apex: 0.12 }
-                        : scene === 'hunt' ? { bed: 1, motion: 0.48 + v * 0.28, swarm: 0.08, apex: 0 }
-                            : { bed: 1, motion: 0.14 + v * 0.3, swarm: 0, apex: 0 };
+                        : scene === 'hunt' ? { bed: 1, motion: 0.65 + v * 0.2, swarm: 0.08, apex: 0 }
+                            : { bed: 1, motion: AUDIO_MIX.calmMotionFloor + v * 0.26, swarm: 0, apex: 0 };
         if (this.theme === 'boss') targets.apex = Math.max(targets.apex, 0.88);
         if (this.ctx) {
             const now = this.ctx.currentTime;
@@ -655,10 +694,16 @@ export class AudioSystem {
         if (!this.ctx || !this.musicFilter) return;
         // Last stand adds danger color, but never collapses the whole score's
         // intensity. It trims only some air while a new pedal voice supplies heat.
-        let cutoff = 3300 + this._intensity * 4800;
+        // Quantize the continuously-smoothed pressure so this method (called by
+        // gameplay every frame) does not cancel/rebuild a filter ramp 60 times
+        // per second. Twelve audible steps still track chaos smoothly.
+        const toneIntensity = Math.round(this._intensity * 12) / 12;
+        let cutoff = AUDIO_MIX.calmCutoff + toneIntensity * 4400;
         if (this._lastStand) cutoff -= 650;
         if (this._combatScene === 'bossFinal') cutoff += 500;
-        cutoff = Math.max(2800, Math.min(9200, cutoff));
+        cutoff = Math.max(3400, Math.min(9200, cutoff));
+        if (this._toneTarget != null && Math.abs(this._toneTarget - cutoff) < 1) return;
+        this._toneTarget = cutoff;
         this._rampParam(this.musicFilter.frequency, cutoff, this.ctx.currentTime, 0.22);
     }
 
@@ -1013,17 +1058,23 @@ export class AudioSystem {
 
     _rand(a, b) { return a + Math.random() * (b - a); }
 
-    // Sidechain duck: dip the music bed briefly under a big SFX moment.
+    // Sidechain duck: create a short pocket for a signature cue while keeping
+    // the score perceptually present. Dense combat should never erase the bed.
     _duck(amount = 0.45, hold = 0.08, recover = 0.35) {
         if (!this.ctx || !this.musicDuck) return;
         const t = this.ctx.currentTime;
         const g = this.musicDuck.gain;
-        const floor = Math.max(0.15, 1 - amount);
-        g.cancelScheduledValues(t);
-        g.setValueAtTime(g.value, t);
+        const depth = Math.max(0, Math.min(1, Number(amount) || 0));
+        const floor = Math.max(AUDIO_MIX.duckFloor, 1 - depth * AUDIO_MIX.duckDepth);
+        if (typeof g.cancelAndHoldAtTime === 'function') g.cancelAndHoldAtTime(t);
+        else {
+            g.cancelScheduledValues(t);
+            g.setValueAtTime(g.value, t);
+        }
         g.linearRampToValueAtTime(floor, t + 0.02);
         g.setValueAtTime(floor, t + 0.02 + hold);
-        g.linearRampToValueAtTime(1, t + 0.02 + hold + recover);
+        const releaseAt = t + 0.02 + hold + recover;
+        g.linearRampToValueAtTime(1, releaseAt);
     }
 
     // Music voice with a per-step voice cap (drops the least-important layer
@@ -1052,7 +1103,8 @@ export class AudioSystem {
         if (this._lastSfx[name] && now - this._lastSfx[name] < minGap) return;
         if (!AudioSystem.PRIORITY_CUES.has(name)) {
             if (now - (this._sfxWindowT || 0) > 0.1) { this._sfxWindowT = now; this._sfxWindowN = 0; }
-            if (++this._sfxWindowN > 9) return;
+            const budget = this._mobile ? AUDIO_MIX.textureBudgetMobile : AUDIO_MIX.textureBudgetDesktop;
+            if (++this._sfxWindowN > budget) return;
         }
         this._lastSfx[name] = now;
         fn(now);
