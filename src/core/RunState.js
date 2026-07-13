@@ -239,6 +239,9 @@ export const RunStateMethods = {
         // drawn on the game-over summary). Cleared so a restart can't show stale XP.
         this.bpResult = null;
         this._battlePassAwarded = false;
+        // Smoothed adaptive-music state. Reset per run so a previous boss or
+        // onslaught cannot leak its orchestration into the new opening bars.
+        this.musicState = { intensity: 0, target: 0, scene: 'calm', lastStand: false, bossActive: false, bossPhase: 1 };
         // Starting coins granted by the shop this run — _bankRunCoins banks
         // them only for a PLAYED run (see the guard there), so an instant
         // pause→RESTART abandon can't mint the seed for free.

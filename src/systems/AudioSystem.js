@@ -1,33 +1,23 @@
-// AudioSystem — HYBRID Web Audio: warm dark-fantasy "ember" music + SFX that are
-// procedurally synthesized, with a thin layer of real CC0 (Kenney.nl) one-shot
-// samples over the most TACTILE cues (a punch, coins, a metal latch, UI clicks) —
-// things a real recorded transient nails better than a synth. Every sampled cue
-// falls back to its synth voice when the sample isn't loaded (headless render,
-// fetch failure, or a cue we keep procedural), so nothing ever goes silent, and
-// ALL music/fanfares stay 100% procedural. Feature-detected, so in headless /
-// unsupported environments every method is a silent no-op (nothing throws).
-// Browsers block audio until a user gesture, so the context is created lazily and
-// `resume()` runs from a click/keydown (which also kicks off sample loading).
-//
-// Signal chain (mobile-safe by construction): sfxBus (dry, samples + synth SFX) +
-// musicBus (→ reverb tail) sum into master → master LOW-PASS (warmth) → a
-// brick-wall LIMITER (DynamicsCompressor) → destination, so no stack of layered
-// hits — sampled or synth — can ever clip. Music runs through a musicDuck gain so
-// big moments pseudo-SIDECHAIN-duck the bed (Web Audio has no external sidechain).
-// Voices are detuned-oscillator pairs through per-voice low-pass with soft ADSR;
-// grit uses a cached tanh waveshaper; impacts are filtered-noise / sub-sine /
-// inharmonic-metal layers — warm, never harsh static.
+// AudioSystem — adaptive original tracker score + hybrid sample/synth SFX.
+// Combat music is composed as 16-bar A/B/C/D forms in content/music.js and
+// orchestrated over four pressure layers. Scene changes quantize to a bar. One
+// credited CC0 menu feature streams once through HTMLAudioElement (never a huge
+// decoded AudioBuffer), then returns to the procedural no-repeat playlist.
+// Browser audio is created lazily and unlocked asynchronously from a real user
+// gesture; unsupported/headless environments remain silent no-ops.
+
+import {
+    BOSS_PROFILES,
+    BOSS_SUITES,
+    BIOME_COMPOSITIONS,
+    MENU_COMPOSITIONS,
+    MUSIC_BY_ID,
+    VICTORY_COMPOSITION,
+    VOICE_STINGERS,
+} from '../content/music.js';
 
 const A4 = 440;
 const hz = (midi) => A4 * Math.pow(2, (midi - 69) / 12);
-
-// Scales. Minor pentatonic drives hard without going dissonant; the biome
-// retunes swap in richer 7-note modes for colour, and victory uses major.
-const PENT = [0, 3, 5, 7, 10];
-const MAJ_PENT = [0, 2, 4, 7, 9];
-const MINOR = [0, 2, 3, 5, 7, 8, 10];
-const DORIAN = [0, 2, 3, 5, 7, 9, 10];
-const PHRYG = [0, 1, 3, 5, 7, 8, 10];
 
 // Resolve a scale degree (can be negative or span octaves) to a MIDI note.
 function degToMidi(root, scale, deg) {
@@ -37,120 +27,64 @@ function degToMidi(root, scale, deg) {
     return root + oct * 12 + scale[idx];
 }
 
-// Themes are full grooves: a DRUM bed (kick + hat) for drive, a walking BASS, a
-// LEAD with an A/B section, a soft PAD, and a gap-filling ARP. A per-bar chord
-// PROGRESSION + the 8-bar A/B phrase make the loop evolve (~16s before it truly
-// repeats). 16 sixteenths/bar; `null` = rest (space keeps it from feeling
-// relentless). `swing` delays off-beats for groove.
-const GAMEPLAY_BASE = {
-    bpm: 128, wave: 'triangle', cutoff: 2900, root: 45, scale: PENT, energy: 1.0, swing: 0.10,
-    prog: [0, 7, 3, 5],
-    lead:  [0, null, 3, 2, null, 4, null, 5, 4, null, 2, 3, null, 2, null, 0],
-    leadB: [7, null, 5, 4, null, 5, 7, null, 9, null, 7, 5, null, 4, 2, null],
-    bassSteps: [0, 3, 6, 8, 11, 14], bassWalk: [0, 0, 3, 0, -2, 0],
-    kick: [0, 4, 8, 12], hat: [2, 6, 10, 14],
-    padVoicing: [0, 2, 4], arp: [0, 4, 7, 10, 7, 4],
-};
+// Tracker timbres are intentionally orchestral roles, not one oscillator with
+// a different cutoff. Plucked strings use a Karplus-lite voice, bells use
+// inharmonic partials, reeds/brass/choirs use distinct envelopes and doublings.
+const INSTRUMENTS = Object.freeze({
+    emberFlute: { type: 'triangle', cutoff: 3000, attack: 0.035, detune: 5, length: 1.6 },
+    reedPipe: { type: 'square', cutoff: 1800, attack: 0.02, detune: 3, length: 1, octaveGain: 0.18 },
+    lowReed: { type: 'sawtooth', cutoff: 1250, attack: 0.08, detune: 7, length: 2.1 },
+    dulcimer: { pluck: true, cutoff: 3600, length: 0.8 },
+    woodPluck: { pluck: true, cutoff: 2400, length: 0.7 },
+    icePluck: { pluck: true, cutoff: 5200, length: 1 },
+    frostGlass: { type: 'sine', cutoff: 5200, attack: 0.006, detune: 9, length: 1.8, octaveGain: 0.32 },
+    glassChoir: { type: 'sine', cutoff: 4600, attack: 0.13, detune: 12, length: 2.5, fifthGain: 0.16 },
+    boneReed: { type: 'square', cutoff: 1450, attack: 0.012, detune: 5, shape: 1.2, length: 0.9 },
+    boneClick: { pluck: true, cutoff: 1700, length: 0.42 },
+    sandOud: { pluck: true, cutoff: 3000, length: 0.75, octaveGain: 0.12 },
+    brightOud: { pluck: true, cutoff: 4700, length: 0.68, octaveGain: 0.22 },
+    heroStrings: { type: 'sawtooth', cutoff: 2800, attack: 0.05, detune: 11, length: 1.7, octaveGain: 0.14 },
+    ironStrings: { type: 'sawtooth', cutoff: 1700, attack: 0.025, detune: 8, shape: 1.5, length: 1.15 },
+    warHorn: { type: 'sawtooth', cutoff: 2100, attack: 0.07, detune: 14, shape: 1.1, length: 1.8, fifthGain: 0.2 },
+    voidLead: { type: 'triangle', cutoff: 1900, attack: 0.04, detune: 15, shape: 1.2, length: 1.5, octaveGain: 0.15 },
+    sunBrass: { type: 'sawtooth', cutoff: 3400, attack: 0.025, detune: 9, shape: 1.8, length: 1.25, octaveGain: 0.18 },
+    stormArp: { type: 'triangle', cutoff: 4600, attack: 0.004, detune: 4, length: 0.55 },
+    anvilPulse: { type: 'square', cutoff: 2100, attack: 0.003, shape: 1.4, length: 0.42 },
+    graveBell: { metal: true, cutoff: 2600, length: 1.4 },
+    emberBell: { metal: true, cutoff: 4300, length: 1 },
+    sunBell: { metal: true, cutoff: 5200, length: 0.9 },
+    warmBass: { type: 'sine', cutoff: 700, attack: 0.008, length: 1.5 },
+    bowedBass: { type: 'triangle', cutoff: 850, attack: 0.08, detune: 6, length: 2.1 },
+    pulseBass: { type: 'square', cutoff: 620, attack: 0.006, shape: 1.1, length: 0.8 },
+    subDrone: { type: 'sine', cutoff: 430, attack: 0.09, detune: 3, length: 2.5 },
+    choir: { type: 'sine', cutoff: 1800, attack: 0.2, detune: 12, length: 3.2 },
+    forestStrings: { type: 'triangle', cutoff: 1800, attack: 0.16, detune: 9, length: 2.8 },
+    nightStrings: { type: 'triangle', cutoff: 1300, attack: 0.22, detune: 14, length: 3.4 },
+    brassPad: { type: 'sawtooth', cutoff: 1250, attack: 0.18, detune: 10, length: 2.7 },
+    auroraPad: { type: 'sine', cutoff: 3000, attack: 0.28, detune: 16, length: 3.7 },
+    voidChoir: { type: 'triangle', cutoff: 950, attack: 0.24, detune: 17, shape: 0.8, length: 3.3 },
+    sunDrone: { type: 'sawtooth', cutoff: 1100, attack: 0.2, detune: 7, length: 3 },
+    warChoir: { type: 'sawtooth', cutoff: 1500, attack: 0.15, detune: 15, shape: 1.1, length: 3 },
+});
 
-// ── Menu playlist ────────────────────────────────────────────────────────
-// Three DISTINCT menu tracks so the lobby never wears one groove out. The
-// active one is installed as THEMES.menu; rotation advances on every menu
-// visit (playMusic('menu')) AND on the 64-bar wrap while sitting in the menu,
-// so both quick trips and long lobby sits keep the music moving.
-const MENU_THEMES = [
-    {   // "Emberkin" — the original warm hearth lilt (pentatonic, swung).
-        bpm: 96, wave: 'triangle', cutoff: 2400, root: 57, scale: PENT, energy: 0.6, swing: 0.18,
-        prog: [0, 0, 3, 5],
-        lead:  [0, null, 2, null, 4, null, 2, null, 3, null, 5, null, 4, null, 2, null],
-        leadB: [4, null, 3, null, 2, null, 3, null, 1, null, 2, null, 0, null, null, null],
-        bassSteps: [0, 8], kick: [0, 8], hat: [4, 12],
-        padVoicing: [0, 2, 4], arp: [0, 4, 7, 4],
-    },
-    {   // "Long Watch" — slow dorian ember-drift: sparse lead, lush pads,
-        // heavy swing. The campfire-rest of the three.
-        bpm: 76, wave: 'sine', cutoff: 2000, root: 50, scale: DORIAN, energy: 0.5, swing: 0.22,
-        prog: [0, 5, 3, 7],
-        lead:  [0, null, null, 2, null, null, 4, null, null, null, 3, null, null, 2, null, null],
-        leadB: [5, null, null, 4, null, null, 2, null, null, null, 4, null, 3, null, null, null],
-        bassSteps: [0, 10], kick: [0], hat: [8],
-        padVoicing: [0, 2, 4, 6], arp: [0, 2, 4, 7],
-    },
-    {   // "Vigil Call" — minor and a touch heroic: moving eighths, brighter
-        // top, a firmer pulse. The "gear up" track.
-        bpm: 108, wave: 'triangle', cutoff: 2800, root: 52, scale: MINOR, energy: 0.7, swing: 0.12,
-        prog: [0, 8, 5, 7],
-        lead:  [0, null, 2, 3, null, 4, null, 7, null, 5, 4, null, 3, null, 2, null],
-        leadB: [7, null, 8, 7, null, 5, 4, null, 5, null, 4, 3, null, 2, null, 0],
-        bassSteps: [0, 6, 8, 14], bassWalk: [0, 0, 2, 0],
-        kick: [0, 8], hat: [4, 10, 12],
-        padVoicing: [0, 2, 4], arp: [0, 3, 7, 10],
-    },
-];
-
-const THEMES = {
-    menu: MENU_THEMES[0],
-    gameplay: GAMEPLAY_BASE,
-    boss: {
-        bpm: 152, wave: 'sawtooth', cutoff: 1600, root: 38, scale: MINOR, energy: 1.12, swing: 0.0,
-        prog: [0, 0, 10, 3],
-        lead:  [0, 0, null, 3, 0, null, 2, 0, null, 3, 0, 2, null, 4, 3, 2],
-        leadB: [5, null, 4, 3, 5, null, 7, 5, null, 4, 3, null, 5, 4, 3, 0],
-        bassSteps: [0, 2, 4, 6, 8, 10, 12, 14], bassWalk: [0, 0, 2, 0, 4, 0, 2, 0],
-        kick: [0, 4, 8, 12], hat: [2, 6, 10, 14],
-        padVoicing: [0, 1, 4], arp: [0, 3, 7, 3],
-    },
-    victory: {
-        bpm: 120, wave: 'triangle', cutoff: 4200, root: 52, scale: MAJ_PENT, energy: 0.9, swing: 0.10,
-        prog: [0, 4, 7, 4],
-        lead:  [0, null, 2, 4, null, 7, null, 4, 2, null, 4, null, 7, null, 9, null],
-        leadB: [7, null, 9, 7, null, 4, null, 7, null, 9, 11, null, 9, 7, 4, null],
-        bassSteps: [0, 4, 8, 12], bassWalk: [0, 2, 4, 2],
-        kick: [0, 4, 8, 12], hat: [2, 6, 10, 14],
-        padVoicing: [0, 2, 4, 6], arp: [0, 4, 7, 12, 7, 4],
-    },
-};
-
-// Per-biome gameplay THEMES, shallow-merged over GAMEPLAY_BASE. These are no
-// longer just tone recolours — each map carries its own melody, groove and
-// progression so every biome has a genuinely different track (the user-facing
-// "each map sounds like itself"). Emberwood keeps the canonical base groove.
-const BIOME_TUNE = {
-    // Emberwood — the canonical driving pentatonic groove (base patterns).
-    emberwood:   { root: 45, scale: PENT,   cutoff: 2900, energy: 1.00, wave: 'triangle', swing: 0.10, reverb: 0.18 },
-    // Hollow Reach — frost vigil: slower, dorian, wide reverb; a haunting
-    // legato lead over a sparse floor (half-time feel against the swarm).
-    hollowreach: {
-        root: 48, scale: DORIAN, cutoff: 3200, energy: 0.92, wave: 'triangle', swing: 0.12, reverb: 0.30,
-        bpm: 122, prog: [0, 5, 3, 7],
-        lead:  [0, null, null, 4, null, 3, null, null, 2, null, null, 4, null, null, 3, 2],
-        leadB: [7, null, null, 5, null, 4, null, null, 5, null, 7, null, null, 4, null, null],
-        bassSteps: [0, 6, 8, 14], bassWalk: [0, 0, -2, 0],
-        kick: [0, 8], hat: [2, 6, 10, 14],
-        padVoicing: [0, 2, 4, 6], arp: [0, 2, 4, 7, 4, 2],
-    },
-    // The Crypts — bone march: minor sawtooth, relentless stepping bass,
-    // tighter and darker with a downward-leaning progression.
-    crypts: {
-        root: 41, scale: MINOR, cutoff: 2200, energy: 1.00, wave: 'sawtooth', swing: 0.06, reverb: 0.24,
-        bpm: 132, prog: [0, 3, 8, 10],
-        lead:  [0, null, 0, 2, null, 3, null, 0, null, 2, null, 3, 5, null, 3, 2],
-        leadB: [5, null, 5, 4, null, 3, null, 5, null, 7, null, 5, 4, null, 3, null],
-        bassSteps: [0, 2, 4, 6, 8, 10, 12, 14], bassWalk: [0, 0, 0, 2, 0, 0, -1, 0],
-        kick: [0, 4, 8, 12], hat: [2, 6, 10, 13, 14],
-        padVoicing: [0, 2, 5], arp: [0, 3, 7, 3],
-    },
-    // The Dunes — serpent heat: phrygian colour (that b2!), swung, an
-    // ornamented winding lead over a rolling camel-gait bass.
-    dunes: {
-        root: 46, scale: PHRYG, cutoff: 2600, energy: 1.02, wave: 'triangle', swing: 0.14, reverb: 0.16,
-        bpm: 126, prog: [0, 1, 0, 5],
-        lead:  [0, 1, 0, null, 3, null, 2, 1, null, 0, null, 4, 3, null, 1, 0],
-        leadB: [5, null, 4, 5, null, 7, null, 5, 4, null, 3, 4, null, 1, null, 0],
-        bassSteps: [0, 3, 6, 8, 11, 14], bassWalk: [0, 0, 1, 0, -2, 0],
-        kick: [0, 4, 8, 12], hat: [2, 5, 10, 13],
-        padVoicing: [0, 3, 5], arp: [0, 1, 4, 7, 4, 1],
-    },
-};
+const GROOVES = Object.freeze({
+    hearth: { kick: [0, 8], snare: [], hat: [4, 12], bass: [0, 8] },
+    vigil: { kick: [0], snare: [], hat: [8], bass: [0, 10] },
+    march: { kick: [0, 8], snare: [4, 12], hat: [2, 6, 10, 14], bass: [0, 6, 8, 14] },
+    hearthDrive: { kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14], bass: [0, 3, 6, 8, 11, 14] },
+    woodland: { kick: [0, 7, 10], snare: [4, 12], hat: [2, 5, 9, 14], bass: [0, 5, 8, 13] },
+    frost: { kick: [0, 8], snare: [12], hat: [2, 6, 10, 14], bass: [0, 6, 8, 14] },
+    glacier: { kick: [0, 10], snare: [6, 14], hat: [3, 7, 11, 15], bass: [0, 8, 12] },
+    boneMarch: { kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 13, 14], bass: [0, 2, 4, 6, 8, 10, 12, 14] },
+    tomb: { kick: [0, 10], snare: [6], hat: [3, 7, 11, 15], bass: [0, 8, 11] },
+    sand: { kick: [0, 4, 8, 12], snare: [6, 14], hat: [2, 5, 10, 13], bass: [0, 3, 6, 8, 11, 14] },
+    caravan: { kick: [0, 3, 8, 11], snare: [4, 12], hat: [2, 5, 7, 10, 13, 15], bass: [0, 3, 6, 9, 12, 14] },
+    tempestWar: { kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14], bass: [0, 2, 4, 6, 8, 10, 12, 14] },
+    colossusWar: { kick: [0, 3, 8, 11], snare: [4, 12], hat: [2, 6, 10, 14], bass: [0, 4, 6, 8, 12, 14] },
+    voidWar: { kick: [0, 6, 8, 14], snare: [4, 12], hat: [1, 5, 9, 13], bass: [0, 3, 6, 8, 11, 14] },
+    infernoWar: { kick: [0, 3, 6, 8, 11, 14], snare: [4, 12], hat: [2, 5, 7, 10, 13, 15], bass: [0, 2, 4, 6, 8, 10, 12, 14] },
+    triumph: { kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14], bass: [0, 4, 8, 12] },
+});
 
 // Hybrid one-shot layer — curated CC0 (Kenney.nl) samples for the most TACTILE
 // cues, one bank per cue (variants are picked at random + pitch-jittered so rapid
@@ -179,11 +113,14 @@ export class AudioSystem {
         this._AC = AC || null;
         this.ctx = null;
         this.master = null;
-        this.masterFilter = null;
+        this.masterFilter = null; // retained as a compatibility field; SFX stay unfiltered
         this.limiter = null;      // brick-wall limiter (clip guard)
         this.musicBus = null;
         this.musicDuck = null;    // sidechain duck gate for the music bed
+        this.musicPause = null;   // independent pause gate (SFX ducking cannot undo it)
+        this.musicFilter = null;  // music-only tone color; never dulls gameplay SFX
         this.sfxBus = null;
+        this.voiceBus = null;
         this.verbSend = null;
         this.volMusic = 0.7;
         this.volSfx = 0.8;
@@ -195,6 +132,28 @@ export class AudioSystem {
         this._lastSfx = {};
         this._noiseBuf = null;
         this._intensity = 0;
+        this._lastStand = false;
+        this._combatScene = 'calm';
+        this._activeScore = null;
+        this._pendingScore = null;
+        this._formCycles = 0;
+        this._menuBag = [];
+        this._lastMenuId = null;
+        this._biomeHistory = {};
+        this._bossId = null;
+        this._musicLayers = {};
+        this._layerTargets = {};
+        this._unlockPromise = null;
+        this._paused = false;
+        this._recorded = null;
+        this._recordedSource = null;
+        this._recordedGain = null;
+        this._voiceBuffers = {};
+        this._voiceLoads = {};
+        this._lastVoiceId = null;
+        this._lastVoiceAt = -Infinity;
+        this._activeVoice = null;
+        this._activeVoiceGain = null;
         this._shapeCache = {};
         this._samples = {};          // cue key → [decoded AudioBuffer, …]
         this._samplesState = 'idle'; // idle → loading → ready | skip
@@ -208,27 +167,27 @@ export class AudioSystem {
         } catch (e) { mob = false; }
         this._mobile = mob;
         this._voiceCap = mob ? 6 : 10;
+        // Short-lived synth graphs are disconnected once their audio-time tail
+        // expires. This is especially important for pluck feedback loops, which
+        // otherwise remain reachable from the destination during long runs.
+        this._cleanupQueue = [];
     }
 
     _ensure() {
         if (!this.enabled || this.ctx) return;
         try {
             this.ctx = new this._AC();
-            // master → master low-pass → LIMITER → destination.
+            // Master has only clip protection. Tone shaping belongs to music,
+            // otherwise a low-HP color pass also muffles hit and warning cues.
             this.master = this.ctx.createGain();
             this.master.gain.value = 0.72;
-            this.masterFilter = this.ctx.createBiquadFilter();
-            this.masterFilter.type = 'lowpass';
-            this.masterFilter.frequency.value = 7000;
-            this.masterFilter.Q.value = 0.4;
             this.limiter = this.ctx.createDynamicsCompressor();
             this.limiter.threshold.value = -3;
             this.limiter.knee.value = 0;
             this.limiter.ratio.value = 20;
             this.limiter.attack.value = 0.003;
             this.limiter.release.value = 0.12;
-            this.master.connect(this.masterFilter);
-            this.masterFilter.connect(this.limiter);
+            this.master.connect(this.limiter);
             this.limiter.connect(this.ctx.destination);
 
             // Light reverb: a short feedback delay tap for ambience (stable fb).
@@ -248,34 +207,80 @@ export class AudioSystem {
             this.musicBus.gain.value = this.volMusic * 0.4;
             this.musicBus.connect(this.master);
             this.musicBus.connect(this.verbSend);
-            // Music voices route through the duck gate → musicBus.
+            // Tracker/stream → duck → pause → MUSIC-ONLY filter → music bus.
             this.musicDuck = this.ctx.createGain();
             this.musicDuck.gain.value = 1;
-            this.musicDuck.connect(this.musicBus);
+            this.musicPause = this.ctx.createGain();
+            this.musicPause.gain.value = this._paused ? 0.45 : 1;
+            this.musicFilter = this.ctx.createBiquadFilter();
+            this.musicFilter.type = 'lowpass';
+            this.musicFilter.frequency.value = 6200;
+            this.musicFilter.Q.value = 0.35;
+            this.musicDuck.connect(this.musicPause);
+            this.musicPause.connect(this.musicFilter);
+            this.musicFilter.connect(this.musicBus);
+
+            for (const [name, initial] of Object.entries({ bed: 1, motion: 0.18, swarm: 0, apex: 0 })) {
+                const layer = this.ctx.createGain();
+                layer.gain.value = initial;
+                layer.connect(this.musicDuck);
+                this._musicLayers[name] = layer;
+            }
 
             this.sfxBus = this.ctx.createGain();
             this.sfxBus.gain.value = this.volSfx;
             this.sfxBus.connect(this.master);
+            this.voiceBus = this.ctx.createGain();
+            this.voiceBus.gain.value = this.volSfx * 0.78;
+            this.voiceBus.connect(this.master);
 
             const len = Math.floor(this.ctx.sampleRate);
             this._noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
             const d = this._noiseBuf.getChannelData(0);
             for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
 
-            this._applyBiome();
+            this._applyScoreMix(this._activeScore);
         } catch (e) {
             this.enabled = false;
         }
     }
 
-    resume() {
-        if (!this.enabled) return;
+    async unlock() {
+        if (!this.enabled) return false;
+        if (this._unlockPromise) return this._unlockPromise;
         this._ensure();
-        if (!this.ctx) return;
-        if (this.ctx.state === 'suspended') this.ctx.resume();
-        if (this._schedId == null) this._startScheduler();
-        this._loadSamples();
+        if (!this.ctx) return false;
+        const task = (async () => {
+            try {
+                // Safari also exposes `interrupted`; resume every non-running
+                // state and await it before starting the look-ahead scheduler.
+                if (this.ctx.state !== 'running' && typeof this.ctx.resume === 'function') {
+                    await this.ctx.resume();
+                }
+                if (this.ctx.state !== 'running') return false;
+                if (this._schedId == null) this._startScheduler();
+                this._loadSamples();
+                if (this._bossId) this.prefetchBoss(this._bossId);
+                if (this._activeScore?.kind === 'recorded') this._startRecorded(this._activeScore);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        })();
+        // Assign before awaiting, then clear only this exact attempt. Putting
+        // the clear inside the immediately-invoked async function races when a
+        // running context completes synchronously and can leave a stale,
+        // forever-resolved promise that blocks recovery from later suspension.
+        this._unlockPromise = task;
+        try {
+            return await task;
+        } finally {
+            if (this._unlockPromise === task) this._unlockPromise = null;
+        }
     }
+
+    // Backward-compatible name used by Game and menu actions.
+    resume() { return this.unlock(); }
 
     // ── Hybrid sample loader ─────────────────────────────────────────────
     // Fetch + decode the CC0 one-shots once, on the first user gesture. Per-file
@@ -337,139 +342,513 @@ export class AudioSystem {
         // one-shot is never clipped early; the source is non-looping regardless.
         const rate = src.playbackRate.value || 1;
         src.stop(t + buf.duration / rate + 0.1);
+        this._queueCleanup([src, g], t + buf.duration / rate + 0.2);
         return true;
+    }
+
+    _decodeBuffer(ab) {
+        if (!this.ctx) return Promise.reject(new Error('audio context unavailable'));
+        return new Promise((resolve, reject) => {
+            let done = false;
+            const ok = (buffer) => { if (!done) { done = true; resolve(buffer); } };
+            const no = (error) => { if (!done) { done = true; reject(error); } };
+            try {
+                const pending = this.ctx.decodeAudioData(ab, ok, no);
+                if (pending?.then) pending.then(ok, no);
+            } catch (error) { no(error); }
+        });
+    }
+
+    _loadVoice(id) {
+        if (this._voiceBuffers[id]) return Promise.resolve(this._voiceBuffers[id]);
+        if (this._voiceLoads[id]) return this._voiceLoads[id];
+        const cue = VOICE_STINGERS[id];
+        if (!cue || !this.ctx || typeof fetch !== 'function') return Promise.resolve(null);
+        this._voiceLoads[id] = fetch(cue.file)
+            .then((response) => { if (!response.ok) throw new Error(`http ${response.status}`); return response.arrayBuffer(); })
+            .then((data) => this._decodeBuffer(data))
+            .then((buffer) => {
+                if (buffer) this._voiceBuffers[id] = buffer;
+                return buffer || null;
+            })
+            .catch(() => null)
+            .finally(() => { delete this._voiceLoads[id]; });
+        return this._voiceLoads[id];
+    }
+
+    prefetchBoss(id = this._bossId) {
+        const profile = BOSS_PROFILES[id];
+        if (!profile || !this.ctx) return Promise.resolve(false);
+        const ids = [...new Set([...(profile.voices.arrival || []), ...(profile.voices.phase2 || [])])];
+        return Promise.all(ids.map((voiceId) => this._loadVoice(voiceId))).then((buffers) => buffers.some(Boolean));
+    }
+
+    bossVoice(event = 'arrival', bossId = null) {
+        if (bossId) this.setBossProfile(bossId);
+        const profile = BOSS_PROFILES[this._bossId];
+        if (!profile || !this.ctx || !this.voiceBus) return false;
+        const semantic = (profile.voices[event] || []).filter((id) => VOICE_STINGERS[id]);
+        // Refuse only an *immediate* repeat. Bosses arrive minutes apart, so a
+        // semantically correct line may return after a cooldown instead of
+        // permanently silencing every later boss that shares that line.
+        const repeatReady = this.ctx.currentTime - this._lastVoiceAt >= 20;
+        const candidates = semantic.filter((id) => id !== this._lastVoiceId || repeatReady);
+        // With only one semantically valid line inside the cooldown, silence is
+        // better than assigning "the warden" to an unrelated creature.
+        if (!candidates.length) return false;
+        const ready = candidates.filter((id) => this._voiceBuffers[id]);
+        if (!ready.length) {
+            candidates.forEach((id) => { this._loadVoice(id); });
+            return false;
+        }
+        const id = ready[Math.floor(Math.random() * ready.length)];
+        return this._playBossVoice(id, this._voiceBuffers[id]);
+    }
+
+    _playBossVoice(id, buffer) {
+        if (!this.ctx || !buffer || !this.voiceBus) return false;
+        const now = this.ctx.currentTime;
+        if (this._activeVoice && this._activeVoiceGain) {
+            const old = this._activeVoice;
+            this._rampParam(this._activeVoiceGain.gain, 0.0001, now, 0.05);
+            try { old.stop(now + 0.06); } catch (e) { /* already ended */ }
+        }
+        const source = this.ctx.createBufferSource();
+        const gain = this.ctx.createGain();
+        source.buffer = buffer;
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.9, now + 0.035);
+        const fadeAt = Math.max(now + 0.08, now + buffer.duration - 0.24);
+        gain.gain.setValueAtTime(0.9, fadeAt);
+        gain.gain.linearRampToValueAtTime(0.0001, now + buffer.duration);
+        source.connect(gain);
+        gain.connect(this.voiceBus);
+        source.onended = () => {
+            if (this._activeVoice === source) {
+                this._activeVoice = null;
+                this._activeVoiceGain = null;
+            }
+            try { source.disconnect(); } catch (e) { /* no-op */ }
+            try { gain.disconnect(); } catch (e) { /* no-op */ }
+        };
+        source.start(now);
+        this._activeVoice = source;
+        this._activeVoiceGain = gain;
+        this._lastVoiceId = id;
+        this._lastVoiceAt = now;
+        this._duck(0.55, Math.max(0.08, buffer.duration - 0.35), 0.55);
+        // The caller uses this exact transcript as the accessibility caption.
+        return VOICE_STINGERS[id]?.line || false;
     }
 
     setVolumes(music, sfx) {
         if (typeof music === 'number') this.volMusic = Math.max(0, Math.min(1, music));
         if (typeof sfx === 'number') this.volSfx = Math.max(0, Math.min(1, sfx));
-        if (this.musicBus) this.musicBus.gain.value = this.volMusic * 0.4;
-        if (this.sfxBus) this.sfxBus.gain.value = this.volSfx;
+        const now = this.ctx?.currentTime ?? 0;
+        this._rampParam(this.musicBus?.gain, this.volMusic * 0.4, now, 0.04);
+        this._rampParam(this.sfxBus?.gain, this.volSfx, now, 0.04);
+        this._rampParam(this.voiceBus?.gain, this.volSfx * 0.78, now, 0.04);
+        if (this._recorded && !this._recordedSource) this._recorded.volume = this.volMusic * 0.32;
     }
 
-    playMusic(theme) {
-        // Fresh menu visit → next track in the playlist, so successive trips to
-        // the lobby don't replay the same groove (see MENU_THEMES).
-        if (theme === 'menu' && this.theme !== 'menu') this._advanceMenuTrack();
-        this.theme = THEMES[theme] ? theme : null;
-        if (this.theme === 'gameplay') this._applyBiome();
-    }
-    stopMusic() { this.theme = null; }
-
-    // Install the next menu track. Also called on the 64-bar wrap while sitting
-    // in the menu, so a long lobby stay rotates through all three.
-    _advanceMenuTrack() {
-        this._menuIdx = ((this._menuIdx ?? -1) + 1) % MENU_THEMES.length;
-        THEMES.menu = MENU_THEMES[this._menuIdx];
+    _rampParam(param, value, now = 0, duration = 0.2) {
+        if (!param) return;
+        try {
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+            param.linearRampToValueAtTime(value, now + duration);
+        } catch (e) { param.value = value; }
     }
 
-    // Current biome recolours the gameplay theme. Callable before the ctx exists
-    // (it just latches the id); _applyBiome() re-derives when audio is live.
+    _refillMenuBag() {
+        const ids = MENU_COMPOSITIONS.map((score) => score.id);
+        for (let i = ids.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [ids[i], ids[j]] = [ids[j], ids[i]];
+        }
+        if (ids.length > 1 && ids[0] === this._lastMenuId) [ids[0], ids[1]] = [ids[1], ids[0]];
+        this._menuBag = ids;
+    }
+
+    _nextMenuScore() {
+        if (!this._menuBag.length) this._refillMenuBag();
+        let id = this._menuBag.shift();
+        if (id === this._lastMenuId && this._menuBag.length) {
+            this._menuBag.push(id);
+            id = this._menuBag.shift();
+        }
+        this._lastMenuId = id;
+        return MUSIC_BY_ID[id] || MENU_COMPOSITIONS[0];
+    }
+
+    _nextBiomeScore() {
+        const choices = BIOME_COMPOSITIONS[this._biome] || BIOME_COMPOSITIONS.emberwood;
+        const last = this._biomeHistory[this._biome];
+        const available = choices.filter((score) => score.id !== last);
+        const score = (available.length ? available : choices)[Math.floor(Math.random() * (available.length || choices.length))];
+        this._biomeHistory[this._biome] = score.id;
+        return score;
+    }
+
+    _bossScore() {
+        const key = BOSS_PROFILES[this._bossId]?.suite;
+        return BOSS_SUITES[key] || BOSS_SUITES.tempest;
+    }
+
+    playMusic(theme, detail = null) {
+        if (theme === 'boss' && (typeof detail === 'string' || detail?.bossId)) {
+            this.setBossProfile(typeof detail === 'string' ? detail : detail.bossId);
+        }
+        const was = this.theme;
+        let score = null;
+        if (theme === 'menu') score = (was === 'menu' && this._activeScore) ? this._activeScore : this._nextMenuScore();
+        else if (theme === 'gameplay') score = this._nextBiomeScore();
+        else if (theme === 'boss') score = this._bossScore();
+        else if (theme === 'victory') score = VICTORY_COMPOSITION;
+        if (!score) { this.stopMusic(); return; }
+
+        this.theme = theme;
+        // A menu visit is an authored release, never a continuation of the last
+        // boss-final/last-stand mix. Reset both policy state and layer targets.
+        if (theme === 'menu') this.setCombatState({ intensity: 0, scene: 'calm', lastStand: false });
+        this.setPaused(false);
+        const immediate = !this._activeScore || !was || this._activeScore.kind === 'recorded';
+        if (immediate) this._applyScore(score);
+        else if (this._activeScore.id !== score.id) this._pendingScore = score;
+        if (this.ctx?.state === 'running' && this._schedId == null) this._startScheduler();
+    }
+
+    stopMusic() {
+        this.theme = null;
+        this._pendingScore = null;
+        this._activeScore = null;
+        this._stopRecorded(true);
+        this.setPaused(false);
+        if (this.ctx) this._nextTime = this.ctx.currentTime + 0.08;
+        this._step = 0;
+        this._bar = 0;
+    }
+
+    _applyScore(score) {
+        if (!score) return;
+        this._stopRecorded(true);
+        this._activeScore = score;
+        this._pendingScore = null;
+        this._step = 0;
+        this._bar = 0;
+        this._formCycles = 0;
+        this._applyScoreMix(score);
+        if (score.kind === 'recorded' && this.ctx?.state === 'running') this._startRecorded(score);
+    }
+
+    _applyScoreMix(score) {
+        if (this.verbSend && score?.reverb != null) {
+            this._rampParam(this.verbSend.gain, score.reverb, this.ctx.currentTime, 0.35);
+        }
+        this._updateMusicTone();
+    }
+
+    _fallbackRecorded(score) {
+        if (this._activeScore?.id !== score?.id) return;
+        const fallback = MUSIC_BY_ID[score.fallbackId] || MENU_COMPOSITIONS.find((item) => item.kind === 'tracker');
+        this._applyScore(fallback);
+    }
+
+    _startRecorded(score) {
+        if (!score || score.kind !== 'recorded' || this._recorded || typeof Audio !== 'function') {
+            if (score?.kind === 'recorded' && typeof Audio !== 'function') this._fallbackRecorded(score);
+            return;
+        }
+        let audio;
+        try {
+            audio = new Audio();
+            audio.preload = 'metadata';
+            audio.loop = false;
+            audio.src = score.file;
+            audio.addEventListener('ended', () => {
+                if (this._recorded !== audio || this.theme !== 'menu' || this._activeScore?.id !== score.id) return;
+                this._stopRecorded(false);
+                this._applyScore(this._nextMenuScore());
+            }, { once: true });
+            const source = this.ctx.createMediaElementSource(audio);
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.92, this.ctx.currentTime + 0.35);
+            source.connect(gain);
+            gain.connect(this.musicDuck);
+            this._recorded = audio;
+            this._recordedSource = source;
+            this._recordedGain = gain;
+            const promise = audio.play();
+            if (promise?.catch) promise.catch(() => {
+                if (this._recorded !== audio) return;
+                this._stopRecorded(false);
+                this._fallbackRecorded(score);
+            });
+        } catch (e) {
+            try { audio?.pause(); } catch (ignored) { /* no-op */ }
+            this._recorded = null;
+            this._recordedSource = null;
+            this._recordedGain = null;
+            this._fallbackRecorded(score);
+        }
+    }
+
+    _stopRecorded(fade = false) {
+        const audio = this._recorded;
+        const source = this._recordedSource;
+        const gain = this._recordedGain;
+        this._recorded = null;
+        this._recordedSource = null;
+        this._recordedGain = null;
+        if (!audio) return;
+        const finish = () => {
+            try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) { /* no-op */ }
+            try { source?.disconnect(); } catch (e) { /* no-op */ }
+            try { gain?.disconnect(); } catch (e) { /* no-op */ }
+        };
+        if (fade && gain && this.ctx) {
+            this._rampParam(gain.gain, 0.0001, this.ctx.currentTime, 0.12);
+            setTimeout(finish, 150);
+        } else finish();
+    }
+
     setBiome(id) {
-        this._biome = BIOME_TUNE[id] ? id : 'emberwood';
-        if (this.theme === 'gameplay') this._applyBiome();
-    }
-    _applyBiome() {
-        const tune = BIOME_TUNE[this._biome] || BIOME_TUNE.emberwood;
-        THEMES.gameplay = { ...GAMEPLAY_BASE, ...tune };
-        if (this.verbSend && tune.reverb != null) this.verbSend.gain.value = tune.reverb;
+        this._biome = BIOME_COMPOSITIONS[id] ? id : 'emberwood';
     }
 
-    // Dynamic intensity (0..1): brightens the master low-pass + layers drive.
+    // Kept for callers from older builds; composition selection now happens at
+    // playMusic('gameplay') so each run/post-boss return can choose a new song.
+    _applyBiome() {
+        if (this.theme === 'gameplay') this._pendingScore = this._nextBiomeScore();
+    }
+
     setIntensity(level) {
-        const v = Math.max(0, Math.min(1, level || 0));
+        this.setCombatState({ intensity: level, scene: this._combatScene, lastStand: this._lastStand });
+    }
+
+    setCombatState(state = {}) {
+        const v = Math.max(0, Math.min(1, Number(state.intensity) || 0));
         this._intensity = v;
-        if (this.masterFilter) this.masterFilter.frequency.value = 5600 + v * 2600;
+        this._lastStand = state.lastStand === true;
+        this._combatScene = state.scene || this._combatScene || 'calm';
+        const scene = this._combatScene;
+        const targets = scene === 'bossFinal' ? { bed: 1, motion: 1, swarm: 1, apex: 1 }
+            : scene === 'boss' ? { bed: 1, motion: 1, swarm: 0.72, apex: 0.88 }
+                : scene === 'onslaught' ? { bed: 1, motion: 1, swarm: 1, apex: 0.68 }
+                    : scene === 'swarm' ? { bed: 1, motion: 0.9, swarm: 0.72, apex: 0.12 }
+                        : scene === 'hunt' ? { bed: 1, motion: 0.48 + v * 0.28, swarm: 0.08, apex: 0 }
+                            : { bed: 1, motion: 0.14 + v * 0.3, swarm: 0, apex: 0 };
+        if (this.theme === 'boss') targets.apex = Math.max(targets.apex, 0.88);
+        if (this.ctx) {
+            const now = this.ctx.currentTime;
+            for (const [name, target] of Object.entries(targets)) {
+                if (Math.abs((this._layerTargets[name] ?? -1) - target) < 0.015) continue;
+                this._layerTargets[name] = target;
+                this._rampParam(this._musicLayers[name]?.gain, target, now, 0.28);
+            }
+        }
+        this._updateMusicTone();
+    }
+
+    _updateMusicTone() {
+        if (!this.ctx || !this.musicFilter) return;
+        // Last stand adds danger color, but never collapses the whole score's
+        // intensity. It trims only some air while a new pedal voice supplies heat.
+        let cutoff = 3300 + this._intensity * 4800;
+        if (this._lastStand) cutoff -= 650;
+        if (this._combatScene === 'bossFinal') cutoff += 500;
+        cutoff = Math.max(2800, Math.min(9200, cutoff));
+        this._rampParam(this.musicFilter.frequency, cutoff, this.ctx.currentTime, 0.22);
+    }
+
+    setBossProfile(id) {
+        this._bossId = BOSS_PROFILES[id] ? id : null;
+        if (this._bossId) this.prefetchBoss(this._bossId);
+        if (this.theme === 'boss') {
+            const score = this._bossScore();
+            if (this._activeScore?.id !== score.id) this._pendingScore = score;
+        }
+        return !!this._bossId;
+    }
+
+    musicEvent(name, detail = null) {
+        if (detail?.bossId) this.setBossProfile(detail.bossId);
+        let caption = false;
+        if (name === 'phase2' || name === 'bossFinal') {
+            this.setCombatState({ intensity: 1, scene: 'bossFinal', lastStand: this._lastStand });
+            if (this.ctx && this._activeScore?.kind === 'tracker') {
+                const t = this.ctx.currentTime + 0.02;
+                const root = this._activeScore.root;
+                // Event stingers are outside the sequencer step. Give the
+                // signature hit a fresh budget so a dense mobile downbeat cannot
+                // nondeterministically swallow it.
+                this._voicesThisStep = 0;
+                this._playInstrument(this._activeScore.instruments.lead, root + 12, t, 0.45, 0.11, this._musicLayers.apex);
+                this._snare(t + 0.1, 1.15, this._musicLayers.apex, this._activeScore.groove);
+            }
+            caption = this.bossVoice('phase2');
+        } else if (name === 'bossArrival') {
+            caption = this.bossVoice('arrival');
+        }
+        return caption;
     }
 
     // ── Music scheduler ──────────────────────────────────────────────────
     _startScheduler() {
+        if (!this.ctx || this._schedId != null) return;
         this._nextTime = this.ctx.currentTime + 0.08;
         this._step = 0;
         this._bar = 0;
-        const tick = () => {
-            if (!this.ctx) return;
-            const horizon = this.ctx.currentTime + 0.2;
-            while (this._nextTime < horizon) {
-                const t = THEMES[this.theme] || THEMES.menu;
-                const sixteenth = (60 / t.bpm) / 4;
-                if (this.theme) {
-                    // Swing: delay the off-beat sixteenths for groove.
-                    const swingOff = (this._step % 2 === 1) ? sixteenth * (t.swing || 0) : 0;
-                    this._scheduleStep(this._step, this._nextTime + swingOff);
-                }
-                this._nextTime += sixteenth;
-                this._step = (this._step + 1) % 16;
-                if (this._step === 0) {
-                    this._bar = (this._bar + 1) % 64;
-                    // Long menu sit: rotate to the next lobby track each full
-                    // 64-bar cycle (~2-3 min) so the playlist keeps moving.
-                    if (this._bar === 0 && this.theme === 'menu') this._advanceMenuTrack();
+        this._schedId = setInterval(() => this._schedulerTick(), 25);
+    }
+
+    _schedulerTick() {
+        if (!this.ctx) return;
+        this._drainCleanup();
+        if (this.ctx.state !== 'running') return;
+        if (!this.theme || !this._activeScore || this._activeScore.kind !== 'tracker') {
+            // A stopped/streaming score does not silently advance a fake
+            // tracker clock. The next tracker always starts at bar one.
+            this._nextTime = this.ctx.currentTime + 0.08;
+            return;
+        }
+        const now = this.ctx.currentTime;
+        // Background throttling and device sleep can leave the tracker clock
+        // minutes behind. Skip the missing wall-clock time rather than trying
+        // to manufacture every missed sixteenth in one catastrophic burst.
+        if (!Number.isFinite(this._nextTime) || this._nextTime < now - 0.25) {
+            this._nextTime = now + 0.04;
+        }
+        const horizon = now + 0.2;
+        let scheduled = 0;
+        const maxSteps = 24;
+        while (this._nextTime < horizon && scheduled < maxSteps) {
+            const score = this._activeScore;
+            const sixteenth = (60 / score.bpm) / 4;
+            const swingOff = (this._step % 2 === 1) ? sixteenth * (score.swing || 0) : 0;
+            this._scheduleStep(this._step, this._nextTime + swingOff);
+            scheduled++;
+            this._nextTime += sixteenth;
+            this._step = (this._step + 1) % 16;
+            if (this._step === 0) {
+                if (this._pendingScore) {
+                    this._applyScore(this._pendingScore);
+                    if (this._activeScore.kind !== 'tracker') break;
+                } else {
+                    this._bar = (this._bar + 1) % score.form.length;
+                    if (this._bar === 0) {
+                        this._formCycles++;
+                        if (this.theme === 'menu' && this._formCycles >= 2) this._pendingScore = this._nextMenuScore();
+                    }
                 }
             }
-        };
-        this._schedId = setInterval(tick, 25);
+        }
+        // Defensive ceiling for malformed/ultra-fast future content.
+        if (scheduled >= maxSteps && this._nextTime < horizon) this._nextTime = now + 0.04;
     }
 
     _scheduleStep(step, t) {
-        const def = THEMES[this.theme];
-        if (!def || !this.musicDuck) return;
+        const def = this._activeScore;
+        if (!def || def.kind !== 'tracker' || !this.musicDuck) return;
         this._voicesThisStep = 0;   // reset the per-step voice budget
         const e = def.energy;
         const bar = this._bar;
-        const chord = def.prog[bar % def.prog.length];
+        const sectionName = def.form[bar % def.form.length];
+        const section = def.sections[sectionName];
+        const chord = section.progression[bar % section.progression.length];
         const root = def.root + chord;
-        const useB = (bar % 8) >= 4;
         const beatDur = (60 / def.bpm) / 4;
-        const md = this.musicDuck;
-
-        // DRUMS — scheduled directly (never dropped by the _mVoice voice cap);
-        // they still ride the musicDuck so a sidechain dip pumps the whole bed.
-        if (def.kick.includes(step)) this._kick(t, e);
-        if (def.hat.includes(step)) this._hat(t, e * (step % 4 === 0 ? 0.6 : 1));
-        if ((bar % 8) === 7 && step >= 12) this._hat(t, e * 0.7);   // end-of-phrase fill
+        const groove = GROOVES[def.groove] || GROOVES.hearthDrive;
+        const bed = this._musicLayers.bed || this.musicDuck;
+        const motion = this._musicLayers.motion || this.musicDuck;
+        const swarm = this._musicLayers.swarm || this.musicDuck;
+        const apex = this._musicLayers.apex || this.musicDuck;
+        const secGain = ({ A: 0.82, B: 0.96, C: 1.06, D: 1.15 })[sectionName] || 1;
+        const breath = (bar === 0 && step === 0) ? 0.55 : 1;
         const ix = this._intensity;
-        if (ix > 0.5 && (step === 1 || step === 5 || step === 9 || step === 13)) this._hat(t, e * 0.45 * ix);
-        if (ix > 0.8 && (step === 6 || step === 14)) this._kick(t, e * 0.6);
 
-        // WALKING BASS — pumps the chord, stepping through bassWalk for motion.
-        if (def.bassSteps.includes(step)) {
-            const i = def.bassSteps.indexOf(step);
-            const walk = def.bassWalk ? def.bassWalk[i % def.bassWalk.length] : 0;
-            this._mVoice(hz(degToMidi(root, def.scale, walk) - 12), t, beatDur * 1.4, (step === 0 ? 0.16 : 0.12) * e,
-                { type: 'sine', bus: md, cutoff: 700, attack: 0.006 });
+        if (groove.kick.includes(step)) this._kick(t, e * 0.72 * secGain, bed);
+        if (groove.snare.includes(step)) this._snare(t, e * 0.72, motion, def.groove);
+        if (groove.hat.includes(step)) this._hat(t, e * (step % 4 === 0 ? 0.55 : 0.78), swarm, def.groove);
+        if (sectionName === 'D' && step >= 12) this._hat(t, e * 0.52, swarm, def.groove);
+        if (ix > 0.78 && (step === 6 || step === 14)) this._kick(t, e * 0.48, apex);
+
+        if (groove.bass.includes(step)) {
+            const i = groove.bass.indexOf(step);
+            const walk = section.bassWalk[i % section.bassWalk.length] || 0;
+            this._playInstrument(def.instruments.bass, degToMidi(root, def.scale, walk) - 12,
+                t, beatDur, (step === 0 ? 0.13 : 0.095) * e * secGain, bed);
         }
 
-        // Per-section dynamics: B section lifts; the first beat of a phrase breathes.
-        const secGain = useB ? 1.12 : 1.0;
-        const breath = ((bar % 8) === 0 && step === 0) ? 0.6 : 1.0;
-
-        // LEAD — A/B, detuned pair through the theme's warm cutoff.
-        const deg = (useB ? def.leadB : def.lead)[step];
+        const deg = section.melody[step];
         if (deg !== null && deg !== undefined) {
-            this._mVoice(hz(degToMidi(root, def.scale, deg)), t, beatDur * 1.7, 0.06 * e * secGain * breath,
-                { type: def.wave, bus: md, cutoff: def.cutoff, attack: 0.012, detune: 7 });
-        } else if (def.arp && (ix > 0.35 || (bar % 8) >= 6)) {
-            // ARP fills the lead's rests when it's hot — an octave up, sparkly.
-            const ad = def.arp[(bar * 16 + step) % def.arp.length];
-            this._mVoice(hz(degToMidi(root, def.scale, ad) + 12), t, beatDur * 0.9, 0.035 * e,
-                { type: 'sine', bus: md, cutoff: def.cutoff * 1.1, attack: 0.006, detune: 4 });
+            this._playInstrument(def.instruments.lead, degToMidi(root, def.scale, deg),
+                t, beatDur, 0.052 * e * secGain * breath, motion);
         }
 
-        // PAD — one long soft chord per bar (lowest priority; dropped first if capped).
-        if (step === 0 && def.padVoicing) {
-            for (const pd of def.padVoicing) {
-                this._mVoice(hz(degToMidi(root, def.scale, pd)), t, (60 / def.bpm) * 2.2, 0.028 * e * breath,
-                    { type: 'triangle', bus: md, cutoff: def.cutoff * 0.55, attack: 0.12, detune: 9 });
+        const counter = section.counter.length ? section.counter[step % section.counter.length]
+            : (deg == null && step % 2 === 1 ? [0, 2, 4, 7][(bar + step) % 4] : null);
+        if (counter !== null && counter !== undefined) {
+            this._playInstrument(def.instruments.counter, degToMidi(root, def.scale, counter) + 12,
+                t, beatDur * 0.72, 0.026 * e * secGain, swarm);
+        }
+
+        if (step === 0) {
+            const voicing = sectionName === 'D' ? [0, 2, 4, 6] : [0, 2, 4];
+            for (const pd of voicing) {
+                this._playInstrument(def.instruments.pad, degToMidi(root, def.scale, pd),
+                    t, beatDur * 4, 0.019 * e * breath, bed);
             }
         }
+
+        if ((this.theme === 'boss' || this._combatScene === 'onslaught' || this._combatScene === 'bossFinal') && step % 4 === 0) {
+            const od = [0, 4, 2, 5][(step / 4 + bar) % 4];
+            this._playInstrument(def.instruments.lead, degToMidi(root, def.scale, od) + 12,
+                t, beatDur * 0.62, 0.026 * e, apex);
+        }
+        if (this._lastStand && (step === 0 || step === 8)) {
+            this._playInstrument(def.instruments.bass, degToMidi(root, def.scale, 0) - 12,
+                t, beatDur * 2.3, 0.055, apex);
+        }
     }
 
-    _kick(t, e = 1) {
-        this._voice(140, t, 0.15, 0.22 * e, { type: 'sine', bus: this.musicDuck, cutoff: 420, slideTo: 46, attack: 0.002 });
+    _playInstrument(name, midi, t, beatDur, gain, bus) {
+        const preset = INSTRUMENTS[name] || INSTRUMENTS.emberFlute;
+        const freq = hz(midi);
+        const dur = Math.max(0.04, beatDur * (preset.length || 1));
+        if (preset.pluck) {
+            this._pluck(freq, t, { dur, gain, cutoff: preset.cutoff, damp: 0.78, bus });
+            if (preset.octaveGain) this._pluck(freq * 2, t + 0.006, { dur: dur * 0.7, gain: gain * preset.octaveGain, cutoff: preset.cutoff * 1.15, damp: 0.72, bus });
+            return;
+        }
+        if (preset.metal) {
+            this._metal(freq, t, { dur, gain, cutoff: preset.cutoff, ratios: [1, 2.01, 3.98, 6.7], bus });
+            return;
+        }
+        this._mVoice(freq, t, dur, gain, { type: preset.type, bus, cutoff: preset.cutoff, attack: preset.attack, detune: preset.detune, shape: preset.shape });
+        if (preset.octaveGain) this._mVoice(freq * 2, t, dur * 0.72, gain * preset.octaveGain,
+            { type: preset.type, bus, cutoff: preset.cutoff * 1.12, attack: preset.attack, detune: preset.detune ? preset.detune * 0.5 : 0 });
+        if (preset.fifthGain) this._mVoice(freq * 1.5, t, dur * 0.82, gain * preset.fifthGain,
+            { type: preset.type, bus, cutoff: preset.cutoff, attack: preset.attack, detune: preset.detune });
     }
-    _hat(t, e = 1) {
-        this._noise(t, 0.028, 0.045 * e, 8500, this.musicDuck);
+
+    _kick(t, e = 1, bus = this.musicDuck) {
+        this._voice(140, t, 0.15, 0.2 * e, { type: 'sine', bus, cutoff: 420, slideTo: 46, attack: 0.002 });
+    }
+    _hat(t, e = 1, bus = this.musicDuck, style = '') {
+        const cutoff = style === 'boneMarch' || style === 'tomb' ? 4200 : style === 'sand' || style === 'caravan' ? 6500 : 8500;
+        this._noise(t, style === 'sand' || style === 'caravan' ? 0.045 : 0.028, 0.04 * e, cutoff, bus);
+        if ((style === 'frost' || style === 'glacier') && e > 0.45) this._metal(1500, t, { dur: 0.05, gain: 0.006 * e, ratios: [1, 2.7], cutoff: 5200, bus });
+    }
+    _snare(t, e = 1, bus = this.musicDuck, style = '') {
+        if (style === 'boneMarch' || style === 'tomb') {
+            this._click(1250, t, 0.035 * e, bus);
+            this._metal(210, t, { dur: 0.08, gain: 0.022 * e, ratios: [1, 2.76], cutoff: 1800, bus });
+        } else {
+            this._noise(t, style === 'sand' || style === 'caravan' ? 0.09 : 0.075, 0.065 * e, style === 'frost' ? 5200 : 3200, bus);
+            this._voice(185, t, 0.07, 0.045 * e, { type: 'triangle', bus, cutoff: 850, slideTo: 105, attack: 0.002 });
+        }
     }
 
     // ── Low-level synth toolkit ───────────────────────────────────────────
@@ -482,16 +861,19 @@ export class AudioSystem {
         g.gain.setValueAtTime(0.0001, t);
         g.gain.linearRampToValueAtTime(gain, t + attack);
         g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+        const nodes = [g];
         let tail = g;
         if (cutoff > 0) {
             const f = this.ctx.createBiquadFilter();
             f.type = 'lowpass'; f.frequency.value = cutoff; f.Q.value = 0.6;
             tail.connect(f); tail = f;
+            nodes.push(f);
         }
         if (shape > 0) {
             const ws = this.ctx.createWaveShaper();
             ws.curve = this._shapeCurve(shape);
             tail.connect(ws); tail = ws;
+            nodes.push(ws);
         }
         tail.connect(bus);
         const mkOsc = (det) => {
@@ -502,9 +884,11 @@ export class AudioSystem {
             if (det) o.detune.value = det;
             o.connect(g);
             o.start(t); o.stop(t + dur + 0.04);
+            nodes.push(o);
         };
         mkOsc(0);
         if (detune) { mkOsc(detune); mkOsc(-detune); }
+        this._queueCleanup(nodes, t + dur + 0.1);
     }
 
     // Soft low-pass-filtered noise swell (impacts / whooshes / hats), optionally
@@ -522,6 +906,7 @@ export class AudioSystem {
         g.gain.exponentialRampToValueAtTime(0.0004, t + dur);
         src.connect(f); f.connect(g); g.connect(bus || this.sfxBus);
         src.start(t); src.stop(t + dur + 0.02);
+        this._queueCleanup([src, f, g], t + dur + 0.08);
     }
 
     // Cached tanh soft-clip curve (grit/saturation) — normalized so it adds
@@ -560,6 +945,7 @@ export class AudioSystem {
         const bp = this.ctx.createBiquadFilter();
         bp.type = 'bandpass'; bp.frequency.value = cutoff; bp.Q.value = 0.7;
         bp.connect(bus);
+        const nodes = [bp];
         for (let i = 0; i < ratios.length; i++) {
             const o = this.ctx.createOscillator();
             o.type = 'sine'; o.frequency.value = freq * ratios[i];
@@ -570,7 +956,9 @@ export class AudioSystem {
             g.gain.exponentialRampToValueAtTime(0.0008, t + Math.max(0.03, dur * (1 - i * 0.12)));
             o.connect(g); g.connect(bp);
             o.start(t); o.stop(t + dur + 0.05);
+            nodes.push(o, g);
         }
+        this._queueCleanup(nodes, t + dur + 0.12);
     }
 
     // Karplus-lite pluck — a short filtered-noise burst into a tuned feedback
@@ -597,6 +985,30 @@ export class AudioSystem {
         delay.connect(lp); lp.connect(fb); fb.connect(delay);
         lp.connect(out); out.connect(bus);
         src.start(t); src.stop(t + 0.02);
+        // Break the feedback cycle after the output envelope reaches silence;
+        // otherwise long sessions can retain an inaudible pluck graph.
+        this._queueCleanup([src, burst, delay, fb, lp, out], t + dur + 0.12);
+    }
+
+    _queueCleanup(nodes, at) {
+        const live = nodes.filter(Boolean);
+        if (!live.length) return;
+        this._cleanupQueue.push({ at: Number.isFinite(at) ? at : 0, nodes: live });
+    }
+
+    _drainCleanup(force = false) {
+        const now = this.ctx?.currentTime ?? Infinity;
+        let write = 0;
+        for (const item of this._cleanupQueue) {
+            if (force || item.at <= now) {
+                for (const node of item.nodes) {
+                    try { node.disconnect(); } catch (e) { /* already disconnected */ }
+                }
+            } else {
+                this._cleanupQueue[write++] = item;
+            }
+        }
+        this._cleanupQueue.length = write;
     }
 
     _rand(a, b) { return a + Math.random() * (b - a); }
@@ -934,11 +1346,26 @@ export class AudioSystem {
     pauseIn()  { this._play('pauseIn', 0.1, (t) => { this._voice(520, t, 0.12, 0.06, { type: 'sine', slideTo: 320, cutoff: 2200 }); this._noise(t, 0.12, 0.03, 1400, this.sfxBus, 500); }); }
     pauseOut() { this._play('pauseOut', 0.1, (t) => { this._voice(320, t, 0.12, 0.06, { type: 'sine', slideTo: 520, cutoff: 2400 }); this._noise(t, 0.1, 0.025, 900, this.sfxBus, 2200); }); }
     setPaused(on) {
-        if (!this.ctx || !this.musicDuck) return;
-        const g = this.musicDuck.gain, now = this.ctx.currentTime;
-        g.cancelScheduledValues(now);
-        g.setValueAtTime(g.value, now);
-        g.linearRampToValueAtTime(on ? 0.45 : 1.0, now + 0.15);
+        this._paused = on === true;
+        if (!this.ctx || !this.musicPause) return;
+        this._rampParam(this.musicPause.gain, this._paused ? 0.45 : 1, this.ctx.currentTime, 0.15);
+    }
+
+    dispose() {
+        if (this._schedId != null) clearInterval(this._schedId);
+        this._schedId = null;
+        this._stopRecorded(false);
+        if (this._activeVoice) {
+            try { this._activeVoice.stop(); } catch (e) { /* already stopped */ }
+        }
+        this._activeVoice = null;
+        this._activeVoiceGain = null;
+        this._drainCleanup(true);
+        const ctx = this.ctx;
+        this.ctx = null;
+        if (ctx?.close) {
+            try { ctx.close(); } catch (e) { /* no-op */ }
+        }
     }
 }
 

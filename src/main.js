@@ -152,6 +152,30 @@ async function boot() {
 
     splash.stop();
     game = new Game({ renderer, input, loop });
+
+    // A fresh save can enter gameplay before any click handler runs. Unlock the
+    // shared AudioContext from any real gesture (including a movement key) and
+    // keep this tiny recovery hook installed: Safari can later move a running
+    // context back to `interrupted` after a call, route, or device change.
+    const unlockAudio = () => {
+        void game.audio.unlock();
+    };
+    window.addEventListener('pointerdown', unlockAudio, { capture: true, passive: true });
+    window.addEventListener('touchstart', unlockAudio, { capture: true, passive: true });
+    window.addEventListener('keydown', unlockAudio, { capture: true, passive: true });
+
+    // Mirror involuntary background pauses into the independent music gate.
+    // Restore it on focus only when gameplay itself is not paused; menu music
+    // must never remain permanently dim after a tab switch.
+    const syncAudioPause = () => {
+        const held = game.screen === 'gameplay' && (document.hidden || game.paused);
+        game.audio.setPaused(held);
+    };
+    window.addEventListener('blur', () => {
+        if (game.screen === 'gameplay') game.audio.setPaused(true);
+    });
+    window.addEventListener('focus', syncAudioPause);
+    document.addEventListener('visibilitychange', syncAudioPause);
     loop.start();
 }
 

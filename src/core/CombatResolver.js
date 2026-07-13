@@ -204,6 +204,21 @@ export const CombatResolverMethods = {
                     this.healthOrbs.push(new HealthOrb(e.x, e.y));
                 }
                 if (e.boss) {
+                    // End the duel cleanly: only bolts whose attribution says
+                    // "boss" and hazards stamped by the apex commit path are
+                    // retired. Biome hazards, bomber zones, and lieutenant
+                    // attacks remain untouched. A queued boss summon must not
+                    // arrive one frame after its caller dies.
+                    for (const bolt of this.enemyProjectiles) {
+                        if (bolt.active && bolt.sourceLabel?.boss) bolt.active = false;
+                    }
+                    for (const hazard of this.hazards) {
+                        if (hazard.active && hazard.bossOwned) hazard.active = false;
+                    }
+                    for (const summoned of this.enemies) {
+                        if (summoned.active && summoned.bossOwnerId === e.type) summoned.active = false;
+                    }
+                    this.bossSummons.length = 0;
                     // Bosses drop a coin burst + a PICK-ONE reward: a treasure
                     // chest OR a Wick Shrine (relic altar), spawned side by side —
                     // claiming one despawns the other.

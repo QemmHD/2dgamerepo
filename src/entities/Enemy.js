@@ -50,6 +50,17 @@ import { getEnemyAiFrames, getEnemyAiDirFrames } from '../assets/EnemySprites.js
 import { getPixelBossFrames } from '../assets/PixelBosses.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
+import { steerEnemyMovement } from '../systems/EnemyNavigation.js';
+import {
+    BOSS_EXPOSED_DAMAGE_MUL,
+    BOSS_PHASE_BREAK_DURATION,
+    bossAttackLabel,
+    bossRecoveryDuration,
+    bossSignatureAttack,
+    canStartBossPhaseBreak,
+    chooseBossAttack,
+    phasePatternFor,
+} from '../systems/BossChoreographer.js';
 
 // Frame getters all return a pre-cached array of canvases. Per-type
 // animation speed (Hz) — bats flap quickly, brutes breathe slowly.
@@ -279,17 +290,38 @@ export class Enemy {
         // Support behaviors throttle their own pulses (heal cadence).
         this._healAccum = 0;
 
+        // Allocation-free local navigation state. The deterministic side seed
+        // splits a pack around both sides of cover; _navHold keeps that choice
+        // stable long enough to round a house instead of flip-flopping at it.
+        const navSeed = (Math.trunc(x) * 73856093) ^ (Math.trunc(y) * 19349663) ^ type.charCodeAt(0);
+        this._navSide = (navSeed & 1) ? 1 : -1;
+        this._navHold = 0;
+        this._navMoveX = 0;
+        this._navMoveY = 0;
+
         // Apex-boss state machine (only bosses carry it). Phase-2 latches at
         // def.phase2HpFraction; attackTimers are seeded randomly so a fresh
         // boss doesn't fire instantly and two bosses desync.
         if (isBoss) {
             this.phase = 1;
             this.phase2Entered = false;
+            this.phase2Pending = false;
             this.enrageShouted = false;
             this.bossWindupTimer = 0;
+            this.bossWindupDuration = 0;
             this.activeAttack = null;
+            this.activeAttackLabel = null;
             this.attackTimers = {};
             this._bossOut = null;
+            // Deterministic choreography + readable post-attack openings.
+            this.bossAttackCursor = 0;
+            this.bossLastAttackId = null;
+            this.bossLastAttackKind = null;
+            this.bossForcedAttack = null;
+            this.bossRecoveryTimer = 0;
+            this.bossRecoveryDuration = 0;
+            this.bossPendingRecovery = 0;
+            this.bossPhaseBreakTimer = 0;
             // Attack-cadence multiplier (Game lowers it at HP thresholds so a
             // wounded boss attacks faster) + one-shot HP-threshold latches
             // (75/50/25%) the Game polls to fire support waves + ramp aggression.
@@ -431,7 +463,8 @@ export class Enemy {
                         })
                     );
                 }
-            } else if (this.attackTimer <= 0 && len <= this.def.fireRange) {
+            } else if (this.attackTimer <= 0 && len <= this.def.fireRange &&
+                       (!obstacleSystem || obstacleSystem.hasLineOfSight(this.x, this.y, player.x, player.y))) {
                 this.windupTimer = this.def.windup;
                 this._windupAimX = nx; this._windupAimY = ny;
                 this.attackTimer = this.def.fireInterval;
@@ -452,7 +485,13 @@ export class Enemy {
                     this.dashDirY = ny;
                     this.dashTimer = this.def.dashDuration;
                 }
-            } else if (this.attackTimer <= 0 && len <= this.def.triggerRange) {
+            } else if (this.attackTimer <= 0 && len <= this.def.triggerRange &&
+                       (!obstacleSystem || !obstacleSystem.movementBlocked(
+                           this.x, this.y,
+                           this.x + nx * Math.min(len, this.def.dashSpeed * this.def.dashDuration + this.radius),
+                           this.y + ny * Math.min(len, this.def.dashSpeed * this.def.dashDuration + this.radius),
+                           this.radius * 0.92,
+                       ))) {
                 this.windupTimer = this.def.windup;
                 this._windupAimX = nx; this._windupAimY = ny;
                 this.attackTimer = this.def.chargeInterval;
@@ -468,7 +507,8 @@ export class Enemy {
                 this.windupTimer -= dt;
                 moveX = 0; moveY = 0; // planted — the telegraph must not drift
                 this._windupAimX = nx; this._windupAimY = ny;
-            } else if (this.attackTimer <= 0 && len <= this.def.triggerRange) {
+            } else if (this.attackTimer <= 0 && len <= this.def.triggerRange &&
+                       (!obstacleSystem || obstacleSystem.hasLineOfSight(this.x, this.y, player.x, player.y))) {
                 this.windupTimer = this.def.windup;
                 this._windupAimX = nx; this._windupAimY = ny;
                 this.attackTimer = this.def.fireInterval;
@@ -486,7 +526,8 @@ export class Enemy {
                 this.windupTimer -= dt;
                 moveX = 0; moveY = 0; // braces while channeling the call
                 this._windupAimX = nx; this._windupAimY = ny;
-            } else if (this.attackTimer <= 0 && len <= this.def.fireRange) {
+            } else if (this.attackTimer <= 0 && len <= this.def.fireRange &&
+                       (!obstacleSystem || obstacleSystem.hasLineOfSight(this.x, this.y, player.x, player.y))) {
                 this.windupTimer = this.def.windup;
                 this._windupAimX = nx; this._windupAimY = ny;
                 this.attackTimer = this.def.fireInterval;
@@ -539,7 +580,8 @@ export class Enemy {
                 this.bossDashTimer -= dt;
                 moveX = this.bossDashDirX; moveY = this.bossDashDirY;
                 spd = this.bossDashSpeed * slowK * chillK;
-            } else if (this.bossWindupTimer > 0 || this.activeAttack) {
+            } else if (this.bossWindupTimer > 0 || this.activeAttack ||
+                       this.bossRecoveryTimer > 0 || this.bossPhaseBreakTimer > 0) {
                 moveX = 0; moveY = 0;
             }
         }
@@ -555,15 +597,31 @@ export class Enemy {
             moveX = b.x; moveY = b.y;
         }
 
-        // Obstacle avoidance: bosses/juggernauts (wide bodies) AND nearby plain
-        // chasers rotate their heading to the nearest clear angle when the path
-        // ahead is blocked, so they flow AROUND buildings instead of grinding
-        // into cover. Skipped while dashing/bracing (they commit their heading).
-        const wantsSteer = this.boss || this.radius >= 85 || (isPlainChaser && len < CHASER_BRAIN_RANGE);
-        if (obstacleSystem && wantsSteer && (moveX || moveY) && spd > 0 &&
-            this.bossDashTimer <= 0 && this.bossWindupTimer <= 0 && !this.activeAttack) {
-            const steered = steerAround(this.x, this.y, moveX, moveY, this.radius, obstacleSystem);
-            moveX = steered.x; moveY = steered.y;
+        // Ranged/support enemies used to stop at their preferred distance even
+        // when a house wall separated them from the player. Strafe around cover
+        // until line of sight opens; the navigator below turns this intent into
+        // a collision-safe wall-following heading.
+        const repositionsForSight = this.behavior === 'spitter' ||
+            this.behavior === 'summoner' || this.behavior === 'support';
+        if (!frozen && repositionsForSight && moveX === 0 && moveY === 0 &&
+            this.windupTimer <= 0 && obstacleSystem &&
+            !obstacleSystem.hasLineOfSight(this.x, this.y, player.x, player.y)) {
+            moveX = -ny * this._navSide;
+            moveY = nx * this._navSide;
+        }
+
+        // Every motile enemy gets local obstacle steering. The previous gate
+        // compared boss-only fields (`undefined <= 0`) on normal enemies, which
+        // is false in JavaScript: despite the old comment, ALL non-bosses drove
+        // straight into walls. Positive checks make absent timers safely idle.
+        // Deliberate dash/telegraph commitments retain their locked headings.
+        const committedMove = this.dashTimer > 0 || this.bossDashTimer > 0 ||
+            this.bossWindupTimer > 0 || this.bossRecoveryTimer > 0 ||
+            this.bossPhaseBreakTimer > 0 || !!this.activeAttack;
+        if (obstacleSystem && !committedMove && (moveX || moveY) && spd > 0 &&
+            steerEnemyMovement(this, moveX, moveY, spd, obstacleSystem, dt)) {
+            moveX = this._navMoveX;
+            moveY = this._navMoveY;
         }
 
         // Continuous low-HP enrage: a wounded boss moves (and lunges) faster.
@@ -587,7 +645,8 @@ export class Enemy {
         // Lieutenants (and planted bombers) get the same treatment while
         // winding up — their committed attack/blast must land on the spot
         // that was telegraphed.
-        const bossPlanted = (this.boss && (this.bossWindupTimer > 0 || this.activeAttack || this.bossDashTimer > 0)) ||
+        const bossPlanted = (this.boss && (this.bossWindupTimer > 0 || this.activeAttack ||
+            this.bossDashTimer > 0 || this.bossRecoveryTimer > 0 || this.bossPhaseBreakTimer > 0)) ||
             ((this.lieutenant || this.behavior === 'bomber') && this.windupTimer > 0);
         if (bossPlanted) {
             this.knockbackVx = 0;
@@ -647,6 +706,8 @@ export class Enemy {
     }
 
     takeDamage(amount, knockbackVx = 0, knockbackVy = 0) {
+        // Recovery is an actual punish window, not merely an animation pause.
+        if (this.boss && this.bossRecoveryTimer > 0) amount *= BOSS_EXPOSED_DAMAGE_MUL;
         // Mild boss resistance (never full immunity — resist is clamped well
         // below 1 in config). No-op for normal enemies (resist 0).
         if (this.resist > 0) amount *= (1 - this.resist);
@@ -834,14 +895,18 @@ export class Enemy {
         // bomber plant, summoner channel, teleporter pre-blink, and lieutenant
         // specials): a charge arc that fills as the wind-up completes + a
         // directional chevron toward the player, so a discrete attack reads
-        // and can be dodged. Bosses use their own ground telegraph
-        // (bossWindupTimer), so this only fires for the regular attackers.
+        // and can be dodged. Bosses layer this body tell over their larger
+        // ground telegraph so a cast stays readable through a crowded arena.
         // Pre-scale, procedural, timer-gated → free when idle. Lieutenants
         // carry their windup length per-attack (_ltWindupDur), not on def.
-        const wupTot = this.lieutenant ? this._ltWindupDur : this.def.windup;
-        if (!this.boss && this.windupTimer > 0 && wupTot > 0) {
-            const wp = clamp(1 - this.windupTimer / wupTot, 0, 1);
-            const warn = this.lieutenant ? '#ffc24a'
+        const bossWinding = this.boss && this.bossWindupTimer > 0 && this.bossWindupDuration > 0;
+        const wupTot = bossWinding ? this.bossWindupDuration
+            : (this.lieutenant ? this._ltWindupDur : this.def.windup);
+        const windupRemaining = bossWinding ? this.bossWindupTimer : this.windupTimer;
+        if (windupRemaining > 0 && wupTot > 0) {
+            const wp = clamp(1 - windupRemaining / wupTot, 0, 1);
+            const warn = this.boss ? (this.phase2Entered ? '#ff3326' : '#ff6b4a')
+                : this.lieutenant ? '#ffc24a'
                 : this.behavior === 'charger' ? '#ff6a3c'
                 : this.behavior === 'bomber' ? '#ff9a3c'
                 : this.behavior === 'summoner' ? '#b48cff'
@@ -890,8 +955,8 @@ export class Enemy {
         }
         // Wind-up anticipation: coil tighter (squat) as the attack nears
         // release (wupTot covers lieutenants' per-attack windups too).
-        if (!this.boss && this.windupTimer > 0 && wupTot > 0) {
-            const wp = clamp(1 - this.windupTimer / wupTot, 0, 1);
+        if (windupRemaining > 0 && wupTot > 0) {
+            const wp = clamp(1 - windupRemaining / wupTot, 0, 1);
             sx *= 1 + 0.10 * wp; sy *= 1 - 0.06 * wp;
         }
         // Non-bosses lean into their horizontal movement — reads as weight.
@@ -1021,11 +1086,6 @@ function hexToHalo(hex, a) {
 // time. Movement is the default chase handled by Enemy.update; this only
 // drives specials. The caller braces the boss (stand still) while a windup is
 // active so the telegraph reads clearly.
-// Probe headings fanning out from the desired chase direction and return the
-// first one whose lookahead point is clear of obstacles, so a wide body steers
-// around cover instead of pressing into it. Angles alternate left/right and
-// widen; falls back to the straight heading if everything is blocked (the
-// per-frame resolveCircle still keeps it out of walls in that worst case).
 // Predict where the player will be in `t` seconds from their current velocity.
 // A target without velocity fields (a test stub) reduces to the current spot.
 function leadPoint(e, player, speed) {
@@ -1073,22 +1133,6 @@ function chaserBrain(e, player, dist, nx, ny) {
     }
     const hl = Math.hypot(hx, hy) || 1;
     return { x: hx / hl, y: hy / hl };
-}
-
-const STEER_ANGLES = [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.1, -2.1];
-function steerAround(x, y, dx, dy, radius, obs) {
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = dx / len, ny = dy / len;
-    const ahead = radius + 70;
-    for (const a of STEER_ANGLES) {
-        const c = Math.cos(a), s = Math.sin(a);
-        const rx = nx * c - ny * s;
-        const ry = nx * s + ny * c;
-        if (!obs.isBlocked(x + rx * ahead, y + ry * ahead, radius * 0.92)) {
-            return { x: rx, y: ry };
-        }
-    }
-    return { x: nx, y: ny };
 }
 
 // ── Lieutenant mini-boss AI (P1.3) ─────────────────────────────────────
@@ -1144,103 +1188,142 @@ function runLieutenantAI(e, dt, player, out) {
 function runBossAI(e, dt, player, out) {
     const def = e.def;
 
-    // Continuous enrage scalar: 0 at full HP → 1 at death. Drives the smooth
-    // speed/cadence/contact-damage ramp so the closer the boss is to dying, the
-    // more frantic and dangerous it gets.
+    // Continuous enrage scalar: 0 at full HP → 1 at death.
     const frac = e.maxHp > 0 ? clamp(e.hp / e.maxHp, 0, 1) : 1;
     e.enrageT = 1 - frac;
-    // Contact damage scales live off the captured baseline.
     e.contactDamage = e.baseContactDamage * (1 + e.enrageT * BOSS.enrage.damageBonus);
 
-    // Phase-2 latch: polled (there is no onDamage hook). The one-shot enrage
-    // announce/retint is driven by Game off the phase2Entered flag.
-    if (!e.phase2Entered && e.maxHp > 0 && e.hp / e.maxHp <= (def.phase2HpFraction ?? 0)) {
-        e.phase2Entered = true;
-        e.phase = 2;
-        // Commit to the signature kit: in phase 2 the boss draws only from
-        // def.phase2Attacks (its heaviest, most-telegraphed subset). Cache the
-        // filtered pool once, and seed those cooldowns short — staggered so they
-        // don't all land on one frame — so the enraged barrage opens promptly.
-        // Empty/unauthored kit → leave phase2Pool unset and keep the full pool.
-        const p2 = def.phase2Attacks;
-        if (Array.isArray(p2) && p2.length) {
-            const kit = (def.attacks || []).filter((a) => p2.includes(a.id));
-            if (kit.length) {
-                e.phase2Pool = kit;
-                for (let i = 0; i < p2.length; i++) e.attackTimers[p2[i]] = 0.4 + i * 0.6;
-            }
-        }
-    }
-
-    // A windup in progress: count it down and commit on expiry.
-    if (e.bossWindupTimer > 0) {
-        e.bossWindupTimer -= dt;
-        if (e.bossWindupTimer <= 0) {
-            e.bossWindupTimer = 0;
-            commitBossAttack(e, e.activeAttack, player, out);
-            e.activeAttack = null;
-        }
-        return;
+    // Crossing 50% requests a transition; it does not cancel an attack the
+    // player was already promised. Windup, dash, and recovery finish first.
+    if (!e.phase2Entered && !e.phase2Pending && frac <= (def.phase2HpFraction ?? 0)) {
+        e.phase2Pending = true;
     }
 
     const attacks = def.attacks;
     if (!attacks || !out) return;
 
-    // Phase 2 draws only from the signature kit built on phase-2 entry
-    // (def.phase2Attacks); phase 1 (or an unauthored kit) uses the full pool.
-    const pool = (e.phase === 2 && e.phase2Pool) ? e.phase2Pool : attacks;
+    // An honest windup always commits, even if the phase threshold was crossed
+    // halfway through it. Record the move only on commit (not selection), so
+    // the no-repeat invariant describes attacks the player actually saw fire.
+    if (e.bossWindupTimer > 0) {
+        e.bossWindupTimer -= dt;
+        if (e.bossWindupTimer <= 0) {
+            e.bossWindupTimer = 0;
+            const committed = e.activeAttack;
+            commitBossAttack(e, committed, player, out);
+            e.bossLastAttackId = committed?.id ?? null;
+            e.bossLastAttackKind = committed?.kind ?? null;
+            const signatureId = bossSignatureAttack(def)?.id ?? null;
+            const recovery = bossRecoveryDuration(committed, signatureId);
+            e.bossRecoveryDuration = recovery;
+            // Charge recovery begins after travel, never during the lunge.
+            if (e.bossDashTimer > 0) e.bossPendingRecovery = recovery;
+            else e.bossRecoveryTimer = recovery;
+            e.activeAttack = null;
+            e.activeAttackLabel = null;
+        }
+        return;
+    }
 
-    // Tick every attack's cooldown; start the first that comes ready. Phase 2
-    // shortens the reset so specials fire more often.
-    for (const atk of pool) {
-        if (e.attackTimers[atk.id] == null) e.attackTimers[atk.id] = atk.cooldown;
-        e.attackTimers[atk.id] -= dt;
-        if (e.attackTimers[atk.id] <= 0) {
-            e.activeAttack = atk;
-            e.bossWindupTimer = atk.windup;
-            // Attack cadence = the FASTEST of the phase-2 enrage multiplier and
-            // the Game-set HP-threshold multiplier, so a wounded boss attacks
-            // faster and the two systems compose instead of shadowing.
-            const phaseCad = e.phase === 2 ? (BOSS_ATTACK.phase2CadenceMul ?? 1) : 1;
-            const cadence = Math.min(e.bossCadenceMul ?? 1, phaseCad);
-            // Continuous enrage shortens cooldowns further (composes with the
-            // threshold/phase cadence) so a low-HP boss attacks much faster.
-            const enrageCad = 1 - (e.enrageT ?? 0) * BOSS.enrage.cadenceCut;
-            e.attackTimers[atk.id] = atk.cooldown * cadence * enrageCad;
-            // Ground-decal telegraph that expands across the windup, centered
-            // on the boss (it braces in place while charging, so this stays put).
-            if (out.hazards) {
-                if (atk.kind === 'shockwave') {
-                    out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: atk.rMax, age: 0, lifetime: atk.windup, active: true });
-                } else if (atk.kind === 'fan') {
-                    out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 140, age: 0, lifetime: atk.windup, active: true, fan: true });
-                } else if (atk.kind === 'summon') {
-                    out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 160, age: 0, lifetime: atk.windup, active: true, fan: true });
-                } else if (atk.kind === 'charge') {
-                    // Directional lunge warning: a lane painted from the boss
-                    // toward where the player is HEADED. The heading is LOCKED
-                    // here and reused verbatim at commit, so the lunge follows
-                    // exactly the lane that was telegraphed (it never re-aims
-                    // mid-charge — the player can read it and sidestep).
-                    const lead = leadPoint(e, player, atk.dashSpeed ?? 600);
-                    const ca = Math.atan2(lead.y - e.y, lead.x - e.x);
-                    e.bossChargeDirX = Math.cos(ca);
-                    e.bossChargeDirY = Math.sin(ca);
-                    out.hazards.push({
-                        kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 120,
-                        age: 0, lifetime: atk.windup, active: true, charge: true,
-                        dirX: e.bossChargeDirX, dirY: e.bossChargeDirY,
-                        reach: (atk.dashSpeed ?? 600) * (atk.dashDuration ?? 0.6),
-                    });
-                } else {
-                    // Every other kind (wall / seekers / zones + the signature
-                    // moves rain / aimed / cross / spiralArms / mines): a generic
-                    // windup ring so the boss visibly charges. Each paints its own
-                    // danger on commit; this just reads the wind-up.
-                    out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 170, age: 0, lifetime: atk.windup, active: true, fan: true });
-                }
-            }
-            break; // only one windup at a time
+    // Cooldowns continue through travel / phase theatre / recovery, but never
+    // bank below ready. This keeps the authored cadence without config-order
+    // dominance or a burst of multiple moves on one frame.
+    for (const attack of attacks) {
+        if (e.attackTimers[attack.id] == null) e.attackTimers[attack.id] = attack.cooldown;
+        else if (e.attackTimers[attack.id] > 0) e.attackTimers[attack.id] -= dt;
+    }
+
+    // A charge owns the boss until its warned lane is complete.
+    if (e.bossDashTimer > 0) return;
+
+    if (e.bossPendingRecovery > 0) {
+        e.bossRecoveryTimer = e.bossPendingRecovery;
+        e.bossRecoveryDuration = e.bossPendingRecovery;
+        e.bossPendingRecovery = 0;
+    }
+    if (e.bossRecoveryTimer > 0) {
+        e.bossRecoveryTimer = Math.max(0, e.bossRecoveryTimer - dt);
+        return;
+    }
+
+    // The second act begins only at a clean boundary. Resolve the authored
+    // pattern once, ready each beat, and force the signature after a dramatic
+    // pause. If that exact signature was the just-finished move, count it as
+    // fulfilled instead of violating the no-repeat rule.
+    if (canStartBossPhaseBreak(e)) {
+        e.phase2Pending = false;
+        e.phase2Entered = true;
+        e.phase = 2;
+        e.phase2Pool = phasePatternFor(e.type, def);
+        e.bossAttackCursor = 0;
+        for (const attack of e.phase2Pool) e.attackTimers[attack.id] = 0;
+        const signature = bossSignatureAttack(def);
+        e.bossForcedAttack = signature && signature.id !== e.bossLastAttackId ? signature : null;
+        e.bossPhaseBreakTimer = BOSS_PHASE_BREAK_DURATION;
+        if (out.hazards) {
+            out.hazards.push({
+                kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 260,
+                age: 0, lifetime: BOSS_PHASE_BREAK_DURATION, active: true,
+                fan: true, phaseBreak: true, bossOwned: true,
+            });
+        }
+        return;
+    }
+    if (e.bossPhaseBreakTimer > 0) {
+        e.bossPhaseBreakTimer = Math.max(0, e.bossPhaseBreakTimer - dt);
+        return;
+    }
+
+    const pool = (e.phase === 2 && e.phase2Pool) ? e.phase2Pool : attacks;
+    const pick = chooseBossAttack(pool, e.attackTimers, {
+        cursor: e.bossAttackCursor,
+        lastAttackId: e.bossLastAttackId,
+        lastAttackKind: e.bossLastAttackKind,
+    }, e.bossForcedAttack, e.phase === 2);
+    if (!pick) return;
+
+    const atk = pick.attack;
+    e.bossAttackCursor = pick.nextCursor;
+    if (pick.forced) e.bossForcedAttack = null;
+    e.activeAttack = atk;
+    e.activeAttackLabel = bossAttackLabel(atk);
+    e.bossWindupDuration = atk.windup;
+    e.bossWindupTimer = atk.windup;
+
+    const phaseCad = e.phase === 2 ? (BOSS_ATTACK.phase2CadenceMul ?? 1) : 1;
+    const cadence = Math.min(e.bossCadenceMul ?? 1, phaseCad);
+    const enrageCad = 1 - (e.enrageT ?? 0) * BOSS.enrage.cadenceCut;
+    e.attackTimers[atk.id] = atk.cooldown * cadence * enrageCad;
+
+    const aimDx = player.x - e.x, aimDy = player.y - e.y;
+    const aimLen = Math.hypot(aimDx, aimDy) || 1;
+    e._windupAimX = aimDx / aimLen;
+    e._windupAimY = aimDy / aimLen;
+
+    // Every boss cast paints a body tell plus a ground tell owned by this duel.
+    if (out.hazards) {
+        if (atk.kind === 'shockwave') {
+            out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: atk.rMax, age: 0, lifetime: atk.windup, active: true, bossOwned: true });
+        } else if (atk.kind === 'fan') {
+            out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 140, age: 0, lifetime: atk.windup, active: true, fan: true, bossOwned: true });
+        } else if (atk.kind === 'summon') {
+            out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 160, age: 0, lifetime: atk.windup, active: true, fan: true, bossOwned: true });
+        } else if (atk.kind === 'charge') {
+            const lead = leadPoint(e, player, atk.dashSpeed ?? 600);
+            const ca = Math.atan2(lead.y - e.y, lead.x - e.x);
+            e.bossChargeDirX = Math.cos(ca);
+            e.bossChargeDirY = Math.sin(ca);
+            e._windupAimX = e.bossChargeDirX;
+            e._windupAimY = e.bossChargeDirY;
+            out.hazards.push({
+                kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 120,
+                age: 0, lifetime: atk.windup, active: true, charge: true,
+                dirX: e.bossChargeDirX, dirY: e.bossChargeDirY,
+                reach: (atk.dashSpeed ?? 600) * (atk.dashDuration ?? 0.6),
+                bossOwned: true,
+            });
+        } else {
+            out.hazards.push({ kind: 'bossTelegraph', x: e.x, y: e.y, r: 0, rMax: 170, age: 0, lifetime: atk.windup, active: true, fan: true, bossOwned: true });
         }
     }
 }
@@ -1250,6 +1333,7 @@ function runBossAI(e, dt, player, out) {
 // EnemyProjectiles into the existing enemy-bolt loop (no new damage path).
 export function commitBossAttack(e, atk, player, out) {
     if (!atk || !out) return;
+    const hazardStart = out.hazards ? out.hazards.length : 0;
     // Killer attribution for the EMBERGLASS death card — every bolt this boss
     // fires carries "fell to <boss>, <epithet>".
     const src = { label: e.def?.label ?? e.name, epithet: e.epithet, boss: e.boss };
@@ -1368,6 +1452,7 @@ export function commitBossAttack(e, atk, player, out) {
             x: e.x, y: e.y,
             count: atk.summonCount ?? 3,
             types: atk.summonTypes ?? null,
+            bossOwnerId: e.boss ? e.type : null,
         });
     } else if (atk.kind === 'aimed' && out.enemyProjectiles) {
         // SIGNATURE — precise lead volley: a tight cluster fired straight at
@@ -1481,5 +1566,10 @@ export function commitBossAttack(e, atk, player, out) {
                 tickTimer: 0, color: atk.color ?? '#ff7a33', active: true,
             });
         }
+    }
+    // Only hazards created by this commit inherit duel ownership. Lieutenant
+    // moves use the same vocabulary but are deliberately left alone.
+    if (e.boss && out.hazards) {
+        for (let i = hazardStart; i < out.hazards.length; i++) out.hazards[i].bossOwned = true;
     }
 }

@@ -32,6 +32,8 @@
     badge    "1" stamps an EXC:<n> exception-count badge top-left (self-check)
     screen   "menu" to shoot the main menu instead of a run; with tab=<name>
     bpxp / bpclaimthrough / bpreceipt  seed Battle-Pass QA states (menu only)
+    boss=1 / bossid=<id> / bosshp=<0..1> / bossattack=<move id> / bosskill=1
+             spawn a live apex directly and stage its choreography state
     tp       teleport before the shot: "building" (just south of the first
              placed building, doorway in view) or "x,y" world coords
     skipOnboarding  forced to "1" here (deterministic frames); pass "=0"
@@ -112,7 +114,12 @@ const DEBUGHUD = params.get('debughud') === '1';
 const DENSE = parseInt(params.get('dense') || '0', 10);      // extra enemies
 const PICKUPS = parseInt(params.get('pickups') || '0', 10);  // gems + coins + orbs
 const DMGNUM = parseInt(params.get('dmgnum') || '0', 10);    // floating damage numbers
-const QABOSS = params.get('boss') === '1';                   // spawn a boss + warning
+const QABOSSID = params.get('bossid');
+const QABOSS = params.get('boss') === '1' || !!QABOSSID;    // spawn a live boss directly
+const QABOSSHP = params.has('bosshp') ? parseFloat(params.get('bosshp')) : null;
+const QABOSSATTACK = params.get('bossattack');
+const QABOSSFRAMES = Math.max(1, parseInt(params.get('bossframes') || '12', 10) || 12);
+const QABOSSKILL = params.get('bosskill') === '1';
 const MAP = params.get('map');                               // force selected map (weather)
 // Roadmap #6 profiling pass (tooling only). profile=<N> runs N measured frames
 // with the FrameProfiler enabled, wrapping update()/render() so the top-level
@@ -129,6 +136,7 @@ const TOUCH = params.get('touch') === '1';
 const BPXP = params.has('bpxp') ? Math.max(0, parseInt(params.get('bpxp'), 10) || 0) : null;
 const BPCLAIMTHROUGH = Math.max(0, parseInt(params.get('bpclaimthrough') || '0', 10) || 0);
 const BPRECEIPT = params.get('bpreceipt') === '1';
+let qaBossSummary = '';
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -269,16 +277,60 @@ async function boot() {
                     else game.gems.push(new XPGem(x, y, tiers[i % 3]));
                 }
             }
+            let stagedBoss = null;
             if (QABOSS) {
                 const bd = game.bossDirector;
-                const id = (bd && bd.bosses && bd.bosses[0]) || 'emberwarden';
+                const id = QABOSSID || (bd && bd.bossTypes && bd.bossTypes[0]) || 'stormwingAlpha';
                 game._spawnBoss(id);
-                game._startBossWarning(id);
+                for (let i = game.enemies.length - 1; i >= 0; i--) {
+                    const candidate = game.enemies[i];
+                    if (candidate.active && candidate.boss && candidate.type === id) { stagedBoss = candidate; break; }
+                }
+                // Keep choreography screenshots deterministic and readable.
+                // Runtime bosses still use the real arena spawn; this QA-only
+                // placement prevents a random angle from putting the staged
+                // cast, ground tell, or recovery pose just outside the frame.
+                if (stagedBoss) {
+                    const spot = game._clearSpot(
+                        game.player.x + 360,
+                        game.player.y - 40,
+                        (stagedBoss.radius || 90) + 8,
+                    );
+                    stagedBoss.x = spot.x;
+                    stagedBoss.y = spot.y;
+                }
+                if (stagedBoss && Number.isFinite(QABOSSHP)) {
+                    const hpFraction = Math.max(0.01, Math.min(1, QABOSSHP));
+                    stagedBoss.hp = stagedBoss.maxHp * hpFraction;
+                }
+                if (stagedBoss && QABOSSATTACK) {
+                    const attack = stagedBoss.def.attacks?.find((a) => a.id === QABOSSATTACK);
+                    if (attack) stagedBoss.bossForcedAttack = attack;
+                    else ERR.push(`bossattack: '${QABOSSATTACK}' is not in ${id}'s kit`);
+                }
+                // QA staging owns the frame; clear the normal run/boss arrival
+                // banner so it cannot cover the cast/opening HUD being reviewed.
+                if (stagedBoss && game.waveDirector) game.waveDirector.announcement = null;
             }
             if (DENSE || PICKUPS || QABOSS) {
-                for (let i = 0; i < 12; i++) {   // brief settle so lights/positions land
+                const settleFrames = QABOSS ? QABOSSFRAMES : 12;
+                for (let i = 0; i < settleFrames; i++) {   // brief settle so lights/positions land
                     game.update(DT);
                     if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);
+                }
+                if (QABOSSKILL && stagedBoss?.active) {
+                    stagedBoss.hp = 0;
+                    stagedBoss.active = false;
+                    game._resolveCombat(DT, { killed: [stagedBoss], hits: [] }, { killed: [] });
+                    const orphan = game.enemies.find((enemy) => enemy.active && enemy.bossOwnerId === stagedBoss.type);
+                    if (orphan) ERR.push(`bosskill: orphaned boss summon ${orphan.type}`);
+                }
+                if (QABOSS && game.waveDirector) game.waveDirector.announcement = null;
+                if (QABOSS) {
+                    const live = game.enemies.find((enemy) => enemy.active && enemy.boss);
+                    qaBossSummary = live
+                        ? ` boss:${live.type}@${Math.round(live.x)},${Math.round(live.y)} hp:${Math.round(live.hp)}`
+                        : ' boss:none';
                 }
             }
             if (DMGNUM) {
@@ -338,7 +390,10 @@ async function boot() {
             const result = {
                 tag: PROFTAG,
                 frames: PROFILE,
-                scenario: { dense: DENSE, pickups: PICKUPS, dmgnum: DMGNUM, boss: QABOSS, gfxtier: GFXTIER, map: MAP || null },
+                scenario: { dense: DENSE, pickups: PICKUPS, dmgnum: DMGNUM, boss: QABOSS,
+                    bossId: QABOSSID || null, bossHp: QABOSSHP, bossAttack: QABOSSATTACK || null,
+                    bossKill: QABOSSKILL,
+                    gfxtier: GFXTIER, map: MAP || null },
                 dpr: (renderer && renderer.dpr) || null,
                 veilScale: (game.lighting && game.lighting.veilScale != null) ? game.lighting.veilScale : null,
                 counts: {
@@ -389,7 +444,7 @@ async function boot() {
     // build never loads this harness). Lets a Playwright test start Boss Rush and
     // step/inspect the sim after boot.
     window.__game = game;
-    document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1);
+    document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1) + qaBossSummary;
     window.__done = true;
 }
 
