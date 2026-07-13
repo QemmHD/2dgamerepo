@@ -84,12 +84,13 @@ export function minesRawMultiplier(safe, mines = MINES.mines, tiles = MINES.tile
 }
 
 // One flat index of everything a case can award, tagged by kind + rarity.
-// Default-unlocked gear (e.g. the Cinderbolt) is EXCLUDED — you already own it,
-// so it should never be a case pull.
+// Default-unlocked items (e.g. the Cinderbolt/starter looks) are EXCLUDED, as
+// are authored progression rewards such as the Last Light Vigil set.
 const ITEM_POOL = [
     ...GEAR_LIST.filter((g) => !g.defaultUnlocked)
         .map((g) => ({ kind: 'gear', id: g.id, rarity: g.rarity, name: g.name, category: g.category, description: g.description ?? '', color: null })),
-    ...COSMETIC_LIST.map((c) => ({ kind: 'cosmetic', id: c.id, rarity: c.rarity, name: c.name, category: c.category, description: c.description ?? '', color: c.color ?? null })),
+    ...COSMETIC_LIST.filter((c) => !c.defaultUnlocked && !c.caseExcluded)
+        .map((c) => ({ kind: 'cosmetic', id: c.id, rarity: c.rarity, name: c.name, category: c.category, description: c.description ?? '', color: c.color ?? null })),
 ];
 
 // Pool filtered by rarity and (optionally) kind (null = any kind).
@@ -190,7 +191,13 @@ export function openCase(save, caseType, opts = {}) {
 function grantRarityReward(save, rarity, kind = null) {
     const pool = poolByRarity(rarity, kind);
     if (pool.length && Math.random() < 0.82) {
-        const pick = pool[Math.floor(Math.random() * pool.length)];
+        // Prefer something new within the rolled rarity. Duplicate dust only
+        // enters the reel once that rarity's case pool has been collected.
+        const unowned = pool.filter((item) => item.kind === 'gear'
+            ? !save.isGearUnlocked(item.id)
+            : !save.isCosmeticUnlocked(item.id));
+        const choices = unowned.length ? unowned : pool;
+        const pick = choices[Math.floor(Math.random() * choices.length)];
         const owned = pick.kind === 'gear' ? save.isGearUnlocked(pick.id) : save.isCosmeticUnlocked(pick.id);
         if (owned) {
             const amount = rarityDust(rarity);
@@ -213,8 +220,9 @@ function grantRarityReward(save, rarity, kind = null) {
         return { ok: true, kind: 'coins', rarity, amount, label: `${amount} coins` };
     }
     const amount = 50 + RARITY_ORDER.indexOf(rarity) * 40;
-    save.addBattlePassXp(amount);
-    return { ok: true, kind: 'bpxp', rarity, amount, label: `${amount} vigil XP` };
+    const bp = save.addBattlePassXp(amount) || {};
+    const cache = bp.everflameCaches > 0 ? ` · Everflame Cache +${bp.everflameCoins} coins` : '';
+    return { ok: true, kind: 'bpxp', rarity, amount, label: `${amount} vigil XP${cache}` };
 }
 
 // Lowest rarity in `odds` that is at least `floor` (for the pity guarantee).

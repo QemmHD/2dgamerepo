@@ -1,38 +1,92 @@
 // BattlePassSystem — turns runs into "vigil XP", tracks the 50-level track,
 // and grants level rewards on claim. Offline only; no monetization.
 //
-// XP sources (all from the run summary): survival time, kills, bosses, coins
-// earned, and chests opened. Tuned so a solid run advances a few levels early
-// and the curve stretches toward 50.
+// XP sources are shown as four stable buckets: Kindling (finish), Endurance,
+// Hunt and Deeds. Daily Trials and selected Threat modifiers are explicit
+// bonuses; coins never distort progression.
 
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, bpProgress } from '../content/battlePass.js';
 import { GEAR } from '../content/gear.js';
 import { COSMETICS } from '../content/cosmetics.js';
-import { rarityName } from '../content/rarities.js';
+import { rarityDust, rarityName } from '../content/rarities.js';
 import { openCase } from './CaseSystem.js';
 
-// XP earned from one finished run.
-export function runXp(summary) {
-    if (!summary) return 0;
-    const time = Math.max(0, summary.time ?? 0);
-    const kills = Math.max(0, summary.kills ?? 0);
-    const bosses = Math.max(0, summary.bossesDefeated ?? 0);
-    const coins = Math.max(0, summary.coinsEarned ?? 0);
-    const chests = Math.max(0, summary.chestsOpened ?? 0);
-    return Math.floor(time * 0.6 + kills * 1.2 + bosses * 30 + coins * 0.5 + chests * 12);
+// The four readable Vigil-XP buckets. Kills/time are capped so an endless or
+// spawn-heavy Trial cannot run away with the pass; bosses, chests, objectives,
+// and a clear move the player forward without making any single mode mandatory.
+export const RUN_XP_RULES = Object.freeze({
+    kindling: 60,
+    endurancePerSecond: 0.35,
+    enduranceCap: 240,
+    huntSqrt: 8,
+    huntCap: 260,
+    boss: 70,
+    chest: 18,
+    wave: 16,
+    objective: 25,
+    clear: 140,
+    bossRushClear: 160,
+    deedsCap: 520,
+    bonusCap: 2.5,
+});
+
+function whole(value) {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+export function runXpBreakdown(summary, options = {}) {
+    if (!summary) return { eligible: false, kindling: 0, endurance: 0, hunt: 0, deeds: 0, trials: 0, core: 0, bonusRate: 0, threat: 0, total: 0 };
+    const time = Math.max(0, Number(summary.time) || 0);
+    const kills = whole(summary.kills);
+    const bosses = whole(summary.bossesDefeated);
+    const chests = whole(summary.chestsOpened);
+    const wave = Math.max(1, whole(summary.finalWave) || 1);
+    const objectives = whole(summary.objectivesCompleted ?? summary.objectivesDone);
+    const cleared = summary.cleared === true || summary.victory === true || bosses >= 3;
+    const bossRushClear = summary.bossRushCleared === true;
+    const eligible = time >= 30 || kills >= 25 || bosses > 0 || chests > 0 || wave > 1;
+    if (!eligible) return { eligible, kindling: 0, endurance: 0, hunt: 0, deeds: 0, trials: 0, core: 0, bonusRate: 0, threat: 0, total: 0 };
+
+    const kindling = RUN_XP_RULES.kindling;
+    const endurance = Math.min(RUN_XP_RULES.enduranceCap, Math.floor(time * RUN_XP_RULES.endurancePerSecond));
+    const hunt = Math.min(RUN_XP_RULES.huntCap, Math.floor(Math.sqrt(kills) * RUN_XP_RULES.huntSqrt));
+    const deeds = Math.min(RUN_XP_RULES.deedsCap,
+        bosses * RUN_XP_RULES.boss
+        + chests * RUN_XP_RULES.chest
+        + Math.max(0, wave - 1) * RUN_XP_RULES.wave
+        + objectives * RUN_XP_RULES.objective
+        + (cleared ? RUN_XP_RULES.clear : 0)
+        + (bossRushClear ? RUN_XP_RULES.bossRushClear : 0));
+    const trials = whole(summary.dailyVigilXp);
+    const core = kindling + endurance + hunt + deeds;
+    const bonusRate = Math.min(RUN_XP_RULES.bonusCap, Math.max(0, Number(options.bonus) || 0));
+    const threat = Math.round(core * bonusRate);
+    return { eligible, kindling, endurance, hunt, deeds, trials, core, bonusRate, threat, total: core + trials + threat };
+}
+
+// XP earned from one finished run (compatibility helper used by tests/tools).
+export function runXp(summary, options = {}) {
+    return runXpBreakdown(summary, options).total;
 }
 
 // Fold a run into the battle-pass track. Returns a summary of the gain.
-export function awardRun(save, summary) {
+export function awardRun(save, summary, options = {}) {
     const before = bpProgress(save.getBattlePassXp());
-    const gained = runXp(summary);
-    if (gained > 0) save.addBattlePassXp(gained);
+    const breakdown = runXpBreakdown(summary, options);
+    const gained = breakdown.total;
+    const saveResult = gained > 0 ? (save.addBattlePassXp(gained) || {}) : {};
     const after = bpProgress(save.getBattlePassXp());
+    const crossedLevels = [];
+    for (let level = before.level + 1; level <= after.level; level++) crossedLevels.push(level);
     return {
         gained,
         levelBefore: before.level,
         levelAfter: after.level,
         leveledUp: after.level > before.level,
+        crossedLevels,
+        breakdown,
+        everflameCaches: saveResult.everflameCaches || 0,
+        everflameCoins: saveResult.everflameCoins || 0,
     };
 }
 
@@ -59,6 +113,9 @@ export function rewardLabel(reward) {
         const g = GEAR[reward.itemId];
         return g ? `${rarityName(g.rarity)} ${g.name}` : 'Gear';
     }
+    if (reward.type === 'bundle') {
+        return (reward.rewards || []).map(rewardLabel).filter(Boolean).join(' + ');
+    }
     return '';
 }
 
@@ -78,16 +135,20 @@ function grantReward(save, reward) {
             const c = COSMETICS[reward.itemId];
             if (!c) return '';
             if (save.unlockCosmetic(reward.itemId)) return `Unlocked ${c.name}`;
-            save.addCoins(40);
-            return `${c.name} owned → +40 coins`;
+            const amount = rarityDust(c.rarity);
+            save.addCoins(amount);
+            return `${c.name} owned → +${amount} coins`;
         }
         case 'gear': {
             const g = GEAR[reward.itemId];
             if (!g) return '';
             if (save.unlockGear(reward.itemId)) return `Unlocked ${g.name}`;
-            save.addCoins(40);
-            return `${g.name} owned → +40 coins`;
+            const amount = rarityDust(g.rarity);
+            save.addCoins(amount);
+            return `${g.name} owned → +${amount} coins`;
         }
+        case 'bundle':
+            return (reward.rewards || []).map((part) => grantReward(save, part)).filter(Boolean).join(' · ');
         default:
             return '';
     }
@@ -95,7 +156,7 @@ function grantReward(save, reward) {
 
 // Claim a single reached level. Returns { ok, label } or { ok:false }.
 export function claim(save, level) {
-    if (level < 1 || level > BP_MAX_LEVEL) return { ok: false };
+    if (!Number.isInteger(level) || level < 1 || level > BP_MAX_LEVEL) return { ok: false, reason: 'invalid' };
     const { level: reached } = bpProgress(save.getBattlePassXp());
     if (level > reached) return { ok: false, reason: 'locked' };
     if (save.isLevelClaimed(level)) return { ok: false, reason: 'claimed' };
@@ -105,11 +166,13 @@ export function claim(save, level) {
     return { ok: true, label };
 }
 
-// Claim every reached-but-unclaimed level. Returns the number claimed.
+// Claim every reached-but-unclaimed level. Preserve the individual labels so
+// the caller can tell the player what cases/items/duplicates were actually won.
 export function claimAll(save) {
-    let n = 0;
+    const labels = [];
     for (const lvl of claimableLevels(save)) {
-        if (claim(save, lvl).ok) n++;
+        const result = claim(save, lvl);
+        if (result.ok) labels.push(result.label);
     }
-    return n;
+    return { count: labels.length, labels };
 }

@@ -51,6 +51,11 @@ export function buildUIState(game) {
         base.attuneSel = game.attuneSel;
         // BOUTIQUE fitting room: the session try-on map (category → id).
         base.tryOn = game.tryOn;
+        // Preserve the most recent run's transparent Vigil-XP receipt after
+        // returning to the menu so the Battle Pass can explain exactly what
+        // moved its bar (kindling, endurance, hunt, deeds, Trials, threat).
+        base.bpResult = game.bpResult;
+        base.runSummary = game.runSummary;
         // Daily Road: today's best (for the menu's "best today" readout). Gated
         // on the record's day so a new UTC day shows 0 until a run is played
         // (the record self-resets on the first daily of the new day).

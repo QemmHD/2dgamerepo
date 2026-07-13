@@ -1,6 +1,7 @@
 // Daily Challenges — three rotating per-run goals that reset each (UTC) day,
 // giving a "come back tomorrow" reward loop. Each is checked against a single
-// run's summary at game-over (NOT lifetime stats) and pays a coin reward once.
+// run's summary at game-over (NOT lifetime stats) and pays coins + Vigil XP
+// once. This is a visible bonus on top of the XP every valid run earns.
 //
 // The day's three picks are chosen DETERMINISTICALLY from the pool by a seeded
 // shuffle keyed on the day number, so every device shows the same set on the
@@ -11,16 +12,16 @@
 //   kills → summary.kills, bosses → summary.bossesDefeated,
 //   timeSec → summary.time, level → summary.level, wave → summary.finalWave
 export const DAILY_POOL = [
-    { id: 'd_kills_400',  name: 'Cull the Horde', desc: 'Defeat 400 Hollow in a run',  metric: 'kills',  target: 400, coins: 80 },
-    { id: 'd_kills_900',  name: 'Slaughter',      desc: 'Defeat 900 Hollow in a run',  metric: 'kills',  target: 900, coins: 140 },
-    { id: 'd_boss_1',     name: 'Warden',         desc: 'Defeat a boss',               metric: 'bosses', target: 1,   coins: 90 },
-    { id: 'd_boss_3',     name: 'Trinity',        desc: 'Defeat 3 bosses in a run',    metric: 'bosses', target: 3,   coins: 220 },
-    { id: 'd_time_5',     name: 'Endure',         desc: 'Survive 5 minutes',           metric: 'timeSec', target: 300, coins: 90 },
-    { id: 'd_time_10',    name: 'Long Watch',     desc: 'Survive 10 minutes',          metric: 'timeSec', target: 600, coins: 170 },
-    { id: 'd_level_15',   name: 'Empowered',      desc: 'Reach level 15 in a run',     metric: 'level',  target: 15,  coins: 90 },
-    { id: 'd_level_25',   name: 'Ascendant',      desc: 'Reach level 25 in a run',     metric: 'level',  target: 25,  coins: 170 },
-    { id: 'd_wave_4',     name: 'Pressing On',    desc: 'Reach wave 4 in a run',       metric: 'wave',   target: 4,   coins: 90 },
-    { id: 'd_wave_6',     name: 'Wavebreaker',    desc: 'Reach wave 6 in a run',       metric: 'wave',   target: 6,   coins: 170 },
+    { id: 'd_kills_400',  name: 'Cull the Horde', desc: 'Defeat 400 Hollow in a run',  metric: 'kills',  target: 400, coins: 80,  vigilXp: 75 },
+    { id: 'd_kills_900',  name: 'Slaughter',      desc: 'Defeat 900 Hollow in a run',  metric: 'kills',  target: 900, coins: 140, vigilXp: 130 },
+    { id: 'd_boss_1',     name: 'Warden',         desc: 'Defeat a boss',               metric: 'bosses', target: 1,   coins: 90,  vigilXp: 75 },
+    { id: 'd_boss_3',     name: 'Trinity',        desc: 'Defeat 3 bosses in a run',    metric: 'bosses', target: 3,   coins: 220, vigilXp: 150 },
+    { id: 'd_time_5',     name: 'Endure',         desc: 'Survive 5 minutes',           metric: 'timeSec', target: 300, coins: 90,  vigilXp: 70 },
+    { id: 'd_time_10',    name: 'Long Watch',     desc: 'Survive 10 minutes',          metric: 'timeSec', target: 600, coins: 170, vigilXp: 120 },
+    { id: 'd_level_15',   name: 'Empowered',      desc: 'Reach level 15 in a run',     metric: 'level',  target: 15,  coins: 90,  vigilXp: 70 },
+    { id: 'd_level_25',   name: 'Ascendant',      desc: 'Reach level 25 in a run',     metric: 'level',  target: 25,  coins: 170, vigilXp: 120 },
+    { id: 'd_wave_4',     name: 'Pressing On',    desc: 'Reach wave 4 in a run',       metric: 'wave',   target: 4,   coins: 90,  vigilXp: 70 },
+    { id: 'd_wave_6',     name: 'Wavebreaker',    desc: 'Reach wave 6 in a run',       metric: 'wave',   target: 6,   coins: 170, vigilXp: 120 },
 ];
 
 const BY_ID = Object.fromEntries(DAILY_POOL.map((c) => [c.id, c]));

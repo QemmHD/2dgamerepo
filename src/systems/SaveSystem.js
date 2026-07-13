@@ -12,6 +12,10 @@ import { MAPS, DEFAULT_MAP, isMapUnlocked } from '../content/maps.js';
 import { getAttunable, attuneCost } from '../content/relics.js';
 import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
 import { riteIdsFor, ritesCompletedCount } from '../content/rites.js';
+import {
+    BP_EVERFLAME_COINS, BP_MAX_LEVEL, BP_SCHEMA, PASS_COSMETIC_MILESTONES,
+    bpProgress, migrateBattlePassXpV1,
+} from '../content/battlePass.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 
@@ -86,6 +90,7 @@ function defaultData() {
         },
         // Offline battle-pass track.
         battlePass: {
+            schema: BP_SCHEMA,
             xp: 0,
             claimed: [],
         },
@@ -149,7 +154,7 @@ function defaultData() {
         // analogue of riteTrial's best-of-day (auto-resets when the week rolls;
         // prevBest keeps LAST week's best across the roll). Additive, no wipe.
         weeklyEmber: { week: 0, best: 0, prevBest: 0 },
-        version: 8,
+        version: 9,
     };
 }
 
@@ -264,12 +269,39 @@ export class SaveSystem {
         };
 
         const db = data.battlePass && typeof data.battlePass === 'object' ? data.battlePass : {};
+        const rawBattlePassXp = Number.isFinite(db.xp) && db.xp >= 0 ? Math.floor(db.xp) : 0;
         const battlePass = {
-            xp: Number.isFinite(db.xp) && db.xp >= 0 ? Math.floor(db.xp) : 0,
+            schema: BP_SCHEMA,
+            xp: db.schema === BP_SCHEMA ? rawBattlePassXp : migrateBattlePassXpV1(rawBattlePassXp),
             claimed: Array.isArray(db.claimed)
-                ? [...new Set(db.claimed.filter((n) => Number.isInteger(n) && n > 0))]
+                ? [...new Set(db.claimed.filter((n) => Number.isInteger(n) && n > 0 && n <= BP_MAX_LEVEL))]
                 : [],
         };
+        // Schema-2 adds one deterministic Last Light cosmetic beside each legacy
+        // gear milestone. A veteran who already claimed that level receives the
+        // new piece during normalization; their original gear remains owned.
+        for (const [levelText, id] of Object.entries(PASS_COSMETIC_MILESTONES)) {
+            if (battlePass.claimed.includes(Number(levelText)) && !cosmetics.unlocked.includes(id)) {
+                cosmetics.unlocked.push(id);
+            }
+        }
+
+        // Equipped ids must be known, owned, and belong to the slot they occupy.
+        // Old/tampered values fall back without deleting valid unlock history.
+        for (const category of Object.keys(cosmetics.equipped)) {
+            const id = cosmetics.equipped[category];
+            const item = COSMETIC_LIST.find((entry) => entry.id === id);
+            if (!item || item.category !== category || !cosmetics.unlocked.includes(id)) {
+                cosmetics.equipped[category] = def.cosmetics.equipped[category];
+            }
+        }
+        for (const category of Object.keys(gear.equipped)) {
+            const id = gear.equipped[category];
+            const item = GEAR_LIST.find((entry) => entry.id === id);
+            if (!item || item.category !== category || !gear.unlocked.includes(id)) {
+                gear.equipped[category] = def.gear.equipped[category];
+            }
+        }
 
         // Selected character: keep only a known id; otherwise fall back to the
         // default (so an old save with no field, or a stale id, loads cleanly).
@@ -440,7 +472,7 @@ export class SaveSystem {
             prevBest: Number.isFinite(wed.prevBest) && wed.prevBest > 0 ? Math.floor(wed.prevBest) : 0,
         };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, weeklyEmber, version: 8 };
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, weeklyEmber, version: 9 };
     }
 
     save() {
@@ -757,9 +789,16 @@ export class SaveSystem {
     }
 
     addBattlePassXp(amount) {
-        if (!Number.isFinite(amount) || amount <= 0) return;
-        this.data.battlePass.xp += Math.floor(amount);
+        if (!Number.isFinite(amount) || amount <= 0) return { added: 0, everflameCaches: 0, everflameCoins: 0 };
+        const before = bpProgress(this.data.battlePass.xp);
+        const added = Math.floor(amount);
+        this.data.battlePass.xp = Math.min(Number.MAX_SAFE_INTEGER, this.data.battlePass.xp + added);
+        const after = bpProgress(this.data.battlePass.xp);
+        const everflameCaches = Math.max(0, after.everflameRank - before.everflameRank);
+        const everflameCoins = everflameCaches * BP_EVERFLAME_COINS;
+        if (everflameCoins > 0) this.data.totalCoins += everflameCoins;
         this.save();
+        return { added, everflameCaches, everflameCoins };
     }
 
     isLevelClaimed(level) {

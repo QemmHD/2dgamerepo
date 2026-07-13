@@ -1159,13 +1159,32 @@ export class Game {
         const state = this.saveSystem.getDailyState(day);
         const done = evaluateDaily(day, this.runSummary, state.completed);
         if (!done.length) return;
-        let coins = 0; const names = [];
+        let coins = 0, vigilXp = 0; const names = [];
         for (const c of done) {
-            if (this.saveSystem.markDailyComplete(day, c.id)) { coins += c.coins || 0; names.push(c.name); }
+            if (this.saveSystem.markDailyComplete(day, c.id)) {
+                coins += c.coins || 0;
+                vigilXp += c.vigilXp || 0;
+                names.push(c.name);
+            }
         }
         if (coins > 0) this.saveSystem.addCoins(coins);
         this.newDailies = names;
-        if (this.runSummary) this.runSummary.dailies = names;
+        if (this.runSummary) {
+            this.runSummary.dailies = names;
+            this.runSummary.dailyVigilXp = vigilXp;
+        }
+    }
+
+    // One idempotent finish-line for every exit path. The difficulty + Trial
+    // modifier rate is folded into the receipt before progress is calculated,
+    // so the displayed level-up state always matches the saved XP.
+    _awardBattlePass() {
+        if (this._battlePassAwarded || !this.runSummary) return this.bpResult;
+        this._battlePassAwarded = true;
+        this.bpResult = awardBattlePassRun(this.saveSystem, this.runSummary, {
+            bonus: this.runBonus?.xp || 0,
+        });
+        return this.bpResult;
     }
 
     _showVictory() {
@@ -1245,6 +1264,9 @@ export class Game {
                 totalCoins: this.saveSystem.data.totalCoins,
                 finalWave: (this.waveState?.index ?? 0) + 1,
                 finalWaveName: this.waveState?.name ?? '',
+                chestsOpened: this.chestsOpened ?? 0,
+                objectivesCompleted: this._objDone?.size ?? 0,
+                cleared: true,
             };
             this.saveSystem.recordRun(this.runSummary);
             // Day streak: a finished run marks today played (idempotent within
@@ -1260,6 +1282,7 @@ export class Game {
             this._bankBossRush();
             this._checkAchievements();
             this._checkDailyChallenges();
+            this._awardBattlePass();
             this._runRecorded = true;
         }
         // Clearing this map's three bosses advances the campaign — select the
@@ -2521,6 +2544,8 @@ export class Game {
             finalWave: (this.waveState?.index ?? 0) + 1,
             finalWaveName: this.waveState?.name ?? '',
             chestsOpened: this.chestsOpened ?? 0,
+            objectivesCompleted: this._objDone?.size ?? 0,
+            cleared: this.bossesDefeated >= 3 || this._gauntletActive === true,
             weapons: this.weaponSystem.snapshotForUI(),
             passives: this.passiveSystem.snapshotForUI(),
             evolutions: this.weaponSystem.owned
@@ -2551,12 +2576,7 @@ export class Game {
         // run's stats are already folded into lifetime totals.
         this._checkAchievements();
         this._checkDailyChallenges();
-        this.bpResult = awardBattlePassRun(this.saveSystem, this.runSummary);
-        // Difficulty/modifier Pass-XP bonus (Hard = +50%, mods add more).
-        if (this.runBonus?.xp > 0 && this.bpResult && this.bpResult.gained > 0) {
-            const bonus = Math.round(this.bpResult.gained * this.runBonus.xp);
-            if (bonus > 0) { this.saveSystem.addBattlePassXp(bonus); this.bpResult.gained += bonus; }
-        }
+        this._awardBattlePass();
 
         // EMBERGLASS: stamp who dealt the killing blow onto the run summary and
         // queue the death recap card — it composes on the next render() once the

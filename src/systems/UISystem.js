@@ -2403,15 +2403,20 @@ export class UISystem {
         // achievements granted (the grind payoff). Stacked + pulsing; the loadout
         // lists below shift down only when more than one reward type fires.
         const rewardLines = [];
-        // Vigil (battle-pass) XP — earned every run, so the core meta reward is
+        // Vigil (battle-pass) XP — earned every valid run, so the core meta reward is
         // VISIBLE at death instead of silently banked (state.bpResult is set in
         // Game._enterGameOver). A pass level-up gets an extra shout.
         const bp = state.bpResult;
         if (bp && bp.gained > 0) {
+            const extras = [];
+            if (bp.breakdown?.trials > 0) extras.push(`Trials +${bp.breakdown.trials}`);
+            if (bp.breakdown?.threat > 0) extras.push(`Threat +${bp.breakdown.threat}`);
+            if (bp.everflameCaches > 0) extras.push(`Everflame +${bp.everflameCoins} coins`);
+            const suffix = extras.length ? `  ·  ${extras.join('  ·  ')}` : '';
             rewardLines.push({
                 text: bp.leveledUp
-                    ? `⬥ +${bp.gained} VIGIL XP → PASS LV ${bp.levelAfter} — LEVEL UP! ⬥`
-                    : `⬥ +${bp.gained} VIGIL XP → PASS LV ${bp.levelAfter} ⬥`,
+                    ? `⬥ +${bp.gained} VIGIL XP → PASS LV ${bp.levelAfter} — LEVEL UP!${suffix} ⬥`
+                    : `⬥ +${bp.gained} VIGIL XP → PASS LV ${bp.levelAfter}${suffix} ⬥`,
                 color: '#ff5a8a',
             });
         }
@@ -2422,8 +2427,10 @@ export class UISystem {
             if (summary.dailyRoadCase) txt += `  ·  case: ${summary.dailyRoadCase}`;
             rewardLines.push({ text: txt + ' ◆', color: '#ff9ecf' });
         }
-        if (Array.isArray(summary.dailies) && summary.dailies.length)
-            rewardLines.push({ text: `✦ DAILY TRIAL — ${summary.dailies.join('  ·  ')} ✦`, color: '#5fe87a' });
+        if (Array.isArray(summary.dailies) && summary.dailies.length) {
+            const dailyXp = summary.dailyVigilXp > 0 ? `  ·  +${summary.dailyVigilXp} Vigil XP` : '';
+            rewardLines.push({ text: `✦ DAILY TRIAL — ${summary.dailies.join('  ·  ')}${dailyXp} ✦`, color: '#5fe87a' });
+        }
         // Day streak — celebratory only, shown once it's actually a streak.
         if ((summary.streak ?? 0) >= 2)
             rewardLines.push({ text: `🔥 ${summary.streak}-DAY VIGIL STREAK 🔥`, color: '#ff9a4a' });

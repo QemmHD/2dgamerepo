@@ -238,6 +238,7 @@ export const RunStateMethods = {
         // Battle-pass XP gained by the last finished run (set in _enterGameOver,
         // drawn on the game-over summary). Cleared so a restart can't show stale XP.
         this.bpResult = null;
+        this._battlePassAwarded = false;
         // Starting coins granted by the shop this run — _bankRunCoins banks
         // them only for a PLAYED run (see the guard there), so an instant
         // pause→RESTART abandon can't mint the seed for free.
