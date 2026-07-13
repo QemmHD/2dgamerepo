@@ -23,7 +23,7 @@ import {
     nextMusicState,
     sceneForPressure,
 } from '../src/systems/MusicDirector.js';
-import { AudioSystem } from '../src/systems/AudioSystem.js';
+import { AUDIO_MIX, AudioSystem } from '../src/systems/AudioSystem.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let failures = 0;
@@ -178,6 +178,128 @@ throttledAudio._scheduleStep = () => { scheduledSteps++; };
 throttledAudio._schedulerTick();
 ok(scheduledSteps > 0 && scheduledSteps <= 24, `stale scheduler emitted ${scheduledSteps} steps instead of a bounded catch-up`);
 ok(throttledAudio._nextTime > throttledAudio.ctx.currentTime, 'stale scheduler clock was not advanced past current audio time');
+
+// Long-run tracker continuity: cross several complete forms, including a
+// deliberate 40-second background-throttle jump. The scheduler must skip that
+// missing wall time, resume promptly, and keep composing indefinitely.
+const continuityAudio = new AudioSystem();
+const continuityScore = BIOME_COMPOSITIONS.emberwood[0];
+let continuityNow = 0;
+const scheduledNotes = [];
+continuityAudio.ctx = {
+    state: 'running',
+    get currentTime() { return continuityNow; },
+};
+continuityAudio.theme = 'gameplay';
+continuityAudio._activeScore = continuityScore;
+continuityAudio._nextTime = 0.08;
+continuityAudio._scheduleStep = (step, time) => { scheduledNotes.push({ step, time }); };
+const tickUntil = (end) => {
+    while (continuityNow < end - 0.00001) {
+        continuityAudio._schedulerTick();
+        continuityNow = Math.round((continuityNow + 0.1) * 10) / 10;
+    }
+};
+tickUntil(55);
+const notesBeforeJump = scheduledNotes.length;
+continuityNow = 95; // emulate a suspended/backgrounded tab without fake catch-up
+continuityAudio._schedulerTick();
+const notesOnRecoveryTick = scheduledNotes.length - notesBeforeJump;
+const firstAfterJump = scheduledNotes[notesBeforeJump]?.time;
+continuityNow = 95.1;
+tickUntil(180);
+
+ok(continuityAudio._activeScore === continuityScore && continuityAudio.theme === 'gameplay', 'long-run scheduler lost its active gameplay score');
+ok(continuityAudio._formCycles >= 4, `long-run scheduler completed only ${continuityAudio._formCycles} forms in 180 seconds`);
+ok(notesOnRecoveryTick > 0 && notesOnRecoveryTick <= 24, `background recovery scheduled ${notesOnRecoveryTick} notes instead of a bounded restart`);
+ok(firstAfterJump >= 95 && firstAfterJump <= 95.25, `background recovery resumed at ${firstAfterJump} instead of within the look-ahead window`);
+ok(!scheduledNotes.some(({ time }) => time >= 56 && time < 95), 'background recovery manufactured notes inside missing wall-clock time');
+ok(continuityAudio._nextTime > continuityNow, 'long-run scheduler clock did not remain ahead of audio time');
+const silentSeconds = [];
+for (const [start, end] of [[0, 55], [95, 180]]) {
+    for (let second = start; second < end; second++) {
+        if (!scheduledNotes.some(({ time }) => time >= second && time < second + 1)) silentSeconds.push(`${second}-${second + 1}`);
+    }
+}
+ok(!silentSeconds.length, `tracker went silent during: ${silentSeconds.slice(0, 8).join(', ')}`);
+
+// Mix calibration is a public policy contract, not another set of magic
+// numbers hidden in the validator. Defaults should put the persistent score
+// near the effects bed, while voice remains intelligible and texture density
+// stays bounded on both desktop and mobile.
+const expectedMix = {
+    musicTrim: 0.68,
+    sfxTrim: 0.55,
+    voiceTrim: 0.68,
+    duckFloor: 0.55,
+    textureBudgetDesktop: 6,
+    textureBudgetMobile: 4,
+};
+for (const [key, expected] of Object.entries(expectedMix)) {
+    ok(AUDIO_MIX?.[key] === expected, `AUDIO_MIX.${key} must be ${expected}, got ${AUDIO_MIX?.[key]}`);
+}
+const calibratedMusic = 0.7 * AUDIO_MIX.musicTrim;
+const calibratedSfx = 0.8 * AUDIO_MIX.sfxTrim;
+const defaultBedDeltaDb = 20 * Math.log10(calibratedMusic / calibratedSfx);
+ok(defaultBedDeltaDb >= -1 && defaultBedDeltaDb <= 2.5, `default music/SFX buses differ by ${defaultBedDeltaDb.toFixed(2)}dB`);
+ok(Number.isInteger(AUDIO_MIX.textureBudgetDesktop) && AUDIO_MIX.textureBudgetDesktop > AUDIO_MIX.textureBudgetMobile, 'desktop texture budget must be a larger positive integer than mobile');
+
+const textureAudio = new AudioSystem();
+let textureNow = 0.02; // first 100ms must be budgeted too (no NaN warm-up window)
+textureAudio.ctx = { get currentTime() { return textureNow; } };
+textureAudio.sfxBus = {};
+let texturesPlayed = 0;
+for (let i = 0; i < AUDIO_MIX.textureBudgetDesktop + 3; i++) {
+    textureAudio._play(`desktop-texture-${i}`, 0, () => { texturesPlayed++; });
+}
+ok(texturesPlayed === AUDIO_MIX.textureBudgetDesktop, `desktop texture window played ${texturesPlayed} cues instead of ${AUDIO_MIX.textureBudgetDesktop}`);
+textureAudio._mobile = true;
+textureNow = 0.2;
+const beforeMobileTextures = texturesPlayed;
+for (let i = 0; i < AUDIO_MIX.textureBudgetMobile + 3; i++) {
+    textureAudio._play(`mobile-texture-${i}`, 0, () => { texturesPlayed++; });
+}
+ok(texturesPlayed - beforeMobileTextures === AUDIO_MIX.textureBudgetMobile, `mobile texture window played ${texturesPlayed - beforeMobileTextures} cues instead of ${AUDIO_MIX.textureBudgetMobile}`);
+
+// Exercise setVolumes() through fake AudioParams so the runtime must consume
+// the exported policy, rather than merely exporting unused passing constants.
+const busAudio = new AudioSystem();
+busAudio.ctx = { currentTime: 4 };
+const musicParam = {}, sfxParam = {}, voiceParam = {};
+busAudio.musicBus = { gain: musicParam };
+busAudio.sfxBus = { gain: sfxParam };
+busAudio.voiceBus = { gain: voiceParam };
+const busTargets = new Map();
+busAudio._rampParam = (param, value) => { busTargets.set(param, value); };
+busAudio.setVolumes(0.7, 0.8);
+ok(busTargets.get(musicParam) === calibratedMusic, `setVolumes music target was ${busTargets.get(musicParam)}, expected ${calibratedMusic}`);
+ok(busTargets.get(sfxParam) === calibratedSfx, `setVolumes SFX target was ${busTargets.get(sfxParam)}, expected ${calibratedSfx}`);
+ok(busTargets.get(voiceParam) === 0.8 * AUDIO_MIX.voiceTrim, `setVolumes voice target was ${busTargets.get(voiceParam)}, expected ${0.8 * AUDIO_MIX.voiceTrim}`);
+
+// Duck automation must always schedule a return to unity. A pathological
+// amount is intentional: it proves signature cues cannot push the persistent
+// score below the authored floor, and a retrigger still receives a new release.
+const duckEvents = [];
+const duckParam = {
+    value: 1,
+    cancelAndHoldAtTime(time) { duckEvents.push({ type: 'hold', time, value: this.value }); },
+    cancelScheduledValues(time) { duckEvents.push({ type: 'cancel', time, value: this.value }); },
+    setValueAtTime(value, time) { this.value = value; duckEvents.push({ type: 'set', time, value }); },
+    linearRampToValueAtTime(value, time) { this.value = value; duckEvents.push({ type: 'ramp', time, value }); },
+};
+let duckNow = 12;
+const duckAudio = new AudioSystem();
+duckAudio.ctx = { get currentTime() { return duckNow; } };
+duckAudio.musicDuck = { gain: duckParam };
+duckAudio._duck(0.95, 0.2, 0.4);
+const firstRelease = duckEvents.filter(({ type }) => type === 'ramp').at(-1);
+ok(duckEvents[0]?.type === 'hold', 'duck did not hold the in-flight automation value before retriggering');
+ok(duckEvents.some(({ value }) => value === AUDIO_MIX.duckFloor), `duck did not respect the ${AUDIO_MIX.duckFloor} music floor`);
+ok(firstRelease?.value === 1 && firstRelease.time > duckNow, 'duck did not schedule its first recovery to unity');
+duckNow = 12.1;
+duckAudio._duck(0.95, 0.2, 0.4);
+const finalRelease = duckEvents.filter(({ type }) => type === 'ramp').at(-1);
+ok(finalRelease?.value === 1 && finalRelease.time > firstRelease?.time, 'retriggered duck did not replace recovery with a later return to unity');
 
 const menuMixAudio = new AudioSystem();
 menuMixAudio.setCombatState({ intensity: 1, scene: 'bossFinal', lastStand: true });
