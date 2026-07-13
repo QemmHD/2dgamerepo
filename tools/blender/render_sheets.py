@@ -8,9 +8,9 @@ the three hero sheets of THE SHEET CONTRACT:
     raw/monkey_up.png     back
     raw/monkey_side.png   profile FACING +screen-right (game mirrors for left)
 
-Each sheet: 1 row x 7 equal 256x256 columns = 1792x256 RGBA, transparent
+Each sheet: 1 row x 9 equal 256x256 columns = 2304x256 RGBA, transparent
 background, POSE_COLS order [idle0, idle1(blink), walk0, walk1, walk2, cast,
-hurt] (src/assets/HeroAiSprites.js).
+hurt, death, victory] (src/assets/HeroAiSprites.js).
 
 FRAMING — solved ONCE, never per-frame:
   The parametric ortho camera (monkey_rig.solve_camera, 12 deg pitch) maps
@@ -19,7 +19,7 @@ FRAMING — solved ONCE, never per-frame:
   three directions are produced by yawing the CHARACTER (the HeroRig armature
   object) about world Z — the camera and the sun rig never move, so every
   sheet is lit from screen-upper-left and no frame can ever reframe/jitter.
-  The union of alpha bounds across all 21 renders is then measured and must
+  The union of alpha bounds across all 27 renders is then measured and must
   fit the cell with margin (validated below) — the solved framing is only
   accepted if that union check passes.
 
@@ -32,16 +32,16 @@ CHARACTER YAW (character rotates, camera fixed at -y):
   geometry is the same; e.g. side here == setup_scene('side') there.
 
 ANCHORS — anchors.json per the HAND-BONE ANCHOR EXPORT spec:
-  For every direction x pose x frame (21), the GRIP empty (right paw) is
-  projected through the render camera (monkey_rig.grip_cell_offset) into px
-  offsets from the 256-cell centre at the in-game 182px sprite scale,
-  y positive = DOWN.  { down/up/side: { idle:[2], walk:[3], cast:[1],
-  hurt:[1] }, meta: { feetFrac, headFrac, bobPx } }.
+  GRIP is projected for all 27 rendered frames. The export keeps the 21
+  wand-bearing runtime frames (idle/walk/cast/hurt across three directions);
+  death/victory deliberately draw no wand. Offsets use the in-game 182px
+  sprite scale, y positive = DOWN. { down/up/side: { idle:[2], walk:[3],
+  cast:[1], hurt:[1] }, meta: { feetFrac, headFrac, bobPx } }.
 
 BAKED BOB: HERO_BOB walk[1] = -2 (48-grid px). Only walk frame index 1 is
 raised, by exactly 2/48 of the cell = 10.67 px at 256. Validated numerically.
 
-Run:  python3 render_sheets.py            (~21 Cycles CPU renders)
+Run:  python3 render_sheets.py            (27 Cycles CPU renders)
 Exit non-zero if any validation fails.
 """
 import json
@@ -63,7 +63,7 @@ FRAME_DIR = os.path.join(RAW_DIR, 'frames')
 ANCHORS_PATH = os.path.join(HERE, 'anchors.json')
 
 CELL = int(MR.CELL)                      # 256
-SHEET_W = CELL * len(MR.POSE_COLS)       # 1792
+SHEET_W = CELL * len(MR.POSE_COLS)       # 2304 with the 9-pose contract
 ALPHA_THRESH = 8                         # ignore faint AA fringe
 
 # character yaw per sheet direction (camera stays at -y, solved once)
@@ -154,7 +154,7 @@ def main():
     head_frac_proj = project_frac((0, 0, P['head_z']))
     origin_x_px = MR.grip_cell_offset(Vector((0, 0, 0)), sprite=CELL)[0]
 
-    # ── render all 21 frames, collect raw grip offsets + alpha stats ─────
+    # ── render every direction/pose frame, collect grip + alpha stats ────
     raw_grip = {}
     raw_stats = {}
     for d in DIRS:
@@ -173,7 +173,7 @@ def main():
     # ── per-DIRECTION ground alignment (computed ONCE from the stats) ─────
     # Under the pitched ortho camera the silhouette bottom row is set by the
     # ground geometry nearest the camera, which differs per facing (toes /
-    # stance width / heels), so each direction's whole 7-frame set gets ONE
+    # stance width / heels), so each direction's whole pose set gets ONE
     # constant integer dy putting its median flat-frame bottom on the
     # contract feet line. Never per-frame — cells within a direction and the
     # walk1 bob relationship are untouched.
@@ -239,12 +239,13 @@ def main():
         if not ok:
             failures.append(msg)
 
-    # 0) union of alpha bounds across ALL 21 cells fits with margin
+    # 0) union of alpha bounds across every rendered cell fits with margin
     ul = min(s['l'] for s in stats.values())
     ut = min(s['t'] for s in stats.values())
     ur = max(s['r'] for s in stats.values())
     ub = max(s['b'] for s in stats.values())
-    print(f'union alpha bounds (all 21 cells): l={ul} t={ut} r={ur} b={ub}')
+    total_cells = len(DIRS) * len(MR.POSE_COLS)
+    print(f'union alpha bounds (all {total_cells} cells): l={ul} t={ut} r={ur} b={ub}')
     check(ul >= 1 and ut >= 1 and ur <= CELL - 2 and ub <= CELL - 2,
           f'union fits cell with margin (l={ul},t={ut},r={ur},b={ub})')
 
@@ -272,9 +273,10 @@ def main():
     fb_min, fb_max = min(flat_bottoms.values()), max(flat_bottoms.values())
     print(f'flat-frame alpha bottom rows: min={fb_min} max={fb_max} '
           f'(feet line {FEET_PX:.0f})')
+    flat_count = len(flat_bottoms)
     check(all(abs((b + 0.5) - FEET_PX) <= FEET_TOL_PX
               for b in flat_bottoms.values()),
-          f'feet at {MR.FEET_FRAC * 100:.1f}% +-1.5% on all 18 flat frames '
+          f'feet at {MR.FEET_FRAC * 100:.1f}% +-1.5% on all {flat_count} flat frames '
           f'(frac {(fb_min + .5) / CELL:.4f}..{(fb_max + .5) / CELL:.4f})')
     check(all(abs((b + 0.5) - FEET_PX) <= HALF_GRID_PX
               for b in flat_bottoms.values()),

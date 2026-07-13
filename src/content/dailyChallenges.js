@@ -51,7 +51,29 @@ export function pickDailyChallenges(day, n = 3) {
         const j = Math.floor(rng() * (i + 1));
         const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
     }
-    return pool.slice(0, Math.min(n, pool.length));
+    const count = Math.max(0, Math.min(Number.isFinite(n) ? Math.floor(n) : 3, pool.length));
+    if (count === 0) return [];
+    // Prefer one goal per metric so a normal three-challenge day cannot ask for
+    // the same deed twice (for example both 400 and 900 kills). Keep skipped
+    // siblings as deterministic overflow so callers asking for more than the
+    // five distinct metrics still receive the requested number of challenges.
+    const out = [];
+    const deferred = [];
+    const seenMetrics = new Set();
+    for (const challenge of pool) {
+        if (!seenMetrics.has(challenge.metric)) {
+            seenMetrics.add(challenge.metric);
+            out.push(challenge);
+        } else {
+            deferred.push(challenge);
+        }
+        if (out.length >= count) return out;
+    }
+    for (const challenge of deferred) {
+        if (out.length >= count) break;
+        out.push(challenge);
+    }
+    return out;
 }
 
 function metricValue(summary, metric) {

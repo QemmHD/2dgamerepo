@@ -9,8 +9,8 @@ fully deterministic and regenerable.
 | file | role |
 | --- | --- |
 | `monkey_r2_free.py` | The winning "free hybrid" parametric monkey model (round-2 bake-off). Its settled parameters are its defaults. Kept as the design reference; `monkey_rig.py` carries the same geometry forward. |
-| `monkey_rig.py` | The rigged asset: `build_monkey` (winner geometry + the tail fix — the curl sweeps diagonally back-right so it reads from front, side AND back), `build_armature` (rigid per-part bone parenting + a GRIP empty at the right paw), `author_poses` (one action, scene frames 1..7 in POSE_COLS order), camera/light solve, and `grip_cell_offset()` (GRIP → cell-px anchor projection). |
-| `render_sheets.py` | One-command driver: renders all 21 frames, assembles the three sheets, validates the full contract numerically, and exports `anchors.json`. Exits non-zero if any check fails. |
+| `monkey_rig.py` | The rigged asset: `build_monkey` (winner geometry + the tail fix — the curl sweeps diagonally back-right so it reads from front, side AND back), `build_armature` (rigid per-part bone parenting + a GRIP empty at the right paw), `author_poses` (one action, scene frames 1..9 in POSE_COLS order), camera/light solve, and `grip_cell_offset()` (GRIP → cell-px anchor projection). |
+| `render_sheets.py` | One-command driver: renders all 27 frames, assembles the three sheets, validates the full contract numerically, and exports `anchors.json`. Exits non-zero if any check fails. |
 
 ## Environment
 
@@ -22,21 +22,21 @@ fully deterministic and regenerable.
 
 ```sh
 cd tools/blender
-python3 render_sheets.py     # ~21 Cycles CPU renders; exits 0 only if ALL contract checks pass
+python3 render_sheets.py     # 27 Cycles CPU renders; exits 0 only if ALL contract checks pass
 ```
 
 Outputs (not committed — regenerate on demand):
 
 - `raw/monkey_down.png`, `raw/monkey_up.png`, `raw/monkey_side.png` —
-  3× raw 1792×256 RGBA sheets (7 equal 256px cells per row).
+  3× raw 2304×256 RGBA sheets (9 equal 256px cells per row).
 - `anchors.json` — the hand-bone anchor export (see below).
 
 ## The sheet contract (validated by render_sheets.py)
 
 - 3 sheets: `monkey_down.png` (front), `monkey_up.png` (back),
   `monkey_side.png` (profile facing +x/RIGHT — the game mirrors for left).
-- Each: 1 row × 7 equal 256×256 columns, RGBA transparent, POSE_COLS order
-  `[idle0, idle1(blink), walk0, walk1, walk2, cast, hurt]`
+- Each: 1 row × 9 equal 256×256 columns, RGBA transparent, POSE_COLS order
+  `[idle0, idle1(blink), walk0, walk1, walk2, cast, hurt, death, victory]`
   (`src/assets/HeroAiSprites.js`).
 - Anchors (48-grid): centred x; head centre 16/48 (33%) down the cell; feet
   45/48 (94%). Framing is solved ONCE (12°-pitch ortho camera; directions by
@@ -52,11 +52,12 @@ Outputs (not committed — regenerate on demand):
 
 ## Anchor export (anchors.json → Player.js HAND)
 
-For every direction × pose × frame (21 total) the GRIP empty (right paw) is
-projected through the render camera to pixel coords, converted to offsets from
-the 256-cell centre, and scaled by 182/256 (in-game `SPRITE_SIZE` = 182,
-spriteHalf = 91). y positive = DOWN (screen coords); each direction's constant
-ground-alignment dy is already folded in.
+The GRIP empty (right paw) is projected for all 27 rendered frames. The exported
+`anchors.json` contains the 21 wand-bearing runtime frames — idle, walk, cast,
+and hurt across three directions; death and victory deliberately draw no wand.
+Offsets are measured from the 256-cell centre and scaled by 182/256 (in-game
+`SPRITE_SIZE` = 182, spriteHalf = 91). y positive = DOWN (screen coords); each
+direction's constant ground-alignment dy is already folded in.
 
 ```
 { down: { idle:[[x,y],[x,y]], walk:[[..]×3], cast:[[..]], hurt:[[..]] },

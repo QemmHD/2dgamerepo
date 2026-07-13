@@ -712,6 +712,7 @@ export class MenuRenderer {
     _drawHome(ctx, state) {
         const sa = this._sa();
         const save = state.saveData;
+        const isFirst = (save.stats?.runs ?? 0) === 0;
         const t = this._t;
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
         const ui = getMenuImages();
@@ -788,12 +789,16 @@ export class MenuRenderer {
         this._panel(ctx, navX - 24, mainTop, navW + 48, mainH, 'rgba(10,8,9,0.70)', 'rgba(255,158,80,0.22)', { corners: true });
 
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        const deckKicker = isFirst ? 'YOUR FIRST LIGHT' : 'THE FORGE IS CALLING';
+        const deckTitle = isFirst ? 'BEGIN YOUR FIRST VIGIL' : 'BEGIN YOUR NEXT VIGIL';
         ctx.fillStyle = '#ffbd68'; ctx.font = `800 14px ${FONT}`;
-        ctx.fillText('THE FORGE IS CALLING', navX, mainTop + 34);
-        ctx.fillStyle = '#fff4df'; this._fitFont(ctx, 'BEGIN YOUR NEXT VIGIL', navW, 700, 30);
-        ctx.fillText('BEGIN YOUR NEXT VIGIL', navX, mainTop + 70);
+        ctx.fillText(deckKicker, navX, mainTop + 34);
+        ctx.fillStyle = '#fff4df'; this._fitFont(ctx, deckTitle, navW, 700, 30);
+        ctx.fillText(deckTitle, navX, mainTop + 70);
         ctx.fillStyle = 'rgba(236,224,210,0.62)'; ctx.font = `500 16px ${FONT}`;
-        ctx.fillText('Choose a path, sharpen your keeper, then step into the dark.', navX, mainTop + 96);
+        ctx.fillText(isFirst
+            ? 'Choose your keeper, then learn the vigil as you play.'
+            : 'Choose a path, sharpen your keeper, then step into the dark.', navX, mainTop + 96);
 
         // PLAY — the singular warm focal point. It opens run setup; the existing
         // Space/Enter shortcut still starts immediately for returning players.
@@ -823,12 +828,14 @@ export class MenuRenderer {
             ctx.globalAlpha = 1;
             this._emberRim(ctx, playR.x + 10, playR.y, playR.w - 20, playR.h, t, 1.7);
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#ffffff'; this._fitFont(ctx, 'BEGIN VIGIL', playR.w - 150, 800, 38);
-            ctx.fillText('BEGIN VIGIL', playR.x + 32, playR.y + 45);
+            const playTitle = isFirst ? 'FIRST VIGIL · GUIDED' : 'BEGIN VIGIL';
+            ctx.fillStyle = '#ffffff'; this._fitFont(ctx, playTitle, playR.w - 150, 800, 38);
+            ctx.fillText(playTitle, playR.x + 32, playR.y + 45);
             ctx.font = `600 16px ${FONT}`; ctx.fillStyle = 'rgba(255,247,231,0.88)';
-            ctx.fillText('Choose hero, biome & pact', playR.x + 32, playR.y + 78);
+            ctx.fillText(isFirst ? 'Setup first · lessons begin when you launch' : 'Choose hero, biome & pact',
+                playR.x + 32, playR.y + 78);
             ctx.fillStyle = 'rgba(255,240,208,0.58)'; ctx.font = `700 13px ${FONT}`;
-            ctx.fillText('SPACE / ENTER  •  QUICK START', playR.x + 32, playR.y + 99);
+            ctx.fillText(isFirst ? 'OPEN GUIDED SETUP' : 'SPACE / ENTER  •  QUICK START', playR.x + 32, playR.y + 99);
             const pcx = playR.x + playR.w - 58, pcy = playR.y + playR.h / 2;
             ctx.beginPath(); ctx.arc(pcx, pcy, 31, 0, TAU);
             ctx.fillStyle = 'rgba(24,10,6,0.48)'; ctx.fill();
@@ -921,7 +928,6 @@ export class MenuRenderer {
             this._ember(ctx, navX + navW - 42, hookY + hookH - 18, 118, '#ff6b1f', 0.09);
             ctx.restore(); ctx.globalAlpha = 1;
 
-            const isFirst = (save.stats?.runs ?? 0) === 0;
             const day = currentDayNumber();
             const daily = save.daily || { day: 0, completed: [] };
             const done = daily.day === day && Array.isArray(daily.completed) ? daily.completed.length : 0;
@@ -1625,7 +1631,8 @@ export class MenuRenderer {
         // CTA: the big START RUN, full width. PLAY is run setup ONLY — the
         // mode launchers live on MODES and the daily trials moved there too
         // (tab exclusivity: nothing here duplicates another screen).
-        this._drawStartButton(ctx, { x: innerX, y: startY, w: innerW, h: startH }, t);
+        this._drawStartButton(ctx, { x: innerX, y: startY, w: innerW, h: startH }, t,
+            (save.stats?.runs ?? 0) === 0);
     }
 
     // ── MODES ──────────────────────────────────────────────────────────
@@ -1767,7 +1774,7 @@ export class MenuRenderer {
     // The big call-to-action: a green button with a moving warm sheen, a
     // breathing gold border, and a soft cached under-glow — hard to miss, and
     // cheaper than the old per-frame hsl shadowBlur.
-    _drawStartButton(ctx, r, t) {
+    _drawStartButton(ctx, r, t, guided = false) {
         ctx.save();
         // Cached-glow beacon behind the button (breathing alpha).
         ctx.globalCompositeOperation = 'lighter';
@@ -1788,10 +1795,12 @@ export class MenuRenderer {
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#ffffff';
         ctx.font = `800 ${Math.round(Math.min(34, r.h * 0.42))}px ${FONT}`;
-        ctx.fillText('START RUN', r.x + r.w / 2, r.y + r.h / 2 - r.h * 0.12);
+        ctx.fillText(guided ? 'FIRST VIGIL · GUIDED' : 'START RUN',
+            r.x + r.w / 2, r.y + r.h / 2 - r.h * 0.12);
         ctx.font = `600 ${Math.round(Math.min(18, r.h * 0.22))}px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.88)';
-        ctx.fillText('Space / Enter', r.x + r.w / 2, r.y + r.h / 2 + r.h * 0.24);
+        ctx.fillText(guided ? 'Space / Enter · lessons included' : 'Space / Enter',
+            r.x + r.w / 2, r.y + r.h / 2 + r.h * 0.24);
         ctx.restore();
         this._hot(r.x, r.y, r.w, r.h, 'startRun', null);
     }

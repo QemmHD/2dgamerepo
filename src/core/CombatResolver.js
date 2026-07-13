@@ -13,14 +13,13 @@
 import {
     SCREEN_SHAKE,
     GEM,
-    GEM_TIERS,
     HEALTH_DROP,
     CHEST,
     COIN,
     WICK_ROADS,
     LIEUTENANT,
 } from '../config/GameConfig.js';
-import { TWO_PI, pickWeighted } from './MathUtils.js';
+import { TWO_PI } from './MathUtils.js';
 import { Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
 import { Chest } from '../entities/Chest.js';
@@ -45,6 +44,21 @@ function deathColor(e) {
     if (e.boss) return '#ffd27a';
     if (e.elite) return '#ffe08a';
     return DEATH_COLORS[e.type] ?? '#ffcaa0';
+}
+
+// Enemy XP is authored per creature and already includes the elite multiplier
+// on Enemy.xpValue. Keep that economy authoritative while retaining the
+// existing three pickup silhouettes: one corpse always creates ONE gem whose
+// stored value is exact, and the tier only communicates the size of the haul.
+export function normalizeEnemyXp(value) {
+    return Number.isFinite(value) && value > 0 ? value : GEM.small.xp;
+}
+
+export function gemTierForXp(value) {
+    const xp = normalizeEnemyXp(value);
+    if (xp >= GEM.large.xp) return 'large';
+    if (xp >= GEM.medium.xp) return 'medium';
+    return 'small';
 }
 
 export const CombatResolverMethods = {
@@ -105,7 +119,7 @@ export const CombatResolverMethods = {
                 if (!other.active) {
                     this.kills += 1;
                     this.particles.deathBurst(other.x, other.y, deathColor(other));
-                    this._dropGem(other.x, other.y);
+                    this._dropGem(other.x, other.y, other.xpValue);
                 }
             }
             // AoE ring + ember burst + a light kick so the blast reads.
@@ -198,7 +212,7 @@ export const CombatResolverMethods = {
                 // unlike the rolled elite 'splitting' AFFIX — both can fire
                 // on an elite splitter, which is the fun kind of chaos).
                 if (e.def.splitInto) this._splitOnDeath(e);
-                this._dropGem(e.x, e.y);
+                this._dropGem(e.x, e.y, e.xpValue);
                 // Rare health orb (skipped at full HP so it's never wasted).
                 if (this.player.hp < this.player.maxHp && Math.random() < HEALTH_DROP.chance) {
                     this.healthOrbs.push(new HealthOrb(e.x, e.y));
@@ -344,9 +358,15 @@ export const CombatResolverMethods = {
             ));
         }
     },
-    _dropGem(x, y) {
-        const tier = pickWeighted(GEM_TIERS, (t) => GEM[t].dropWeight) ?? 'small';
+    _dropGem(x, y, xpValue = GEM.small.xp) {
+        const xp = normalizeEnemyXp(xpValue);
+        const tier = gemTierForXp(xp);
         if (this.obstacleSystem.isBlocked(x, y, 16)) { const s = this._clearSpot(x, y, 16); x = s.x; y = s.y; }
-        this.gems.push(new XPGem(x, y, tier));
+        const gem = new XPGem(x, y, tier);
+        // XPGem's tier owns art/radius/bounce; the corpse's authored value owns
+        // progression. Stamping the flat public field avoids multiplying pickup
+        // entities for high-value elites and 35-90 XP apexes.
+        gem.xp = xp;
+        this.gems.push(gem);
     },
 };
