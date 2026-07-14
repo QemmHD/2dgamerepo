@@ -130,7 +130,7 @@ for all enemy/creature art:
   `'start'` (menu) | gameplay | `'gameOver'`; `g._startRun()` starts a run,
   `g.update(1/60)` steps, `g.render()` draws.
 - Menu: `src/systems/MenuRenderer.js`. In-game HUD: `src/systems/UISystem.js`.
-- Guided Run Path: at main `5abd6fd`, `src/content/objectives.js` owns 26 authored
+- Guided Run Path: shipped by main `5abd6fd`; `src/content/objectives.js` owns 26 authored
   candidates and `RunObjectiveDirector.js` keeps exactly one current task at a time as
   the path advances Orientation → Tactic → Climax. Never flatten the catalog into
   simultaneous tasks. First-run onboarding owns the guidance lane before the director
@@ -143,6 +143,20 @@ for all enemy/creature art:
   opening `?dev=1` or running the QA harness does not. A non-terminal abort—including
   restart or pause-menu abandon—and reload forfeits held Run Path coins and never
   reaches objective-derived terminal XP; a valid terminal resolution settles.
+- Collection Growth I-A: shipped by main `454e944`; `src/content/cosmetics.js` remains
+  catalog/source truth and `src/systems/CosmeticCollection.js` owns deterministic
+  eight-item category/ownership/source pages for all 73 cosmetics and nine sets.
+  `MenuRenderer.js`/`GameInputActions.js` own paged Collection/Boutique presentation and
+  focus-safe Character → Boutique routing; `CaseSystem.js` consumes the same exclusions.
+  Lanternward's four new pieces are Boutique-only, Duskmoth Court's four are case-only,
+  and unknown cosmetic grants fail closed. All real preview/reel/live silhouettes and
+  effects must retain the shared six-hero × 27-pose attachment contract and fully freeze
+  under Reduced Effects. This slice changes no save schema, power, case odds/pity, Mines
+  stakes, or return. Its eight enabling looks do not count toward or reduce Collection
+  Growth I-B's separate 30-look commitment; complete Collection Growth I, A11-13, 1.1,
+  the 1.0 → 2.0 arc, and 2.0 remain open. Durable Character/Lanternward Canvas proof,
+  pixel hashes, delivery IDs, and limitations live in
+  `docs/evidence/v1.1/collection-growth-ia-deployed-smoke.md`.
 - Player is PROCEDURAL & animated (4-dir × idle/walk/cast/hurt) — never
   replace the hero with a flat AI sprite.
 - Enemy sprites resolve through layered fallbacks in `Enemy.js`

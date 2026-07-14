@@ -58,6 +58,7 @@
     bpxp / bpclaimthrough / bpreceipt  seed Battle-Pass QA states (menu only)
     mines=<preset> / minessafe=<n>  stage an honest Mines quote (menu only)
     minesFocus=<0..24>  select a Mines tile for keyboard-focus visual QA
+    tryset=<set id>  stage a known cosmetic set in the Boutique fitting room
     boss=1 / bossid=<id> / bosshp=<0..1> / bossattack=<move id> / bosskill=1
              spawn a live apex directly and stage its choreography state
     tp       teleport before the shot: "building" (just south of the first
@@ -113,6 +114,7 @@ import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
 import { loadRenderedProps } from '../../src/assets/RenderedWeaponProps.js';
 import { getMenuImages } from '../../src/assets/MenuImages.js';
 import { PASS_COSMETIC_MILESTONES, bpProgress } from '../../src/content/battlePass.js';
+import { COSMETIC_SETS } from '../../src/content/cosmetics.js';
 import { Enemy } from '../../src/entities/Enemy.js';
 import { XPGem } from '../../src/entities/XPGem.js';
 import { Coin } from '../../src/entities/Coin.js';
@@ -131,6 +133,10 @@ const SECONDS = parseFloat(params.get('seconds') || '12');
 const BADGE = params.get('badge') === '1';
 const SCREEN = params.get('screen') || 'run';   // 'run' | 'menu'
 const TAB = params.get('tab') || 'play';
+const TRY_SET_REQUEST = params.get('tryset');
+const QA_TRY_SET = TRY_SET_REQUEST
+    ? COSMETIC_SETS.find((set) => set.id === TRY_SET_REQUEST) ?? null
+    : null;
 const QA_DEV = params.get('dev') === '1';
 const RESET_PROFILE = params.get('resetprofile') === '1';
 const CAMPAIGN_BOSS_REQUEST = params.get('campaignbosses');
@@ -419,10 +425,26 @@ async function boot() {
     if (MINES_FOCUS != null && (SCREEN !== 'menu' || MINESBET == null)) {
         ERR.push('minesFocus: tile selection requires screen=menu and mines=<preset>');
     }
+    if (TRY_SET_REQUEST && !QA_TRY_SET) {
+        ERR.push(`tryset: unknown cosmetic set '${TRY_SET_REQUEST}'`);
+    }
+    if (QA_TRY_SET && (SCREEN !== 'menu' || TAB !== 'boutique')) {
+        ERR.push('tryset: staging requires screen=menu and tab=boutique');
+    }
 
     if (SCREEN === 'menu') {
         game.screen = 'start';
         game.menuTab = TAB;
+        if (QA_TRY_SET) {
+            const setIndex = COSMETIC_SETS.findIndex((set) => set.id === QA_TRY_SET.id);
+            game.tryOn = { ...QA_TRY_SET.pieces };
+            game.boutiqueView = {
+                ...(game.boutiqueView || {}),
+                category: 'cloak',
+                page: 1,
+                setPage: Math.floor(setIndex / 3) + 1,
+            };
+        }
         if (BPXP != null) {
             game.saveSystem.data.battlePass.xp = BPXP;
             game.saveSystem.data.battlePass.claimed = Array.from({ length: Math.min(50, BPCLAIMTHROUGH) }, (_, i) => i + 1);
@@ -931,6 +953,11 @@ async function boot() {
             `${status.mapId}:${status.defeatedCount}/${status.requiredCount}:${status.campaignUnlocked ? 'open' : 'locked'}`
         ).join(','),
         settingsPane: game.settingsPane === 'accessibility' ? 'accessibility' : 'general',
+        cosmeticSet: QA_TRY_SET && Object.entries(QA_TRY_SET.pieces).every(
+            ([category, id]) => game.tryOn?.[category] === id,
+        ) ? QA_TRY_SET.id : '',
+        boutiqueCategory: game.boutiqueView?.category || '',
+        boutiqueSetPage: Number(game.boutiqueView?.setPage) || 0,
         statuses: allStatusTimersActive ? 'all' : '',
         minesFocusIndex: game.minigame?.mines ? game.minesFocusIndex : null,
         objectivePhase: qaObjective?.phase || '',
@@ -1026,6 +1053,9 @@ async function boot() {
     }
     if (QA_SETTINGS_PANE && qaState.settingsPane !== QA_SETTINGS_PANE) {
         ERR.push(`receipt: settingspane expected '${QA_SETTINGS_PANE}', got '${qaState.settingsPane}'`);
+    }
+    if (QA_TRY_SET && qaState.cosmeticSet !== QA_TRY_SET.id) {
+        ERR.push(`receipt: tryset expected '${QA_TRY_SET.id}', got '${qaState.cosmeticSet}'`);
     }
     if (QA_STATUSES === 'all' && qaState.statuses !== 'all') {
         ERR.push('receipt: statuses=all did not stage all seven combat statuses');
@@ -1144,6 +1174,9 @@ async function boot() {
     qaRoot.dataset.qaCampaignReceipts = window.__qaState.campaignReceipts;
     qaRoot.dataset.qaCampaignStatus = window.__qaState.campaignStatus;
     qaRoot.dataset.qaSettingsPane = window.__qaState.settingsPane;
+    qaRoot.dataset.qaCosmeticSet = window.__qaState.cosmeticSet;
+    qaRoot.dataset.qaBoutiqueCategory = window.__qaState.boutiqueCategory;
+    qaRoot.dataset.qaBoutiqueSetPage = String(window.__qaState.boutiqueSetPage);
     qaRoot.dataset.qaStatuses = window.__qaState.statuses;
     qaRoot.dataset.qaMinesFocus = window.__qaState.minesFocusIndex == null
         ? ''

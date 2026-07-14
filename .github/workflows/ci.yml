@@ -363,6 +363,22 @@ jobs:
                 echo "FAIL: matrix scenario '${QUERY}' did not expose visible keyboard focus"; exit 1;
               }
             fi
+            if [[ "$QUERY" == *"focus=collectionCategory%3Ahat%230"* ]]; then
+              grep -q 'data-qa-focus="collectionCategory:hat#0"' "$MATRIX_DOM" || {
+                echo "FAIL: Character Collection did not retain category-filter focus"; exit 1;
+              }
+              grep -q 'data-qa-focus-visible="true"' "$MATRIX_DOM" || {
+                echo "FAIL: Character Collection did not expose visible keyboard focus"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"focus=boutiqueCategory%3Aaura%230"* ]]; then
+              grep -q 'data-qa-focus="boutiqueCategory:aura#0"' "$MATRIX_DOM" || {
+                echo "FAIL: Boutique did not retain category-filter focus"; exit 1;
+              }
+              grep -q 'data-qa-focus-visible="true"' "$MATRIX_DOM" || {
+                echo "FAIL: Boutique did not expose visible keyboard focus"; exit 1;
+              }
+            fi
             if [[ "$QUERY" == *"minesFocus=7"* ]]; then
               grep -q 'data-qa-mines-focus="7"' "$MATRIX_DOM" || {
                 echo "FAIL: matrix scenario '${QUERY}' did not retain the requested Mines focus"; exit 1;
@@ -481,6 +497,8 @@ jobs:
           emberwood|screen=menu&tab=settings&settingspane=accessibility&uiscale=130&contrast=1&captions=1&captiondetail=full&mono=1&voicevol=40&vibration=full&vibrationcap=0&input=keyboard&focus=setCaptionDetail%3Afull%230
           emberwood|screen=menu&tab=settings&settingspane=accessibility&captions=0&captiondetail=essential&mono=0&voicevol=0&vibration=off&vibrationcap=1
           emberwood|screen=menu&tab=settings&settingspane=general&dev=1&input=keyboard&focus=toggleSetting%3Adebug%230
+          emberwood|screen=menu&tab=character&input=keyboard&focus=collectionCategory%3Ahat%230
+          emberwood|screen=menu&tab=boutique&input=keyboard&focus=boutiqueCategory%3Aaura%230
           emberwood|uiscale=130&contrast=1&statuses=all&captions=1&captiondetail=full&caption=danger
           emberwood|captions=1&captiondetail=essential&caption=voice
           emberwood|captions=1&vibration=full&bosswarning=1
@@ -575,4 +593,65 @@ jobs:
             && grep -q 'data-qa-error-keys="voicevol"' "$EMPTY_VOICE_DOM" || {
               echo 'FAIL: empty voicevol bypassed the exact lexical allowlist'; exit 1;
             }
-          echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, menus, Mines)"
+          # Durable Collection Growth I-A visual receipts. These use the same
+          # production Canvas/harness path as the exception matrix above and are
+          # uploaded for human layout review; deterministic geometry/source truth
+          # remains owned by validate-cosmetic-collection.js.
+          COLLECTION_RECEIPTS=/tmp/collection-growth-ia
+          rm -rf "$COLLECTION_RECEIPTS" __out
+          mkdir -p "$COLLECTION_RECEIPTS" __out
+          for COLLECTION_TAB in character boutique; do
+            COLLECTION_PROFILE=$(mktemp -d)
+            COLLECTION_NAME="${COLLECTION_TAB}-1600x900.png"
+            COLLECTION_DOM="/tmp/collection-growth-ia-${COLLECTION_TAB}.html"
+            case "$COLLECTION_TAB" in
+              character)
+                COLLECTION_FOCUS='collectionCategory%3Ahat%230'
+                COLLECTION_EXTRA=''
+                COLLECTION_EXPECTED_FOCUS='collectionCategory:hat#0'
+                ;;
+              boutique)
+                COLLECTION_FOCUS='boutiqueCategory%3Aaura%230'
+                COLLECTION_EXTRA='&tryset=lanternward'
+                COLLECTION_EXPECTED_FOCUS='boutiqueCategory:aura#0'
+                ;;
+            esac
+            timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+              --autoplay-policy=no-user-gesture-required \
+              --disable-background-networking --disable-component-update \
+              --force-device-scale-factor=1 --window-size=1600,900 \
+              --virtual-time-budget=7000 --user-data-dir="$COLLECTION_PROFILE" \
+              --dump-dom \
+              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&screen=menu&tab=${COLLECTION_TAB}&input=keyboard&focus=${COLLECTION_FOCUS}&out=${COLLECTION_NAME}${COLLECTION_EXTRA}" \
+              > "$COLLECTION_DOM"
+            COLLECTION_TITLE=$(grep -o '<title>[^<]*</title>' "$COLLECTION_DOM" | head -1)
+            echo "Collection visual ${COLLECTION_TAB}: $COLLECTION_TITLE"
+            echo "$COLLECTION_TITLE" | grep -q 'DONE EXC:0 ' \
+              && grep -q 'data-qa-ready="1"' "$COLLECTION_DOM" \
+              && grep -q "data-qa-focus=\"${COLLECTION_EXPECTED_FOCUS}\"" "$COLLECTION_DOM" \
+              && grep -q 'data-qa-focus-visible="true"' "$COLLECTION_DOM" \
+              && grep -q "data-qa-output=\"${COLLECTION_NAME}\"" "$COLLECTION_DOM" || {
+              echo "FAIL: ${COLLECTION_TAB} canvas receipt did not finish cleanly"; exit 1;
+            }
+            if [ "$COLLECTION_TAB" = boutique ]; then
+              grep -q 'data-qa-cosmetic-set="lanternward"' "$COLLECTION_DOM" \
+                && grep -q 'data-qa-boutique-category="cloak"' "$COLLECTION_DOM" \
+                && grep -q 'data-qa-boutique-set-page="3"' "$COLLECTION_DOM" || {
+                  echo 'FAIL: Boutique visual did not stage the Lanternward fitting-room state'; exit 1;
+                }
+            fi
+            cp "__out/${COLLECTION_NAME}" "$COLLECTION_RECEIPTS/${COLLECTION_NAME}"
+            node tools/artshot/validate-receipt-png.mjs "$COLLECTION_RECEIPTS/${COLLECTION_NAME}"
+          done
+          cmp -s "$COLLECTION_RECEIPTS/character-1600x900.png" \
+            "$COLLECTION_RECEIPTS/boutique-1600x900.png" \
+            && { echo 'FAIL: Character and Boutique receipts are byte-identical'; exit 1; }
+          echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, Collection, Boutique, menus, Mines)"
+
+      - name: Upload Collection Growth I-A visual receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-growth-ia-visual-receipts
+          path: /tmp/collection-growth-ia/*.png
+          if-no-files-found: error
+          retention-days: 30
