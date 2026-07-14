@@ -79,6 +79,7 @@ export function resolveHeroPose(frameSet, facing = 'down', state = 'idle', index
         const resolved = resolvePair(frameSet, dir, requestedState, index);
         if (!resolved) continue;
         const flip = dir === 'side' && facing === 'left';
+        const authoredNeutral = frameSet?.assetAttachments?.[dir]?.idle?.[0];
         return {
             kind: frameSet?.kind ?? null,
             sprite: resolved.sprite,
@@ -91,6 +92,12 @@ export function resolveHeroPose(frameSet, facing = 'down', state = 'idle', index
             resolvedIndex: resolved.index,
             attachments: resolved.attachments,
             neutralAttachments: neutral.attachments,
+            // Cosmetic bitmaps are authored on the canonical monkey grid.
+            // Bespoke bodies supply that asset-space neutral separately so
+            // their neutral fit (not only their animation delta) is exact.
+            assetNeutralAttachments: isPoseAttachments(authoredNeutral)
+                ? authoredNeutral
+                : neutral.attachments,
         };
     }
 
@@ -106,6 +113,7 @@ export function resolveHeroPose(frameSet, facing = 'down', state = 'idle', index
         resolvedIndex: 0,
         attachments: null,
         neutralAttachments: null,
+        assetNeutralAttachments: null,
     };
 }
 
@@ -150,7 +158,8 @@ function mirroredSegment(segment) {
  */
 export function applyHeroAttachmentTransform(ctx, pose, slot) {
     if (!ctx || typeof ctx.transform !== 'function' || !pose || !SEGMENT_SLOTS.has(slot)) return false;
-    let neutral = pose.neutralAttachments?.[slot];
+    let neutral = pose.assetNeutralAttachments?.[slot]
+        || pose.neutralAttachments?.[slot];
     let current = pose.attachments?.[slot];
     if (!isFiniteSegment(neutral) || !isFiniteSegment(current)) return false;
     if (pose.flip === true) {

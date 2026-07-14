@@ -150,6 +150,10 @@ def main():
     hero = os.environ.get('HERO_NAME', 'monkey')
     delta, preset_path, preset_digest = HP.load_hero_delta(
         hero, MR.DEFAULT_PARAMS, os.environ.get('HERO_PARAMS'))
+    # The canonical monkey intentionally has no JSON delta. Hash the empty
+    # semantic preset so every anchor receipt still carries one comparable,
+    # deterministic 64-character preset identity.
+    preset_digest = preset_digest or HP.canonical_digest({})
     if delta is not None:
         print(f'HERO {hero}: applying {len(delta)} param override(s) from '
               f'{preset_path} (sha256 {preset_digest[:12]})', flush=True)
@@ -260,6 +264,8 @@ def main():
             anchors['attachments'][d][p] = frames
 
     anchors['meta'] = {
+        'heroId': hero,
+        'presetSha256': preset_digest,
         'feetFrac': round(MR.FEET_FRAC, 6),
         'headFrac': round(MR.HEAD_FRAC, 6),
         # HERO_BOB (PixelArt.js): 48-grid px baked per walk frame, y-down

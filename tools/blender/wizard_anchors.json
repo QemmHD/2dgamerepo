@@ -860,6 +860,8 @@
   }
  },
  "meta": {
+  "heroId": "wizard",
+  "presetSha256": "00247820f0a9cb0850299b7c69e6e7f7dae4cf679c668fb07683eb27e884e775",
   "feetFrac": 0.9375,
   "headFrac": 0.333333,
   "bobPx": [

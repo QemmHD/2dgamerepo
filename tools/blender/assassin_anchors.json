@@ -860,6 +860,8 @@
   }
  },
  "meta": {
+  "heroId": "assassin",
+  "presetSha256": "0e7b0aa80d96a86575355f562ea30726796b2a9a8f58bbb420a876fde4908616",
   "feetFrac": 0.9375,
   "headFrac": 0.333333,
   "bobPx": [

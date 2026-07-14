@@ -98,9 +98,12 @@ the deterministic pass (settings chosen for this asset — 96px logical detail,
 node tools/artshot/pixelate-sheet.mjs tools/blender/raw/elf_down.png src/assets/hero/elf_down.png --cell=256 --logical=96 --colors=32 --outline=1
 node tools/artshot/pixelate-sheet.mjs tools/blender/raw/elf_up.png   src/assets/hero/elf_up.png   --cell=256 --logical=96 --colors=32 --outline=1
 node tools/artshot/pixelate-sheet.mjs tools/blender/raw/elf_side.png src/assets/hero/elf_side.png --cell=256 --logical=96 --colors=32 --outline=1
+node tools/generate-hero-install-manifest.js
 ```
 
-Then verify: headless screenshot via `tools/artshot/harness.html` with
-`badge=1` must show `EXC: 0`, and `node tools/validate-assets.js` must exit 0.
-If a model or pose changes, commit its regenerated anchor JSON and regenerate
-the runtime pose data before approving the sprite sheets.
+The manifest records the exact install options and SHA-256 for all 18 runtime
+PNGs. Then verify the browser hero-contract probe reports `DONE EXC:0` and run
+`node tools/validate-cosmetic-attachments.js`; it rejects stale hashes, palette
+or alpha drift, swapped hero identities, and attachment/preset mismatches. If a
+model or pose changes, commit its regenerated anchor JSON, runtime pose data,
+installed sheets, and regenerated manifest as one reviewable asset batch.

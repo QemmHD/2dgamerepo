@@ -349,7 +349,9 @@ export class Player {
     // you play. Replaces the old draw-time whole-body tint wash.
     refreshHeroFrames() {
         const ch = getCharacter(this.characterId);
-        this.heroFrames = getHeroFrames(this.characterId, ch, (this.appearance && this.appearance.furColor) || null);
+        const ap = this.appearance || {};
+        const hasCatalogHat = !!ap.hatShape && ap.hatShape !== 'none';
+        this.heroFrames = getHeroFrames(this.characterId, ch, ap.furColor || null, hasCatalogHat);
         this.isLpcBody = this.heroFrames?.kind === 'lpc';
     }
 

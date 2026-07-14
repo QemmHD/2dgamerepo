@@ -860,6 +860,8 @@
   }
  },
  "meta": {
+  "heroId": "elf",
+  "presetSha256": "b8716cf917c8730cc92b971c2d8f6e66a36b1b949996670c5e316edfff0f86f6",
   "feetFrac": 0.9375,
   "headFrac": 0.333333,
   "bobPx": [

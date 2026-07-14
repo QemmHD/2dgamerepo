@@ -860,6 +860,8 @@
   }
  },
  "meta": {
+  "heroId": "orc",
+  "presetSha256": "f2b173526c79e9c1f44e691e9dc7511e665fa314cc8997ba5e613863791b7421",
   "feetFrac": 0.9375,
   "headFrac": 0.333333,
   "bobPx": [

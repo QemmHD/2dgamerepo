@@ -1278,7 +1278,7 @@ export class MenuRenderer {
         let avatarPose = null;
         const avatarState = (t % 3.6) > 3.0 ? 'cast' : 'idle';
         try {
-            const frames = getHeroFrames(ch.id, ch, ap.furColor);
+            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
             avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
         } catch (e) { avatarPose = null; }
         const startWeaponId = resolveStartingWeapon(save);
@@ -1656,7 +1656,7 @@ export class MenuRenderer {
         // body, cosmetics and held wand preview the same in-game frame.
         const avatarState = (this._t % 3.6) > 3.0 ? 'cast' : 'idle';
         try {
-            const frames = getHeroFrames(ch.id, ch, ap.furColor);
+            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
             avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
         } catch (e) { avatarPose = null; }
         // The selected starting weapon drives the themed skin overlay so the
@@ -2955,7 +2955,7 @@ export class MenuRenderer {
         let avatarPose = null;
         const avatarState = (this._t % 4.0) > 3.4 ? 'cast' : 'idle';
         try {
-            const frames = getHeroFrames(ch.id, ch, ap.furColor);
+            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
             avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
         } catch (e) { avatarPose = null; }
         const startWeaponId = resolveStartingWeapon(save);
@@ -3316,7 +3316,8 @@ export class MenuRenderer {
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let avatarPose = null;
         try {
-            avatarPose = resolveHeroPose(getHeroFrames(ch.id, ch, ap.furColor), 'down', 'idle', 0);
+            avatarPose = resolveHeroPose(getHeroFrames(ch.id, ch, ap.furColor,
+                !!ap.hatShape && ap.hatShape !== 'none'), 'down', 'idle', 0);
         } catch (e) { avatarPose = null; }
         // Mannequin radius scales with the panel (fixed 105 collided with the
         // caption once phone insets + the sub-tab row shrank c.h to ~557), and

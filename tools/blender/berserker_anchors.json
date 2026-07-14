@@ -860,6 +860,8 @@
   }
  },
  "meta": {
+  "heroId": "berserker",
+  "presetSha256": "7f3c12892557cc2890a74fd2507819f6574f027897c3f82a1d7f7d83a60c1d51",
   "feetFrac": 0.9375,
   "headFrac": 0.333333,
   "bobPx": [

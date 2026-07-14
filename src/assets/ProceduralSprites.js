@@ -347,11 +347,13 @@ function furRecolorSet(set, color, baseFurHex) {
     } catch (e) { return set; }   // no-DOM env → uncolored fallback
 }
 
-export function getHeroFrames(id, char = null, furColor = null) {
+export function getHeroFrames(id, char = null, furColor = null, suppressReplaceableHeadwear = false) {
     // Fur cosmetics are a first-class variant: one cached set per (hero, fur),
     // so menu previews, the boutique mannequin and the in-run player all pull
     // the SAME recolored frames (the old draw-time tint only ran in-game).
-    const key = `heroFrames:${id}:${furColor || 'nat'}`;
+    const suppressFeature = suppressReplaceableHeadwear
+        && ['hat', 'horns', 'hood'].includes(char?.feature);
+    const key = `heroFrames:${id}:${furColor || 'nat'}:${suppressFeature ? 'cosmetic-headwear' : 'native-headwear'}`;
     if (cache.has(key)) return cache.get(key);
     let set = null;
     // Only use the LPC body if its sheet actually loaded; otherwise fall through
@@ -359,7 +361,7 @@ export function getHeroFrames(id, char = null, furColor = null) {
     if (char && char.lpc && char.lpcModel && isLpcLoaded(char.lpcModel)) set = buildLpcHeroSet(char.lpcModel);
     // Pixel-bodied heroes prefer the HQ AI body sheets (shared base + per-hero
     // tint/feature composite); null until loaded / on failure → procedural.
-    if (!set) set = getAiHeroFrames(id, char);
+    if (!set) set = getAiHeroFrames(id, char, suppressFeature);
     // Baked/imported bodies can't regenerate — recolor their fur pixels via
     // the per-pixel hue remap (true recolor, shading preserved).
     if (set && furColor) set = furRecolorSet(set, furColor, char && char.palette && char.palette.fur);
@@ -369,7 +371,7 @@ export function getHeroFrames(id, char = null, furColor = null) {
         // (shaded furD/furL variants derive from it correctly).
         const pal = char ? char.palette : null;
         const opts = char
-            ? { palette: furColor ? { ...pal, fur: furColor } : pal, feature: char.feature, accent: char.accent }
+            ? { palette: furColor ? { ...pal, fur: furColor } : pal, feature: suppressFeature ? null : char.feature, accent: char.accent }
             : (furColor ? { palette: { fur: furColor } } : {});
         set = buildPixelHeroSet(opts);
     }

@@ -1,28 +1,31 @@
-// HeroAiSprites — the HQ pixel-art hero BODY (higgsfield / Nano Banana 2,
-// upgraded from the procedural monkey with the same silhouette + anchors),
-// pre-rendered as one 9-frame sheet per direction under assets/hero/:
+// HeroAiSprites — the six deterministic Blender hero bodies, pixelated into
+// one 9-frame sheet per direction under assets/hero/:
 //   cols: idle0, idle1(blink), walk0, walk1(rise), walk2, cast, hurt,
 //         death, victory
-//   files: monkey_down.png / monkey_up.png / monkey_side.png
+//   files: <hero>_down.png / <hero>_up.png / <hero>_side.png
 //
-// ONE shared body serves ALL six heroes: each character's set is built from
-// the base frames + that hero's palette tint (source-atop, like the fur
-// cosmetic tint) + its code-drawn feature overlay (elf ears / tusks / horns /
-// hood / hat via drawHeroFeatureOverlay) composited at build time, so the
-// existing cosmetics/tint/weapon-arm pipeline works unchanged on top.
+// Every bespoke silhouette selects its own Blender-exported attachment tree.
+// If a bespoke trio fails to load, that hero safely falls back to the monkey
+// base + palette tint while keeping the monkey attachment contract. Character
+// feature overlays (ears/tusks/horns/hood/hat) are composited at build time.
 //
 // loadHeroAiSprites() NEVER rejects; getAiHeroFrames() returns null until the
 // sheets load (and permanently on failure), and ProceduralSprites.getHeroFrames
 // falls back to the procedural body — the game always renders.
 
 import { SPRITE_SIZE } from '../config/GameConfig.js';
-import { drawHeroFeatureOverlay, HERO_BOB } from './PixelArt.js';
-import { HERO_POSE_ATTACHMENTS } from './HeroPoseData.js';
+import { drawHeroFeatureOverlay } from './PixelArt.js';
+import { applyHeroAttachmentTransform } from './HeroPose.js';
+import {
+    HERO_POSE_ATTACHMENTS,
+    HERO_POSE_ATTACHMENTS_BY_HERO,
+} from './HeroPoseData.js';
 
 const DIRS = ['down', 'up', 'side'];
 const COLS = 9;
 // col index per pose/frame — matches tools/blender/render_sheets.py POSE_COLS.
 const POSE_COLS = { idle: [0, 1], walk: [2, 3, 4], cast: [5], hurt: [6], death: [7], victory: [8] };
+const REPLACEABLE_HEADWEAR_FEATURES = new Set(['hat', 'horns', 'hood']);
 
 // Heroes that ship a BESPOKE Blender body sheet set (distinct proportions +
 // baked palette) beside the shared monkey base. A hero not listed here — or one
@@ -32,8 +35,8 @@ const BESPOKE = ['elf', 'orc', 'wizard', 'berserker', 'assassin'];
 
 const _heroSheets = {};   // heroId -> { down, up, side: Image }  (only if all 3 loaded)
 let _loadPromise = null;
-let _ready = false;       // true once the monkey BASE is loaded (procedural gate)
-const _heroCache = new Map();   // hero id -> built dirs set
+let _ready = false;       // true after monkey loaded and all bespoke requests settled
+const _heroCache = new Map();   // hero id + native/cosmetic headwear -> built dirs set
 
 function loadSheet(heroId, dir) {
     return new Promise((resolve) => {
@@ -56,15 +59,16 @@ async function loadHeroSet(heroId) {
     return false;
 }
 
-// Kick the sheet loads; resolves true once the monkey BASE is up (the gate for
-// the AI-body tier). Bespoke hero bodies are optional and loaded in parallel —
-// any that miss simply fall back to the monkey base + tint for that hero.
+// Kick the sheet loads; resolves true once the monkey base and every optional
+// bespoke request have settled. Keeping `_ready` false for that whole window
+// prevents a hero requested mid-load from caching the monkey fallback forever.
 export function loadHeroAiSprites() {
     if (_loadPromise) return _loadPromise;
     _loadPromise = (async () => {
         const monkeyOk = await loadHeroSet('monkey');
-        _ready = monkeyOk;
         await Promise.all(BESPOKE.map(loadHeroSet));
+        _heroCache.clear();
+        _ready = monkeyOk;
         return _ready;
     })();
     return _loadPromise;
@@ -72,8 +76,10 @@ export function loadHeroAiSprites() {
 
 // Slice one frame col from a sheet into a SPRITE_SIZE canvas, tint it toward
 // the hero palette (mirrors the fur-cosmetic tint), and composite the hero's
-// feature overlay with the frame's HERO_BOB offset so features ride the head.
-function buildFrame(sheet, col, char, dir, pose, frameIdx, skipTint) {
+// feature overlay through the same exported head-seat transform as catalog
+// hats. This keeps ears, tusks, horns, hoods and native hats attached through
+// the authored death/victory tilts as well as idle/walk/cast/hurt motion.
+function buildFrame(sheet, col, char, dir, pose, frameIdx, skipTint, attachments) {
     const cw = Math.floor(sheet.width / COLS);
     const cv = document.createElement('canvas');
     cv.width = SPRITE_SIZE; cv.height = SPRITE_SIZE;
@@ -99,20 +105,38 @@ function buildFrame(sheet, col, char, dir, pose, frameIdx, skipTint) {
     }
     // Feature overlay (elf ears / tusks / horns / hood / hat).
     if (char?.feature) {
-        const hb = HERO_BOB[pose] || [0];
-        const bob = hb[frameIdx % hb.length] || 0;
+        // The feature art is authored on the canonical neutral monkey grid.
+        // Pose-local character motion stays inside that asset, while the
+        // segment transform below maps the whole overlay onto this exact
+        // Blender body's current head. No fixed-grid feature can float behind.
         const ov = drawHeroFeatureOverlay(
-            { palette: char.palette, accent: char.accent, feature: char.feature }, dir, bob, pose, frameIdx);
-        if (ov) cx.drawImage(ov, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
+            { palette: char.palette, accent: char.accent, feature: char.feature },
+            dir, 0, pose, frameIdx);
+        if (ov) {
+            const current = attachments?.[dir]?.[pose]?.[frameIdx];
+            const assetNeutral = HERO_POSE_ATTACHMENTS?.[dir]?.idle?.[0];
+            const half = SPRITE_SIZE / 2;
+            cx.save();
+            cx.translate(half, half);
+            applyHeroAttachmentTransform(cx, {
+                attachments: current,
+                assetNeutralAttachments: assetNeutral,
+            }, 'headSeat');
+            cx.drawImage(ov, -half, -half, SPRITE_SIZE, SPRITE_SIZE);
+            cx.restore();
+        }
     }
     return cv;
 }
 
 // Build (once per hero) the { kind, dirs } set from the loaded sheets, or null
 // if the sheets aren't ready / failed — caller falls back to procedural.
-export function getAiHeroFrames(id, char) {
+export function getAiHeroFrames(id, char, suppressReplaceableHeadwear = false) {
     if (!_ready) return null;
-    if (_heroCache.has(id)) return _heroCache.get(id);
+    const suppressFeature = suppressReplaceableHeadwear
+        && REPLACEABLE_HEADWEAR_FEATURES.has(char?.feature);
+    const cacheKey = `${id}:${suppressFeature ? 'cosmetic-headwear' : 'native-headwear'}`;
+    if (_heroCache.has(cacheKey)) return _heroCache.get(cacheKey);
     let set = null;
     try {
         // Bespoke body if this hero shipped one (palette baked → skip tint);
@@ -121,16 +145,36 @@ export function getAiHeroFrames(id, char) {
         const sheets = own || _heroSheets.monkey;
         const skipTint = !!own;
         const dirs = {};
+        // Wizard hats, berserker horns and assassin hoods are identity
+        // headwear, not anatomy. When a catalog hat is equipped, omit that
+        // baked-on code overlay so two silhouettes never occupy one head.
+        // Elf ears and orc tusks remain because they are anatomy.
+        const renderedChar = suppressFeature ? { ...char, feature: null } : char;
+        // Resolve the body contract before frame construction because native
+        // identity features use its pose-local head seat during compositing.
+        const attachments = own
+            ? HERO_POSE_ATTACHMENTS_BY_HERO[id]
+            : HERO_POSE_ATTACHMENTS;
+        if (!attachments) throw new Error(`Missing pose attachments for ${id}`);
         for (const dir of DIRS) {
             const sheet = sheets[dir];
             const d = {};
             for (const pose in POSE_COLS) {
-                d[pose] = POSE_COLS[pose].map((col, i) => buildFrame(sheet, col, char, dir, pose, i, skipTint));
+                d[pose] = POSE_COLS[pose].map((col, i) => buildFrame(
+                    sheet, col, renderedChar, dir, pose, i, skipTint, attachments));
             }
             dirs[dir] = d;
         }
-        set = { kind: 'pixel', dirs, attachments: HERO_POSE_ATTACHMENTS };
+        // A bespoke silhouette consumes the anchors exported from that exact
+        // Blender parameter preset. Missing bespoke data rejects this tier and
+        // lets ProceduralSprites take its safe monkey-contract fallback.
+        set = {
+            kind: 'pixel',
+            dirs,
+            attachments,
+            assetAttachments: HERO_POSE_ATTACHMENTS,
+        };
     } catch (e) { set = null; }
-    _heroCache.set(id, set);
+    _heroCache.set(cacheKey, set);
     return set;
 }
