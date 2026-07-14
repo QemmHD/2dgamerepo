@@ -145,7 +145,8 @@ open; the canonical execution truth and exact gaps live in
 
 **2026-07-14 branch-only First Light delta:** A11-10 now has an in-flight bounded
 slice for save-safe Combat HUD size 100/115/130, high-contrast combat tells, and
-seven source-backed non-color status badges. This is not yet a delivery claim and
+seven source-backed non-color status badges in feature `1cddd9b` / open PR #188.
+This is not yet a delivery claim and
 does not complete global text scaling, mono audio, caption detail, voice volume,
 vibration, A11-14 convergence, or full 1.1. Exact evidence remains in the ledger.
 

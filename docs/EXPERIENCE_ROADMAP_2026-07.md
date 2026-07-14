@@ -195,8 +195,9 @@ but it does not close full 1.1. A11-01–A11-14 in the
 remaining preference, tutorial/debrief, hierarchy, routing, device/AT, and convergence
 work.
 
-**2026-07-14 A11-10 branch delta:** the first preference slice is locally integrated
-and validated, but not yet committed, merged, or deployed. Combat HUD scaling,
+**2026-07-14 A11-10 branch delta:** the first preference slice is locally integrated,
+validated, and published as feature `1cddd9b` in open PR #188, but is not yet merged
+or deployed. Combat HUD scaling,
 post-veil high-contrast warnings, source-backed non-color status badges, and dedicated
 Accessibility Settings are in flight; mono/captions/voice/vibration and full First
 Light convergence remain open. The development ledger owns exact counts and delivery
