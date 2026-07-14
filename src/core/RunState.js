@@ -31,6 +31,7 @@ import { getMapBosses, getMapTier } from '../content/maps.js';
 
 export const RunStateMethods = {
     _initRunState() {
+        this.captionSystem?.reset?.();
         this.player = new Player(undefined, undefined, this._effectiveCharacterId());
         this.camera.follow(this.player);
 
@@ -66,6 +67,7 @@ export const RunStateMethods = {
         this.hitStop = 0;
         // Brief red screen-edge vignette pulse on taking damage (0..1, decays).
         this.hitVignette = 0;
+        this._captionLowHealth = false;
         // Queue of boss summon requests (drained each frame into themed spawns).
         this.bossSummons = [];
         // Active "BOSS INCOMING" warning (the boss spawns when this expires).

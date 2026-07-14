@@ -52,6 +52,8 @@ export function computeHUDLayout(options = {}) {
     // UI scale is a screen-space HUD preference. It must never alter world or
     // camera coordinates, renderer fit, or the fixed touch-action discs.
     const uiScale = uiScaleFactor(options.uiScale);
+    const cssScale = Number.isFinite(options.cssScale) && options.cssScale > 0
+        ? options.cssScale : 1;
 
     const left = safe.left;
     const right = width - safe.right;
@@ -195,6 +197,32 @@ export function computeHUDLayout(options = {}) {
         ? rect(0, 0, 0, 0)
         : rect(right - 328, bottom - 176, 300, 22);
 
+    // Captions own one centered lane above the bottom control clusters. Their
+    // type is independent of Combat HUD size and enforces a 16 CSS-pixel floor
+    // on small landscape phones without changing world/input coordinates.
+    const captionTextPx = Math.max(26, Math.ceil(16 / cssScale));
+    const captionLabelPx = Math.max(18, Math.ceil(16 / cssScale));
+    const captionLineHeight = Math.ceil(captionTextPx * 1.08);
+    const captionPadY = Math.max(14, Math.ceil(8 / cssScale));
+    const captionGap = Math.max(8, Math.ceil(4 / cssScale));
+    const captionH = captionPadY * 2 + captionLabelPx + captionGap + captionLineHeight * 2;
+    const captionW = Math.min(760, usableW * 0.55);
+    const centeredCaptionX = centerX - captionW / 2;
+    const captionX = touchMode && filteredAbilityCount > 0
+        ? Math.max(left, Math.min(centeredCaptionX, abilities.x - 20 - captionW))
+        : centeredCaptionX;
+    const caption = Object.assign(
+        rect(captionX, bottom - 170 - captionH, captionW, captionH),
+        {
+            textPx: captionTextPx,
+            labelPx: captionLabelPx,
+            lineHeight: captionLineHeight,
+            padY: captionPadY,
+            gap: captionGap,
+            cssScale,
+        },
+    );
+
     const playerLocator = { denseEnemyThreshold: compact ? 34 : 46, lowHpThreshold: 0.48 };
 
     return {
@@ -217,6 +245,7 @@ export function computeHUDLayout(options = {}) {
         vigil,
         abilities,
         kindle,
+        caption,
         playerLocator,
     };
 }

@@ -274,6 +274,7 @@ export const CombatResolverMethods = {
                     // strong shake so an apex kill lands.
                     this.waveDirector.announce(`${e.name.toUpperCase()} DEFEATED!`, 3.0, '#ff6a4a');
                     this.audio.bossDefeat();
+                    this.haptics?.pulse?.('bossDefeat');
                     this.particles.bossDeathBurst(e.x, e.y, '#ff8c4a');
                     this._shake(SCREEN_SHAKE.intensity * 1.1, 0.5);
                     // Setpiece punch: a hard freeze-frame + a triple expanding

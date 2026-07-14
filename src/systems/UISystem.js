@@ -151,6 +151,7 @@ export class UISystem {
             abilityCount: state.abilityCooldowns?.length ?? 0,
             hasVigil: !!state.vigilTracker,
             uiScale: normalizeUiScale(state.saveData?.settings?.uiScale),
+            cssScale: cssW / INTERNAL_WIDTH,
         });
     }
 
@@ -467,6 +468,7 @@ export class UISystem {
     draw(ctx, gameState) {
         this._activeUiScale = uiScaleFactor(gameState.saveData?.settings?.uiScale);
         this._highContrast = gameState.saveData?.settings?.highContrast === true;
+        this._reducedEffects = gameState.saveData?.settings?.reducedEffects === true;
         // Start / shop screen replaces the regular HUD entirely — now the
         // redesigned tabbed main menu (Play/Skills/Loadout/Character/Shop/
         // Battle Pass/Settings) drawn by MenuRenderer.
@@ -511,6 +513,10 @@ export class UISystem {
             this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
             this._drawBossWarning(ctx, gameState);
             this._drawBossRushHud(ctx, gameState, hud);
+        }
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward
+            && !gameState.altar && !gameState.paused && !gameState.victory && !gameState.photoMode) {
+            this._drawCaption(ctx, gameState.caption, hud);
         }
 
         // Low-HP danger vignette during live play.
@@ -1416,6 +1422,53 @@ export class UISystem {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(ann.text, INTERNAL_WIDTH / 2, centerY);
+        ctx.restore();
+    }
+
+    _drawCaption(ctx, caption, hud) {
+        if (!caption || !hud?.caption) return;
+        const r = hud.caption;
+        const lifetime = Math.max(0.001, caption.lifetime || 0);
+        const t = clamp01((caption.age || 0) / lifetime);
+        const edge = Math.min(1, lifetime * 0.18);
+        const fadeIn = clamp01((caption.age || 0) / Math.max(0.08, edge));
+        const fadeOut = clamp01((lifetime - (caption.age || 0)) / Math.max(0.12, edge));
+        const alpha = Math.min(fadeIn, fadeOut);
+        if (alpha <= 0) return;
+        const reduced = this._reducedEffects === true;
+        const lift = reduced ? 0 : (1 - easeOutCubic(clamp01(t * 5))) * 10;
+        const speaker = caption.kind === 'speech'
+            ? String(caption.speaker || 'VOICE').toUpperCase()
+            : 'SOUND';
+        const body = caption.kind === 'speech'
+            ? String(caption.text || '')
+            : `[${String(caption.text || '')}]`;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(0, lift);
+        this._hudGlassPlate(ctx, r.x, r.y, r.w, r.h, 16, {
+            stroke: this._highContrast ? '#ffffff' : 'rgba(255,182,103,0.42)',
+        });
+        if (this._highContrast) {
+            roundRectPath(ctx, r.x, r.y, r.w, r.h, 16);
+            ctx.strokeStyle = '#050505'; ctx.lineWidth = 7; ctx.stroke();
+            roundRectPath(ctx, r.x, r.y, r.w, r.h, 16);
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
+        }
+        const labelPx = r.labelPx || Math.max(18, Math.round(r.textPx * 0.72));
+        const lineHeight = r.lineHeight || Math.round(r.textPx * 1.08);
+        const padY = r.padY || 14;
+        const gap = r.gap || 8;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = `800 ${labelPx}px ${DISPLAY_FONT}`;
+        const labelY = r.y + padY + labelPx;
+        this._textWithShadow(ctx, speaker, r.x + r.w / 2, labelY, '#f0ad63');
+        ctx.font = `650 ${r.textPx}px ${FONT}`;
+        ctx.fillStyle = caption.kind === 'speech' ? '#ffffff' : '#e9d4b5';
+        const bodyY = labelY + gap + r.textPx;
+        wrapText(ctx, body, r.x + r.w / 2, bodyY, r.w - 48, lineHeight, 2);
         ctx.restore();
     }
 
@@ -3424,29 +3477,32 @@ function performanceNowSafe() {
 // Word-wrap with a hard line cap. Clamps to `maxLines` (default 8) and adds
 // an ellipsis if the text would overflow, so a long description can never
 // run past the card footer.
-function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 8) {
+export function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 8) {
     const words = String(text).split(/\s+/);
     const lines = [];
     let line = '';
     for (let i = 0; i < words.length; i++) {
         const testLine = line ? line + ' ' + words[i] : words[i];
         if (ctx.measureText(testLine).width > maxWidth && line) {
+            if (lines.length >= maxLines - 1) {
+                // This is the final visible line and unconsumed words remain.
+                // Preserve as much as fits; exact two-line copy reaches the
+                // loop end and therefore keeps its exact punctuation.
+                let last = line;
+                while (last && ctx.measureText(last + '…').width > maxWidth) {
+                    last = last.slice(0, -1).trimEnd();
+                }
+                lines.push(last + '…');
+                line = '';
+                break;
+            }
             lines.push(line);
             line = words[i];
-            if (lines.length >= maxLines - 1) break;
         } else {
             line = testLine;
         }
     }
     if (line && lines.length < maxLines) lines.push(line);
-    // If we stopped early, ellipsize the last visible line.
-    if (lines.length === maxLines) {
-        let last = lines[maxLines - 1];
-        while (last && ctx.measureText(last + '…').width > maxWidth) {
-            last = last.slice(0, -1);
-        }
-        lines[maxLines - 1] = last + '…';
-    }
     for (let i = 0; i < lines.length; i++) {
         ctx.fillText(lines[i], x, y + i * lineHeight);
     }

@@ -129,6 +129,7 @@ export class AudioSystem {
         this._AC = AC || null;
         this.ctx = null;
         this.master = null;
+        this.outputBus = null;   // explicit 2ch/1ch player mix before limiting
         this.masterFilter = null; // retained as a compatibility field; SFX stay unfiltered
         this.limiter = null;      // brick-wall limiter (clip guard)
         this.musicBus = null;
@@ -141,6 +142,8 @@ export class AudioSystem {
         this.verbSend = null;
         this.volMusic = 0.7;
         this.volSfx = 0.8;
+        this.volVoice = 0.8;
+        this.monoAudio = false;
         this.theme = null;
         this._schedId = null;
         this._nextTime = 0;
@@ -206,13 +209,23 @@ export class AudioSystem {
             // otherwise a low-HP color pass also muffles hit and warning cues.
             this.master = this.ctx.createGain();
             this.master.gain.value = 0.72;
+            // One standards-defined channel-mode switch covers every source:
+            // tracker/streamed music, SFX, reverb and decoded voice all meet at
+            // master before this point. `speakers` downmixes stereo to
+            // 0.5 * (L + R); the limiter remains AFTER the downmix so a mono
+            // sum cannot clip the output.
+            this.outputBus = this.ctx.createGain();
+            this.outputBus.channelInterpretation = 'speakers';
+            this.outputBus.channelCountMode = 'explicit';
+            this.outputBus.channelCount = this.monoAudio ? 1 : 2;
             this.limiter = this.ctx.createDynamicsCompressor();
             this.limiter.threshold.value = -3;
             this.limiter.knee.value = 0;
             this.limiter.ratio.value = 20;
             this.limiter.attack.value = 0.003;
             this.limiter.release.value = 0.12;
-            this.master.connect(this.limiter);
+            this.master.connect(this.outputBus);
+            this.outputBus.connect(this.limiter);
             this.limiter.connect(this.ctx.destination);
 
             // Light reverb: a short feedback delay tap for ambience (stable fb).
@@ -263,7 +276,7 @@ export class AudioSystem {
             this.sfxBus.connect(this.sfxCompressor);
             this.sfxCompressor.connect(this.master);
             this.voiceBus = this.ctx.createGain();
-            this.voiceBus.gain.value = this.volSfx * AUDIO_MIX.voiceTrim;
+            this.voiceBus.gain.value = this.volVoice * AUDIO_MIX.voiceTrim;
             this.voiceBus.connect(this.master);
 
             const len = Math.floor(this.ctx.sampleRate);
@@ -468,19 +481,38 @@ export class AudioSystem {
         this._activeVoiceGain = gain;
         this._lastVoiceId = id;
         this._lastVoiceAt = now;
-        this._duck(0.55, Math.max(0.08, buffer.duration - 0.35), 0.55);
+        // A muted voice bus must not create an unexplained hole in the score.
+        if (this.volVoice > 0) this._duck(0.55, Math.max(0.08, buffer.duration - 0.35), 0.55);
         // The caller uses this exact transcript as the accessibility caption.
         return VOICE_STINGERS[id]?.line || false;
     }
 
-    setVolumes(music, sfx) {
+    stopVoice() {
+        const source = this._activeVoice;
+        if (!source) return false;
+        const now = this.ctx?.currentTime ?? 0;
+        this._rampParam(this._activeVoiceGain?.gain, 0.0001, now, 0.035);
+        try { source.stop(now + 0.045); } catch (e) { /* already stopped */ }
+        this._activeVoice = null;
+        this._activeVoiceGain = null;
+        return true;
+    }
+
+    setVolumes(music, sfx, voice = sfx) {
         if (typeof music === 'number') this.volMusic = Math.max(0, Math.min(1, music));
         if (typeof sfx === 'number') this.volSfx = Math.max(0, Math.min(1, sfx));
+        if (typeof voice === 'number') this.volVoice = Math.max(0, Math.min(1, voice));
         const now = this.ctx?.currentTime ?? 0;
         this._rampParam(this.musicBus?.gain, this.volMusic * AUDIO_MIX.musicTrim, now, 0.04);
         this._rampParam(this.sfxBus?.gain, this.volSfx * AUDIO_MIX.sfxTrim, now, 0.04);
-        this._rampParam(this.voiceBus?.gain, this.volSfx * AUDIO_MIX.voiceTrim, now, 0.04);
+        this._rampParam(this.voiceBus?.gain, this.volVoice * AUDIO_MIX.voiceTrim, now, 0.04);
         if (this._recorded && !this._recordedSource) this._recorded.volume = this.volMusic * AUDIO_MIX.musicTrim;
+    }
+
+    setMonoAudio(on) {
+        this.monoAudio = on === true;
+        if (this.outputBus) this.outputBus.channelCount = this.monoAudio ? 1 : 2;
+        return this.monoAudio;
     }
 
     _rampParam(param, value, now = 0, duration = 0.2) {
@@ -1399,6 +1431,11 @@ export class AudioSystem {
     pauseOut() { this._play('pauseOut', 0.1, (t) => { this._voice(320, t, 0.12, 0.06, { type: 'sine', slideTo: 520, cutoff: 2400 }); this._noise(t, 0.1, 0.025, 900, this.sfxBus, 2200); }); }
     setPaused(on) {
         this._paused = on === true;
+        // Captions are intentionally hidden/frozen behind pause and modal
+        // surfaces. Stop a spoken stinger at the same boundary so audio never
+        // continues without its transcript; the frozen text remains readable
+        // when play resumes.
+        if (this._paused) this.stopVoice();
         if (!this.ctx || !this.musicPause) return;
         this._rampParam(this.musicPause.gain, this._paused ? 0.45 : 1, this.ctx.currentTime, 0.15);
     }
@@ -1415,6 +1452,7 @@ export class AudioSystem {
         this._drainCleanup(true);
         const ctx = this.ctx;
         this.ctx = null;
+        this.outputBus = null;
         if (ctx?.close) {
             try { ctx.close(); } catch (e) { /* no-op */ }
         }

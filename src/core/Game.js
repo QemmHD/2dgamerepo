@@ -76,6 +76,8 @@ import { VigilSiteSystem, livingVigilRunSeed } from '../systems/VigilSiteSystem.
 import { EncounterDirector, retireEncounterEnemyTags } from '../systems/EncounterDirector.js';
 import { VigilTracker } from '../systems/VigilTracker.js';
 import { AccessibilityBridge } from '../systems/AccessibilityBridge.js';
+import { CaptionSystem } from '../systems/CaptionSystem.js';
+import { HapticsSystem } from '../systems/HapticsSystem.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { getCardCompositor } from '../systems/CardCompositor.js';
@@ -105,6 +107,22 @@ export class Game {
         this.camera = new Camera();
         this.ui = new UISystem({ renderer, loop });
         this.saveSystem = new SaveSystem();
+        this.captionSystem = new CaptionSystem({
+            onPresent: (caption) => {
+                // Spoken lines enter the polite live region once. Curated sound
+                // captions already duplicate visible warnings and would make a
+                // screen reader noisy during combat.
+                if (caption.kind === 'speech') {
+                    this.accessibility?.announce?.(`${caption.speaker}: ${caption.text}`);
+                }
+            },
+        });
+        this.captionSystem.setPreferences(
+            this.saveSystem.getSetting('captions'),
+            this.saveSystem.getSetting('captionDetail'),
+        );
+        this.haptics = new HapticsSystem();
+        this.haptics.setStrength(this.saveSystem.getSetting('vibration'));
         // MapRenderer lives outside _initRunState — its cached tile
         // pattern and per-chunk decoration tables are world-static,
         // so they survive restarts intact (no need to rebuild).
@@ -125,7 +143,12 @@ export class Game {
         // Procedural audio (synthesized; silent no-op when unsupported/headless).
         // Volumes seed from saved settings; the context resumes on first input.
         this.audio = new AudioSystem();
-        this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
+        this.audio.setVolumes(
+            this.saveSystem.getSetting('volMusic'),
+            this.saveSystem.getSetting('volSfx'),
+            this.saveSystem.getSetting('volVoice'),
+        );
+        this.audio.setMonoAudio(this.saveSystem.getSetting('monoAudio'));
         this.audio.playMusic('menu');
         // Adaptive graphics governor state. level 0 = full quality (roadmap #5).
         this._gfxLevel = 0;
@@ -756,6 +779,10 @@ export class Game {
             if (this.screen === 'gameplay' && !this.gameOver &&
                 !this.upgradeChoices && !this.chestReward && !this.altar && !this.paused) {
                 this.paused = true;
+                // Browsers may suspend animation frames as soon as a tab is
+                // hidden. Apply the audio/voice pause boundary synchronously
+                // instead of waiting for the next GameUpdate that may not run.
+                this.audio?.setPaused?.(true);
                 this._updateJoystickEnabled();
             }
         };
@@ -1346,6 +1373,7 @@ export class Game {
         // Swell into the triumphant victory theme + a fanfare stinger.
         this.audio.playMusic('victory');
         this.audio.victoryFanfare();
+        this.haptics?.pulse?.('victory');
         this.audio.setIntensity(0.4);
         // A 3rd-boss clear on Nightmare is a bragging milestone.
         if (this.difficulty === 'hard') this.saveSystem.incrementStat('hardWins', 1);
@@ -1381,6 +1409,11 @@ export class Game {
         // so "continue" would drop the player into an empty world). Bank + return
         // to the menu instead.
         if (this.bossRush) { this.victoryToMenu(false); return; }
+        // Victory can freeze a transient caption for an arbitrary amount of
+        // time. Continuing into the endless gauntlet starts a new encounter
+        // state, so never resurrect the pre-victory warning or boss line.
+        this.captionSystem?.clear?.();
+        this.audio?.stopVoice?.();
         this.victory = null;
         this.shareToast = null;   // don't carry a victory share toast into the gauntlet
         this._gauntletActive = true;
@@ -2085,6 +2118,7 @@ export class Game {
         if (kills > this._runBestUltKills) this._runBestUltKills = kills;
         if (this._heroId === 'berserker' && lowHpCast) this._runBrinkCasts++;
         this.audio.ult(sig.aimKind);
+        this.haptics?.pulse?.('kindle');
         this._shake(SCREEN_SHAKE.intensity * 0.8, 0.35);
         this._pushFeedback('levelup', 0.4);
         return res;
@@ -2346,7 +2380,13 @@ export class Game {
         this.audio.bossSpawn();
         this.audio.playMusic('boss', id);
         const voiceCaption = this.audio.musicEvent('bossArrival', { bossId: id });
-        if (voiceCaption) this.waveDirector.announce(`“${voiceCaption}”`, 2.4, '#ffd0b8');
+        if (voiceCaption) {
+            this.captionSystem?.say?.({
+                key: `boss-arrival-${id}`,
+                speaker: def.bossName || 'Boss',
+                text: voiceCaption,
+            });
+        }
         // A heavier, longer shake than a normal hit to telegraph the arrival.
         this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
         // The boss arrives flanked by a themed opening group (capped).
@@ -2370,6 +2410,14 @@ export class Game {
         // warning window, not on the first vulnerable frame of the fight.
         this.audio.setBossProfile(id);
         this.waveDirector.announce('⚠  BOSS INCOMING  ⚠', BOSS.warningDuration, '#ff4040');
+        this.captionSystem?.sound?.({
+            key: `boss-warning-${id}`,
+            text: 'Boss incoming',
+            priority: 90,
+            lifetime: Math.min(3.2, BOSS.warningDuration),
+            cooldown: 4,
+        });
+        this.haptics?.pulse?.('bossWarning');
         this.audio.bossTelegraph();
         this._shake(SCREEN_SHAKE.intensity * 0.4, 0.3);
     }

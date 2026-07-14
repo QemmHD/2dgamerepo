@@ -26,6 +26,7 @@ import {
 import { AUDIO_MIX, AudioSystem } from '../src/systems/AudioSystem.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const audioSource = fs.readFileSync(path.join(ROOT, 'src/systems/AudioSystem.js'), 'utf8');
 let failures = 0;
 const fail = (message) => { console.error(`  x ${message}`); failures++; };
 const ok = (condition, message) => { if (!condition) fail(message); };
@@ -271,10 +272,45 @@ busAudio.sfxBus = { gain: sfxParam };
 busAudio.voiceBus = { gain: voiceParam };
 const busTargets = new Map();
 busAudio._rampParam = (param, value) => { busTargets.set(param, value); };
-busAudio.setVolumes(0.7, 0.8);
+busAudio.setVolumes(0.7, 0.8, 0.35);
 ok(busTargets.get(musicParam) === calibratedMusic, `setVolumes music target was ${busTargets.get(musicParam)}, expected ${calibratedMusic}`);
 ok(busTargets.get(sfxParam) === calibratedSfx, `setVolumes SFX target was ${busTargets.get(sfxParam)}, expected ${calibratedSfx}`);
-ok(busTargets.get(voiceParam) === 0.8 * AUDIO_MIX.voiceTrim, `setVolumes voice target was ${busTargets.get(voiceParam)}, expected ${0.8 * AUDIO_MIX.voiceTrim}`);
+ok(busTargets.get(voiceParam) === 0.35 * AUDIO_MIX.voiceTrim, `setVolumes voice target was ${busTargets.get(voiceParam)}, expected ${0.35 * AUDIO_MIX.voiceTrim}`);
+busAudio.setVolumes(0.7, 0.2, 0.35);
+ok(busTargets.get(sfxParam) === 0.2 * AUDIO_MIX.sfxTrim
+    && busTargets.get(voiceParam) === 0.35 * AUDIO_MIX.voiceTrim,
+'changing SFX with an explicit fixed voice level does not move the voice bus');
+busAudio.setVolumes(0.7, 0.6);
+ok(busTargets.get(voiceParam) === 0.6 * AUDIO_MIX.voiceTrim,
+'legacy two-argument setVolumes keeps voice following SFX');
+
+const monoAudio = new AudioSystem();
+monoAudio.outputBus = { channelCount: 2 };
+ok(monoAudio.setMonoAudio(true) === true && monoAudio.outputBus.channelCount === 1,
+'mono preference switches the explicit output bus to one channel');
+ok(monoAudio.setMonoAudio('true') === false && monoAudio.outputBus.channelCount === 2,
+'mono preference rejects truthy non-booleans and restores stereo');
+ok(audioSource.includes("this.outputBus.channelInterpretation = 'speakers'")
+    && audioSource.includes("this.outputBus.channelCountMode = 'explicit'")
+    && audioSource.indexOf('this.master.connect(this.outputBus)')
+        < audioSource.indexOf('this.outputBus.connect(this.limiter)')
+    && audioSource.indexOf('this.outputBus.connect(this.limiter)')
+        < audioSource.indexOf('this.limiter.connect(this.ctx.destination)'),
+'explicit speaker downmix sits before the output limiter and destination');
+ok(audioSource.includes('if (this.volVoice > 0) this._duck('),
+'muted voice does not create an unexplained music duck');
+
+const pausedVoiceAudio = new AudioSystem();
+let stoppedVoiceAt = null;
+let fadedVoiceTo = null;
+pausedVoiceAudio.ctx = { currentTime: 7 };
+pausedVoiceAudio._activeVoice = { stop: (time) => { stoppedVoiceAt = time; } };
+pausedVoiceAudio._activeVoiceGain = { gain: {} };
+pausedVoiceAudio._rampParam = (_param, value) => { fadedVoiceTo = value; };
+pausedVoiceAudio.setPaused(true);
+ok(pausedVoiceAudio._paused === true && stoppedVoiceAt > 7 && fadedVoiceTo === 0.0001
+    && pausedVoiceAudio._activeVoice === null && pausedVoiceAudio._activeVoiceGain === null,
+'pause stops an active spoken stinger when its frozen caption becomes hidden');
 
 // Duck automation must always schedule a return to unity. A pathological
 // amount is intentional: it proves signature cues cannot push the persistent

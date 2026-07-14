@@ -53,6 +53,16 @@ export const GameUpdateMethods = {
         // Feedback flashes + press states tick on every screen so they
         // animate even while gameplay is frozen behind an overlay.
         this._updateFeedback(dt);
+        const captionHidden = this.screen !== 'gameplay' || this.paused || this.photoMode
+            || this.upgradeChoices || this.chestReward || this.altar || this.victory || this.gameOver;
+        if (captionHidden) {
+            // Voice is independently configurable and may still be audible
+            // when captions are Off. Hidden gameplay surfaces always stop it;
+            // never key the audio boundary off a caption snapshot.
+            this.audio?.stopVoice?.();
+        } else {
+            this.captionSystem?.update?.(dt);
+        }
 
         // KINDLED: an overlay/pause/run-end opening mid-aim CANCELS the ult and
         // refunds the committed bar (the aim can't tick while the world is frozen,
@@ -728,13 +738,26 @@ export const GameUpdateMethods = {
                 // windup and its commit; phase two gets a distinct stinger.
                 if (!wasBossWinding && e.bossWindupTimer > 0) {
                     if (this._inView(e.x, e.y, 0)) this.audio.bossTelegraph();
+                    this.captionSystem?.sound?.({
+                        key: `boss-cast-${e.type}`,
+                        text: 'Boss attack charging',
+                        priority: 82,
+                        cooldown: 1.2,
+                    });
+                    this.haptics?.pulse?.('bossAttack');
                 } else if (wasBossWinding && e.bossWindupTimer <= 0) {
                     if (this._inView(e.x, e.y, 80)) this.audio.bossAttack();
                 }
                 if (!wasPhaseBreaking && e.bossPhaseBreakTimer > 0) this.audio.enrage();
             }
             if (e.type === 'charger' && this._inView(e.x, e.y, 0)) {
-                if (!wasWinding && e.windupTimer > 0) this.audio.chargerWindup();
+                if (!wasWinding && e.windupTimer > 0) {
+                    this.audio.chargerWindup();
+                    this.captionSystem?.sound?.({
+                        key: 'charger-windup', text: 'Charger winding up',
+                        priority: 68, cooldown: 2,
+                    });
+                }
                 else if (wasWinding && e.windupTimer <= 0) this.audio.chargerDash();
             } else if (e.behavior === 'bomber') {
                 if (!wasWinding && e.windupTimer > 0) {
@@ -748,7 +771,13 @@ export const GameUpdateMethods = {
                         damage: e.blastDamage, age: 0, lifetime: e.def.windup,
                         hitPlayer: false, detonateAge: 0, active: true,
                     });
-                    if (this._inView(e.x, e.y, 0)) this.audio.chargerWindup();
+                    if (this._inView(e.x, e.y, 0)) {
+                        this.audio.chargerWindup();
+                        this.captionSystem?.sound?.({
+                            key: 'bomber-fuse', text: 'Bomber fuse ignites',
+                            priority: 72, cooldown: 2,
+                        });
+                    }
                 } else if (wasWinding && e.windupTimer <= 0 && e.active) {
                     // Commit: the bee dies in its own blast. A PLAIN bomber is
                     // deliberately NOT routed through the kill/reward path — a
@@ -764,11 +793,23 @@ export const GameUpdateMethods = {
                     }
                     if (e.elite) this._selfDetonated.push(e);
                     else this.particles.deathBurst(e.x, e.y, '#ff9a4a');
-                    if (this._inView(e.x, e.y, 120)) this.audio.volatileBoom();
+                    if (this._inView(e.x, e.y, 120)) {
+                        this.audio.volatileBoom();
+                        this.captionSystem?.sound?.({
+                            key: 'bomber-blast', text: 'Volatile enemy explodes',
+                            detail: 'full', priority: 44, cooldown: 2,
+                        });
+                    }
                 }
             } else if (e.behavior === 'summoner') {
                 if (!wasWinding && e.windupTimer > 0) {
-                    if (this._inView(e.x, e.y, 0)) this.audio.chargerWindup();
+                    if (this._inView(e.x, e.y, 0)) {
+                        this.audio.chargerWindup();
+                        this.captionSystem?.sound?.({
+                            key: 'summoner-call', text: 'Summoner calls reinforcements',
+                            priority: 64, cooldown: 3,
+                        });
+                    }
                 } else if (wasWinding && e.windupTimer <= 0) {
                     // Call fulfilled through _spawnBossSupport — the SAME
                     // alive-cap gate boss summons use, so summon pressure can
@@ -1014,8 +1055,14 @@ export const GameUpdateMethods = {
                 if (e.phase2Entered && !e.enrageShouted) {
                     e.enrageShouted = true;
                     const voiceCaption = this.audio.musicEvent('phase2', { bossId: e.type });
-                    const caption = voiceCaption ? ` · “${voiceCaption}”` : '';
-                    this.waveDirector.announce(`SECOND ACT — ${e.name.toUpperCase()}${caption}`, 2.2, '#ff3326');
+                    this.waveDirector.announce(`SECOND ACT — ${e.name.toUpperCase()}`, 2.2, '#ff3326');
+                    if (voiceCaption) {
+                        this.captionSystem?.say?.({
+                            key: `boss-phase2-${e.type}`,
+                            speaker: e.name || 'Boss',
+                            text: voiceCaption,
+                        });
+                    }
                     this._shake(SCREEN_SHAKE.intensity * 0.85, 0.45);
                     this._spawnRing(e.x, e.y, { maxR: 300, width: 12, life: 0.5, color: '#ff3b4e', ease: 'outCubic' });
                 }
@@ -1093,6 +1140,7 @@ export const GameUpdateMethods = {
         if (this.player.hp > this._lastHp + 0.5) this._pushFeedback('heal', 0.4);
         else if (this.player.hp < this._lastHp - 0.5) {
             this.audio.hurt();
+            this.haptics?.pulse?.('damage');
             // Red screen-edge vignette pulse on any damage; a heavy hit
             // (>=12% max HP) also briefly freezes the frame for impact.
             const dmg = this._lastHp - this.player.hp;
@@ -1104,9 +1152,19 @@ export const GameUpdateMethods = {
         // Near-death heartbeat: a soft ~1Hz ember pulse while HP is critical —
         // cozy dread, never a klaxon. Resets the instant HP recovers.
         if (this.player.hp > 0 && this.player.hp < this.player.maxHp * 0.25) {
+            if (!this._captionLowHealth) {
+                this._captionLowHealth = true;
+                this.captionSystem?.sound?.({
+                    key: 'low-health', text: 'Heartbeat quickens — health critical',
+                    priority: 88, cooldown: 8, lifetime: 2.8,
+                });
+            }
             this._heartbeatT = (this._heartbeatT ?? 0) - dt;
             if (this._heartbeatT <= 0) { this.audio.heartbeat(); this._heartbeatT = 0.85; }
-        } else this._heartbeatT = 0;
+        } else {
+            this._heartbeatT = 0;
+            this._captionLowHealth = false;
+        }
 
         // Second Wind: trickle HP back while no enemy is within the safe
         // radius. Applied after the heal-flash check so the tiny per-frame
