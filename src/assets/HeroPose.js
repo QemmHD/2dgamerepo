@@ -170,7 +170,7 @@ export function applyHeroAttachmentTransform(ctx, pose, slot) {
 /** Return a fresh attachment point, mirroring canonical X once when flipped. */
 export function heroPosePoint(pose, slot) {
     const point = pose?.attachments?.[slot];
-    if (!isFinitePoint(point)) return [0, 0];
+    if (!isFinitePoint(point)) return null;
     const x = pose.flip === true && point[0] !== 0 ? -point[0] : point[0];
     return [x, point[1]];
 }

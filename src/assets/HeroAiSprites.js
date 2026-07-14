@@ -1,7 +1,8 @@
 // HeroAiSprites — the HQ pixel-art hero BODY (higgsfield / Nano Banana 2,
 // upgraded from the procedural monkey with the same silhouette + anchors),
-// pre-rendered as one 7-frame sheet per direction under assets/hero/:
-//   cols: idle0, idle1(blink), walk0, walk1(rise), walk2, cast, hurt
+// pre-rendered as one 9-frame sheet per direction under assets/hero/:
+//   cols: idle0, idle1(blink), walk0, walk1(rise), walk2, cast, hurt,
+//         death, victory
 //   files: monkey_down.png / monkey_up.png / monkey_side.png
 //
 // ONE shared body serves ALL six heroes: each character's set is built from
@@ -16,6 +17,7 @@
 
 import { SPRITE_SIZE } from '../config/GameConfig.js';
 import { drawHeroFeatureOverlay, HERO_BOB } from './PixelArt.js';
+import { HERO_POSE_ATTACHMENTS } from './HeroPoseData.js';
 
 const DIRS = ['down', 'up', 'side'];
 const COLS = 9;
@@ -127,7 +129,7 @@ export function getAiHeroFrames(id, char) {
             }
             dirs[dir] = d;
         }
-        set = { kind: 'pixel', dirs };
+        set = { kind: 'pixel', dirs, attachments: HERO_POSE_ATTACHMENTS };
     } catch (e) { set = null; }
     _heroCache.set(id, set);
     return set;

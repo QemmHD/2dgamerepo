@@ -14,39 +14,15 @@ import { Easing } from '../core/Easing.js';
 import {
     getHeroFrames, getGlowSprite, getSoftShadowSprite,
 } from '../assets/ProceduralSprites.js';
-import { drawPixelCloak, drawPixelHat, HERO_BOB, HERO_GRID } from '../assets/PixelArt.js';
+import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
+import {
+    applyHeroAttachmentTransform,
+    heroPosePoint,
+    resolveHeroPose,
+} from '../assets/HeroPose.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawTrailPoint, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
 
-// The held wand sits in the sprite's OWN paw: these are the wand-hand PAW
-// positions per direction / pose / frame, exported BONE-EXACTLY from the
-// Blender grip-bone (the rig's GRIP empty at the right paw, projected through
-// the render camera — tools/blender pipeline, anchors.json), in draw px
-// relative to the sprite centre (unflipped; 'side' faces right — the x
-// mirrors for 'left'; in 'up' the right paw sits on screen-LEFT, hence the
-// negative x). The frames bake the walk bob + arm swing, so riding these
-// anchors makes the body's real arm carry the weapon through every
-// animation — no synthetic arm is drawn.
-const HAND = {
-    down: {
-        idle: [[31.5, 48.2], [31.5, 48.2]],
-        walk: [[32.4, 47.5], [31.5, 40.5], [30.3, 43.6]],
-        cast: [[50.0, 11.0]],
-        hurt: [[43.1, 44.7]],
-    },
-    side: {
-        idle: [[9.1, 37.6], [9.1, 37.6]],
-        walk: [[-1.9, 39.0], [12.2, 29.3], [19.0, 31.2]],
-        cast: [[27.4, -7.2]],
-        hurt: [[7.7, 32.0]],
-    },
-    up: {
-        idle: [[-31.5, 47.3], [-31.5, 47.3]],
-        walk: [[-32.4, 51.2], [-31.5, 38.3], [-30.3, 38.6]],
-        cast: [[-50.0, 2.5]],
-        hurt: [[-43.1, 44.3]],
-    },
-};
 // Resting carry angle per direction (radians; wand grip in the hanging paw,
 // tip up and slightly forward like a carried stick). Mirrored when flipped.
 const CARRY = { down: -1.25, side: -0.62, up: -1.35 };
@@ -72,8 +48,8 @@ export class Player {
         // Kept between moves so an idle hero keeps the last-faced direction.
         this.facing = 'down';
         this.characterId = characterId;
-        // Directional pose frame model: { dirs:{down,up,side}, each = {idle,
-        // walk:[3], cast, hurt} }. draw() picks dir+state by facing/animState.
+        // Directional pose frame model: body canvases and Blender-exported
+        // attachment frames share one direction/state/index contract.
         const ch = getCharacter(characterId);
         this.heroFrames = getHeroFrames(characterId, ch);
         // LPC-bodied heroes get the imported cape sprite for their cloak (it
@@ -477,30 +453,18 @@ export class Player {
             const ph = this.auraPhase % 2.6;
             idx = ph > 2.32 ? 1 : 0;
         }
-        const dset = this.heroFrames.dirs[dir] || this.heroFrames.dirs.down;
-        const poseArr = dset[state] || dset.idle;
-        // Fur cosmetics are baked into heroFrames (refreshHeroFrames) — no
-        // draw-time tint pass any more.
-        const sprite = poseArr[idx % poseArr.length] || poseArr[0];
-        // Snapshot the resolved pose for the held-weapon passes (both the
-        // behind-body and over-body draws), so the wand rides the exact frame
-        // the body is showing this tick.
-        this._pose = { dir, state, idx, flip };
-
-        // The frames BAKE a per-frame body bob (HERO_BOB, logical px) — the
-        // head/shoulders shift inside the canvas. Cosmetics are separate cached
-        // canvases, so they must ride that same offset or hats sink onto the
-        // brow every mid-walk step. World px per logical px = SIZE / GRID.
-        let bakedBob = 0;
-        if (!this.isLpcBody) {
-            const hb = HERO_BOB[state] || [0];
-            bakedBob = (hb[idx % hb.length] || 0) * (SPRITE_SIZE / HERO_GRID);
-        }
-        // Cloth lags the body: the cloak follows at half the bob and drags a
-        // step behind the run direction; the hat is pinned to the head (full bob).
-        const hatOy = bakedBob;
-        const cloakOy = Math.round(bakedBob * 0.5);
-        const cloakOx = this.moving ? -Math.sign(this.vx || 0) * 3 : 0;
+        // Body, head/shoulder seats, and hand resolve from one frame contract.
+        // A missing state falls back together, so an idle sprite can never be
+        // paired with cast/death anchors (the old detached-cosmetic failure).
+        const pose = resolveHeroPose(this.heroFrames, this.facing, state, idx);
+        const sprite = pose.sprite;
+        dir = pose.dir;
+        flip = pose.flip;
+        this._pose = pose;
+        // A corrupt or partially deployed frame contract must not throw from
+        // drawImage and take down the whole render loop. CI rejects this state;
+        // at runtime we simply omit the body for this frame and recover next tick.
+        if (!sprite) return;
 
         // Shadow Dash afterimage smear: fading ghost copies strung along the
         // blink path (origin → destination), drawn in world space behind the
@@ -559,7 +523,7 @@ export class Player {
         // cloak drapes OVER the body (drawn after the sprite, below) so we see the
         // full cape. LPC heroes use a single front-facing imported cape that has
         // no back variant, so it always draws behind the body (every direction).
-        if (ap.cloakColor && (this.isLpcBody || dir !== 'up')) this._drawCloak(ctx, ap.cloakColor, dir, flip, cloakOx, cloakOy);
+        if (ap.cloakColor && (this.isLpcBody || dir !== 'up')) this._drawCloak(ctx, ap.cloakColor, pose);
 
         ctx.save();
         if (flip) ctx.scale(-1, 1);
@@ -582,15 +546,15 @@ export class Player {
 
         // Back-view pixel cloak drapes over the body (full cape facing away).
         // (LPC heroes already drew their cape behind the body above.)
-        if (ap.cloakColor && !this.isLpcBody && dir === 'up') this._drawCloak(ctx, ap.cloakColor, dir, flip, cloakOx, cloakOy);
+        if (ap.cloakColor && !this.isLpcBody && dir === 'up') this._drawCloak(ctx, ap.cloakColor, pose);
 
         // (The old themed sash + chest gem overlay was removed — the held weapon
         // now carries the weapon identity, so the torso stays clean.)
 
         // Accessory on the head (direction-aware pixel hat, on top) — riding the
-        // baked head bob so it stays seated while walking.
+        // Blender-exported head seat through every shipped pose.
         if (ap.hatShape && ap.hatShape !== 'none') {
-            this._drawHat(ctx, ap.hatShape, ap.hatColor, dir, flip, hatOy);
+            this._drawHat(ctx, ap.hatShape, ap.hatColor, pose);
             // Hit flash: the body pops white via an additive redraw — do the
             // same for the hat so it doesn't sit unlit on a flashing hero.
             if (this.hitFlashTimer > 0) {
@@ -598,10 +562,11 @@ export class Player {
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.globalAlpha = alpha * Math.min(1, tq) * 0.8;
-                this._drawHat(ctx, ap.hatShape, ap.hatColor, dir, flip, hatOy);
+                this._drawHat(ctx, ap.hatShape, ap.hatColor, pose);
                 ctx.restore();
             }
         }
+        if (this.debugAttachmentAnchors) this._drawAttachmentAnchors(ctx, pose);
         ctx.restore();
 
         // Held weapon OVER the body (front pass): the signature weapon in its
@@ -615,7 +580,7 @@ export class Player {
     // Draw the SIGNATURE weapon IN the sprite's own paw: the run's starting
     // weapon (chosen in the menu loadout — owned[0], so an evolution/fusion of
     // it keeps the slot). The grip anchor follows the body's REAL arm through
-    // every pose frame (the HAND table, measured from the sheets), so the
+    // every pose frame (the Blender attachment export), so the
     // baked animation does the acting: at rest the wand rides the hanging paw
     // at a carry angle; on fire the cast pose raises the arm and the wand
     // pivots in that fist to the aim with a thrust + tip muzzle flash. The
@@ -624,7 +589,7 @@ export class Player {
     _drawHeldWeapons(ctx, bobY, alpha, layer = 'front') {
         // On the run-end poses the hero drops/raises empty paws — a wand pinned
         // to the hand would fight the collapse/cheer, so skip the held prop.
-        if (this._pose && (this._pose.state === 'death' || this._pose.state === 'victory')) return;
+        if (this._pose && (this._pose.requestedState === 'death' || this._pose.requestedState === 'victory')) return;
         // Orbit-kind primaries (e.g. the starter fused into Cinderhalo) are
         // held too — the hand keeps the run's chosen weapon even after fusion;
         // the spinning ring around the body stays their gameplay visual.
@@ -640,14 +605,13 @@ export class Player {
         // the camera), so it draws in the behind pass and the torso occludes.
         if (layer !== (this.facing === 'up' ? 'behind' : 'front')) return;
 
-        // Paw anchor for the exact frame the body is showing (flip mirrors x).
+        // Paw anchor from the same exact frame contract as the body/cosmetics.
         const H = this.hold;                 // per-character scale/tilt flavor
         const k = this.spriteHalf / 91;      // world px per authored anchor px
-        const hand = HAND[P.dir] || HAND.down;
-        const arr = hand[P.state] || hand.idle;
-        const a = arr[P.idx % arr.length] || arr[0];
-        const hx = this.x + (P.flip ? -a[0] : a[0]) * k;
-        const hy = this.y + bobY + a[1] * k;
+        const hand = heroPosePoint(P, 'handR');
+        if (!hand) return;
+        const hx = this.x + hand[0] * k;
+        const hy = this.y + bobY + hand[1] * k;
 
         const firing = P.state === 'cast';
         const kick = Easing.outQuad(primary.fireFlash || 0);
@@ -733,10 +697,13 @@ export class Player {
         ctx.restore();
     }
 
-    // Cloak + hat: direction-aware pixel cosmetics (drawPixelCloak/Hat, shared
-    // with the menu preview so the two never diverge). `dir` is down/up/side and
-    // `flip` mirrors the side view for left-facing.
-    _drawCloak(ctx, color, dir = 'down', flip = false, ox = 0, oy = 0) {
+    // Cloak + hat: both are authored in the neutral 182px body box, then one
+    // shared segment transform pins them to the current shoulder/head pose.
+    _drawCloak(ctx, color, pose) {
+        const dir = pose?.dir || 'down';
+        const flip = !!pose?.flip;
+        ctx.save();
+        applyHeroAttachmentTransform(ctx, pose, 'shoulders');
         // LPC heroes keep the imported, recolored cape sprite (it aligns to the
         // LPC body); the single front-facing cape is reused for every direction.
         if (this.isLpcBody) {
@@ -746,15 +713,41 @@ export class Player {
                 // it flares out behind the hero instead of hiding behind them.
                 const dw = SPRITE_SIZE * 1.32, off = SPRITE_SIZE * 0.075;
                 ctx.drawImage(cape, -dw / 2, -dw / 2 + off, dw, dw);
+                ctx.restore();
                 return;
             }
         }
-        // ox/oy: cloth lag — half the baked body bob + a step behind the run.
-        drawPixelCloak(ctx, ox, oy, this.spriteHalf, dir, color, flip);
+        drawPixelCloak(ctx, 0, 0, this.spriteHalf, dir, color, flip);
+        ctx.restore();
     }
-    _drawHat(ctx, shape, color, dir = 'down', flip = false, oy = 0) {
-        // oy: the baked head bob, so the hat stays seated on the head.
-        drawPixelHat(ctx, 0, oy, this.spriteHalf, dir, shape, color, flip);
+    _drawHat(ctx, shape, color, pose) {
+        ctx.save();
+        applyHeroAttachmentTransform(ctx, pose, 'headSeat');
+        drawPixelHat(ctx, 0, 0, this.spriteHalf, pose?.dir || 'down', shape, color, !!pose?.flip);
+        ctx.restore();
+    }
+
+    _drawAttachmentAnchors(ctx, pose) {
+        const A = pose?.attachments;
+        if (!A) return;
+        ctx.save();
+        if (pose.flip) ctx.scale(-1, 1);
+        const segment = (seg, color) => {
+            if (!seg?.left || !seg?.right) return;
+            ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(seg.left[0], seg.left[1]);
+            ctx.lineTo(seg.right[0], seg.right[1]); ctx.stroke();
+            for (const p of [seg.left, seg.right]) {
+                ctx.beginPath(); ctx.arc(p[0], p[1], 3, 0, TWO_PI); ctx.fill();
+            }
+        };
+        segment(A.headSeat, '#7dff73');
+        segment(A.shoulders, '#65d9ff');
+        if (A.handR) {
+            ctx.fillStyle = '#ff6fe7'; ctx.beginPath();
+            ctx.arc(A.handR[0], A.handR[1], 4, 0, TWO_PI); ctx.fill();
+        }
+        ctx.restore();
     }
 
     // Spawn a melee swing toward `angle` (world radians). Game calls this on a

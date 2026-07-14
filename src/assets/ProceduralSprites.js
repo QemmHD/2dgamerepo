@@ -19,6 +19,7 @@ import { TWO_PI } from '../core/MathUtils.js';
 import { getLpcFrames, isLpcLoaded } from './LpcSprites.js';
 import { drawPixelMonkey, drawPixelHero } from './PixelArt.js';
 import { getAiHeroFrames } from './HeroAiSprites.js';
+import { HERO_POSE_ATTACHMENTS } from './HeroPoseData.js';
 import { getDecorSprite } from './DecorSprites.js';
 
 const cache = new Map();
@@ -188,8 +189,9 @@ export function getMonkeySprite() {
 
 // ── Directional pose frame model ─────────────────────────────────────────
 // getHeroFrames returns a structured, cached set:
-//   { kind, dirs: { down, up, side } }, each dir = { idle:[c], walk:[c,c,c],
-//     cast:[c], hurt:[c] }.  `side` faces +x; callers flip it for left.
+//   { kind, dirs: { down, up, side }, attachments }, each dir contains the
+//   available animation canvases. `side` faces +x; callers flip it for left.
+//   Blender-exported attachment frames share the same state/index contract.
 // Pixel heroes get full per-direction pose art; LPC heroes get directional
 // walk built from their walk rows (cast/hurt reuse idle — Player adds the
 // transform lean/recoil), so the imported bodies stay feasible without new art.
@@ -202,7 +204,11 @@ function buildPixelHeroSet(opts) {
         cast: [drawPixelHero(opts, dir, 'cast', 0)],
         hurt: [drawPixelHero(opts, dir, 'hurt', 0)],
     });
-    return { kind: 'pixel', dirs: { down: mk('down'), up: mk('up'), side: mk('side') } };
+    return {
+        kind: 'pixel',
+        dirs: { down: mk('down'), up: mk('up'), side: mk('side') },
+        attachments: HERO_POSE_ATTACHMENTS,
+    };
 }
 
 // Copy a canvas so addOutline (which mutates in place) never touches the
@@ -231,7 +237,7 @@ function buildLpcHeroSet(model) {
     if (!down) return null;            // sheet failed → fall back to pixel set
     const up = pick(fr.up) || down;
     const side = pick(fr.right) || down; // side faces +x; Player flips for left
-    return { kind: 'lpc', dirs: { down, up, side } };
+    return { kind: 'lpc', dirs: { down, up, side }, attachments: HERO_POSE_ATTACHMENTS };
 }
 
 // ── True fur recolor for baked/imported frame sets (AI sheets, LPC) ──────
@@ -365,7 +371,10 @@ export function clearHeroFrameCache() {
 export function heroSetFrames(set) {
     const out = [];
     for (const d of Object.values(set.dirs)) {
-        for (const arr of [d.idle, d.walk, d.cast, d.hurt]) for (const c of arr) if (c && !out.includes(c)) out.push(c);
+        for (const arr of Object.values(d)) {
+            if (!Array.isArray(arr)) continue;
+            for (const c of arr) if (c && !out.includes(c)) out.push(c);
+        }
     }
     return out;
 }
