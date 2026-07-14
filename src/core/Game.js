@@ -154,6 +154,10 @@ export class Game {
         // a short-lived toast for claim/case feedback. The menu lands on the
         // HOME title screen; sections open from its stack.
         this.menuTab = 'home';
+        // General and Accessibility share the Settings section without adding
+        // another global menu tab. Session-only: preferences themselves live in
+        // SaveSystem, while this only remembers which pane is visible.
+        this.settingsPane = 'general';
         // ATTUNE altar selection (relic id; null → first attunable). Session-
         // local like selectedPatron — set by the 'attuneSelect' menu action.
         this.attuneSel = null;
@@ -334,6 +338,19 @@ export class Game {
                     e.preventDefault();
                     this._menuAction('tourSkip', null);
                     this._resetMenuFocus();
+                    return;
+                }
+
+                // Accessibility is nested inside Settings: the first Escape
+                // returns to General, and a second Escape follows the normal
+                // section-to-HOME path below.
+                if (e.code === 'Escape' && this.menuTab === 'settings'
+                    && this.settingsPane === 'accessibility') {
+                    e.preventDefault();
+                    this.settingsPane = 'general';
+                    this._resetMenuFocus();
+                    this.accessibility?.setScreen?.('start', 'General settings.');
+                    this.accessibility?.announce?.('General settings.');
                     return;
                 }
 
@@ -1084,6 +1101,12 @@ export class Game {
         const step = TOUR_STEPS[this.menuTour?.idx];
         if (!step) return;
         this.menuTab = step.tab;
+        // Tour steps may target a nested Settings pane. Resetting this on every
+        // step prevents a replay or skipped tour from leaving Settings parked
+        // on Accessibility when the player later returns on their own.
+        this.settingsPane = step.tab === 'settings' && step.settingsPane === 'accessibility'
+            ? 'accessibility'
+            : 'general';
         this.saveSystem.markTabSeen(step.tab);
     }
 
@@ -1091,6 +1114,7 @@ export class Game {
         this.menuTour = null;
         this.saveSystem.setTourDone(true);
         this.menuTab = 'home';   // land back on the title screen after the tour
+        this.settingsPane = 'general';
         this._resetMenuFocus();
         this.accessibility?.announce?.('Menu tour closed. Home.');
     }

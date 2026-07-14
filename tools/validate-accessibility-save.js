@@ -5,6 +5,13 @@
 // reducedEffects field is absent or invalid.
 
 import { SaveSystem } from '../src/systems/SaveSystem.js';
+import {
+    DEFAULT_UI_SCALE,
+    UI_SCALE_PRESETS,
+    normalizeHighContrast,
+    normalizeUiScale,
+    uiScaleFactor,
+} from '../src/systems/AccessibilityPreferences.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 const MOTION_QUERY = '(prefers-reduced-motion: reduce)';
@@ -67,6 +74,28 @@ function existingRaw(settings) {
     return JSON.stringify({ totalCoins: 321, settings });
 }
 
+ok(DEFAULT_UI_SCALE === 100, 'UI scale default is exactly 100 percent');
+ok(Object.isFrozen(UI_SCALE_PRESETS)
+    && UI_SCALE_PRESETS.join(',') === '100,115,130',
+'UI scale presets are the immutable 100/115/130 contract');
+for (const scale of UI_SCALE_PRESETS) {
+    ok(normalizeUiScale(scale) === scale, `UI scale normalizer preserves ${scale} percent`);
+    ok(uiScaleFactor(scale) === scale / 100,
+        `UI scale ${scale} percent converts to an exact HUD layout factor`);
+}
+ok(uiScaleFactor(129) === 1,
+    'unsupported UI scale converts to the safe 100-percent HUD layout factor');
+for (const value of [undefined, null, false, true, '130', 1.15, 99, 101, 114, 116, 129, 131, 1000, {}, []]) {
+    ok(normalizeUiScale(value) === DEFAULT_UI_SCALE,
+        `unsupported UI scale ${JSON.stringify(value)} falls back to 100 percent`);
+}
+ok(normalizeHighContrast(true) === true,
+    'strict high-contrast normalizer preserves literal true');
+for (const value of [undefined, null, false, 0, 1, 'true', {}, []]) {
+    ok(normalizeHighContrast(value) === false,
+        `high contrast rejects non-true value ${JSON.stringify(value)}`);
+}
+
 try {
     // Expected storage failures are part of the contract, not noisy test output.
     console.warn = () => {};
@@ -78,13 +107,20 @@ try {
     const freshReduced = new SaveSystem();
     ok(freshReduced.getSetting('reducedEffects') === true,
         'fresh stored profile inherits an enabled OS reduced-motion preference');
+    ok(freshReduced.getSetting('uiScale') === 100
+        && freshReduced.getSetting('highContrast') === false,
+    'fresh profile receives safe UI-scale and high-contrast defaults');
     ok(queries.length === 1 && queries[0] === MOTION_QUERY,
         'fresh profile queries the exact prefers-reduced-motion media feature once');
 
     setGlobal('window', mediaWindow(false));
     setGlobal('localStorage', new MemoryStorage());
-    ok(new SaveSystem().getSetting('reducedEffects') === false,
+    const freshFullMotion = new SaveSystem();
+    ok(freshFullMotion.getSetting('reducedEffects') === false,
         'fresh stored profile stays full-motion when the OS preference is off');
+    ok(freshFullMotion.getSetting('uiScale') === 100
+        && freshFullMotion.getSetting('highContrast') === false,
+    'fresh full-motion profile keeps independent accessibility defaults');
 
     // Storage-unavailable play is an in-memory fresh profile and must inherit too.
     setGlobal('window', mediaWindow(true));
@@ -94,8 +130,12 @@ try {
 
     // Both malformed JSON and structurally invalid JSON are corrupt profiles.
     setGlobal('localStorage', new MemoryStorage('{broken-json'));
-    ok(new SaveSystem().getSetting('reducedEffects') === true,
+    const malformedSave = new SaveSystem();
+    ok(malformedSave.getSetting('reducedEffects') === true,
         'malformed stored JSON resets with the OS preference');
+    ok(malformedSave.getSetting('uiScale') === 100
+        && malformedSave.getSetting('highContrast') === false,
+    'malformed stored JSON resets the new preferences safely');
     setGlobal('localStorage', new MemoryStorage('null'));
     ok(new SaveSystem().getSetting('reducedEffects') === true,
         'valid JSON null is treated as corrupt and resets with the OS preference');
@@ -120,6 +160,99 @@ try {
     ok(new SaveSystem().getSetting('reducedEffects') === true,
         'existing explicit reduced-effects preference survives OS full motion');
 
+    // Every documented UI scale and explicit high-contrast choice must survive
+    // normalization, persistence, and a second constructor exactly.
+    for (const scale of UI_SCALE_PRESETS) {
+        const storage = new MemoryStorage(existingRaw({
+            reducedEffects: false,
+            uiScale: scale,
+            highContrast: true,
+        }));
+        setGlobal('localStorage', storage);
+        const first = new SaveSystem();
+        ok(first.getSetting('uiScale') === scale
+            && first.getSetting('highContrast') === true,
+        `stored ${scale}% UI scale and high contrast validate exactly`);
+        first.save();
+        const second = new SaveSystem();
+        ok(second.getSetting('uiScale') === scale
+            && second.getSetting('highContrast') === true,
+        `stored ${scale}% UI scale and high contrast survive reload`);
+    }
+    const contrastOffStorage = new MemoryStorage(existingRaw({
+        uiScale: 130,
+        highContrast: false,
+    }));
+    setGlobal('localStorage', contrastOffStorage);
+    const contrastOff = new SaveSystem();
+    ok(contrastOff.getSetting('uiScale') === 130
+        && contrastOff.getSetting('highContrast') === false,
+    'explicit high-contrast off validates independently of a large HUD size');
+    contrastOff.save();
+    ok(new SaveSystem().getSetting('highContrast') === false,
+        'explicit high-contrast off survives reload');
+
+    // The fixed-shape settings normalizer must add safe defaults to an old save
+    // without losing historical values or the dev-only escape switches.
+    const legacyStorage = new MemoryStorage(existingRaw({
+        screenShake: false,
+        debug: true,
+        damageNumbers: false,
+        particles: false,
+        reducedEffects: true,
+        volMusic: 0.35,
+        volSfx: 0.65,
+        unlockMaps: true,
+    }));
+    setGlobal('localStorage', legacyStorage);
+    const legacy = new SaveSystem();
+    ok(legacy.getSetting('uiScale') === 100
+        && legacy.getSetting('highContrast') === false,
+    'old save missing preference keys receives safe additive defaults');
+    ok(legacy.data.totalCoins === 321
+        && legacy.getSetting('screenShake') === false
+        && legacy.getSetting('debug') === true
+        && legacy.getSetting('damageNumbers') === false
+        && legacy.getSetting('particles') === false
+        && legacy.getSetting('reducedEffects') === true
+        && legacy.getSetting('volMusic') === 0.35
+        && legacy.getSetting('volSfx') === 0.65
+        && legacy.getSetting('unlockMaps') === true,
+    'old-save migration preserves progression, player settings, and dev settings');
+
+    for (const value of [null, false, true, '130', 1.15, 0, 99, 101, 114, 116, 129, 131, 1000, {}, []]) {
+        setGlobal('localStorage', new MemoryStorage(existingRaw({ uiScale: value })));
+        ok(new SaveSystem().getSetting('uiScale') === 100,
+            `stored unsupported UI scale ${JSON.stringify(value)} validates to 100 percent`);
+    }
+    for (const value of [null, 0, 1, 'true', {}, []]) {
+        setGlobal('localStorage', new MemoryStorage(existingRaw({ highContrast: value })));
+        ok(new SaveSystem().getSetting('highContrast') === false,
+            `stored high contrast ${JSON.stringify(value)} validates to false`);
+    }
+
+    // Live setters use the same strict boundary, so a bad action cannot poison
+    // the in-memory profile until the next reload repairs it.
+    const setterStorage = new MemoryStorage(existingRaw({}));
+    setGlobal('localStorage', setterStorage);
+    const setterSave = new SaveSystem();
+    ok(setterSave.setSetting('uiScale', 115) === 115
+        && setterSave.getSetting('uiScale') === 115,
+    'UI-scale setter accepts a documented preset');
+    ok(setterSave.setSetting('uiScale', 129) === 100
+        && setterSave.getSetting('uiScale') === 100,
+    'UI-scale setter repairs an unsupported live value immediately');
+    ok(setterSave.setSetting('highContrast', true) === true
+        && setterSave.getSetting('highContrast') === true,
+    'high-contrast setter accepts literal true');
+    ok(setterSave.setSetting('highContrast', 'true') === false
+        && setterSave.getSetting('highContrast') === false,
+    'high-contrast setter rejects truthy non-booleans immediately');
+    const setterReload = new SaveSystem();
+    ok(setterReload.getSetting('uiScale') === 100
+        && setterReload.getSetting('highContrast') === false,
+    'normalized setter results persist through reload');
+
     // Migration remains intentionally historical: missing/invalid values use
     // defaultData() false, never the OS-derived freshDefaultData() value.
     setGlobal('window', mediaWindow(true));
@@ -127,8 +260,14 @@ try {
     ok(new SaveSystem().getSetting('reducedEffects') === false,
         'older save missing reducedEffects keeps the historical false fallback');
     setGlobal('localStorage', new MemoryStorage(JSON.stringify({ totalCoins: 321 })));
-    ok(new SaveSystem().getSetting('reducedEffects') === false,
-        'older save missing the settings object does not silently inherit OS motion');
+    {
+        const noSettings = new SaveSystem();
+        ok(noSettings.getSetting('reducedEffects') === false,
+            'older save missing the settings object does not silently inherit OS motion');
+        ok(noSettings.getSetting('uiScale') === 100
+            && noSettings.getSetting('highContrast') === false,
+        'older save missing the settings object receives safe preference defaults');
+    }
     setGlobal('localStorage', new MemoryStorage(existingRaw({ reducedEffects: 'yes' })));
     ok(new SaveSystem().getSetting('reducedEffects') === false,
         'existing invalid reducedEffects value validates to historical false');
@@ -139,15 +278,29 @@ try {
     setGlobal('window', {
         matchMedia(query) { return { matches: query === MOTION_QUERY && livePreference }; },
     });
-    const resetStorage = new MemoryStorage(existingRaw({ reducedEffects: false }));
+    const resetStorage = new MemoryStorage(existingRaw({
+        reducedEffects: false,
+        uiScale: 130,
+        highContrast: true,
+    }));
     setGlobal('localStorage', resetStorage);
     const resetSave = new SaveSystem();
+    ok(resetSave.getSetting('uiScale') === 130
+        && resetSave.getSetting('highContrast') === true,
+    'reset fixture begins with non-default persisted preferences');
     livePreference = true;
     resetSave.reset();
     ok(resetSave.getSetting('reducedEffects') === true,
         'reset profile re-samples and inherits enabled OS reduced motion');
+    ok(resetSave.getSetting('uiScale') === 100
+        && resetSave.getSetting('highContrast') === false,
+    'reset restores safe UI-scale and high-contrast defaults');
     ok(JSON.parse(resetStorage.getItem(SAVE_KEY)).settings.reducedEffects === true,
         'reset persists its inherited reduced-motion setting');
+    const persistedResetSettings = JSON.parse(resetStorage.getItem(SAVE_KEY)).settings;
+    ok(persistedResetSettings.uiScale === 100
+        && persistedResetSettings.highContrast === false,
+    'reset persists the new preference defaults');
     livePreference = false;
     resetSave.reset();
     ok(resetSave.getSetting('reducedEffects') === false,
@@ -183,4 +336,4 @@ if (failures) {
     process.exit(1);
 }
 
-console.log(`Accessibility save validation passed: ${checks} reduced-motion save checks.`);
+console.log(`Accessibility save validation passed: ${checks} motion and preference save checks.`);

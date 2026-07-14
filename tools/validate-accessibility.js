@@ -141,6 +141,7 @@ ok(menuHotspotKey('tab', 'play', 0) !== menuHotspotKey('tab', 'play', 1),
     'repeated semantic controls receive distinct occurrence keys');
 for (const [action, arg] of [
     ['tab', 'play'], ['startRun', null], ['toggleSetting', 'reducedEffects'],
+    ['toggleSetting', 'highContrast'], ['setUiScale', 115],
     ['openMines', 250], ['claimBP', 12], ['tourNext', null],
 ]) {
     const label = menuHotspotLabel(action, arg);
@@ -148,6 +149,85 @@ for (const [action, arg] of [
 }
 ok(menuHotspotLabel('customAction', null, '  Exact   accessible label  ') === 'Exact accessible label',
     'explicit hotspot labels are normalized and preserved');
+ok(menuHotspotLabel('setUiScale', 115) === 'Set combat HUD size to 115 percent',
+    'combat HUD size control exposes its exact percentage in the accessible label');
+ok(menuHotspotLabel('toggleSetting', 'highContrast') === 'Toggle High contrast warnings',
+    'high-contrast control exposes a useful accessible label');
+
+const scaleWrites = [];
+const scaleAnnouncements = [];
+const scaleActionGame = {
+    saveSystem: {
+        setSetting(key, value) { scaleWrites.push([key, value]); return value; },
+    },
+    accessibility: {
+        announce(message) { scaleAnnouncements.push(message); },
+    },
+};
+ok(GameInputActionMethods._setUiScale.call(scaleActionGame, 115) === 115
+    && scaleWrites[0]?.[0] === 'uiScale' && scaleWrites[0]?.[1] === 115,
+'combat HUD size action persists an exact documented preset');
+ok(scaleAnnouncements[0] === 'Combat HUD size: 115 percent.',
+    'combat HUD size action announces the exact resulting percentage');
+ok(GameInputActionMethods._setUiScale.call(scaleActionGame, 129) === 100
+    && scaleWrites[1]?.[1] === 100
+    && scaleAnnouncements[1] === 'Combat HUD size: 100 percent.',
+'combat HUD size action normalizes and announces an unsupported value safely');
+
+let routedScale = null;
+const scaleRouteGame = {
+    audio: { resume() {}, click() {} },
+    menuTour: null,
+    resetConfirming: false,
+    _setUiScale(value) { routedScale = value; },
+};
+GameInputActionMethods._menuAction.call(scaleRouteGame, 'setUiScale', 130);
+ok(routedScale === 130, 'central menu router dispatches setUiScale without a parallel input path');
+
+// Settings panes are session navigation, not a persisted preference. Exercise
+// the real central router so pointer and keyboard hotspot activation share the
+// same sanitization, focus reset, and semantic-screen announcement.
+const paneScreens = [];
+const paneAnnouncements = [];
+let paneFocusResets = 0;
+const paneRouteGame = {
+    audio: { resume() {}, click() {} },
+    menuTour: null,
+    resetConfirming: true,
+    settingsPane: 'general',
+    _resetMenuFocus() { paneFocusResets++; },
+    accessibility: {
+        setScreen(screen, detail) { paneScreens.push([screen, detail]); },
+        announce(message) { paneAnnouncements.push(message); },
+    },
+};
+GameInputActionMethods._menuAction.call(paneRouteGame, 'settingsPane', 'accessibility');
+ok(paneRouteGame.settingsPane === 'accessibility' && paneRouteGame.resetConfirming === false,
+    'settingsPane router accepts Accessibility and cancels stale reset confirmation');
+ok(paneFocusResets === 1,
+    'opening Accessibility resets the rendered-hotspot focus scope exactly once');
+ok(paneScreens[0]?.[0] === 'start'
+    && paneScreens[0]?.[1] === 'Accessibility and Display settings.'
+    && paneAnnouncements[0] === 'Accessibility and Display settings.',
+'opening Accessibility switches and announces the semantic menu screen');
+
+GameInputActionMethods._menuAction.call(paneRouteGame, 'settingsPane', 'general');
+ok(paneRouteGame.settingsPane === 'general' && paneFocusResets === 2,
+    'settingsPane router accepts General and rebuilds focus for its controls');
+ok(paneScreens[1]?.[0] === 'start' && paneScreens[1]?.[1] === 'General settings.'
+    && paneAnnouncements[1] === 'General settings.',
+'returning to General switches and announces the semantic menu screen');
+
+for (const invalidPane of [null, 'display', 115, { pane: 'accessibility' }]) {
+    paneRouteGame.settingsPane = 'accessibility';
+    GameInputActionMethods._menuAction.call(paneRouteGame, 'settingsPane', invalidPane);
+    ok(paneRouteGame.settingsPane === 'general',
+        `invalid Settings pane ${String(invalidPane)} sanitizes to General`);
+}
+ok(paneFocusResets === 6
+    && paneScreens.slice(2).every(([screen, detail]) => screen === 'start' && detail === 'General settings.')
+    && paneAnnouncements.slice(2).every((message) => message === 'General settings.'),
+'every invalid Settings pane resets focus and announces the sanitized General screen');
 
 const menu = new MenuRenderer({ safeArea: { top: 0, right: 0, bottom: 0, left: 0 } });
 menu._hot(10, 20, 100, 44, 'tab', 'play', 'Run setup');

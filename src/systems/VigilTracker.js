@@ -18,6 +18,8 @@
 // this compact plate can be allocated beside the existing HUD instead of
 // inventing another fixed screen position.
 
+import { uiScaleFactor } from './AccessibilityPreferences.js';
+
 export const VIGIL_TRACKER_SITE_KINDS = Object.freeze([
     'hearth',
     'archive',
@@ -135,6 +137,25 @@ function siteRewardSubtitle(event, firstActivation) {
 function isCanvasContext(ctx) {
     return !!ctx && typeof ctx.save === 'function' && typeof ctx.restore === 'function'
         && typeof ctx.beginPath === 'function' && typeof ctx.fillText === 'function';
+}
+
+function drawContrastText(ctx, text, x, y, color, highContrast) {
+    if (highContrast && typeof ctx.strokeText === 'function') {
+        ctx.save();
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#050505';
+        ctx.lineWidth = 5;
+        ctx.strokeText(text, x, y);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.strokeText(text, x, y);
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, y);
+        ctx.restore();
+        return;
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
 }
 
 function siteMaskFrom(value) {
@@ -555,15 +576,19 @@ export class VigilTracker {
     drawHUD(ctx, rect = {}, options = {}) {
         if (!isCanvasContext(ctx) || options?.visible === false) return false;
         const safeRect = rect && typeof rect === 'object' ? rect : {};
-        const x = finite(safeRect.x);
-        const y = finite(safeRect.y);
-        const w = clamp(finite(safeRect.w, 500), 0, 720);
-        const h = clamp(finite(safeRect.h, 132), 0, 180);
+        const screenX = finite(safeRect.x);
+        const screenY = finite(safeRect.y);
+        const uiScale = uiScaleFactor(options?.uiScale);
+        const allocatedW = clamp(finite(safeRect.w, 500 * uiScale), 0, 720 * uiScale);
+        const allocatedH = clamp(finite(safeRect.h, 132 * uiScale), 0, 180 * uiScale);
         // Never silently expand beyond the caller's allocated HUD rectangle.
         // Returning false lets HUDLayout choose a different slot while keeping
         // text at a genuinely legible internal-resolution size.
-        if (w < 340 || h < 112) return false;
-        const compact = w < 440 || h < 124;
+        if (allocatedW < 340 * uiScale || allocatedH < 112 * uiScale) return false;
+        const w = allocatedW / uiScale;
+        const h = allocatedH / uiScale;
+        const compact = options?.compact === true || w < 440 || h < 124;
+        const highContrast = options?.highContrast === true;
         const pad = compact ? 14 : 18;
         const accent = this.celebrations[0]?.color || this.getCurrentPrompt()?.color || GOLD;
         const alpha = clamp(finite(options?.alpha, 1), 0, 1);
@@ -571,12 +596,27 @@ export class VigilTracker {
 
         ctx.save();
         ctx.globalAlpha = finite(ctx.globalAlpha, 1) * alpha;
+        ctx.translate(screenX, screenY);
+        if (uiScale !== 1) {
+            if (typeof ctx.scale !== 'function') { ctx.restore(); return false; }
+            ctx.scale(uiScale, uiScale);
+        }
+        const x = 0;
+        const y = 0;
         roundedRectPath(ctx, x, y, w, h, compact ? 12 : 16);
         ctx.fillStyle = 'rgba(10,9,13,0.92)';
         ctx.fill();
+        if (highContrast) {
+            // Keep the thick silhouette entirely inside the allocation so a
+            // right-edge/safe-area placement never clips half the outline.
+            roundedRectPath(ctx, x + 3, y + 3, w - 6, h - 6, compact ? 10 : 14);
+            ctx.strokeStyle = '#050505';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+        }
         roundedRectPath(ctx, x + 2, y + 2, w - 4, h - 4, compact ? 10 : 14);
-        ctx.strokeStyle = 'rgba(255,188,116,0.16)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = highContrast ? '#ffffff' : 'rgba(255,188,116,0.16)';
+        ctx.lineWidth = highContrast ? 2.5 : 2;
         ctx.stroke();
         ctx.fillStyle = accent;
         const plateAlpha = finite(ctx.globalAlpha, 1);
@@ -628,6 +668,7 @@ export class VigilTracker {
             w: w - pad * 2,
             h: y + h - pad * 0.55 - dividerY - 5,
             compact,
+            highContrast,
         });
         ctx.restore();
         return true;
@@ -636,6 +677,7 @@ export class VigilTracker {
     _drawChipMessage(ctx, box) {
         const celebration = this.celebrations[0];
         const prompt = this.getCurrentPrompt();
+        const highContrast = box.highContrast === true;
         let title;
         let body;
         let color;
@@ -669,6 +711,13 @@ export class VigilTracker {
         ctx.arc(iconX, midY, box.compact ? 5 : 6, 0, TAU);
         ctx.fillStyle = color;
         ctx.fill();
+        if (highContrast && kind === 'encounter-warning') {
+            ctx.beginPath();
+            ctx.arc(iconX, midY, box.compact ? 7 : 8, 0, TAU);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
         if (celebration && !this.reducedEffects) {
             ctx.beginPath();
             ctx.arc(iconX, midY, box.compact ? 10 : 12, 0, TAU);
@@ -681,32 +730,56 @@ export class VigilTracker {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.font = `800 ${box.compact ? 13 : 15}px ${FONT}`;
-        ctx.fillStyle = color;
-        ctx.fillText(cleanText(title, '', box.compact ? 34 : 44), textX, box.y + box.h * 0.32);
+        const titleText = cleanText(title, '', box.compact ? 34 : 44);
+        drawContrastText(
+            ctx, titleText, textX, box.y + box.h * 0.32, color,
+            highContrast && kind === 'encounter-warning',
+        );
         ctx.font = `600 ${box.compact ? 11 : 12}px ${FONT}`;
-        ctx.fillStyle = MUTED;
-        ctx.fillText(cleanText(body, '', box.compact ? 48 : 64), textX, box.y + box.h * 0.70);
+        const bodyText = cleanText(body, '', box.compact ? 48 : 64);
+        drawContrastText(
+            ctx, bodyText, textX, box.y + box.h * 0.70,
+            highContrast && kind === 'encounter-warning' ? TEXT : MUTED,
+            highContrast && kind === 'encounter-warning',
+        );
 
         if (!celebration && prompt?.kind === 'site' && prompt.inside && !prompt.blocked) {
             const barX = box.x;
-            const barY = box.y + box.h - 3;
             const barW = box.w;
-            ctx.fillStyle = 'rgba(255,255,255,0.10)';
-            roundedRectPath(ctx, barX, barY, barW, 3, 1.5); ctx.fill();
+            const barH = highContrast ? 5 : 3;
+            const barY = box.y + box.h - barH;
+            ctx.fillStyle = highContrast ? '#050505' : 'rgba(255,255,255,0.10)';
+            roundedRectPath(ctx, barX, barY, barW, barH, barH / 2); ctx.fill();
             ctx.fillStyle = color;
-            roundedRectPath(ctx, barX, barY, Math.max(2, barW * prompt.progress), 3, 1.5); ctx.fill();
+            roundedRectPath(ctx, barX, barY, Math.max(2, barW * prompt.progress), barH, barH / 2); ctx.fill();
+            if (highContrast) {
+                roundedRectPath(ctx, barX, barY, barW, barH, barH / 2);
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+            }
         } else if (!celebration && prompt?.kind === 'encounter-warning' && prompt.duration > 0) {
             const ratio = clamp(prompt.remaining / prompt.duration, 0, 1);
+            const barH = highContrast ? 5 : 3;
+            const barY = box.y + box.h - barH;
+            if (highContrast) {
+                ctx.fillStyle = '#050505';
+                roundedRectPath(ctx, box.x, barY, box.w, barH, barH / 2); ctx.fill();
+            }
             ctx.fillStyle = color;
-            roundedRectPath(ctx, box.x, box.y + box.h - 3, Math.max(2, box.w * ratio), 3, 1.5); ctx.fill();
+            roundedRectPath(ctx, box.x, barY, Math.max(2, box.w * ratio), barH, barH / 2); ctx.fill();
+            if (highContrast) {
+                roundedRectPath(ctx, box.x, barY, box.w, barH, barH / 2);
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+            }
         }
 
         // This label is visual hierarchy, not an additional animation.
         if (kind === 'encounter-warning') {
             ctx.textAlign = 'right';
             ctx.font = `800 ${box.compact ? 10 : 11}px ${MONO}`;
-            ctx.fillStyle = color;
-            ctx.fillText('INCOMING', box.x + box.w, box.y + box.h * 0.32);
+            drawContrastText(
+                ctx, 'INCOMING', box.x + box.w, box.y + box.h * 0.32,
+                color, highContrast,
+            );
         }
     }
 

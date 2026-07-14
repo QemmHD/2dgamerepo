@@ -34,6 +34,7 @@ import { getCaseArt } from '../assets/CaseArt.js';
 import { getCosmeticEmblem } from '../assets/CosmeticEmblems.js';
 import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
 import { menuHotspotKey, menuHotspotLabel } from './AccessibilityBridge.js';
+import { UI_SCALE_PRESETS, normalizeUiScale } from './AccessibilityPreferences.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
@@ -181,6 +182,7 @@ const SETTING_TOGGLES = [
 export function phoneToggleLabelLines(toggle) {
     if (toggle.key === 'damageNumbers') return ['Damage', 'Numbers'];
     if (toggle.key === 'reducedEffects') return ['Reduce Motion', '& Effects'];
+    if (toggle.key === 'highContrast') return ['High Contrast', 'Warnings'];
     if (toggle.key === 'debug') return ['Debug', 'Mode'];
     if (toggle.key === 'unlockMaps') return ['Unlock', 'Maps'];
     return [toggle.label];
@@ -277,6 +279,71 @@ export function computePhoneSettingsLayout(content, options = {}) {
         gameplayRows: rowsFor(columns.gameplay, 4),
         supportRows: rowsFor(columns.support, 2 + devToggleCount),
         audioBlocks, volumeControls, cheatHeaderY, cheatButtons,
+    };
+}
+
+// Accessibility is a second Settings pane rather than another row in the
+// already-full phone General layout. This keeps every target at least 44 CSS px
+// at the supported 667px landscape width while leaving the ?dev=1 controls and
+// cheats untouched on General.
+export function computePhoneAccessibilityLayout(content, options = {}) {
+    const cssScale = Number.isFinite(options.cssScale) && options.cssScale > 0
+        ? options.cssScale : 1;
+    const pad = 28;
+    const colGap = 24;
+    const rowGap = 12;
+    const rowH = Math.max(100, Math.ceil(44 / cssScale));
+    const inner = {
+        x: content.x + pad,
+        y: content.y + pad,
+        w: content.w - pad * 2,
+        h: content.h - pad * 2,
+    };
+    const availableW = inner.w - colGap;
+    const displayW = Math.round(availableW * 0.66);
+    const columns = {
+        display: { x: inner.x, y: inner.y, w: displayW, h: inner.h },
+        support: {
+            x: inner.x + displayW + colGap,
+            y: inner.y,
+            w: availableW - displayW,
+            h: inner.h,
+        },
+    };
+    const headerY = inner.y + 32;
+    const bodyTop = inner.y + 52;
+    const coreFontPx = Math.max(36, Math.ceil(16 / cssScale));
+    const sectionFontPx = Math.max(32, Math.ceil(13 / cssScale));
+    const statusFontPx = Math.max(26, Math.ceil(12 / cssScale));
+    const coreLineHeight = Math.round(coreFontPx * 0.92);
+    const switchH = Math.max(84, rowH - 8);
+    const switchW = Math.max(150, Math.round(switchH * 1.65));
+    const contrastRow = { x: columns.display.x, y: bodyTop, w: columns.display.w, h: rowH };
+    const scaleHeaderY = contrastRow.y + contrastRow.h + 42;
+    const scaleY = contrastRow.y + contrastRow.h + 54;
+    const scaleGap = 12;
+    const scaleW = (columns.display.w - scaleGap * (UI_SCALE_PRESETS.length - 1))
+        / UI_SCALE_PRESETS.length;
+    const scaleButtons = UI_SCALE_PRESETS.map((value, i) => ({
+        value,
+        x: columns.display.x + i * (scaleW + scaleGap),
+        y: scaleY,
+        w: scaleW,
+        h: rowH,
+    }));
+    const replay = { x: columns.support.x, y: bodyTop, w: columns.support.w, h: rowH };
+    const back = {
+        x: columns.support.x,
+        y: bodyTop + rowH + rowGap,
+        w: columns.support.w,
+        h: rowH,
+    };
+
+    return {
+        inner, columns, headerY, bodyTop, rowH, rowGap, cssScale,
+        coreFontPx, sectionFontPx, statusFontPx, coreLineHeight,
+        switchH, switchW, contrastRow, scaleHeaderY, scaleButtons, replay, back,
+        labelWidth: columns.display.w - switchW - 30,
     };
 }
 
@@ -3666,6 +3733,147 @@ export class MenuRenderer {
         this._hot(rect.x, rect.y, rect.w, rect.h, 'toggleSetting', toggle.key, toggle.label);
     }
 
+    _drawScaleChoice(ctx, rect, value, current, fontSize = 26) {
+        const selected = value === current;
+        roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+        ctx.fillStyle = selected ? 'rgba(76,101,126,0.88)' : 'rgba(20,25,34,0.78)';
+        ctx.fill();
+        ctx.strokeStyle = selected ? '#fff0c2' : 'rgba(184,199,216,0.32)';
+        ctx.lineWidth = selected ? 4 : 2;
+        ctx.stroke();
+        if (selected) {
+            roundRectPath(ctx, rect.x + 7, rect.y + 7, rect.w - 14, rect.h - 14, 11);
+            ctx.strokeStyle = 'rgba(255,240,194,0.55)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        const marker = selected ? '\u2713 ' : '';
+        const label = `${marker}${value}%`;
+        ctx.fillStyle = '#fff';
+        this._fitFont(ctx, label, rect.w - 22, 800, fontSize);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+        this._hot(
+            rect.x, rect.y, rect.w, rect.h, 'setUiScale', value,
+            `Set combat HUD size to ${value} percent${selected ? ', selected' : ''}`,
+        );
+    }
+
+    _drawAccessibilityToggle(ctx, rect, value) {
+        roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+        ctx.fillStyle = value ? 'rgba(40,92,61,0.46)' : 'rgba(20,25,34,0.72)';
+        ctx.fill();
+        ctx.strokeStyle = value ? 'rgba(112,224,145,0.55)' : 'rgba(184,199,216,0.24)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = `700 26px ${FONT}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('High Contrast Warnings', rect.x + 22, rect.y + rect.h / 2);
+        const tw = 100, th = 46;
+        const tx = rect.x + rect.w - tw - 18;
+        const ty = rect.y + (rect.h - th) / 2;
+        roundRectPath(ctx, tx, ty, tw, th, th / 2);
+        ctx.fillStyle = value ? '#3ea65b' : '#505660';
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(value ? tx + tw - th / 2 : tx + th / 2, ty + th / 2, th / 2 - 6, 0, TAU);
+        ctx.fill();
+        ctx.font = `800 17px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(value ? 'ON' : 'OFF', value ? tx + th / 2 : tx + tw - th / 2, ty + th / 2 + 1);
+        this._hot(
+            rect.x, rect.y, rect.w, rect.h, 'toggleSetting', 'highContrast',
+            'High Contrast Warnings',
+        );
+    }
+
+    _drawPhoneAccessibility(ctx, state, c) {
+        const settings = state.saveData?.settings || {};
+        const layout = computePhoneAccessibilityLayout(c, {
+            cssScale: (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH,
+        });
+        const currentScale = normalizeUiScale(settings.uiScale);
+
+        this._phoneSettingsHeader(
+            ctx, layout.columns.display, layout.headerY, 'DISPLAY', layout.sectionFontPx,
+        );
+        this._phoneSettingsHeader(
+            ctx, layout.columns.support, layout.headerY, 'HELP & BACK', layout.sectionFontPx,
+        );
+        this._drawPhoneToggle(
+            ctx,
+            layout.contrastRow,
+            { key: 'highContrast', label: 'High Contrast Warnings' },
+            settings.highContrast === true,
+            layout,
+        );
+
+        ctx.fillStyle = '#b8c7d8';
+        ctx.font = `800 ${layout.sectionFontPx}px ${HEAD}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText('COMBAT HUD SIZE', layout.columns.display.x, layout.scaleHeaderY);
+        for (const choice of layout.scaleButtons) {
+            this._drawScaleChoice(ctx, choice, choice.value, currentScale, layout.coreFontPx);
+        }
+
+        this._button(ctx, layout.replay, 'REPLAY TUTORIAL', {
+            accent: 'rgba(46,74,96,0.95)', action: 'replayTutorial', fontSize: layout.coreFontPx,
+        });
+        this._button(ctx, layout.back, 'BACK TO GENERAL', {
+            accent: 'rgba(52,58,70,0.96)', action: 'settingsPane', arg: 'general',
+            fontSize: layout.coreFontPx,
+            accessibleLabel: 'Back to General settings',
+        });
+    }
+
+    _drawAccessibilitySettings(ctx, state, c) {
+        const settings = state.saveData?.settings || {};
+        const currentScale = normalizeUiScale(settings.uiScale);
+        const innerX = c.x + 40;
+        const innerW = c.w - 80;
+        const colGap = 56;
+        const colW = (innerW - colGap) / 2;
+        const rightX = innerX + colW + colGap;
+
+        let y = this._settingsHeader(ctx, innerX, colW, c.y + 58, 'ACCESSIBILITY & DISPLAY');
+        const contrast = { x: innerX, y: y + 8, w: colW, h: 74 };
+        this._drawAccessibilityToggle(ctx, contrast, settings.highContrast === true);
+
+        y = this._settingsHeader(ctx, innerX, colW, contrast.y + contrast.h + 64, 'COMBAT HUD SIZE');
+        ctx.fillStyle = 'rgba(255,255,255,0.68)';
+        ctx.font = `500 18px ${FONT}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText('Choose the size of combat HUD information.', innerX, y + 18);
+        const gap = 14;
+        const choiceW = (colW - gap * (UI_SCALE_PRESETS.length - 1)) / UI_SCALE_PRESETS.length;
+        const choiceY = y + 42;
+        for (let i = 0; i < UI_SCALE_PRESETS.length; i++) {
+            const value = UI_SCALE_PRESETS[i];
+            this._drawScaleChoice(ctx, {
+                x: innerX + i * (choiceW + gap), y: choiceY, w: choiceW, h: 70,
+            }, value, currentScale, 28);
+        }
+
+        let ry = this._settingsHeader(ctx, rightX, colW, c.y + 58, 'HELP & NAVIGATION');
+        this._button(ctx, { x: rightX, y: ry + 8, w: colW, h: 66 }, 'REPLAY TUTORIAL', {
+            accent: 'rgba(46,74,96,0.95)', action: 'replayTutorial', fontSize: 24,
+        });
+        this._button(ctx, { x: rightX, y: ry + 90, w: colW, h: 66 }, 'BACK TO GENERAL SETTINGS', {
+            accent: 'rgba(52,58,70,0.96)', action: 'settingsPane', arg: 'general', fontSize: 24,
+            accessibleLabel: 'Back to General settings',
+        });
+        ctx.fillStyle = 'rgba(255,255,255,0.68)';
+        ctx.font = `500 18px ${FONT}`;
+        ctx.textAlign = 'left';
+        ctx.fillText('Escape also returns to General before leaving Settings.', rightX, ry + 192);
+    }
+
     _drawPhoneSettings(ctx, state, c) {
         const save = state.saveData;
         const regular = SETTING_TOGGLES.filter((toggle) => !toggle.dev);
@@ -3717,9 +3925,11 @@ export class MenuRenderer {
                 controls.percent.y + controls.percent.h / 2);
         });
 
-        const replayRect = layout.supportRows[0];
-        this._button(ctx, replayRect, 'REPLAY TUTORIAL', {
-            accent: 'rgba(46,74,96,0.95)', action: 'replayTutorial', fontSize: layout.coreFontPx,
+        const accessibilityRect = layout.supportRows[0];
+        this._button(ctx, accessibilityRect, 'DISPLAY OPTIONS', {
+            accent: 'rgba(46,74,96,0.95)', action: 'settingsPane', arg: 'accessibility',
+            fontSize: layout.coreFontPx,
+            accessibleLabel: 'Open Accessibility and Display settings',
         });
         const resetRect = layout.supportRows[1];
         this._button(ctx, resetRect,
@@ -3753,8 +3963,14 @@ export class MenuRenderer {
         const c = this._contentRect();
         const save = state.saveData;
         this._panel(ctx, c.x, c.y, c.w, c.h, null, undefined, { corners: true });
+        const accessibilityPane = state.settingsPane === 'accessibility';
         if ((this.renderer.cssWidth ?? INTERNAL_WIDTH) < 900) {
-            this._drawPhoneSettings(ctx, state, c);
+            if (accessibilityPane) this._drawPhoneAccessibility(ctx, state, c);
+            else this._drawPhoneSettings(ctx, state, c);
+            return;
+        }
+        if (accessibilityPane) {
+            this._drawAccessibilitySettings(ctx, state, c);
             return;
         }
         const innerX = c.x + 40;
@@ -3817,14 +4033,16 @@ export class MenuRenderer {
         ctx.fillText('Adaptive music + sound effects. 0% mutes.', rightX, ry + 20);
         ry += 56;
 
-        // Replay the guided tutorial: re-runs the menu tour right away and
-        // re-arms the in-run hint pills for the next vigil.
+        // Accessibility has its own pane so the complete player preference
+        // suite never crowds out General or the separate ?dev=1 controls.
         ry = this._settingsHeader(ctx, rightX, colW, ry + 24, 'HELP');
-        this._button(ctx, { x: rightX, y: ry, w: 340, h: 52 }, 'REPLAY TUTORIAL',
-            { accent: 'rgba(46,74,96,0.9)', action: 'replayTutorial', fontSize: 22 });
+        this._button(ctx, { x: rightX, y: ry, w: 340, h: 52 }, 'ACCESSIBILITY & DISPLAY', {
+            accent: 'rgba(46,74,96,0.9)', action: 'settingsPane', arg: 'accessibility', fontSize: 20,
+            accessibleLabel: 'Open Accessibility and Display settings',
+        });
         ctx.fillStyle = 'rgba(255,255,255,0.68)'; ctx.font = `500 17px ${FONT}`;
         ctx.textBaseline = 'alphabetic';
-        this._wrapText(ctx, 'Guided tour of the menu + hint pills on your next run.',
+        this._wrapText(ctx, 'Contrast, HUD size and tutorial replay.',
             rightX + 364 + (colW - 364) / 2, ry + 22, colW - 364, 22, 3);
 
         // ── SAVE — the full reset lives HERE (save management is settings;

@@ -119,13 +119,14 @@ export const TOUR_STEPS = [
     },
     {
         tab: 'settings',
+        settingsPane: 'accessibility',
         title: 'Settings — comfort & options',
         highlightAction: 'replayTutorial',
         lines: [
             'Adjust the music and sound volume, turn screen shake on or off, and',
-            'switch on a lighter-effects mode if the game runs slowly on your phone.',
-            'You can replay this whole tutorial any time from the button here —',
-            'and there\'s a full reset if you ever want to start over from scratch.',
+            'open Accessibility & Display for contrast and Combat HUD size.',
+            'You can replay this whole tutorial any time from the button here.',
+            'Back in General, a full reset lets you start over from scratch.',
         ],
     },
     {

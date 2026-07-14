@@ -23,10 +23,14 @@ class MockContext {
         this.globalAlpha = 1;
         this.drawCalls = 0;
         this.text = [];
+        this.scaleCalls = [];
+        this.strokeCalls = 0;
+        this.strokeTextCalls = [];
     }
     save() { this.drawCalls++; }
     restore() {}
     translate() {}
+    scale(x, y) { this.scaleCalls.push([x, y]); }
     beginPath() {}
     closePath() {}
     moveTo() {}
@@ -34,8 +38,9 @@ class MockContext {
     quadraticCurveTo() {}
     arc() {}
     fill() { this.drawCalls++; }
-    stroke() { this.drawCalls++; }
+    stroke() { this.strokeCalls++; this.drawCalls++; }
     fillText(text) { this.text.push(String(text)); this.drawCalls++; }
+    strokeText(text) { this.strokeTextCalls.push(String(text)); this.drawCalls++; }
     measureText(text) { return { width: String(text).length * 8 }; }
 }
 
@@ -224,6 +229,44 @@ ok(tracker.draw(ctx, {}, { visible: false }) === false, 'hidden HUD draw is a no
 ok(tracker.draw(null, {}) === false, 'invalid Canvas context is rejected');
 ok(tracker.draw(ctx, { x: 0, y: 0, w: 200, h: 80 }) === false,
     'undersized HUD allocation is rejected instead of overflowing its slot');
+
+// Combat accessibility preferences apply to the complete procedural chip.
+// The allocation and Canvas transform grow together, while high contrast adds
+// real warning/progress outlines instead of only recoloring the backdrop.
+const warningTracker = new VigilTracker();
+warningTracker.ingest({
+    type: 'encounter-warning',
+    packId: 'contrast-pack',
+    title: 'Black Sun Procession',
+    text: 'Shield bearers are entering the grove',
+    color: '#ff9a4a',
+    duration: 3,
+});
+const scaledRect = { x: 1260, y: 240, w: 350 * 1.3, h: 118 * 1.3 };
+const scaledCtx = new MockContext();
+ok(warningTracker.drawHUD(scaledCtx, scaledRect, { compact: true, uiScale: 130 }),
+    '130% compact Living Vigil draws inside its scaled allocation');
+ok(scaledCtx.scaleCalls.length === 1
+    && scaledCtx.scaleCalls[0][0] === 1.3 && scaledCtx.scaleCalls[0][1] === 1.3,
+    'Living Vigil applies the requested UI scale to fonts and procedural glyphs');
+
+const contrastCtx = new MockContext();
+ok(warningTracker.drawHUD(contrastCtx, scaledRect, {
+    compact: true, uiScale: 130, highContrast: true,
+}), 'high-contrast Living Vigil warning remains drawable');
+ok(contrastCtx.scaleCalls.length === 1
+    && contrastCtx.scaleCalls[0][0] === 1.3 && contrastCtx.scaleCalls[0][1] === 1.3,
+    'high-contrast Living Vigil preserves the requested UI scale transform');
+ok(contrastCtx.strokeCalls > scaledCtx.strokeCalls,
+    'high contrast adds explicit chip/progress/glyph outline strokes');
+ok(contrastCtx.strokeTextCalls.includes('Black Sun Procession')
+    && contrastCtx.strokeTextCalls.includes('Shield bearers are entering the grove')
+    && contrastCtx.strokeTextCalls.includes('INCOMING'),
+    'high contrast outlines warning title, body, and progress status text');
+const undersizedScaledCtx = new MockContext();
+ok(warningTracker.drawHUD(undersizedScaledCtx, { x: 0, y: 0, w: 400, h: 140 }, {
+    compact: true, uiScale: 130, highContrast: true,
+}) === false, 'scaled Living Vigil rejects an allocation smaller than its scaled minimum');
 ok(tracker.drawWorldPrompt(ctx, { x: 120, y: -70 }, { width: 1920, height: 1080 }),
     'camera-aware world prompt draws for a visible focused site');
 ok(tracker.drawWorldPrompt(ctx, null) === false, 'world prompt requires a finite camera');

@@ -24,7 +24,8 @@
 // two top-level phases; the rest are sub-phases folded inside them.
 export const PROFILER_BUCKETS = [
     'update', 'render',
-    'map', 'decor', 'obstacles', 'entities', 'projectiles', 'particles', 'lighting', 'ui',
+    'map', 'decor', 'obstacles', 'entities', 'projectiles', 'particles', 'lighting',
+    'combatCues', 'ui',
     'collision', 'weapons', 'spawner',
 ];
 

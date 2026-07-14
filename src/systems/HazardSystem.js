@@ -21,6 +21,7 @@
 import { TWO_PI, clamp } from '../core/MathUtils.js';
 import { BIOME_HAZARD, BOSS_ATTACK, GFX, LIGHT_COLORS, WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
+import { strokeHighContrastPath } from '../render/CombatCues.js';
 
 // Mirrors Game's CULL_MARGIN (half the largest sprite + headroom + shake).
 const CULL_MARGIN = 160;
@@ -532,5 +533,108 @@ export class HazardSystem {
             ctx.restore();
             if (L && hot) L.addLight((hz.x + ex) / 2, (hz.y + ey) / 2, Lc.hazardRadius, hz.color || LIGHT_COLORS.hazard, 0.85, 0);
         }
+    }
+
+    // Post-veil high-contrast warning pass. Only semantic contours are
+    // repeated here: no authored fills, glow bands, additive cores, lights,
+    // or timing changes. Keeping it stateless makes the pass safe to skip in
+    // normal mode and prevents darkness compositing from swallowing warnings.
+    drawContrastOverlay(ctx, game) {
+        let contours = 0;
+        for (const hz of game.hazards) {
+            if (!hz.active) continue;
+
+            if (hz.kind === 'bossTelegraph') {
+                if (!game._inView(hz.x, hz.y, hz.rMax + CULL_MARGIN)) continue;
+                const t = Math.min(1, hz.age / hz.lifetime);
+                if (hz.charge) {
+                    const reach = (hz.reach ?? 360) * (0.5 + 0.5 * t);
+                    const ex = hz.x + hz.dirX * reach;
+                    const ey = hz.y + hz.dirY * reach;
+                    const px = -hz.dirY;
+                    const py = hz.dirX;
+                    const halfW = 26 + 22 * t;
+                    ctx.beginPath();
+                    ctx.moveTo(hz.x + px * halfW * 0.5, hz.y + py * halfW * 0.5);
+                    ctx.lineTo(hz.x - px * halfW * 0.5, hz.y - py * halfW * 0.5);
+                    ctx.lineTo(ex - px * halfW, ey - py * halfW);
+                    ctx.lineTo(ex + px * halfW, ey + py * halfW);
+                    ctx.closePath();
+                    strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, 2);
+                    ctx.beginPath();
+                    ctx.moveTo(ex + hz.dirX * 18, ey + hz.dirY * 18);
+                    ctx.lineTo(ex - px * halfW * 0.7, ey - py * halfW * 0.7);
+                    ctx.lineTo(ex + px * halfW * 0.7, ey + py * halfW * 0.7);
+                    ctx.closePath();
+                    strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, 3);
+                    contours += 2;
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(hz.x, hz.y, Math.max(2, hz.r), 0, TWO_PI);
+                    strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, hz.fan ? 3 : 4);
+                    contours++;
+                }
+                continue;
+            }
+
+            if (hz.kind === 'delayedZone') {
+                if (hz.hitPlayer || !game._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
+                const t = Math.min(1, hz.age / hz.lifetime);
+                ctx.beginPath();
+                ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI);
+                strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, 1.5);
+                ctx.beginPath();
+                ctx.arc(hz.x, hz.y, hz.r * (0.35 + 0.65 * t), 0, TWO_PI);
+                strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, 2.5);
+                contours += 2;
+                continue;
+            }
+
+            if (hz.kind === 'lingering') {
+                if (hz.age >= hz.warn || !game._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
+                const t = hz.age / hz.warn;
+                ctx.beginPath();
+                ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI);
+                strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, 2);
+                ctx.beginPath();
+                ctx.arc(hz.x, hz.y, hz.r * (0.35 + 0.65 * t), 0, TWO_PI);
+                strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, 1.5);
+                contours += 2;
+                continue;
+            }
+
+            if (hz.biome) {
+                const danger = hz.tickDamage > 0 && hz.age < hz.warn;
+                if (!danger || !game._inView(hz.x, hz.y, hz.r + CULL_MARGIN)) continue;
+                const warm = Math.min(1, hz.age / hz.warn);
+                const r = hz.r * (0.55 + 0.45 * warm);
+                ctx.beginPath();
+                ctx.arc(hz.x, hz.y, r, 0, TWO_PI);
+                strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, 2.5);
+                contours++;
+                continue;
+            }
+
+            if (hz.kind === 'shockwave') {
+                if (!game._inView(hz.x, hz.y, hz.rMax + CULL_MARGIN)) continue;
+                ctx.beginPath();
+                ctx.arc(hz.x, hz.y, hz.r, 0, TWO_PI);
+                strokeHighContrastPath(ctx, LIGHT_COLORS.hazard, 4);
+                contours++;
+                continue;
+            }
+
+            if (hz.kind === 'beam' && hz.age < hz.warn) {
+                const ex = hz.x + Math.cos(hz.curAngle) * hz.length;
+                const ey = hz.y + Math.sin(hz.curAngle) * hz.length;
+                const t = hz.age / hz.warn;
+                ctx.beginPath();
+                ctx.moveTo(hz.x, hz.y);
+                ctx.lineTo(ex, ey);
+                strokeHighContrastPath(ctx, BOSS_ATTACK.telegraphColor, 2 + 2 * t);
+                contours++;
+            }
+        }
+        return contours;
     }
 }

@@ -23,10 +23,17 @@ try {
     if (originalLocation) Object.defineProperty(globalThis, 'location', originalLocation);
     else delete globalThis.location;
 }
-const { MenuRenderer, computePhoneSettingsLayout, phoneToggleLabelLines } = menuModule;
+const {
+    MenuRenderer,
+    computePhoneSettingsLayout,
+    computePhoneAccessibilityLayout,
+    phoneToggleLabelLines,
+} = menuModule;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(path.join(ROOT, 'src/systems/MenuRenderer.js'), 'utf8');
+const gameSource = fs.readFileSync(path.join(ROOT, 'src/core/Game.js'), 'utf8');
+const uiStateSource = fs.readFileSync(path.join(ROOT, 'src/systems/UIStateBuilder.js'), 'utf8');
 let checks = 0;
 let failures = 0;
 const ok = (condition, message) => {
@@ -143,16 +150,84 @@ for (const scenario of scenarios) {
     }
 }
 
+// The nested Accessibility pane has its own two-column allocation. It does not
+// consume a fifth General row, so its geometry is identical in player/dev mode
+// and the five ?dev controls stay together on General.
+for (const scenario of scenarios) {
+    const name = `${scenario.name}/accessibility`;
+    const layout = computePhoneAccessibilityLayout(scenario.content, {
+        cssScale: scenario.cssScale,
+    });
+    ok(inside(layout.inner, scenario.content), `${name}: inner layout escapes content panel`);
+    ok(layout.coreFontPx * scenario.cssScale >= 15.99,
+        `${name}: core type falls below 16 CSS pixels`);
+    ok(layout.switchH * scenario.cssScale >= 39.99,
+        `${name}: visible switch track falls below 40 CSS pixels`);
+    ok(layout.labelWidth * scenario.cssScale >= 120,
+        `${name}: high-contrast label has less than 120 CSS pixels`);
+    for (const [heading, width] of [
+        ['DISPLAY', layout.columns.display.w],
+        ['HELP & BACK', layout.columns.support.w],
+        ['COMBAT HUD SIZE', layout.columns.display.w],
+    ]) {
+        ok(heading.length * layout.sectionFontPx * 0.58 <= width,
+            `${name}: ${heading} header exceeds its intended column width`);
+    }
+    for (const label of ['REPLAY TUTORIAL', 'BACK TO GENERAL']) {
+        ok(label.length * layout.coreFontPx * 0.58 <= layout.columns.support.w - 24,
+            `${name}: ${label} would need to shrink below the 16 CSS-pixel type floor`);
+    }
+    const contrastLines = phoneToggleLabelLines({
+        key: 'highContrast', label: 'High Contrast Warnings',
+    });
+    ok(contrastLines.length === 2, `${name}: High Contrast needs a contained two-line label`);
+    for (const line of contrastLines) {
+        ok(line.length * layout.coreFontPx * 0.58 <= layout.labelWidth,
+            `${name}: High Contrast line '${line}' exceeds its label allocation`);
+    }
+
+    const targets = [
+        { name: 'high contrast', rect: layout.contrastRow },
+        ...layout.scaleButtons.map((rect) => ({ name: `UI scale ${rect.value}`, rect })),
+        { name: 'replay tutorial', rect: layout.replay },
+        { name: 'back to General', rect: layout.back },
+    ];
+    for (const target of targets) {
+        ok(inside(target.rect, layout.inner), `${name}: ${target.name} escapes the safe inner panel`);
+        ok(target.rect.w * scenario.cssScale >= 43.99
+            && target.rect.h * scenario.cssScale >= 43.99,
+        `${name}: ${target.name} falls below the 44 CSS-pixel phone target`);
+    }
+    for (let i = 0; i < targets.length; i++) {
+        for (let j = i + 1; j < targets.length; j++) {
+            ok(!overlap(targets[i].rect, targets[j].rect),
+                `${name}: ${targets[i].name} overlaps ${targets[j].name}`);
+        }
+    }
+}
+
 function makeRecordingContext() {
     const texts = [];
+    const draws = [];
     return {
-        texts,
+        texts, draws, font: '16px sans-serif',
         beginPath() {}, closePath() {}, roundRect() {}, moveTo() {}, lineTo() {},
         quadraticCurveTo() {}, fill() {}, stroke() {}, arc() {},
         save() {}, restore() {}, clip() {}, drawImage() {},
-        fillText(value) { texts.push(String(value)); },
-        measureText(value) { return { width: String(value).length * 14 }; },
+        fillText(value, x = 0, y = 0) {
+            const text = String(value);
+            texts.push(text);
+            draws.push({ text, x, y, font: this.font });
+        },
+        measureText(value) {
+            const px = Number(/([0-9.]+)px/.exec(this.font || '')?.[1]) || 16;
+            return { width: String(value).length * px * 0.58 };
+        },
     };
+}
+
+function fontPx(draw) {
+    return Number(/([0-9.]+)px/.exec(draw?.font || '')?.[1]) || 0;
 }
 
 // Exercise the actual phone renderer with DEV_MODE enabled. Its visual button
@@ -176,6 +251,8 @@ const settingsState = {
             damageNumbers: true,
             particles: true,
             reducedEffects: true,
+            highContrast: true,
+            uiScale: 115,
             // Keep both off so their presence proves the ?dev=1 gate, not the
             // legacy safety path that exposes an already-enabled dev toggle.
             debug: false,
@@ -186,6 +263,101 @@ const settingsState = {
     },
     resetConfirming: false,
 };
+const requiredDevActions = [
+    ['toggleSetting', 'debug'],
+    ['toggleSetting', 'unlockMaps'],
+    ['cheatCoins', 1000],
+    ['cheatCoins', 10000],
+    ['cheatUnlockAll', null],
+];
+
+// Bind the pure allocations back to the real renderers at every supported
+// phone fixture. These passes use the production button primitive so both the
+// hotspot rectangles and fitted visual labels are under test.
+for (const scenario of scenarios) {
+    const actualRenderer = new MenuRenderer({
+        cssWidth: scenario.cssScale * 1920,
+        safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+    });
+    const generalContext = makeRecordingContext();
+    actualRenderer._drawPhoneSettings(generalContext, settingsState, scenario.content);
+    const generalLayout = computePhoneSettingsLayout(scenario.content, {
+        devToggleCount: 2, showCheats: true, cssScale: scenario.cssScale,
+    });
+    const generalHotspots = [...actualRenderer.hotspots];
+    ok(generalHotspots.length === 15,
+        `${scenario.name}: real ?dev=1 General emitted ${generalHotspots.length} controls instead of 15`);
+    for (const hotspot of generalHotspots) {
+        ok(inside(hotspot, generalLayout.inner),
+            `${scenario.name}: rendered General ${hotspot.action}/${String(hotspot.arg)} escapes its inner panel`);
+        ok(hotspot.w * scenario.cssScale >= 43.99 && hotspot.h * scenario.cssScale >= 43.99,
+            `${scenario.name}: rendered General ${hotspot.action}/${String(hotspot.arg)} is below 44 CSS pixels`);
+    }
+    for (let i = 0; i < generalHotspots.length; i++) {
+        for (let j = i + 1; j < generalHotspots.length; j++) {
+            ok(!overlap(generalHotspots[i], generalHotspots[j]),
+                `${scenario.name}: rendered General controls ${i + 1}/${j + 1} overlap`);
+        }
+    }
+    for (const [action, arg] of requiredDevActions) {
+        ok(generalHotspots.some((hotspot) => hotspot.action === action && hotspot.arg === arg),
+            `${scenario.name}: real ?dev=1 General lost ${action}/${String(arg)}`);
+    }
+
+    actualRenderer.hotspots = [];
+    const accessibilityContext = makeRecordingContext();
+    const accessibilityState = { ...settingsState, settingsPane: 'accessibility' };
+    actualRenderer._drawPhoneAccessibility(
+        accessibilityContext, accessibilityState, scenario.content,
+    );
+    const accessLayout = computePhoneAccessibilityLayout(scenario.content, {
+        cssScale: scenario.cssScale,
+    });
+    const accessHotspots = [...actualRenderer.hotspots];
+    ok(accessHotspots.length === 6,
+        `${scenario.name}: real Accessibility emitted ${accessHotspots.length} controls instead of 6`);
+    for (const hotspot of accessHotspots) {
+        ok(inside(hotspot, accessLayout.inner),
+            `${scenario.name}: rendered Accessibility ${hotspot.action}/${String(hotspot.arg)} escapes its inner panel`);
+        ok(hotspot.w * scenario.cssScale >= 43.99 && hotspot.h * scenario.cssScale >= 43.99,
+            `${scenario.name}: rendered Accessibility ${hotspot.action}/${String(hotspot.arg)} is below 44 CSS pixels`);
+    }
+    for (let i = 0; i < accessHotspots.length; i++) {
+        for (let j = i + 1; j < accessHotspots.length; j++) {
+            ok(!overlap(accessHotspots[i], accessHotspots[j]),
+                `${scenario.name}: rendered Accessibility controls ${i + 1}/${j + 1} overlap`);
+        }
+    }
+    ok(requiredDevActions.every(([action, arg]) =>
+        !accessHotspots.some((hotspot) => hotspot.action === action && hotspot.arg === arg)),
+    `${scenario.name}: developer controls leaked from General into Accessibility`);
+
+    const headerWidths = new Map([
+        ['DISPLAY', accessLayout.columns.display.w],
+        ['HELP & BACK', accessLayout.columns.support.w],
+        ['COMBAT HUD SIZE', accessLayout.columns.display.w],
+    ]);
+    for (const [heading, width] of headerWidths) {
+        const draw = accessibilityContext.draws.find((entry) => entry.text === heading);
+        ok(!!draw && fontPx(draw) * scenario.cssScale >= 12.99,
+            `${scenario.name}: rendered ${heading} header is missing or below 13 CSS pixels`);
+        ok(!!draw && heading.length * fontPx(draw) * 0.58 <= width,
+            `${scenario.name}: rendered ${heading} header exceeds its intended column`);
+    }
+    for (const [label, action, arg] of [
+        ['REPLAY TUTORIAL', 'replayTutorial', null],
+        ['BACK TO GENERAL', 'settingsPane', 'general'],
+    ]) {
+        const draw = accessibilityContext.draws.find((entry) => entry.text === label);
+        const hotspot = accessHotspots.find((entry) => entry.action === action && entry.arg === arg);
+        ok(!!draw && fontPx(draw) * scenario.cssScale >= 15.99,
+            `${scenario.name}: rendered ${label} falls below the 16 CSS-pixel type floor`);
+        ok(!!draw && !!hotspot && label.length * fontPx(draw) * 0.58 <= hotspot.w - 24,
+            `${scenario.name}: rendered ${label} exceeds its control width`);
+    }
+    ok(accessibilityContext.texts.includes('\u2713 115%'),
+        `${scenario.name}: real Accessibility lost the selected UI-size check marker`);
+}
 phoneRenderer._drawPhoneSettings(phoneContext, settingsState, scenarios[0].content);
 
 const emitted = phoneRenderer.hotspots;
@@ -198,7 +370,7 @@ const expectedHotspots = [
     ['volUp', 'volMusic', 'Increase Music Volume'],
     ['volDown', 'volSfx', 'Decrease SFX Volume'],
     ['volUp', 'volSfx', 'Increase SFX Volume'],
-    ['replayTutorial', undefined, 'REPLAY TUTORIAL'],
+    ['settingsPane', 'accessibility', 'Open Accessibility and Display settings'],
     ['resetSave', undefined, 'RESET SAVE'],
     ['toggleSetting', 'debug', 'Debug Mode'],
     ['toggleSetting', 'unlockMaps', 'Unlock All Maps (testing)'],
@@ -220,6 +392,38 @@ for (const label of ['Music Volume', 'SFX Volume']) {
     ok(phoneContext.texts.includes(label), `phone Settings did not draw the ${label} heading`);
 }
 
+// Exercise the actual Accessibility renderer and its non-colour scale state.
+phoneRenderer.hotspots = [];
+const accessibilityContext = makeRecordingContext();
+const accessibilityState = { ...settingsState, settingsPane: 'accessibility' };
+phoneRenderer._drawPhoneAccessibility(
+    accessibilityContext, accessibilityState, scenarios[0].content,
+);
+const accessibilityHotspots = phoneRenderer.hotspots;
+const expectedAccessibilityHotspots = [
+    ['toggleSetting', 'highContrast', 'High Contrast Warnings'],
+    ['setUiScale', 100, 'Set combat HUD size to 100 percent'],
+    ['setUiScale', 115, 'Set combat HUD size to 115 percent, selected'],
+    ['setUiScale', 130, 'Set combat HUD size to 130 percent'],
+    ['replayTutorial', undefined, 'REPLAY TUTORIAL'],
+    ['settingsPane', 'general', 'Back to General settings'],
+];
+ok(accessibilityHotspots.length === expectedAccessibilityHotspots.length,
+    `phone Accessibility emitted ${accessibilityHotspots.length} hotspots; expected ${expectedAccessibilityHotspots.length}`);
+for (const [action, arg, label] of expectedAccessibilityHotspots) {
+    ok(accessibilityHotspots.some((hotspot) => hotspot.action === action
+        && hotspot.arg === arg && hotspot.label === label),
+    `phone Accessibility did not emit ${action}/${String(arg)} as '${label}'`);
+}
+ok(accessibilityHotspots.every((hotspot) => hotspot.key && hotspot.baseKey && hotspot.label
+    && hotspot.w > 0 && hotspot.h > 0),
+'phone Accessibility emitted an unkeyed, unlabeled, or empty hotspot');
+ok(accessibilityContext.texts.includes('\u2713 115%'),
+    'selected UI scale lacks its non-colour check marker');
+ok(!accessibilityContext.texts.includes('\u2713 100%')
+    && !accessibilityContext.texts.includes('\u2713 130%'),
+'an unselected UI scale incorrectly received the selected marker');
+
 // Preserve the developer Settings surface on desktop as well as phone. The
 // production module was imported with ?dev=1 above, so this exercises the real
 // DEV_MODE branch while replacing only visual helpers that need browser assets.
@@ -237,17 +441,84 @@ desktopRenderer._button = function recordDesktopButton(_ctx, rect, label, option
     this._hot(rect.x, rect.y, rect.w, rect.h, options.action, options.arg, hotspotLabel);
 };
 desktopRenderer._drawSettings(makeRecordingContext(), settingsState);
-const desktopDevActions = [
-    ['toggleSetting', 'debug'],
-    ['toggleSetting', 'unlockMaps'],
-    ['cheatCoins', 1000],
-    ['cheatCoins', 10000],
-    ['cheatUnlockAll', null],
-];
+const desktopDevActions = requiredDevActions;
 for (const [action, arg] of desktopDevActions) {
     ok(desktopRenderer.hotspots.some((hotspot) => hotspot.action === action && hotspot.arg === arg),
         `desktop ?dev=1 Settings did not retain ${action}/${String(arg)}`);
 }
+
+desktopRenderer.hotspots = [];
+const desktopAccessibilityContext = makeRecordingContext();
+desktopRenderer._drawSettings(desktopAccessibilityContext, accessibilityState);
+for (const [action, arg, label] of expectedAccessibilityHotspots) {
+    ok(desktopRenderer.hotspots.some((hotspot) => hotspot.action === action
+        && hotspot.arg === arg && hotspot.label === label),
+    `desktop Accessibility did not emit ${action}/${String(arg)} as '${label}'`);
+}
+ok(desktopAccessibilityContext.texts.includes('\u2713 115%'),
+    'desktop selected UI scale lacks its non-colour check marker');
+
+// Run one unmocked desktop Accessibility layout pass. Only the outer panel is
+// suppressed (it needs gradients/assets); headers, choices, buttons, labels,
+// and hotspots use their production drawing paths.
+const desktopContent = { x: 56, y: 184, w: 1808, h: 856 };
+const desktopScale = 1280 / 1920;
+const desktopLayoutRenderer = new MenuRenderer({
+    cssWidth: 1280,
+    safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+});
+desktopLayoutRenderer._contentRect = () => desktopContent;
+desktopLayoutRenderer._panel = () => {};
+const desktopLayoutContext = makeRecordingContext();
+desktopLayoutRenderer._drawSettings(desktopLayoutContext, accessibilityState);
+const desktopAccessHotspots = desktopLayoutRenderer.hotspots;
+ok(desktopAccessHotspots.length === 6,
+    `desktop Accessibility emitted ${desktopAccessHotspots.length} controls instead of 6`);
+for (const hotspot of desktopAccessHotspots) {
+    ok(inside(hotspot, desktopContent),
+        `desktop Accessibility ${hotspot.action}/${String(hotspot.arg)} escapes its panel`);
+    ok(hotspot.w * desktopScale >= 43.99 && hotspot.h * desktopScale >= 43.99,
+        `desktop Accessibility ${hotspot.action}/${String(hotspot.arg)} is below 44 CSS pixels`);
+}
+for (let i = 0; i < desktopAccessHotspots.length; i++) {
+    for (let j = i + 1; j < desktopAccessHotspots.length; j++) {
+        ok(!overlap(desktopAccessHotspots[i], desktopAccessHotspots[j]),
+            `desktop Accessibility controls ${i + 1}/${j + 1} overlap`);
+    }
+}
+ok(requiredDevActions.every(([action, arg]) =>
+    !desktopAccessHotspots.some((hotspot) => hotspot.action === action && hotspot.arg === arg)),
+'desktop developer controls leaked from General into Accessibility');
+const desktopInnerW = desktopContent.w - 80;
+const desktopColW = (desktopInnerW - 56) / 2;
+for (const heading of ['ACCESSIBILITY & DISPLAY', 'COMBAT HUD SIZE', 'HELP & NAVIGATION']) {
+    const draw = desktopLayoutContext.draws.find((entry) => entry.text === heading);
+    ok(!!draw && heading.length * fontPx(draw) * 0.58 <= desktopColW,
+        `desktop ${heading} header exceeds its intended column width`);
+}
+for (const [label, action, arg] of [
+    ['REPLAY TUTORIAL', 'replayTutorial', null],
+    ['BACK TO GENERAL SETTINGS', 'settingsPane', 'general'],
+]) {
+    const draw = desktopLayoutContext.draws.find((entry) => entry.text === label);
+    const hotspot = desktopAccessHotspots.find((entry) => entry.action === action && entry.arg === arg);
+    ok(!!draw && fontPx(draw) * desktopScale >= 15.99,
+        `desktop ${label} falls below the 16 CSS-pixel type floor`);
+    ok(!!draw && !!hotspot && label.length * fontPx(draw) * 0.58 <= hotspot.w - 24,
+        `desktop ${label} exceeds its control width`);
+}
+const desktopContrastDraw = desktopLayoutContext.draws.find(
+    (entry) => entry.text === 'High Contrast Warnings',
+);
+const desktopContrastHotspot = desktopAccessHotspots.find(
+    (entry) => entry.action === 'toggleSetting' && entry.arg === 'highContrast',
+);
+ok(!!desktopContrastDraw && !!desktopContrastHotspot
+    && 'High Contrast Warnings'.length * fontPx(desktopContrastDraw) * 0.58
+        <= desktopContrastHotspot.w - 140,
+'desktop High Contrast label collides with its switch allocation');
+ok(desktopLayoutContext.texts.includes('\u2713 115%'),
+    'unmocked desktop selected UI scale lacks its non-colour check marker');
 
 const buttonProbe = new MenuRenderer({
     cssWidth: 844,
@@ -261,15 +532,29 @@ ok(buttonProbe.hotspots[0]?.label === 'Decrease Music Volume',
 
 ok(source.includes('(this.renderer.cssWidth ?? INTERNAL_WIDTH) < 900'),
     'Settings must switch layout from renderer.cssWidth below 900px');
-ok(source.indexOf("this._drawPhoneSettings(ctx, state, c);") < source.indexOf('const innerX = c.x + 40;'),
+const drawSettingsStart = source.indexOf('    _drawSettings(ctx, state) {');
+const drawSettingsEnd = source.indexOf('// â”€â”€ CASE OPENING', drawSettingsStart);
+const drawSettingsSource = source.slice(drawSettingsStart, drawSettingsEnd);
+ok(drawSettingsSource.indexOf("this._drawPhoneSettings(ctx, state, c);")
+    < drawSettingsSource.indexOf('const innerX = c.x + 40;'),
     'phone layout must return before the unchanged desktop columns');
 ok(source.includes('const coreFontPx = Math.max(36, Math.ceil(16 / cssScale))'),
     'phone core labels must preserve a 16 CSS-pixel type floor');
 ok(source.includes('const switchH = Math.max(84, rowH - 8)'),
     'visible switch height must scale with the phone action row');
+ok(source.includes("state.settingsPane === 'accessibility'"),
+    'Settings renderer must route the session Accessibility pane explicitly');
+ok(gameSource.includes("this.settingsPane = 'general'"),
+    'Game must initialize Settings on the General pane');
+ok(gameSource.includes("this.menuTab === 'settings'")
+    && gameSource.includes("this.settingsPane === 'accessibility'")
+    && gameSource.includes("this.settingsPane = 'general'"),
+'Escape must return Accessibility to General before leaving Settings');
+ok(uiStateSource.includes("base.settingsPane = game.settingsPane === 'accessibility'"),
+    'UI state must pass the sanitized session Settings pane to MenuRenderer');
 
 if (failures) {
     console.error(`\nPhone Settings validation failed: ${failures}/${checks} checks.`);
     process.exit(1);
 }
-console.log(`Phone Settings validation passed: ${checks} checks across ${scenarios.length * 2} layouts.`);
+console.log(`Phone Settings validation passed: ${checks} checks across ${scenarios.length * 3} layout fixtures plus real phone/desktop render passes.`);

@@ -19,6 +19,7 @@ import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { getMap } from '../content/maps.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { menuHotspotLabel } from '../systems/AccessibilityBridge.js';
+import { normalizeUiScale } from '../systems/AccessibilityPreferences.js';
 
 export const PAUSE_EXIT_CONFIRM_MS = 3000;
 
@@ -498,7 +499,19 @@ export const GameInputActionMethods = {
                 }
                 break;
             }
+            case 'settingsPane': {
+                const pane = arg === 'accessibility' ? 'accessibility' : 'general';
+                this.settingsPane = pane;
+                this._resetMenuFocus();
+                const label = pane === 'accessibility'
+                    ? 'Accessibility and Display settings'
+                    : 'General settings';
+                this.accessibility?.setScreen?.('start', `${label}.`);
+                this.accessibility?.announce?.(`${label}.`);
+                break;
+            }
             case 'toggleSetting': this._toggleSetting(arg); break;
+            case 'setUiScale': this._setUiScale(arg); break;
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
             case 'openCase': this._resetMenuFocus(); this.minigame.openCaseFlow(arg); break;
@@ -536,6 +549,12 @@ export const GameInputActionMethods = {
         this.saveSystem.setSetting(key, !cur);
         if (key === 'debug') { this.showDebug = !cur; this.profiler.enabled = this.showDebug; }
         this.accessibility?.announce?.(`${menuHotspotLabel('toggleSetting', key)}: ${!cur ? 'on' : 'off'}.`);
+    },
+    _setUiScale(value) {
+        const scale = normalizeUiScale(value);
+        this.saveSystem.setSetting('uiScale', scale);
+        this.accessibility?.announce?.(`Combat HUD size: ${scale} percent.`);
+        return scale;
     },
     _adjustVolume(key, delta) {
         const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;

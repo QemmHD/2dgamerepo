@@ -35,6 +35,10 @@
              (legacy touch=1 still forces touch and takes precedence)
     focus    current menu hotspot key (encode # as %23), or an action fallback
     reduced "1" persists Reduced Effects before staging the requested frame
+    uiscale  Combat HUD size: "100", "115", or "130"
+    contrast high-contrast combat cues: "1" on or "0" off
+    settingspane  Settings sub-pane: "general" or "accessibility" (menu only)
+    statuses "all" stages all seven combat-status cues on one enemy (run only)
     bpxp / bpclaimthrough / bpreceipt  seed Battle-Pass QA states (menu only)
     mines=<preset> / minessafe=<n>  stage an honest Mines quote (menu only)
     minesFocus=<0..24>  select a Mines tile for keyboard-focus visual QA
@@ -137,6 +141,22 @@ const INPUT_MODE = ['keyboard', 'pointer', 'touch'].includes(INPUT_REQUEST)
     : null;
 const MENU_FOCUS = (params.get('focus') || '').trim();
 const REDUCED = params.get('reduced') === '1';
+const UI_SCALE_REQUEST = params.has('uiscale') ? params.get('uiscale') : null;
+const QA_UI_SCALE = ['100', '115', '130'].includes(UI_SCALE_REQUEST)
+    ? Number(UI_SCALE_REQUEST)
+    : null;
+const CONTRAST_REQUEST = params.has('contrast') ? params.get('contrast') : null;
+const QA_HIGH_CONTRAST = CONTRAST_REQUEST === '1'
+    ? true
+    : CONTRAST_REQUEST === '0'
+        ? false
+        : null;
+const SETTINGS_PANE_REQUEST = params.has('settingspane') ? params.get('settingspane') : null;
+const QA_SETTINGS_PANE = ['general', 'accessibility'].includes(SETTINGS_PANE_REQUEST)
+    ? SETTINGS_PANE_REQUEST
+    : null;
+const STATUSES_REQUEST = params.has('statuses') ? params.get('statuses') : null;
+const QA_STATUSES = STATUSES_REQUEST === 'all' ? 'all' : null;
 // Roadmap #6 profiling pass (tooling only). profile=<N> runs N measured frames
 // with the FrameProfiler enabled, wrapping update()/render() so the top-level
 // buckets (normally timed by GameLoop, which sync-stepping bypasses) populate,
@@ -166,6 +186,7 @@ const MINES_FOCUS = Number.isInteger(MINES_FOCUS_PARSED)
     : null;
 let qaBossSummary = '';
 let qaExpectedMenuFocusKey = null;
+let qaStatusEnemy = null;
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -192,21 +213,39 @@ async function boot() {
 
     game = new Game({ renderer, input, loop });
     game.showDebug = false;          // no debug grid/HUD in the art frame
-    // Apply QA preferences after Game registers its modality listener, so
-    // keyboard mode also follows the production focusCanvas path. Reduced
-    // Effects goes through SaveSystem instead of mutating renderer-only state:
-    // both menu and run branches therefore consume the persisted setting.
+    // Apply QA preferences after Game registers its modality listener. Every
+    // preference goes through the production SaveSystem so menu and gameplay
+    // consume the same normalized values a returning player would load.
     if (REDUCED) {
         game.saveSystem.setSetting('reducedEffects', true);
         game.reducedEffects = true;
     }
+    if (QA_UI_SCALE != null) game.saveSystem.setSetting('uiScale', QA_UI_SCALE);
+    if (QA_HIGH_CONTRAST != null) game.saveSystem.setSetting('highContrast', QA_HIGH_CONTRAST);
+    if (QA_SETTINGS_PANE) game.settingsPane = QA_SETTINGS_PANE;
     if (ACTIVE_INPUT_MODE) input.setModality(ACTIVE_INPUT_MODE);
 
     if (INPUT_REQUEST && !INPUT_MODE) ERR.push(`input: unsupported mode '${INPUT_REQUEST}'`);
+    if (UI_SCALE_REQUEST != null && QA_UI_SCALE == null) {
+        ERR.push(`uiscale: expected 100, 115, or 130, got '${UI_SCALE_REQUEST}'`);
+    }
+    if (CONTRAST_REQUEST != null && QA_HIGH_CONTRAST == null) {
+        ERR.push(`contrast: expected 1 or 0, got '${CONTRAST_REQUEST}'`);
+    }
+    if (SETTINGS_PANE_REQUEST != null && QA_SETTINGS_PANE == null) {
+        ERR.push(`settingspane: expected 'general' or 'accessibility', got '${SETTINGS_PANE_REQUEST}'`);
+    }
+    if (STATUSES_REQUEST != null && QA_STATUSES == null) {
+        ERR.push(`statuses: expected 'all', got '${STATUSES_REQUEST}'`);
+    }
     if (MINES_FOCUS_REQUEST != null && MINES_FOCUS == null) {
         ERR.push(`minesFocus: expected an integer from 0 through 24, got '${MINES_FOCUS_REQUEST}'`);
     }
     if (MENU_FOCUS && SCREEN !== 'menu') ERR.push('focus: menu hotspot selection requires screen=menu');
+    if (QA_SETTINGS_PANE && (SCREEN !== 'menu' || TAB !== 'settings')) {
+        ERR.push('settingspane: selection requires screen=menu and tab=settings');
+    }
+    if (QA_STATUSES && SCREEN === 'menu') ERR.push('statuses: showcase requires a gameplay frame');
     if (MINES_FOCUS != null && (SCREEN !== 'menu' || MINESBET == null)) {
         ERR.push('minesFocus: tile selection requires screen=menu and mines=<preset>');
     }
@@ -555,13 +594,48 @@ async function boot() {
                 } catch (e) { ERR.push('profile-save: ' + String(e)); }
             }
         }
+        if (QA_STATUSES === 'all') {
+            try {
+                // Stage after every simulation/profiling update so timers stay
+                // exact in the final frame. Replacing the visual enemy list is
+                // harness-only and keeps all seven non-color glyphs readable.
+                const enemy = new Enemy('brute', game.player.x + 180, game.player.y + 80);
+                enemy.spawnAge = 1;
+                enemy.speed = 0;
+                enemy.hp = enemy.maxHp * 0.68;
+                // Important enemies retain the complete seven-cue vocabulary;
+                // trash swarms intentionally cap visible badges for legibility.
+                enemy.encounterGuardian = true;
+                enemy.shieldTimer = 120;
+                enemy.slowTimer = 120;
+                enemy.shredTimer = 120;
+                enemy.shredStacks = 4;
+                enemy.chillTimer = 120;
+                enemy.chillStacks = 5;
+                enemy.freezeTimer = 120;
+                enemy.burnTimer = 120;
+                enemy.shockTimer = 120;
+                enemy.shockStacks = 7;
+                game.enemies = [enemy];
+                qaStatusEnemy = enemy;
+            } catch (e) { ERR.push('statuses: ' + String(e && e.stack || e)); }
+        }
         game.render();
     }
 
     // Verify every requested QA branch against production-owned state before
     // stamping the frame/title. This makes EXC:0 a receipt assertion, not only
     // an exception smoke: a query that silently stops staging its requested
-    // modality, focus, motion, or Mines cell now fails both local and CI runs.
+    // modality, focus, preferences, showcase, or Mines cell now fails both
+    // local and CI runs.
+    const allStatusTimersActive = !!qaStatusEnemy
+        && qaStatusEnemy.shieldTimer > 0
+        && qaStatusEnemy.slowTimer > 0
+        && qaStatusEnemy.shredTimer > 0
+        && qaStatusEnemy.chillTimer > 0
+        && qaStatusEnemy.freezeTimer > 0
+        && qaStatusEnemy.burnTimer > 0
+        && qaStatusEnemy.shockTimer > 0;
     const qaState = {
         inputModality: input.getModality(),
         menuFocusKey: game.menuFocusKey || null,
@@ -569,6 +643,10 @@ async function boot() {
             && input.getModality() === 'keyboard'
             && !!game.menuFocusKey,
         reducedEffects: game.saveSystem.getSetting('reducedEffects') === true,
+        uiScale: game.saveSystem.getSetting('uiScale'),
+        highContrast: game.saveSystem.getSetting('highContrast') === true,
+        settingsPane: game.settingsPane === 'accessibility' ? 'accessibility' : 'general',
+        statuses: allStatusTimersActive ? 'all' : '',
         minesFocusIndex: game.minigame?.mines ? game.minesFocusIndex : null,
     };
     if (ACTIVE_INPUT_MODE && qaState.inputModality !== ACTIVE_INPUT_MODE) {
@@ -576,6 +654,18 @@ async function boot() {
     }
     if (REDUCED && !qaState.reducedEffects) {
         ERR.push('receipt: reduced=1 did not persist Reduced Effects');
+    }
+    if (QA_UI_SCALE != null && qaState.uiScale !== QA_UI_SCALE) {
+        ERR.push(`receipt: uiscale expected ${QA_UI_SCALE}, got ${qaState.uiScale}`);
+    }
+    if (QA_HIGH_CONTRAST != null && qaState.highContrast !== QA_HIGH_CONTRAST) {
+        ERR.push(`receipt: contrast expected ${QA_HIGH_CONTRAST}, got ${qaState.highContrast}`);
+    }
+    if (QA_SETTINGS_PANE && qaState.settingsPane !== QA_SETTINGS_PANE) {
+        ERR.push(`receipt: settingspane expected '${QA_SETTINGS_PANE}', got '${qaState.settingsPane}'`);
+    }
+    if (QA_STATUSES === 'all' && qaState.statuses !== 'all') {
+        ERR.push('receipt: statuses=all did not stage all seven combat statuses');
     }
     if (MENU_FOCUS && qaExpectedMenuFocusKey && qaState.menuFocusKey !== qaExpectedMenuFocusKey) {
         ERR.push(`receipt: focus expected '${qaExpectedMenuFocusKey}', got '${qaState.menuFocusKey || ''}'`);
@@ -614,6 +704,10 @@ async function boot() {
     qaRoot.dataset.qaFocus = window.__qaState.menuFocusKey || '';
     qaRoot.dataset.qaFocusVisible = String(window.__qaState.menuFocusVisible);
     qaRoot.dataset.qaReduced = String(window.__qaState.reducedEffects);
+    qaRoot.dataset.qaUiScale = String(window.__qaState.uiScale);
+    qaRoot.dataset.qaHighContrast = String(window.__qaState.highContrast);
+    qaRoot.dataset.qaSettingsPane = window.__qaState.settingsPane;
+    qaRoot.dataset.qaStatuses = window.__qaState.statuses;
     qaRoot.dataset.qaMinesFocus = window.__qaState.minesFocusIndex == null
         ? ''
         : String(window.__qaState.minesFocusIndex);
