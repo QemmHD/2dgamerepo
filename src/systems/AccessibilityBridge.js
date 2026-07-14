@@ -83,6 +83,13 @@ export function menuHotspotLabel(action, arg, explicitLabel = '') {
         case 'selectPatron': return `Select patron ${words(id)}`;
         case 'selectCharacter': return `Select hero ${words(id)}`;
         case 'selectMap': return `Select map ${words(id)}`;
+        case 'collectionCategory': return `Show ${words(id)} cosmetics`;
+        case 'collectionOwnership': return `Filter collection to ${words(id)}`;
+        case 'collectionSource': return `Filter collection source to ${words(id)}`;
+        case 'collectionPage': return `Open collection page ${id}`;
+        case 'boutiqueCategory': return `Show ${words(id)} Boutique stock`;
+        case 'boutiquePage': return `Open Boutique stock page ${id}`;
+        case 'boutiqueSetPage': return `Open Boutique set page ${id}`;
         case 'setUiScale': return `Set combat HUD size to ${normalizeUiScale(id)} percent`;
         case 'setCaptionDetail': return `Set caption detail to ${words(id)}`;
         case 'setVibration': return `Set vibration to ${words(id)}`;

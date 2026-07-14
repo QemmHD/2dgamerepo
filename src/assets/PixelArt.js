@@ -386,12 +386,123 @@ const cosmeticCache = new Map();
 // A draped cape. dir 'down'/'side' draw BEHIND the body (caller draws it first
 // → only the collar + hem wings peek out); 'up' draws a full back drape OVER
 // the body. `side` trails to the left (caller flips for right/left facing).
-function pixelCloak(dir, color) {
+function pixelCloak(dir, color, style = 'classic') {
     const dark = shade(color, 0.34, 'dark');
     const light = shade(color, 0.26, 'light');
     const p = pixelCanvas(MONKEY_L);
     const cx = CX;
-    if (dir === 'side') {
+    if (style === 'splitwatch') {
+        // A sentry mantle with a high collar and two forked tails. The split is
+        // authored into every direction instead of being a detached overlay,
+        // so the shoulder transform and side-view mirroring remain canonical.
+        if (dir === 'side') {
+            p.rect(cx - 4, 17, 7, 6, dark);          // raised back collar
+            p.rect(cx - 2, 17, 3, 5, light);
+            for (let y = 21; y <= 31; y++) {
+                const left = cx - 4 - Math.round((y - 21) * 0.9);
+                p.rect(left, y, cx - left + 2, 1, color);
+                p.dot(left, y, dark);
+            }
+            // Two wind-separated tails: the upper tail rides above the long
+            // lower point, leaving a clear dark notch between them.
+            for (let y = 30; y <= 43; y++) {
+                const t = (y - 30) / 13;
+                const left = cx - 12 - Math.round(t * 7);
+                const right = cx - 4 - Math.round(t * 5);
+                p.rect(left, y, Math.max(2, right - left + 1), 1, color);
+                p.dot(left, y, dark);
+            }
+            for (let y = 33; y <= 46; y++) {
+                const t = (y - 33) / 13;
+                const left = cx - 6 - Math.round(t * 7);
+                const right = cx + 1 - Math.round(t * 2);
+                p.rect(left, y, Math.max(2, right - left + 1), 1, color);
+                p.dot(left, y, light);
+            }
+            p.line(cx - 12, 33, cx - 8, 42, dark, 1);
+        } else if (dir === 'up') {
+            p.rect(cx - 10, 17, 21, 4, dark);       // high, split collar
+            p.rect(cx - 8, 17, 7, 2, light);
+            p.rect(cx + 2, 17, 7, 2, light);
+            for (let y = 20; y <= 31; y++) {
+                const half = 9 + Math.round((y - 20) * 0.25);
+                p.rect(cx - half, y, half * 2 + 1, 1, color);
+                p.dot(cx - half, y, light); p.dot(cx + half, y, dark);
+            }
+            for (let y = 30; y <= 46; y++) {
+                const t = (y - 30) / 16;
+                const half = 10 + Math.round(t * 4);
+                const gap = 1 + Math.round(t * 2);
+                p.rect(cx - half, y, half - gap + 1, 1, color);
+                p.rect(cx + gap, y, half - gap + 1, 1, color);
+                p.dot(cx - half, y, light); p.dot(cx + half, y, dark);
+                p.dot(cx - gap, y, dark); p.dot(cx + gap, y, dark);
+            }
+            p.line(cx - 5, 22, cx - 7, 43, dark, 1);
+            p.line(cx + 5, 22, cx + 7, 43, dark, 1);
+            p.rect(cx - 14, 46, 5, 1, dark); p.rect(cx + 10, 46, 5, 1, dark);
+        } else {
+            // Front view is behind the body: tall collar points, outer seams,
+            // and the forked hem intentionally peek beyond the silhouette.
+            p.rect(cx - 8, 18, 17, 4, dark);
+            p.rect(cx - 8, 17, 4, 5, color); p.rect(cx + 5, 17, 4, 5, color);
+            p.dot(cx - 7, 17, light); p.dot(cx + 7, 17, light);
+            for (let y = 21; y <= 44; y++) {
+                const t = (y - 21) / 23;
+                const half = 12 + Math.round(t * 6);
+                const gap = y < 31 ? 0 : 1 + Math.round((y - 31) / 7);
+                if (gap === 0) p.rect(cx - half, y, half * 2 + 1, 1, color);
+                else {
+                    p.rect(cx - half, y, half - gap + 1, 1, color);
+                    p.rect(cx + gap, y, half - gap + 1, 1, color);
+                    p.dot(cx - gap, y, dark); p.dot(cx + gap, y, dark);
+                }
+                p.dot(cx - half, y, light); p.dot(cx + half, y, dark);
+            }
+            p.rect(cx - 18, 44, 6, 2, dark); p.rect(cx + 13, 44, 6, 2, dark);
+        }
+    } else if (style === 'mothwing') {
+        // A broad moth-wing mantle. Overlapping lobes form a scalloped hem;
+        // sparse veins keep it readable at the native 48 px logical scale.
+        if (dir === 'side') {
+            p.ell(cx - 7, 30, 17, 12, color);
+            p.ell(cx - 14, 39, 8, 7, color);
+            p.ell(cx - 3, 41, 8, 6, color);
+            p.rect(cx - 2, 19, 4, 20, dark);
+            p.rect(cx - 1, 20, 2, 16, light);
+            p.line(cx - 2, 24, cx - 19, 35, dark, 1);
+            p.line(cx - 3, 29, cx - 13, 43, dark, 1);
+            p.disc(cx - 11, 31, 2, light);
+            p.dot(cx - 11, 31, dark);
+        } else {
+            const back = dir === 'up';
+            // Four wing lobes stay inside the body box yet reach far enough to
+            // show around the torso when the front-facing version is behind it.
+            p.ell(cx - 10, 29, 12, 12, color);
+            p.ell(cx + 10, 29, 12, 12, color);
+            p.ell(cx - 12, 39, 10, 8, color);
+            p.ell(cx + 12, 39, 10, 8, color);
+            p.disc(cx - 18, 42, 4, color); p.disc(cx + 18, 42, 4, color);
+            p.rect(cx - 2, 19, 5, 25, dark);        // moth body / cloak spine
+            p.rect(cx - 1, 20, 2, 22, light);
+            p.line(cx - 2, 23, cx - 18, 33, dark, 1);
+            p.line(cx + 2, 23, cx + 18, 33, dark, 1);
+            p.line(cx - 2, 29, cx - 15, 43, dark, 1);
+            p.line(cx + 2, 29, cx + 15, 43, dark, 1);
+            p.disc(cx - 11, 31, 2, light); p.disc(cx + 11, 31, 2, light);
+            p.dot(cx - 11, 31, dark); p.dot(cx + 11, 31, dark);
+            // Back view wears the soft collar over the shoulders; front view's
+            // collar tips are intentionally outside the torso silhouette.
+            if (back) {
+                p.ell(cx, 19, 10, 3, dark);
+                p.rect(cx - 7, 18, 15, 1, light);
+            } else {
+                p.rect(cx - 12, 21, 5, 3, dark);
+                p.rect(cx + 8, 21, 5, 3, dark);
+                p.dot(cx - 10, 21, light); p.dot(cx + 10, 21, light);
+            }
+        }
+    } else if (dir === 'side') {
         // Cape sweeping back-and-down behind the shoulder.
         for (let y = 22; y <= 45; y++) {
             const t = (y - 22) / 23;
@@ -494,6 +605,59 @@ function pixelHat(dir, shape, color) {
         p.ell(cx, 0, 2, 3, '#ffb24a');              // flame
         p.dot(cx, -1, '#fff1c0');
         p.disc(cx, 1, 1, col);                      // warm core (cosmetic colour)
+    } else if (shape === 'waylantern') {
+        // A wearable way-lantern: a dark glass chamber, warm flame, and a
+        // colour-matched cage. Direction changes the cage depth, not its seat.
+        const lx = dir === 'side' ? cx + 1 : cx;
+        p.ell(lx, 2, dir === 'side' ? 5 : 7, 7, dark);
+        p.ell(lx, 2, dir === 'side' ? 3 : 5, 5, '#34291f');
+        p.ell(lx, 3, 2, 4, '#ff9b3d');
+        p.disc(lx, 2, 1, '#fff0a8');
+        p.dot(lx, -1, light);
+        p.rect(lx - (dir === 'side' ? 5 : 7), 7,
+            dir === 'side' ? 11 : 15, 2, dark);     // foot / head band
+        p.rect(lx - 4, -4, 9, 2, col);             // vented cap
+        p.rect(lx - 2, -5, 5, 1, light);
+        p.line(lx - 5, -1, lx - 5, 7, col, 1);
+        p.line(lx + 5, -1, lx + 5, 7, col, 1);
+        if (dir !== 'side') p.line(lx, -2, lx, 7, col, 1);
+        if (dir === 'up') {
+            p.line(lx - 3, -2, lx - 3, 7, light, 1);
+            p.line(lx + 3, -2, lx + 3, 7, dark, 1);
+        } else {
+            p.dot(lx - 5, 3, light); p.dot(lx + 5, 3, dark);
+        }
+    } else if (shape === 'mothmask') {
+        // Wing-brow eye mask with antennae. It remains a single head-seat
+        // attachment; side art is canonical right-facing and mirrors with the
+        // same transform as every other hat.
+        p.line(cx - 4, 7, cx - 9, -2, dark, 1);
+        p.line(cx + 4, 7, cx + 9, -2, dark, 1);
+        p.line(cx - 9, -2, cx - 11, -4, col, 1);
+        p.line(cx + 9, -2, cx + 11, -4, col, 1);
+        p.dot(cx - 11, -4, light); p.dot(cx + 11, -4, light);
+        if (dir === 'side') {
+            p.ell(cx + 2, 8, 10, 4, col);
+            p.ell(cx - 6, 7, 5, 3, col);
+            p.line(cx - 8, 8, cx + 11, 6, light, 1);
+            p.ell(cx + 5, 8, 3, 1, '#241a2d');
+            p.line(cx - 6, 10, cx + 8, 11, dark, 1);
+        } else {
+            p.ell(cx - 7, 8, 8, 4, col);
+            p.ell(cx + 7, 8, 8, 4, col);
+            p.rect(cx - 5, 6, 11, 5, col);
+            p.line(cx - 14, 7, cx - 2, 5, light, 1);
+            p.line(cx + 14, 7, cx + 2, 5, light, 1);
+            if (dir === 'up') {
+                p.rect(cx - 12, 9, 25, 2, dark);   // back strap and knot
+                p.disc(cx + 12, 10, 2, col);
+            } else {
+                p.ell(cx - 6, 8, 3, 1, '#241a2d');
+                p.ell(cx + 6, 8, 3, 1, '#241a2d');
+                p.dot(cx - 5, 8, light); p.dot(cx + 5, 8, light);
+                p.rect(cx - 2, 9, 5, 2, dark);
+            }
+        }
     } else if (shape === 'horns') {
         // Two curved horns rising from the head sides.
         p.line(cx - 7, 9, cx - 9, 4, col, 2); p.line(cx - 9, 4, cx - 8, 0, col, 2);
@@ -600,9 +764,11 @@ function cachedCosmetic(key, build) {
 // Draw a cached pixel cloak onto the body box centred at (ox,oy) with half-size
 // `s` (the player passes spriteHalf; the menu its avatar half). `flip` mirrors
 // horizontally about ox (for left-facing side views).
-export function drawPixelCloak(ctx, ox, oy, s, dir, color, flip = false) {
+export function drawPixelCloak(ctx, ox, oy, s, dir, color, flip = false, style = 'classic') {
     if (!color) return;
-    const c = cachedCosmetic(`cloak:${dir}:${color}`, () => pixelCloak(dir, color));
+    const cloakStyle = style || 'classic';
+    const c = cachedCosmetic(`cloak:${dir}:${cloakStyle}:${color}`,
+        () => pixelCloak(dir, color, cloakStyle));
     if (!c) return;
     ctx.save();
     if (flip) { ctx.translate(ox, 0); ctx.scale(-1, 1); ctx.translate(-ox, 0); }

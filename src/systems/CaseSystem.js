@@ -172,10 +172,12 @@ export function buildCaseReel(caseType, result, length = 48, landingIndex = 42) 
         const rr = weighted.length ? weighted[Math.floor(Math.random() * weighted.length)] : 'common';
         const pool = poolByRarity(rr, kind);
         const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
-        // Cells carry kind + category + swatch colour so the spin reel can draw
-        // each item's real face (gear emblem / cosmetic swatch), not a generic dot.
+        // Cells carry the catalog id plus kind/category/colour so the spin reel
+        // can draw each item's real face (gear emblem / cosmetic silhouette),
+        // not a generic category medallion.
         reel.push({
             rarity: rr, name: pick ? pick.name : rarityName(rr),
+            id: pick ? pick.id : null,
             kind: pick ? pick.kind : (kind || 'coins'),
             category: pick ? pick.category : null,
             color: pick ? pick.color : null,
@@ -185,6 +187,7 @@ export function buildCaseReel(caseType, result, length = 48, landingIndex = 42) 
     reel[landingIndex] = {
         rarity: result.rarity || 'common',
         name: result.name || result.label || rarityName(result.rarity || 'common'),
+        id: result.id ?? null,
         kind: result.kind || kind || 'coins',
         category: result.category ?? null,
         color: result.color ?? null,

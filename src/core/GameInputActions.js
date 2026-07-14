@@ -494,6 +494,61 @@ export const GameInputActionMethods = {
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
             case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); this.audio.equip(); break;
             case 'buyCosmetic': this._pressFeedback(`cos:${arg && arg.id}`); this._buyCosmetic(arg); break;
+            // Collection Growth I-A — every browse action is session-only and
+            // fail-closed. Filter changes return to page one; page hotspots pass
+            // absolute 1-based targets that the pure collection model clamps.
+            case 'collectionCategory': {
+                if (!['fur', 'cloak', 'hat', 'aura', 'trail'].includes(arg)) break;
+                this.collectionView = { ...(this.collectionView || {}), category: arg, page: 1 };
+                this._resetMenuFocus();
+                this.accessibility?.announce?.(`${arg === 'hat' ? 'Accessory' : arg} cosmetics.`);
+                break;
+            }
+            case 'collectionOwnership': {
+                if (!['all', 'owned', 'locked'].includes(arg)) break;
+                this.collectionView = { ...(this.collectionView || {}), ownership: arg, page: 1 };
+                this._resetMenuFocus();
+                this.accessibility?.announce?.(`Collection filter: ${arg}.`);
+                break;
+            }
+            case 'collectionSource': {
+                if (!['all', 'starter', 'boutique', 'case', 'achievement', 'vigil'].includes(arg)) break;
+                this.collectionView = { ...(this.collectionView || {}), source: arg, page: 1 };
+                this._resetMenuFocus();
+                this.accessibility?.announce?.(`Collection source: ${arg === 'vigil' ? 'Vigil Path' : arg}.`);
+                break;
+            }
+            case 'collectionPage': {
+                const page = Number(arg);
+                if (!Number.isInteger(page) || page < 1) break;
+                this.collectionView = { ...(this.collectionView || {}), page };
+                this._resetMenuFocus();
+                this.accessibility?.announce?.(`Collection page ${page}.`);
+                break;
+            }
+            case 'boutiqueCategory': {
+                if (!['fur', 'cloak', 'hat', 'aura', 'trail'].includes(arg)) break;
+                this.boutiqueView = { ...(this.boutiqueView || {}), category: arg, page: 1 };
+                this._resetMenuFocus();
+                this.accessibility?.announce?.(`Boutique ${arg === 'hat' ? 'accessory' : arg} stock.`);
+                break;
+            }
+            case 'boutiquePage': {
+                const page = Number(arg);
+                if (!Number.isInteger(page) || page < 1) break;
+                this.boutiqueView = { ...(this.boutiqueView || {}), page };
+                this._resetMenuFocus();
+                this.accessibility?.announce?.(`Boutique stock page ${page}.`);
+                break;
+            }
+            case 'boutiqueSetPage': {
+                const setPage = Number(arg);
+                if (!Number.isInteger(setPage) || setPage < 1) break;
+                this.boutiqueView = { ...(this.boutiqueView || {}), setPage };
+                this._resetMenuFocus();
+                this.accessibility?.announce?.(`Boutique set page ${setPage}.`);
+                break;
+            }
             // BOUTIQUE fitting room: toggle a piece, stage a whole themed set,
             // clear, or buy+equip the tried-on look.
             case 'tryOnCosmetic': {
@@ -518,6 +573,13 @@ export const GameInputActionMethods = {
                 if (arg && arg.category) this.tryOn[arg.category] = arg.id;
                 this.menuTab = 'boutique';
                 this.saveSystem.markTabSeen('boutique');
+                this.resetConfirming = false;
+                this._resetMenuFocus();
+                {
+                    const tabLabel = menuHotspotLabel('tab', 'boutique').replace(/^Open\s+/i, '');
+                    this.accessibility?.setScreen?.('start', `${tabLabel}.`);
+                    this.accessibility?.announce?.(`${tabLabel} opened.`);
+                }
                 break;
             }
             case 'buyTryOn': this._pressFeedback('trybuy'); this.buyTryOn(); break;

@@ -23,6 +23,7 @@ import {
     HERO_POSE_ATTACHMENTS_BY_HERO,
     HERO_POSE_FRAME_COUNTS,
 } from '../src/assets/HeroPoseData.js';
+import { AURA_FX_STYLES, TRAIL_FX_STYLES } from '../src/assets/CosmeticFx.js';
 import { COSMETIC_LIST } from '../src/content/cosmetics.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,6 +35,7 @@ const MENU_PATH = path.join(ROOT, 'src', 'systems', 'MenuRenderer.js');
 const HERO_AI_PATH = path.join(ROOT, 'src', 'assets', 'HeroAiSprites.js');
 const PROCEDURAL_PATH = path.join(ROOT, 'src', 'assets', 'ProceduralSprites.js');
 const PIXEL_ART_PATH = path.join(ROOT, 'src', 'assets', 'PixelArt.js');
+const COSMETIC_FX_PATH = path.join(ROOT, 'src', 'assets', 'CosmeticFx.js');
 
 const DIRECTIONS = Object.freeze(['down', 'up', 'side']);
 const HERO_IDS = Object.freeze(['monkey', 'elf', 'orc', 'wizard', 'berserker', 'assassin']);
@@ -52,6 +54,10 @@ const FRAME_COUNTS = Object.freeze({
 });
 const LEGACY_GRIP_STATES = Object.freeze(['idle', 'walk', 'cast', 'hurt']);
 const SEGMENT_SLOTS = Object.freeze(['headSeat', 'shoulders']);
+const REQUIRED_CLOAK_STYLES = Object.freeze(['classic', 'splitwatch', 'mothwing']);
+const REQUIRED_HEAD_SHAPES = Object.freeze(['waylantern', 'mothmask']);
+const REQUIRED_AURA_FX = Object.freeze(['oathwheel', 'gloam_moths']);
+const REQUIRED_TRAIL_FX = Object.freeze(['waymarks', 'gloam_wisps']);
 const POINT_SLOTS_PER_FRAME = 5;
 const SPRITE_SIZE = 182;
 const SPRITE_HALF = SPRITE_SIZE / 2;
@@ -61,6 +67,7 @@ let checks = 0;
 let failures = 0;
 let frameTotal = 0;
 let pointTotal = 0;
+let collectionAttachmentTotal = 0;
 
 function check(condition, message) {
     checks++;
@@ -400,15 +407,33 @@ for (const heroId of HERO_IDS) {
                         a: captured[0], b: captured[1], c: captured[2],
                         d: captured[3], e: captured[4], f: captured[5], valid: true,
                     };
-                    check(applied === true && matrixIsFinite(matrix)
+                    const mapsExact = applied === true && matrixIsFinite(matrix)
                         && matrixMapsSegment(matrix,
-                            HERO_POSE_ATTACHMENTS[dir].idle[0][slot], frame[slot]),
-                    `${heroId}.${dir}.${state}[${index}].${slot} misses its exact body segment`);
+                            HERO_POSE_ATTACHMENTS[dir].idle[0][slot], frame[slot]);
+                    check(mapsExact,
+                        `${heroId}.${dir}.${state}[${index}].${slot} misses its exact body segment`);
+
+                    // Collection Growth I-A deliberately adds visual vocabulary,
+                    // not independent animation sheets. Exercise every new cut
+                    // against all 6 heroes x 27 poses through the one shared seat.
+                    const variants = slot === 'shoulders'
+                        ? REQUIRED_CLOAK_STYLES : REQUIRED_HEAD_SHAPES;
+                    for (const variant of variants) {
+                        collectionAttachmentTotal++;
+                        check(mapsExact,
+                            `${heroId}.${dir}.${state}[${index}].${slot}.${variant} detached`);
+                    }
                 }
             });
         }
     }
 }
+
+check(collectionAttachmentTotal === HERO_IDS.length * 27
+    * (REQUIRED_CLOAK_STYLES.length + REQUIRED_HEAD_SHAPES.length),
+`expected ${HERO_IDS.length * 27
+    * (REQUIRED_CLOAK_STYLES.length + REQUIRED_HEAD_SHAPES.length)} collection attachment probes, `
+    + `found ${collectionAttachmentTotal}`);
 
 for (const dir of DIRECTIONS) {
     for (const [state, count] of Object.entries(FRAME_COUNTS)) {
@@ -558,22 +583,86 @@ for (const heroId of HERO_IDS) {
     }
 }
 
-// Catalog vocabulary gate: every accessory a save can equip must have an
-// authored PixelArt branch (or the explicit no-hat branch).
+// Catalog vocabulary gate: every visual value a save can equip must have an
+// authored runtime branch. The collection cuts reuse shared pose seats rather
+// than introducing independent sprite sheets.
 const pixelSource = fs.readFileSync(PIXEL_ART_PATH, 'utf8');
+const pixelCloakStart = pixelSource.indexOf('function pixelCloak(');
 const pixelHatStart = pixelSource.indexOf('function pixelHat(');
 const pixelHatEnd = pixelSource.indexOf('function cachedCosmetic(', pixelHatStart);
+const pixelCloakSource = pixelSource.slice(pixelCloakStart, pixelHatStart);
 const pixelHatSource = pixelSource.slice(pixelHatStart, pixelHatEnd);
+const supportedCloakStyles = new Set(
+    [...pixelCloakSource.matchAll(/style\s*===\s*['"]([^'"]+)['"]/g)].map((match) => match[1]),
+);
+supportedCloakStyles.add('classic');
 const supportedHatShapes = new Set(
     [...pixelHatSource.matchAll(/shape\s*===\s*['"]([^'"]+)['"]/g)].map((match) => match[1]),
 );
 if (/shape\s*===\s*['"]none['"]/.test(pixelSource.slice(pixelHatEnd))) supportedHatShapes.add('none');
+check(pixelCloakStart >= 0 && pixelHatStart > pixelCloakStart,
+    'could not locate the authored PixelArt cloak vocabulary');
 check(pixelHatStart >= 0 && pixelHatEnd > pixelHatStart,
     'could not locate the authored PixelArt hat vocabulary');
+for (const style of REQUIRED_CLOAK_STYLES) {
+    check(supportedCloakStyles.has(style),
+        `PixelArt is missing required cloak style "${style}"`);
+}
+for (const shape of REQUIRED_HEAD_SHAPES) {
+    check(supportedHatShapes.has(shape),
+        `PixelArt is missing required head shape "${shape}"`);
+}
+for (const item of COSMETIC_LIST.filter((cosmetic) => cosmetic.category === 'cloak')) {
+    const style = item.cloakStyle ?? item.style ?? 'classic';
+    check(typeof style === 'string' && supportedCloakStyles.has(style),
+        `${item.id} equips unsupported PixelArt cloak style "${style}"`);
+}
 for (const item of COSMETIC_LIST.filter((cosmetic) => cosmetic.category === 'hat')) {
     check(typeof item.shape === 'string' && supportedHatShapes.has(item.shape),
         `${item.id} equips unsupported PixelArt hat shape "${item.shape}"`);
 }
+
+check(Object.isFrozen(AURA_FX_STYLES) && new Set(AURA_FX_STYLES).size === AURA_FX_STYLES.length,
+    'aura fx vocabulary must be frozen and duplicate-free');
+check(Object.isFrozen(TRAIL_FX_STYLES) && new Set(TRAIL_FX_STYLES).size === TRAIL_FX_STYLES.length,
+    'trail fx vocabulary must be frozen and duplicate-free');
+for (const fx of REQUIRED_AURA_FX) {
+    check(AURA_FX_STYLES.includes(fx), `CosmeticFx is missing required aura fx "${fx}"`);
+}
+for (const fx of REQUIRED_TRAIL_FX) {
+    check(TRAIL_FX_STYLES.includes(fx), `CosmeticFx is missing required trail fx "${fx}"`);
+}
+for (const item of COSMETIC_LIST.filter((cosmetic) => cosmetic.category === 'aura')) {
+    const fx = item.fx ?? 'static';
+    check(AURA_FX_STYLES.includes(fx), `${item.id} equips unsupported aura fx "${fx}"`);
+}
+for (const item of COSMETIC_LIST.filter((cosmetic) => cosmetic.category === 'trail')) {
+    const fx = item.fx ?? 'puffs';
+    check(TRAIL_FX_STYLES.includes(fx), `${item.id} equips unsupported trail fx "${fx}"`);
+}
+
+// Cache identities must include the visual variant or two equipped cosmetics
+// with the same direction/color would silently reuse the first built canvas.
+check(pixelSource.includes('`cloak:${dir}:${cloakStyle}:${color}`'),
+    'cloak cache key must include direction, cloakStyle, and color');
+check(pixelSource.includes('`hat:${dir}:${shape}:${color}`'),
+    'hat cache key must include direction, shape, and color');
+const cloakCacheProbeKeys = [];
+for (const dir of DIRECTIONS) {
+    for (const style of REQUIRED_CLOAK_STYLES) {
+        cloakCacheProbeKeys.push(`cloak:${dir}:${style}:#contract-a`);
+        cloakCacheProbeKeys.push(`cloak:${dir}:${style}:#contract-b`);
+    }
+}
+check(new Set(cloakCacheProbeKeys).size === DIRECTIONS.length
+    * REQUIRED_CLOAK_STYLES.length * 2,
+'cloak cache vocabulary aliases a direction, style, or color key');
+
+const cosmeticFxSource = fs.readFileSync(COSMETIC_FX_PATH, 'utf8');
+check((cosmeticFxSource.match(/const time = reducedEffects \? 0 : t;/g) ?? []).length >= 3,
+    'aura, set-bonus, and trail fx must freeze their time source under Reduced Effects');
+check(!/document\.createElement\s*\(\s*['"]canvas['"]|new\s+OffscreenCanvas|new\s+Image\s*\(/.test(cosmeticFxSource),
+    'CosmeticFx must not allocate canvases/images in live draw paths');
 
 // Static wiring guards catch the original regression without needing Canvas:
 // Player and every menu avatar must consume the same pose/seat/hand contract.
@@ -608,6 +697,21 @@ check(!/castPose\s*\?\s*50(?:\.0)?\s*:\s*31\.5/.test(menuSource)
 'MenuRenderer reintroduced the historical cast/rest 50/11 hand-anchor branch');
 check(!/\bcloakOx\b/.test(playerSource),
     'Player reintroduced whole-cloak cloakOx movement lag that detaches the collar');
+check(playerSource.includes('ap.cloakStyle')
+    && /_drawCloak\(ctx, color, style, pose\)/.test(playerSource)
+    && /drawPixelCloak\([\s\S]{0,180}cloakStyle\)/.test(playerSource),
+    'Player no longer threads appearance.cloakStyle through the shared shoulder rig');
+check(/applyHeroAttachmentTransform\(ctx, pose, 'shoulders'\)[\s\S]{0,900}drawPixelCloak/.test(playerSource),
+    'Player cloak styles bypass the shared pose shoulder transform');
+check(/drawTrailPoint\([\s\S]{0,220}reducedEffects\)/.test(playerSource)
+    && /drawAuraFx\([\s\S]{0,220}reducedEffects\)/.test(playerSource),
+    'Player no longer forwards Reduced Effects to cosmetic aura/trail animation');
+check(/drawSetBonus\([\s\S]{0,220}reducedEffects\)/.test(playerSource),
+    'Player no longer freezes completed-set animation under Reduced Effects');
+check(/drawSetBonus\([\s\S]{0,220}this\._reducedMotion\)/.test(menuSource),
+    'menu previews no longer freeze completed-set animation under Reduced Effects');
+check(/this\.isLpcBody\s*&&\s*cloakStyle\s*===\s*['"]classic['"]/.test(playerSource),
+    'non-classic LPC cloaks no longer use their distinct procedural cuts');
 check(heroAiSource.includes('HERO_POSE_ATTACHMENTS_BY_HERO[id]'),
     'bespoke hero sheets no longer select their own generated attachment tree');
 check(heroAiSource.includes('applyHeroAttachmentTransform(cx')

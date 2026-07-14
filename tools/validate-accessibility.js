@@ -156,6 +156,9 @@ for (const [action, arg] of [
     ['toggleSetting', 'captions'], ['toggleSetting', 'monoAudio'],
     ['setCaptionDetail', 'full'], ['setVibration', 'low'], ['volUp', 'volVoice'],
     ['openMines', 250], ['claimBP', 12], ['tourNext', null],
+    ['collectionCategory', 'hat'], ['collectionOwnership', 'owned'],
+    ['collectionSource', 'achievement'], ['collectionPage', 2],
+    ['boutiqueCategory', 'cloak'], ['boutiquePage', 2], ['boutiqueSetPage', 2],
 ]) {
     const label = menuHotspotLabel(action, arg);
     ok(typeof label === 'string' && label.trim().length >= 4, `${action} has a useful fallback label`);
@@ -176,6 +179,11 @@ ok(menuHotspotLabel('setVibration', 'off') === 'Set vibration to off',
     'vibration choice exposes its exact setting in the accessible label');
 ok(menuHotspotLabel('volUp', 'volVoice') === 'Increase Voice volume',
     'voice-volume control is named independently from sound effects');
+ok(menuHotspotLabel('collectionSource', 'achievement')
+    === 'Filter collection source to achievement',
+    'collection source controls expose their exact filter');
+ok(menuHotspotLabel('boutiqueSetPage', 2) === 'Open Boutique set page 2',
+    'Boutique set pagination exposes its exact destination');
 
 const scaleWrites = [];
 const scaleAnnouncements = [];

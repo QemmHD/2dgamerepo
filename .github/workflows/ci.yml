@@ -110,6 +110,9 @@ jobs:
       - name: Validate animated cosmetic attachment contracts
         run: node tools/validate-cosmetic-attachments.js
 
+      - name: Validate cosmetic collection reachability and source truth
+        run: node tools/validate-cosmetic-collection.js
+
       - name: Validate house-safe enemy navigation
         run: node tools/validate-navigation.js
 

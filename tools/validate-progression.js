@@ -13,7 +13,17 @@ import {
 } from '../src/content/battlePass.js';
 import { ACHIEVEMENTS } from '../src/content/achievements.js';
 import {
-    COSMETICS, COSMETIC_CATEGORIES, COSMETIC_SETS, cosmeticsForAchievement,
+    COSMETICS,
+    COSMETIC_ACQUISITION_ROUTES,
+    COSMETIC_CATEGORIES,
+    COSMETIC_LIST,
+    COSMETIC_SETS,
+    cosmeticById,
+    cosmeticCoinCost,
+    cosmeticsForAchievement,
+    getCosmeticAcquisitionRoutes,
+    getCosmeticSourceLabel,
+    resolveAppearance,
 } from '../src/content/cosmetics.js';
 import { GEAR } from '../src/content/gear.js';
 import { PERMANENT_UPGRADES } from '../src/content/permanentUpgrades.js';
@@ -110,6 +120,157 @@ const achievementIds = ACHIEVEMENTS.map((achievement) => achievement.id);
 check(new Set(achievementIds).size === achievementIds.length, 'achievement ids are not unique');
 const cosmeticSetIds = COSMETIC_SETS.map((set) => set.id);
 check(new Set(cosmeticSetIds).size === cosmeticSetIds.length, 'cosmetic set ids are not unique');
+for (const set of COSMETIC_SETS) {
+    check(typeof set.id === 'string' && !!set.id && typeof set.name === 'string' && !!set.name,
+        'cosmetic set is missing a stable id/name');
+    const categories = Object.keys(set.pieces || {});
+    check(categories.length === COSMETIC_CATEGORIES.length
+        && COSMETIC_CATEGORIES.every((category) => categories.includes(category)),
+    `${set.id} does not contain exactly one piece per cosmetic category`);
+    for (const category of COSMETIC_CATEGORIES) {
+        const item = cosmeticById(set.pieces?.[category]);
+        check(!!item && item.category === category,
+            `${set.id}.${category} does not resolve to a matching catalog item`);
+    }
+}
+
+// Collection Growth I-A adds two genuine silhouette families without inflating
+// fur recolors. Counts, acquisition routes, source labels, and complete sets
+// are persistence/UI contracts rather than incidental menu presentation.
+check(COSMETIC_LIST.length === 73, 'Collection Growth I-A must contain exactly 73 cosmetics');
+const expectedCategoryCounts = { fur: 12, cloak: 14, hat: 16, aura: 15, trail: 16 };
+for (const category of COSMETIC_CATEGORIES) {
+    const actual = COSMETIC_LIST.filter((item) => item.category === category).length;
+    check(actual === expectedCategoryCounts[category],
+        `${category} catalog count ${actual} does not match ${expectedCategoryCounts[category]}`);
+}
+check(COSMETIC_SETS.length === 9, 'Collection Growth I-A must contain exactly nine complete sets');
+check(JSON.stringify(COSMETIC_ACQUISITION_ROUTES)
+    === JSON.stringify(['starter', 'boutique', 'case', 'achievement', 'vigil']),
+'cosmetic acquisition-route ids/order changed');
+check(Object.isFrozen(COSMETIC_ACQUISITION_ROUTES), 'cosmetic acquisition routes are mutable');
+for (const item of COSMETIC_LIST) {
+    const routes = getCosmeticAcquisitionRoutes(item);
+    const again = getCosmeticAcquisitionRoutes(item.id);
+    check(Object.isFrozen(routes), `${item.id} acquisition routes are mutable`);
+    check(routes.length > 0, `${item.id} has no valid acquisition route`);
+    check(JSON.stringify(routes) === JSON.stringify(again), `${item.id} routes differ by item/id lookup`);
+    check(routes.every((route) => COSMETIC_ACQUISITION_ROUTES.includes(route)),
+        `${item.id} exposes an unknown acquisition route`);
+    check(new Set(routes).size === routes.length, `${item.id} repeats an acquisition route`);
+    check(!item.caseExcluded || !routes.includes('case'), `${item.id} ignores caseExcluded`);
+    check(!item.defaultUnlocked || (routes.length === 1 && routes[0] === 'starter'),
+        `${item.id} starter route leaks into another acquisition path`);
+    check(getCosmeticSourceLabel(item).length > 0, `${item.id} has no source label`);
+}
+check(cosmeticById('__proto__') === null && cosmeticById('constructor') === null
+    && cosmeticById(null) === null, 'prototype/non-string cosmetic ids resolve as catalog items');
+check(getCosmeticAcquisitionRoutes('__proto__').length === 0
+    && getCosmeticSourceLabel('__proto__') === '', 'unknown cosmetics expose acquisition copy');
+check(JSON.stringify(getCosmeticAcquisitionRoutes('fur_natural')) === JSON.stringify(['starter'])
+    && getCosmeticSourceLabel('fur_natural') === 'Starter',
+'starter cosmetic acquisition copy changed');
+check(JSON.stringify(getCosmeticAcquisitionRoutes('fur_ashen'))
+    === JSON.stringify(['boutique', 'case'])
+    && getCosmeticSourceLabel('fur_ashen') === 'Boutique · Case',
+'boutique/case alternate acquisition copy changed');
+check(JSON.stringify(getCosmeticAcquisitionRoutes('fur_void'))
+    === JSON.stringify(['case', 'achievement']), 'mixed achievement/case route order changed');
+check(getCosmeticSourceLabel('fur_void') === 'Achievement · Case',
+    'mixed source label does not prioritize the authored route');
+check(JSON.stringify(getCosmeticAcquisitionRoutes('fur_vigil')) === JSON.stringify(['vigil'])
+    && getCosmeticSourceLabel('fur_vigil') === 'Vigil Path',
+'Vigil Path cosmetic acquisition copy changed');
+
+const collectionGrowthCoinPieces = {
+    cloak_splitwatch: { category: 'cloak', rarity: 'rare', rawCoinCost: 900, displayCost: 1800, key: 'cloakStyle', value: 'splitwatch' },
+    hat_waylantern: { category: 'hat', rarity: 'epic', rawCoinCost: 1400, displayCost: 2800, key: 'shape', value: 'waylantern' },
+    aura_oathwheel: { category: 'aura', rarity: 'legendary', rawCoinCost: 2400, displayCost: 4800, key: 'fx', value: 'oathwheel' },
+    trail_waymarks: { category: 'trail', rarity: 'epic', rawCoinCost: 1500, displayCost: 3000, key: 'fx', value: 'waymarks' },
+};
+const collectionGrowthCasePieces = {
+    cloak_mothwing: { category: 'cloak', rarity: 'legendary', key: 'cloakStyle', value: 'mothwing' },
+    hat_mothmask: { category: 'hat', rarity: 'epic', key: 'shape', value: 'mothmask' },
+    aura_gloam_moths: { category: 'aura', rarity: 'mythic', key: 'fx', value: 'gloam_moths' },
+    trail_gloam_wisps: { category: 'trail', rarity: 'rare', key: 'fx', value: 'gloam_wisps' },
+};
+for (const [id, contract] of Object.entries(collectionGrowthCoinPieces)) {
+    const item = COSMETICS[id];
+    check(!!item, `${id} is missing`);
+    check(item.category === contract.category && item.rarity === contract.rarity,
+        `${id} category/rarity contract changed`);
+    check(item.coinCost === contract.rawCoinCost && cosmeticCoinCost(item) === contract.displayCost
+        && item.caseExcluded === true,
+        `${id} is not Boutique-only at its authored price`);
+    check(item[contract.key] === contract.value, `${id} lost its distinct visual vocabulary`);
+    check(JSON.stringify(getCosmeticAcquisitionRoutes(item)) === JSON.stringify(['boutique']),
+        `${id} has a competing acquisition route`);
+    check(getCosmeticSourceLabel(item) === 'Boutique', `${id} has the wrong source label`);
+}
+check(Object.values(collectionGrowthCoinPieces)
+    .reduce((sum, contract) => sum + contract.rawCoinCost, 0) === 6200,
+'Collection Growth raw Boutique prices no longer total 6,200');
+check(Object.keys(collectionGrowthCoinPieces)
+    .reduce((sum, id) => sum + cosmeticCoinCost(COSMETICS[id]), 0) === 12400,
+'Collection Growth displayed/spent Boutique prices no longer total 12,400');
+for (const [id, contract] of Object.entries(collectionGrowthCasePieces)) {
+    const item = COSMETICS[id];
+    check(!!item, `${id} is missing`);
+    check(item.category === contract.category && item.rarity === contract.rarity,
+        `${id} category/rarity contract changed`);
+    check(item.coinCost == null && item.achievement == null && item.passLevel == null
+        && item.defaultUnlocked !== true && item.caseExcluded !== true,
+    `${id} is not case-only`);
+    check(item[contract.key] === contract.value, `${id} lost its distinct visual vocabulary`);
+    check(JSON.stringify(getCosmeticAcquisitionRoutes(item)) === JSON.stringify(['case']),
+        `${id} has a competing acquisition route`);
+    check(getCosmeticSourceLabel(item) === 'Case', `${id} has the wrong source label`);
+}
+
+const collectionGrowthSets = {
+    lanternward: {
+        name: 'Lanternward', fur: 'fur_waylight', cloak: 'cloak_splitwatch',
+        hat: 'hat_waylantern', aura: 'aura_oathwheel', trail: 'trail_waymarks',
+    },
+    duskmoth: {
+        name: 'Duskmoth Court', fur: 'fur_shadow', cloak: 'cloak_mothwing',
+        hat: 'hat_mothmask', aura: 'aura_gloam_moths', trail: 'trail_gloam_wisps',
+    },
+};
+for (const [setId, contract] of Object.entries(collectionGrowthSets)) {
+    const set = COSMETIC_SETS.find((entry) => entry.id === setId);
+    check(!!set && set.name === contract.name, `${setId} set identity is missing`);
+    check(Object.keys(set.pieces).length === COSMETIC_CATEGORIES.length,
+        `${setId} does not map all five categories exactly once`);
+    for (const category of COSMETIC_CATEGORIES) {
+        const id = contract[category];
+        check(set.pieces[category] === id, `${setId} maps the wrong ${category} piece`);
+        check(COSMETICS[id]?.category === category, `${setId}.${category} points outside its slot`);
+    }
+}
+const lanternwardAppearance = resolveAppearance(COSMETIC_SETS.find((set) => set.id === 'lanternward').pieces);
+check(lanternwardAppearance.cloakStyle === 'splitwatch'
+    && lanternwardAppearance.hatShape === 'waylantern'
+    && lanternwardAppearance.auraFx === 'oathwheel'
+    && lanternwardAppearance.trailFx === 'waymarks',
+'Lanternward appearance metadata did not reach the shared resolver');
+const duskmothAppearance = resolveAppearance(COSMETIC_SETS.find((set) => set.id === 'duskmoth').pieces);
+check(duskmothAppearance.cloakStyle === 'mothwing'
+    && duskmothAppearance.hatShape === 'mothmask'
+    && duskmothAppearance.auraFx === 'gloam_moths'
+    && duskmothAppearance.trailFx === 'gloam_wisps',
+'Duskmoth appearance metadata did not reach the shared resolver');
+const hostileAppearance = resolveAppearance({
+    fur: '__proto__', cloak: 'constructor', hat: '__proto__',
+    aura: 'not_a_cosmetic', trail: null,
+});
+check(hostileAppearance.furColor === COSMETICS.fur_natural.color
+    && hostileAppearance.cloakColor === COSMETICS.cloak_none.color
+    && hostileAppearance.cloakStyle === 'classic'
+    && hostileAppearance.hatShape === 'none'
+    && hostileAppearance.auraColor === COSMETICS.aura_ember.color
+    && hostileAppearance.trailColor === COSMETICS.trail_none.color,
+'appearance resolver does not fail closed for unknown/prototype ids');
 
 // Waylight Regalia is a permanent mastery collection. Every piece has one
 // named achievement source, never enters cases, and only uses effects already
@@ -279,6 +440,37 @@ check(save.incrementUpgrade('maxHp') === true && save.data.upgrades.maxHp === ma
 
 // Equipment APIs reject cross-slot ids immediately, and the run-start bridge
 // independently ignores a malformed raw loadout instead of applying its buffs.
+const validLegacyCosmetics = save._validate({ cosmetics: {
+    unlocked: ['hat_wool', 'cloak_crimson'],
+    equipped: { hat: 'hat_wool', cloak: 'cloak_crimson' },
+} });
+check(validLegacyCosmetics.cosmetics.unlocked.includes('hat_wool')
+    && validLegacyCosmetics.cosmetics.unlocked.includes('cloak_crimson')
+    && validLegacyCosmetics.cosmetics.equipped.hat === 'hat_wool'
+    && validLegacyCosmetics.cosmetics.equipped.cloak === 'cloak_crimson',
+'valid pre-growth cosmetic saves no longer round-trip');
+const invalidEquippedCosmetic = save._validate({ cosmetics: {
+    unlocked: ['hat_wool', 'not_a_cosmetic'],
+    equipped: { hat: 'not_a_cosmetic' },
+} });
+check(invalidEquippedCosmetic.cosmetics.equipped.hat === 'hat_none',
+    'unknown equipped cosmetic escaped the existing slot fallback');
+const unlockedBeforeUnknownGrant = [...save.data.cosmetics.unlocked];
+check(save.unlockCosmetic('not_a_cosmetic') === false
+    && save.unlockCosmetic('__proto__') === false
+    && save.unlockCosmetic(null) === false,
+'public cosmetic grant accepted an unknown/prototype/non-string id');
+check(save.unlockCosmeticSilent('not_a_cosmetic') === false
+    && save.unlockCosmeticSilent('constructor') === false,
+'silent cosmetic grant accepted an unknown/prototype id');
+check(JSON.stringify(save.data.cosmetics.unlocked) === JSON.stringify(unlockedBeforeUnknownGrant),
+    'rejected cosmetic grant mutated the owned catalog');
+check(save.unlockCosmetic('cloak_splitwatch') === true
+    && save.unlockCosmetic('cloak_splitwatch') === false,
+'valid Collection Growth cosmetic grant is not new-once idempotent');
+check(save.unlockCosmeticSilent('hat_waylantern') === true
+    && save.unlockCosmeticSilent('hat_waylantern') === false,
+'valid silent Collection Growth grant is not new-once idempotent');
 save.unlockGear('t_emberband');
 const armorBefore = save.data.gear.equipped.armor;
 check(save.equipGear('armor', 't_emberband') === false && save.data.gear.equipped.armor === armorBefore,

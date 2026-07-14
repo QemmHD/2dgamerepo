@@ -366,6 +366,7 @@ export class Player {
         }
 
         const ap = this.appearance || {};
+        const reducedEffects = this.skinOverlayEnabled === false;
         const bobY = this.moving ? Math.sin(this.bobTimer * 12) * 3 : 0;
 
         // Cosmetic trail (world space, behind everything) — chunky pixel puffs
@@ -385,7 +386,8 @@ export class Player {
                 // bob phase to historical points made the whole wake oscillate
                 // in lockstep instead of staying planted where it fell.
                 const px = Math.round(t.x), py = Math.round(t.y);
-                drawTrailPoint(ctx, px, py, b, k, ap.trailColor, fx, this.auraPhase, i);
+                drawTrailPoint(ctx, px, py, b, k, ap.trailColor, fx,
+                    this.auraPhase, i, reducedEffects);
             }
             ctx.restore();
         }
@@ -425,7 +427,8 @@ export class Player {
         if (ap.auraColor) {
             // Animated cosmetic aura (the prestige VFX layer). auraPhase advances
             // every frame so pulse/spin/flame/rainbow/starfield animate even idle.
-            drawAuraFx(ctx, this.x, cy, this.spriteHalf * 1.1, ap.auraColor, ap.auraFx, this.auraPhase, 0.34);
+            drawAuraFx(ctx, this.x, cy, this.spriteHalf * 1.1, ap.auraColor,
+                ap.auraFx, this.auraPhase, 0.34, reducedEffects);
         }
         // Rarity prestige VFX — from RARE up, the flashiest equipped cosmetic
         // glows/pulses/sparkles in its own colour (rarer = flashier). Gated by
@@ -435,7 +438,8 @@ export class Player {
         }
         // Set-bonus flourish — equipping a whole themed set lights up an extra
         // counter-rotating ring of motes in the set's colour (cosmetic only).
-        if (ap.set) drawSetBonus(ctx, this.x, cy, this.spriteHalf * 1.1, ap.set.color, this.auraPhase);
+        if (ap.set) drawSetBonus(ctx, this.x, cy, this.spriteHalf * 1.1,
+            ap.set.color, this.auraPhase, reducedEffects);
 
         // Directional facing → which dir set + horizontal flip.
         let dir = 'down', flip = false;
@@ -528,7 +532,11 @@ export class Player {
         // cloak drapes OVER the body (drawn after the sprite, below) so we see the
         // full cape. LPC heroes use a single front-facing imported cape that has
         // no back variant, so it always draws behind the body (every direction).
-        if (ap.cloakColor && (this.isLpcBody || dir !== 'up')) this._drawCloak(ctx, ap.cloakColor, pose);
+        const usesImportedCloak = this.isLpcBody
+            && (!ap.cloakStyle || ap.cloakStyle === 'classic');
+        if (ap.cloakColor && (usesImportedCloak || dir !== 'up')) {
+            this._drawCloak(ctx, ap.cloakColor, ap.cloakStyle, pose);
+        }
 
         ctx.save();
         if (flip) ctx.scale(-1, 1);
@@ -551,7 +559,9 @@ export class Player {
 
         // Back-view pixel cloak drapes over the body (full cape facing away).
         // (LPC heroes already drew their cape behind the body above.)
-        if (ap.cloakColor && !this.isLpcBody && dir === 'up') this._drawCloak(ctx, ap.cloakColor, pose);
+        if (ap.cloakColor && !usesImportedCloak && dir === 'up') {
+            this._drawCloak(ctx, ap.cloakColor, ap.cloakStyle, pose);
+        }
 
         // (The old themed sash + chest gem overlay was removed — the held weapon
         // now carries the weapon identity, so the torso stays clean.)
@@ -701,14 +711,16 @@ export class Player {
 
     // Cloak + hat: both are authored in the neutral 182px body box, then one
     // shared segment transform pins them to the current shoulder/head pose.
-    _drawCloak(ctx, color, pose) {
+    _drawCloak(ctx, color, style, pose) {
         const dir = pose?.dir || 'down';
         const flip = !!pose?.flip;
+        const cloakStyle = style || 'classic';
         ctx.save();
         applyHeroAttachmentTransform(ctx, pose, 'shoulders');
         // LPC heroes keep the imported, recolored cape sprite (it aligns to the
-        // LPC body); the single front-facing cape is reused for every direction.
-        if (this.isLpcBody) {
+        // LPC body) for the classic cut. Authored collection styles deliberately
+        // use the shared procedural rig so split tails/wings remain distinct.
+        if (this.isLpcBody && cloakStyle === 'classic') {
             const cape = getCloakSprite(color);
             if (cape) {
                 // Draw the cape a touch larger than the body and nudged down so
@@ -719,7 +731,7 @@ export class Player {
                 return;
             }
         }
-        drawPixelCloak(ctx, 0, 0, this.spriteHalf, dir, color, flip);
+        drawPixelCloak(ctx, 0, 0, this.spriteHalf, dir, color, flip, cloakStyle);
         ctx.restore();
     }
     _drawHat(ctx, shape, color, pose) {
