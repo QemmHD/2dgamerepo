@@ -101,6 +101,9 @@ jobs:
       - name: Validate HUD layout contracts
         run: node tools/validate-hud-layout.js
 
+      - name: Validate animated cosmetic attachment contracts
+        run: node tools/validate-cosmetic-attachments.js
+
       - name: Validate house-safe enemy navigation
         run: node tools/validate-navigation.js
 
