@@ -25,6 +25,7 @@ const safeAreas = [
 ];
 const modes = [
     { name: 'desktop', compact: false, touchMode: false },
+    { name: 'desktop-1280', compact: false, touchMode: false, cssScale: 1280 / 1920 },
     { name: 'compact', compact: true, touchMode: false },
     { name: 'touch', compact: true, touchMode: true },
     { name: 'phone-667', compact: true, touchMode: true, cssScale: 667 / 1920 },
@@ -263,6 +264,21 @@ for (const safeArea of safeAreas) {
                     ok(objective.edgeCompact === true,
                         `${name}: stacked 130% duel did not enter the edge combat rail`);
                 }
+            }
+
+            if (objectiveLanes.compressed) {
+                const scaleToCss = objectiveHud.cssScale;
+                const titleBottom = objectiveLanes.titleY + objective.titlePx / 2;
+                ok(objective.compressed === true && objective.dense === false,
+                    `${name}: compressed Run Path did not retain its standard-card contract`);
+                ok(objective.h * scaleToCss >= 139.9,
+                    `${name}: compressed Run Path is shorter than 140 CSS pixels`);
+                ok(objectiveLanes.bodyBarGap * scaleToCss >= 5.99,
+                    `${name}: compressed Run Path body does not clear its bar by 6 CSS pixels`);
+                ok(objectiveLanes.barFooterGap * scaleToCss >= 5.99,
+                    `${name}: compressed Run Path bar does not clear its footer by 6 CSS pixels`);
+                ok((objectiveLanes.bodyY - titleBottom) * scaleToCss >= 2.99,
+                    `${name}: compressed Run Path body does not clear its title by 3 CSS pixels`);
             }
 
             // Touch removes Blink from the passive cooldown row because its

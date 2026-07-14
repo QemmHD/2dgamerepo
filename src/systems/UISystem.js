@@ -816,13 +816,23 @@ export class UISystem {
         drawProgressBar();
 
         const denseFooter = r.dense || state.touchMode;
+        const compressedFooter = lanes.compressed === true;
+        const showFooterContext = !compressedFooter
+            || state.objectiveRewardsEligible !== false;
         const rewardFit = drawFooter({
             footerY: lanes.footerY ?? (r.y + r.h - pad - progressPx * 0.42),
-            rewardMaxW: r.w * (state.objectiveRewardsEligible === false
-                ? 0.43 : denseFooter ? 0.38 : 0.30),
-            contextMaxW: r.w * (state.objectiveRewardsEligible === false
-                ? 0.43 : denseFooter ? 0.50 : 0.56),
-            minRewardSize: denseFooter ? Math.max(12, progressPx - 3) : progressPx,
+            rewardMaxW: compressedFooter
+                ? showFooterContext ? r.w * 0.43 : r.w - pad * 2
+                : r.w * (state.objectiveRewardsEligible === false
+                    ? 0.43 : denseFooter ? 0.38 : 0.30),
+            contextMaxW: compressedFooter
+                ? r.w * 0.43
+                : r.w * (state.objectiveRewardsEligible === false
+                    ? 0.43 : denseFooter ? 0.50 : 0.56),
+            showContext: showFooterContext,
+            minRewardSize: compressedFooter
+                ? progressPx
+                : denseFooter ? Math.max(12, progressPx - 3) : progressPx,
         });
         this._lastDrawReceipt.objectiveVariant = 'standard';
         this._lastDrawReceipt.objectiveTextComplete = actionWrap?.truncated !== true

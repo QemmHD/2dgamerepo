@@ -178,6 +178,7 @@ export function computeHUDLayout(options = {}) {
     // Living Vigil counts; once all three phases finish, the richer Vigil card
     // can reclaim this same lane without stacking two equal-weight panels.
     const phoneGuidance = touchMode && usableW * cssScale <= 700;
+    const compressedGuidance = !phoneGuidance && cssScale < 0.999;
     const objectiveRight = right - 38;
     // A phone Run Path owns a real right rail instead of borrowing the combat
     // centre. Forty CSS pixels remain between the player column and the card,
@@ -201,6 +202,9 @@ export function computeHUDLayout(options = {}) {
         // title, action, bar, and reward sequential lanes instead of letting a
         // percentage-based body run through the progress bar.
         phoneGuidance ? Math.ceil(134 / cssScale) : 0,
+        // A 1920-wide logical canvas shown at common 1280/1600 CSS widths
+        // still needs two complete action lines plus real content gutters.
+        compressedGuidance ? Math.ceil(140 / cssScale) : 0,
     );
     const reservedAbilityY = touchMode ? bottom - 394 : bottom - 148;
     const phoneAbilityGap = phoneGuidance ? Math.ceil(4 / cssScale) : 0;
@@ -250,6 +254,7 @@ export function computeHUDLayout(options = {}) {
             dense: denseObjective,
             edgeCompact: edgeCompactObjective,
             phone: phoneGuidance,
+            compressed: compressedGuidance && !denseObjective,
             centerKeepoutPx: phoneGuidance ? 40 : 0,
         })
         : rect(0, 0, 0, 0);
@@ -289,6 +294,17 @@ export function computeHUDLayout(options = {}) {
             bodyLineHeight = objectiveBodyPx * 1.02;
             footerY = objective.y + objective.h - objectiveProgressPx - 15 * uiScale;
             barY = objective.y + objective.h - barH - 5 * uiScale;
+        } else if (compressedGuidance) {
+            const gap3 = Math.ceil(3 / cssScale);
+            const gap6 = Math.ceil(6 / cssScale);
+            const footerTop = footerY - objectiveProgressPx / 2;
+            barY = footerTop - gap6 - barH;
+            const titleBottom = titleY + objectiveTitlePx / 2;
+            const bodyHeight = bodyLineHeight * (bodyLines - 1) + objectiveBodyPx;
+            bodyY = Math.max(
+                titleBottom + gap3,
+                Math.min(bodyY, barY - gap6 - bodyHeight),
+            );
         }
 
         objective.lanes = {
@@ -307,6 +323,7 @@ export function computeHUDLayout(options = {}) {
             showTitle: !edgeCompactObjective,
             showContext: !edgeCompactObjective,
             compactPhase: edgeCompactObjective,
+            compressed: compressedGuidance && !denseObjective,
             minimumGap: phoneGuidance ? cssGap6 : 0,
         };
     }
