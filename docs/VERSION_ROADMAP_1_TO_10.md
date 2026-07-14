@@ -132,15 +132,16 @@ This plan is tied to the code that exists, not to an imagined rewrite:
 - `tools/blender/`, `tools/artshot/`, `validate-assets.js`, and the canonical enemy
   sheets remain the source, capture, provenance, and visual-regression contracts.
 
-**Shipped baseline:** the ten 1.0.1 Vigil Health fixes are on `main`. **In-flight
-post-1.0.1 foundation:** the current content branch adds four interactive Vigil Site
-archetypes (`Wayfarer Hearth`, `Ashen Archive`, `Keeper Cache`, `Gloam Beacon`) and
-twelve named formation encounters—three for each existing biome—through
-`VigilSiteSystem` and `EncounterDirector`. The same branch exposes Mines' exact
-probability/payout quote, four fixed stakes and an about-7% target edge, preserves the five/hour cap,
-and centers the real case result without a manufactured near miss. These count as
-shipped only after determinism, save, performance, screenshot, PR, and deployed-main
-gates pass.
+**Shipped baseline through 1.0.2:** the ten 1.0.1 Vigil Health fixes are on `main`;
+Waylight Calls shipped through [PR #185](https://github.com/QemmHD/2dgamerepo/pull/185)
+at `da88450`. Its four Vigil Sites, twelve formations, progression additions, exact
+Mines quote/stakes/economy, honest case landing, HUD/menu work, validators, Pages
+deployment, and live smoke passed the recorded gates. **First Light foundation:**
+[PR #186](https://github.com/QemmHD/2dgamerepo/pull/186) shipped semantic Canvas,
+keyboard menu/Mines foundations, active modality, reduced-motion inheritance, phone
+Settings, attention-badge, and receipt-bearing QA work at `3ed29e0`. Full 1.1 remains
+open; the canonical execution truth and exact gaps live in
+[the shared development ledger](DEVELOPMENT_LEDGER.md).
 
 ## 3. How versions earn their number
 
@@ -307,7 +308,7 @@ three direction sheets with 9 poses each, validated on Blender 5.1.
 first-run browser proof, pause proof, level-up proof, save reload proof, 180-body nav,
 and an `EXC:0` harness frame.
 
-## 1.0.2 — Waylight Calls (in-flight content foundation)
+## 1.0.2 — Waylight Calls (shipped 2026-07-13)
 
 **Player promise:** “The world notices where I move and gives me a reason to change
 my route.”
@@ -347,9 +348,9 @@ content count is concrete rather than a generic “more variety” claim:
 15. Add a strategy-aware gambling/economy validator for payout math, stake validation,
     wallet mutation, five/hour quota, edge disclosure, and reel landing truth.
 
-**Current status:** content and isolated systems exist on the working branch; central
-run/update/render/audio/save integration, adversarial validation, PR, deployed-main
-proof, and post-deploy smoke are the remaining truth gates.
+**Delivery status:** shipped through [PR #185](https://github.com/QemmHD/2dgamerepo/pull/185)
+at `da88450`; integration, adversarial validators, deployed-main Pages, and live smoke
+passed. Preserve those fixtures rather than recreating this release.
 
 **Exit gate:** four site kinds and all twelve formations appear in deterministic test
 runs; repeat activation cannot duplicate payout; boss transitions cannot strand an
@@ -359,6 +360,16 @@ audio, and screenshot gates pass.
 ## 1.1 — First Light
 
 **Player promise:** “I know what to do, and the game gets out of my way.”
+
+**Delivery status:** [PR #186](https://github.com/QemmHD/2dgamerepo/pull/186)
+shipped the semantic Canvas, menu keyboard focus, active modality, reduced-motion
+inheritance, phone Settings, typed attention badge, keyboard-Mines foundation, and
+deterministic QA gates at `3ed29e0`. This is a foundation, not the complete release:
+preference controls, playable tutorial/debrief, full Play/Now/Explore hierarchy,
+lock/source/context routing, device/AT/zoom proof, and the exact acceptance matrix below
+remain open. See A11-01–A11-14 in the
+[development ledger](DEVELOPMENT_LEDGER.md); keyboard Mines is explicitly tracked as
+pulled-forward 1.2 work.
 
 - Add roving keyboard focus over the existing hotspot registry: Tab/arrows move,
   Enter/Space activates, Esc backs out, and the same router handles pointer/touch.
@@ -598,8 +609,9 @@ fallbacks remain; source/rights are recorded; no new art breaks canonical palett
 
 **Player promise:** “It feels at home on phone, tablet, desktop, and controller.”
 
-- Add poll-based Gamepad API input, dead zones, edge-triggered buttons, focus ring,
-  remapping, glyph switching, disconnect recovery, and optional haptics.
+- Add poll-based Gamepad API input, dead zones, edge-triggered buttons, remapping,
+  glyph switching, disconnect recovery, and optional haptics; drive the shipped
+  hotspot focus ring rather than creating a controller-only focus system.
 - Add PWA service worker, offline shell, update prompt, install education, and cache
   version rollback.
 - Add native adapter boundaries for storage, haptics, safe areas, share sheet,
@@ -1474,10 +1486,12 @@ Release scorecard:
 
 ## 8. Immediate execution order
 
-1. Finish and ship 1.0.2 Waylight Calls: four sites, twelve formations, progression,
-   honest Mines/case presentation, validators, screenshots, PR, deploy, and ledger proof.
-2. Land 1.1 keyboard focus, Clear-Flame hierarchy, attention/RGB budget, reduced motion,
-   phone layouts, responsiveness, and accessibility state.
+1. Preserve shipped 1.0.2 Waylight Calls and its PR #185 validators, screenshots,
+   deterministic fixtures, deployed-main proof, and ledger record.
+2. Continue 1.1 from the shipped PR #186 foundation: close AT/device/zoom/motion proof;
+   build the preference suite, playable tutorial/debrief, complete Play/Now/Explore
+   hierarchy, and lock/source/context routing; then pass the exact First Light
+   comprehension, timing, pointerless, viewport, grayscale/RGB, and reduced-motion gate.
 3. Build 1.2 Fair Forge save/economy/territory-policy fixtures before adding pools,
    rewards, chapter currencies, high-stakes tables, or native storefront surfaces.
 4. Produce one modular house/POI vertical slice while 1.3 enemy roles navigate and fight

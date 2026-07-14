@@ -169,21 +169,24 @@ phoneRenderer._button = function recordPhoneButton(_ctx, rect, label, options = 
     this._hot(rect.x, rect.y, rect.w, rect.h, options.action, options.arg, hotspotLabel);
 };
 const phoneContext = makeRecordingContext();
-phoneRenderer._drawPhoneSettings(phoneContext, {
+const settingsState = {
     saveData: {
         settings: {
             screenShake: true,
             damageNumbers: true,
             particles: true,
             reducedEffects: true,
-            debug: true,
-            unlockMaps: true,
+            // Keep both off so their presence proves the ?dev=1 gate, not the
+            // legacy safety path that exposes an already-enabled dev toggle.
+            debug: false,
+            unlockMaps: false,
             volMusic: 0.7,
             volSfx: 0.8,
         },
     },
     resetConfirming: false,
-}, scenarios[0].content);
+};
+phoneRenderer._drawPhoneSettings(phoneContext, settingsState, scenarios[0].content);
 
 const emitted = phoneRenderer.hotspots;
 const expectedHotspots = [
@@ -215,6 +218,35 @@ ok(emitted.every((hotspot) => hotspot.key && hotspot.baseKey && hotspot.label
 'phone Settings emitted an unkeyed, unlabeled, or empty hotspot');
 for (const label of ['Music Volume', 'SFX Volume']) {
     ok(phoneContext.texts.includes(label), `phone Settings did not draw the ${label} heading`);
+}
+
+// Preserve the developer Settings surface on desktop as well as phone. The
+// production module was imported with ?dev=1 above, so this exercises the real
+// DEV_MODE branch while replacing only visual helpers that need browser assets.
+const desktopRenderer = new MenuRenderer({
+    cssWidth: 1280,
+    safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+});
+desktopRenderer._contentRect = () => ({ x: 56, y: 184, w: 1808, h: 856 });
+desktopRenderer._panel = () => {};
+desktopRenderer._settingsHeader = (_ctx, _x, _w, y) => y + 36;
+desktopRenderer._wrapText = () => {};
+desktopRenderer._button = function recordDesktopButton(_ctx, rect, label, options = {}) {
+    if (!options.action || options.enabled === false) return;
+    const hotspotLabel = options.accessibleLabel === undefined ? label : options.accessibleLabel;
+    this._hot(rect.x, rect.y, rect.w, rect.h, options.action, options.arg, hotspotLabel);
+};
+desktopRenderer._drawSettings(makeRecordingContext(), settingsState);
+const desktopDevActions = [
+    ['toggleSetting', 'debug'],
+    ['toggleSetting', 'unlockMaps'],
+    ['cheatCoins', 1000],
+    ['cheatCoins', 10000],
+    ['cheatUnlockAll', null],
+];
+for (const [action, arg] of desktopDevActions) {
+    ok(desktopRenderer.hotspots.some((hotspot) => hotspot.action === action && hotspot.arg === arg),
+        `desktop ?dev=1 Settings did not retain ${action}/${String(arg)}`);
 }
 
 const buttonProbe = new MenuRenderer({

@@ -1,5 +1,12 @@
 # EMBERWAKE — Major Update Plan: "THE LONG VIGIL"
 
+> **Historical plan (2026-07-02):** version names and shipping order in this document
+> describe the repository at that date and are superseded for current execution. Use
+> the [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md) for the canonical 1.0→10.0 scope
+> and the [Shared Development Ledger](DEVELOPMENT_LEDGER.md) for shipped/in-flight
+> truth. In particular, the legacy “v1.1 Keeper's Ledger” below is not the current
+> First Light 1.1 contract.
+
 *Synthesized from five specialist reviews (balance, content, code, ux, meta), 2026-07-02.
 Every numeric claim below was re-verified against the code at the cited file/line before
 inclusion.*

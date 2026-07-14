@@ -3,14 +3,13 @@
 **Canonical handoff:** read this file before planning or editing; update status,
 evidence, and next action in the same PR as the work.
 
-**Last grounded:** 2026-07-13
-**Main baseline:** [`da88450ce4b223c7866ab0498d9d88a635865da3`](https://github.com/QemmHD/2dgamerepo/commit/da88450ce4b223c7866ab0498d9d88a635865da3) — PR
-[#185](https://github.com/QemmHD/2dgamerepo/pull/185)
-**Active branch at grounding:** `agent/first-light-accessibility` at shipped `main`,
-with an uncommitted 1.1 accessibility/input working tree
-**Latest shipped feature commit:** [`53db829`](https://github.com/QemmHD/2dgamerepo/commit/53db829)
-**Latest shipped ledger commit:** [`377ad9b`](https://github.com/QemmHD/2dgamerepo/commit/377ad9b)
-**Current 1.1 feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / draft [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
+**Last grounded:** 2026-07-14
+**Main baseline:** [`3ed29e072b6a5b8d5bd277eb8a3e30de6f6e60f3`](https://github.com/QemmHD/2dgamerepo/commit/3ed29e072b6a5b8d5bd277eb8a3e30de6f6e60f3) — PR
+[#186](https://github.com/QemmHD/2dgamerepo/pull/186)
+**Active branch at grounding:** `agent/first-light-delivery-ledger` from shipped `main`
+**Latest shipped feature commit:** [`3ed29e0`](https://github.com/QemmHD/2dgamerepo/commit/3ed29e072b6a5b8d5bd277eb8a3e30de6f6e60f3)
+**Shipped ledger baseline before this reconciliation:** included in [`3ed29e0`](https://github.com/QemmHD/2dgamerepo/commit/3ed29e072b6a5b8d5bd277eb8a3e30de6f6e60f3); when this file is on `main`, its containing commit is the newer ledger truth
+**1.1 foundation feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / merged [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
 **Product roadmap:** [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md)
 
 This ledger answers four questions for the next Codex or Claude session: what is
@@ -23,7 +22,7 @@ file owns execution truth.
 | Marker | Meaning | May be used when… |
 | --- | --- | --- |
 | `[x] SHIPPED` | On `main` and deployed | Commit/PR, required validators, real-game capture, and post-deploy smoke are recorded. |
-| `[~] IN FLIGHT` | Code or asset exists off-main | Files are present, but one or more integration/validation/review/merge/deploy gates remain. |
+| `[~] IN FLIGHT` | Implementation exists but the full row is incomplete | One or more acceptance, integration, validation, device, policy, or delivery gates remain; partial foundations may already be on `main`. |
 | `[>] NEXT` | Approved immediate work | Dependencies are green and the next bounded implementation slice is named. |
 | `[ ] PLANNED` | Roadmap commitment only | No implementation claim; discovery and dependencies may still change the approach. |
 | `[?] VERIFY` | Existing behavior needs proof | Do not rewrite until runtime/source evidence decides whether it is broken. |
@@ -54,11 +53,28 @@ passed, the Pages deploy passed, and a live smoke at
 [qemmhd.github.io/2dgamerepo](https://qemmhd.github.io/2dgamerepo/) showed the
 1280×720 game canvas, title, and Home screen.
 
-**1.1 in-flight boundary:** A11 source and validators are committed and pushed on the
-current feature branch in draft PR #186. Local and hosted evidence is recorded below,
-but merge, Pages deploy, and deployed smoke slots are pending. Selected 1.0.2
-captures remain under `docs/evidence/v1.0.2`; local/ignored artifacts alone do not
-promote any A11 row to `[x] SHIPPED`.
+**1.1 foundation shipped boundary:** feature `b06915e` and its ledger commits were
+delivered by [PR #186](https://github.com/QemmHD/2dgamerepo/pull/186), squash-merged
+to `main` as `3ed29e072b6a5b8d5bd277eb8a3e30de6f6e60f3`. Both PR CI runs passed;
+post-merge `main` CI [29299938429](https://github.com/QemmHD/2dgamerepo/actions/runs/29299938429)
+and Pages [29299938437](https://github.com/QemmHD/2dgamerepo/actions/runs/29299938437)
+passed. Live 667×375 and 1280×720 smoke verified the semantic Canvas, polite status,
+keyboard focus/Run setup/back path, and zero browser logs.
+
+**Full 1.1 remains in flight:** A11-08 and the A11-09 delivery slice are shipped;
+A11-01–A11-04, A11-06, and A11-07 retain explicit AT, cross-tab, hybrid-device,
+motion-completeness, device/zoom, and effective pinch-zoom gaps. A11-10–A11-14
+record the still-unbuilt preference, tutorial/debrief, menu hierarchy, context, and
+convergence work required by the canonical 1.1 contract. A11-05 is a pulled-forward
+1.2 Mines foundation whose remaining full-board proof belongs to the Fair Forge gate.
+Selected visual evidence remains local/ignored and does not promote those rows beyond
+their earned status.
+
+**Developer Settings preservation:** `?dev=1` intentionally retains **Debug Mode**,
+**Unlock All Maps (testing)**, and the coin/item **CHEATS (TESTING)** controls inside
+Settings on desktop and phone while normal player URLs keep them gated. The phone
+Settings validator exercises both developer layouts plus the real desktop/phone dev
+actions; future Settings work must preserve this testing surface.
 
 | ID | Version | Category | Status | Grounded outcome and source anchors | Dependencies | Evidence / PR slot | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -68,17 +84,23 @@ promote any A11 row to `[x] SHIPPED`.
 | LV-03 | 1.0.2 | Progression/Battle Pass | `[x] SHIPPED` | Additive `vigilSitesActivated`, `vigilSiteKindsMastered` (clamped 0–4), `encountersCleared`, and `guardianPacksDefeated`; direct run XP, transparent receipt, objectives/dailies, six achievements, and Waylight Regalia. `SaveSystem.js`, `BattlePassSystem.js`, `achievements.js`, `cosmetics.js`, `dailyChallenges.js`, `objectives.js` | None for the shipped web tranche | Progression **4,550 OK**; integration **110 OK**; [Battle Pass receipt](evidence/v1.0.2/battle-pass-waylight-included.jpg) reconciles `Waylight 84 included` to `+932 XP`; feature `53db829`, ledger `377ad9b`, PR #185, main `da88450`; delivery gates passed | Add historical-main save fixtures to the long-lived recovery corpus while preserving the shipped additive ids. |
 | LV-04 | 1.0.2 | Mines/Cases/economy | `[x] SHIPPED` | Coin-only 5×5/6-mine risk with 100/250/500/2,000 stakes, exact risk/payout/net, about-7% edge, five/hour cap; real case result centered with no manufactured near miss. `CaseSystem.js`, `MinigameOverlay.js`, `MenuRenderer.js` | Native distribution remains separately policy-gated | Gambling **644 OK** across four stakes and 93% target return; [Mines quote](evidence/v1.0.2/mines-transparent-quote.jpg) is `EXC:0`; feature `53db829`, ledger `377ad9b`, PR #185, main `da88450`; delivery gates passed | Preserve the 644-check economy contract; add a durable case-landing capture and territory review before any native-store submission. |
 | LV-05 | 1.0.2 | HUD/feedback | `[x] SHIPPED` | Site/encounter state, exact reward receipts, guardian state, and progress use the existing HUD/state builder without a second permanent panel. `HUDLayout.js`, `UIStateBuilder.js`, `UISystem.js`, `VigilTracker.js` | None for the shipped web tranche | HUD **1,069 OK across 36 scenarios**; tracker **60 OK**; browser touch/site/guardian/boss/swarm matrix `EXC:0`; durable [site reward](evidence/v1.0.2/living-vigil-reward.jpg) and [Beacon clear](evidence/v1.0.2/living-vigil-beacon-clear.jpg); feature `53db829`, ledger `377ad9b`, PR #185, main `da88450`; delivery gates passed | Keep dense HUD fixtures green and add phone/reduced/high-density evidence through A11 rather than reopening 1.0.2. |
-| LV-06 | 1.0.2 | CI/QA | `[x] SHIPPED` | Fourteen validators, expanded real-game matrix, main-only Pages deploy, deterministic Vigil/Mines/Pass states, and SFX reel probe are integrated in CI. | None | **14/14 validators**, syntax **144/144**, YAML/diff, browser matrix, audio continuity, navigation stress, and Blender **27/27** were green; PR and `main` CI passed; Pages deploy and live smoke passed; feature `53db829`, ledger `377ad9b`, PR #185, main `da88450` | Keep the shipped gates green; review the four A11 validators and expanded harness as a separate 1.1 delta. |
+| LV-06 | 1.0.2 | CI/QA | `[x] SHIPPED` | Fourteen validators, expanded real-game matrix, main-only Pages deploy, deterministic Vigil/Mines/Pass states, and SFX reel probe are integrated in CI. | None | **14/14 validators**, syntax **144/144**, YAML/diff, browser matrix, audio continuity, navigation stress, and Blender **27/27** were green; PR and `main` CI passed; Pages deploy and live smoke passed; feature `53db829`, ledger `377ad9b`, PR #185, main `da88450` | Preserve the shipped 1.0.2 gates plus the four A11 gates and expanded receipt-bearing harness across every remaining First Light row. |
 | LV-07 | 1.0.2 | Menu clarity/color | `[x] SHIPPED` | Home says “Start your first run,” “Upgrades,” and “Survive about 15 minutes”; restrained accents distinguish support actions while the run CTA stays dominant. `src/systems/MenuRenderer.js` | None for the shipped web tranche | UX **74 OK**; durable [same-state menu comparison](evidence/v1.0.2/menu-clarity-comparison.jpg); menu/touch/Mines/Pass renders `EXC:0`; feature `53db829`, ledger `377ad9b`, PR #185, main `da88450`; delivery gates passed | Treat this copy/accent baseline as shipped; finish focus, reduced-motion, phone, and zoom proof in A11. |
-| LV-08 | 1.0.2 | Delivery | `[x] SHIPPED` | Living Vigil, fair-risk, HUD, and menu-clarity tranche is on `main` and deployed. | LV-01–LV-07 shipped | Feature `53db829`; ledger `377ad9b`; PR [#185](https://github.com/QemmHD/2dgamerepo/pull/185); squash merge `da88450ce4b223c7866ab0498d9d88a635865da3`; PR/main CI and Pages passed; [live smoke](https://qemmhd.github.io/2dgamerepo/) showed 1280×720 canvas/title/Home | 1.0.2 is closed; deliver the A11 tranche under its own reviewed commit, PR, hosted CI, deploy, and smoke evidence. |
-| A11-01 | 1.1 | Semantic canvas/live status | `[~] IN FLIGHT` | Focusable Canvas application semantics, screen-aware labels/instructions, polite live region, and announcements for focus, actions, toasts, and wave events. `index.html`, `styles.css`, `src/systems/AccessibilityBridge.js`, `src/core/Game.js`, `src/core/RunState.js`, `src/systems/WaveDirector.js` | Assistive-technology review, integration, and delivery | Accessibility/input **193 OK**; real-browser Home Canvas focus, activation, and back path passed; feature `b06915e`, draft PR #186. Hosted CI/merge/deploy pending | Run a manual screen-reader/Voice Control spot check without declaring unsupported platform claims, then integrate and review the complete slice. |
-| A11-02 | 1.1 | Menu/tour keyboard focus | `[~] IN FLIGHT` | Stable labeled hotspot keys, roving Tab/arrow focus, Enter/Space activation, Escape/back behavior, visible non-color focus, and a tour-only SKIP/NEXT focus scope. `AccessibilityBridge.js`, `GameInputActions.js`, `MenuRenderer.js`, `UIStateBuilder.js` | Cross-tab/tour browser sweep and delivery | Accessibility/input **193 OK**, including repeat suppression, modal Tab containment, orphan recovery, and the two-Enter first-run path; real-browser Home focus, activation, and back passed; harness modes are `EXC:0`; feature `b06915e`, draft PR #186 | Exercise every tab plus the guided tour in a real browser, preserve pointer activation, then submit for review. |
-| A11-03 | 1.1 | Active modality/touch HUD | `[~] IN FLIGHT` | Keyboard, pointer, and touch modality reflect the latest real input; hybrid devices show touch controls only in touch mode and clear held touch state when switching away. `src/core/Input.js`, `src/core/GameRender.js`, `src/core/TouchButtons.js`, `src/systems/UIStateBuilder.js` | Hybrid-device runtime proof and delivery | Accessibility/input **193 OK**, including touch-to-keyboard switching and held-key repeat isolation; UX **74 OK**; harness modality modes are `EXC:0`; feature `b06915e`, draft PR #186 | Capture keyboard↔touch switching on a hybrid/phone path and verify no stuck joystick/button state before review. |
-| A11-04 | 1.1 | Reduced-motion inheritance | `[~] IN FLIGHT` | Fresh/reset/corrupt profiles inherit `prefers-reduced-motion`; an explicit existing save stays authoritative. Menu decoration/transitions, case reveal, Mines shake/pop/pulse, and touch-button ready pulse become static while state remains readable. `SaveSystem.js`, `MenuRenderer.js`, `MinigameOverlay.js`, `TouchButtons.js` | Broader runtime state sweep and delivery | Save inheritance **20 OK**; Minigame accessibility **14 OK**; real-browser reduced Settings and case frames were byte-identical; reduced harness Mines is `EXC:0`. The pre-Game loading splash is not included in this claim; feature `b06915e`, draft PR #186 | Gate the loading splash/rotate presentation in a later motion-completeness pass; retain the reviewed menu/case/Mines/touch-button scope for this slice. |
-| A11-05 | 1.1 | Keyboard Mines | `[~] IN FLIGHT` | Arrow-key 5×5 focus, Enter reveal, Space cash-out/continue, Escape close, spoken outcomes, keyboard help copy, and a high-contrast shape/outline focus indicator preserve the pointer/touch board. `Game.js`, `GameInputActions.js`, `MinigameOverlay.js`, `UIStateBuilder.js` | Full browser board flow and delivery | Minigame accessibility **14 OK**; Gambling **644 OK**; keyboard/reduced Mines harness is `EXC:0`; feature `b06915e`, draft PR #186 | Complete a real-browser safe-pick, cash-out, bust, and close flow with both keyboard and pointer before review. |
-| A11-06 | 1.1 | Phone Settings | `[~] IN FLIGHT` | Dedicated landscape-phone Settings geometry uses readable three-column grouping, CSS-scale-aware 44 px minimum targets, concise labels, and complete gameplay/audio/help/save actions while desktop remains unchanged. `MenuRenderer.js`, `tools/validate-phone-settings.js` | Device/zoom review, hosted CI, and delivery | Phone Settings **855 OK across 6 layouts**, including emitted phone-only actions/labels; real-browser 844×390 and matched-state 667×375 captures are locally reviewed; the deterministic gate is wired into CI; feature `b06915e`, draft PR #186 | Complete the 200%/device sweep, retain the two phone captures as review evidence, then deliver through the A11 PR and deployed smoke gates. |
-| A11-07 | 1.1 | Zoom resilience | `[~] IN FLIGHT` | Viewport metadata no longer disables browser zoom; Canvas focus remains visible and scale-aware layout paths retain their existing cover-fit behavior. `index.html`, `styles.css`, `MenuRenderer.js` | 200% zoom/five-viewport runtime proof and delivery | Accessibility/input **193 OK** proves only the viewport-metadata contract. Effective mobile pinch zoom remains unproven and is currently constrained by full-surface touch handling; feature `b06915e`, draft PR #186 | Resolve the touch-action/gesture ownership tradeoff, then run 100%/200% keyboard, Settings, and phone sweeps at five viewports; do not promote a mobile pinch-zoom claim before that proof. |
-| A11-08 | 1.1 | Validators/CI/harness | `[~] IN FLIGHT` | Four new deterministic gates cover semantic/modality/focus, reduced-motion save inheritance, accessible minigame motion/focus, and phone Settings geometry/action coverage; CI and the real-game harness add receipt-asserted keyboard/reduced Home and Mines states. `.github/workflows/ci.yml`, `tools/validate-accessibility.js`, `tools/validate-accessibility-save.js`, `tools/validate-minigame-accessibility.js`, `tools/validate-phone-settings.js`, `tools/artshot/harness.html` | Review and delivery | Final local integration gate: **18/18 validators OK** on Node 22.23.1, syntax **149/149**, accessibility **193**, save **20**, minigame **14**, phone Settings **855**, UX **74**, and exact keyboard/reduced/focus/Mines harness receipts at `EXC:0`; hosted PR CI [run 29299835745](https://github.com/QemmHD/2dgamerepo/actions/runs/29299835745) passed including the receipt-bearing harness; feature `b06915e`, draft PR #186 | Mark the PR ready, merge, deploy, and smoke before marking any A11 row shipped. |
+| LV-08 | 1.0.2 | Delivery | `[x] SHIPPED` | Living Vigil, fair-risk, HUD, and menu-clarity tranche is on `main` and deployed. | LV-01–LV-07 shipped | Feature `53db829`; ledger `377ad9b`; PR [#185](https://github.com/QemmHD/2dgamerepo/pull/185); squash merge `da88450ce4b223c7866ab0498d9d88a635865da3`; PR/main CI and Pages passed; [live smoke](https://qemmhd.github.io/2dgamerepo/) showed 1280×720 canvas/title/Home | 1.0.2 is closed; preserve its fixtures and execute the named proof and feature rows without republishing it. |
+| A11-01 | 1.1 | Semantic canvas/live status | `[~] IN FLIGHT` | Focusable Canvas application semantics, screen-aware labels/instructions, polite live region, and announcements for focus, actions, toasts, wave events, and boss arrivals. `index.html`, `styles.css`, `src/systems/AccessibilityBridge.js`, `src/core/Game.js`, `src/core/RunState.js`, `src/systems/WaveDirector.js` | Assistive-technology review and richer modal coverage | Foundation delivered by PR #186/main `3ed29e0`; accessibility/input **193 OK**; boss/wave announcements route through `RunState`; live Home Canvas semantics, focus, activation, and back path passed at 667×375 and 1280×720 with zero logs | Run manual screen-reader/Voice Control spot checks and add explicit upgrade-choice, reward, victory, and death announcements before promoting the full semantic row. |
+| A11-02 | 1.1 | Menu/tour keyboard focus | `[~] IN FLIGHT` | Stable labeled hotspot keys, roving Tab/arrow focus, Enter/Space activation, Escape/back behavior, visible non-color focus, and a tour-only SKIP/NEXT focus scope. `AccessibilityBridge.js`, `GameInputActions.js`, `MenuRenderer.js`, `UIStateBuilder.js` | Complete cross-tab/tour browser sweep | PR #186/main `3ed29e0` delivered repeat suppression, modal Tab containment, orphan recovery, and the two-Enter first-run path; accessibility **193**, live Home/Run setup/back, and receipt-bearing harness are green | Exercise every tab, destructive confirmation, claim/equip removal, and the full guided tour in the deployed browser before closing the row. |
+| A11-03 | 1.1 | Active modality/touch HUD | `[~] IN FLIGHT` | Keyboard, pointer, and touch modality reflect the latest real input; hybrid devices show touch controls only in touch mode and clear held touch state when switching away. `src/core/Input.js`, `src/core/GameRender.js`, `src/core/TouchButtons.js`, `src/systems/UIStateBuilder.js` | Hybrid-device runtime proof | PR #186/main `3ed29e0` delivered active-modality HUD gating, touch reset, and held-key repeat isolation; accessibility **193**, UX **74**, and harness modality states are green | Capture keyboard↔touch switching on a hybrid/phone path and verify no stuck joystick/button state in a live run. |
+| A11-04 | 1.1 | Reduced-motion inheritance | `[~] IN FLIGHT` | Fresh/reset/corrupt profiles inherit `prefers-reduced-motion`; an explicit existing save stays authoritative. Menu decoration/transitions, case reveal, Mines shake/pop/pulse, and touch-button ready pulse become static while state remains readable. `SaveSystem.js`, `MenuRenderer.js`, `MinigameOverlay.js`, `TouchButtons.js` | Motion-completeness pass | PR #186/main `3ed29e0` delivered the scoped behavior; save **20**, minigame **14**, byte-identical Settings/case frames, and reduced Mines `EXC:0` are green. The pre-Game loading splash is not included | Gate the loading splash/rotate presentation and audit camera/global effects before claiming all app motion is covered. |
+| A11-05 | 1.2 pulled forward | Keyboard Mines | `[~] IN FLIGHT` | Pulled-forward Fair Forge input-accessibility foundation: arrow-key 5×5 focus, Enter reveal, Space cash-out/continue, Escape close, spoken outcomes, keyboard help copy, and a high-contrast shape/outline focus indicator preserve the pointer/touch board. The retained A11 id reflects its delivery tranche; its completion gate belongs to 1.2. `Game.js`, `GameInputActions.js`, `MinigameOverlay.js`, `UIStateBuilder.js` | Full deployed board flow and remaining 1.2 input parity | PR #186/main `3ed29e0` delivered the keyboard board and Tab focus scope; minigame **14**, gambling **644**, exact receipt harness, and live Canvas focus are green | Complete deployed safe-pick, cash-out, bust, result-dismiss, and close flows with keyboard and pointer; finish gamepad/muted/high-contrast/2,000-coin confirmation coverage under 1.2. |
+| A11-06 | 1.1 | Phone Settings | `[~] IN FLIGHT` | Dedicated landscape-phone Settings geometry uses readable three-column grouping, CSS-scale-aware 44 px minimum targets, concise labels, and complete gameplay/audio/help/save actions while desktop remains unchanged. `MenuRenderer.js`, `tools/validate-phone-settings.js` | Device/zoom review | PR #186/main `3ed29e0` delivered the layout; current phone Settings **860 OK across 6 layouts**, including player/dev geometry, phone actions/labels, and desktop `?dev=1` Settings retention; matched-state 667×375 comparison is reviewed, and live 667×375 Home smoke passed | Complete the 200%/device sweep and retain durable Settings evidence before closing the full phone row. |
+| A11-07 | 1.1 | Zoom resilience | `[~] IN FLIGHT` | Viewport metadata no longer disables browser zoom; Canvas focus remains visible and scale-aware layout paths retain their existing cover-fit behavior. `index.html`, `styles.css`, `MenuRenderer.js` | Effective pinch/200% proof | PR #186/main `3ed29e0` delivered the metadata/focus foundation; accessibility **193** proves only that contract. Mobile pinch remains constrained by full-surface touch handling | Resolve touch-action/gesture ownership, then run 100%/200% keyboard, Settings, and phone sweeps at five viewports; do not claim effective mobile pinch before proof. |
+| A11-08 | 1.1 | Validators/CI/harness | `[x] SHIPPED` | Four deterministic gates cover semantic/modality/focus, reduced-motion save inheritance, accessible minigame motion/focus, and phone Settings geometry/action coverage; CI and the real-game harness assert keyboard/reduced Home and Mines receipts. `.github/workflows/ci.yml`, `tools/validate-accessibility.js`, `tools/validate-accessibility-save.js`, `tools/validate-minigame-accessibility.js`, `tools/validate-phone-settings.js`, `tools/artshot/harness.html` | None | PR #186 shipped local Node 22 **18/18**, syntax **149/149**, and phone Settings **855**; the current Settings gate is **860** with desktop `?dev=1` retention. PR CI runs `29299835745` and `29299893474` plus main CI [29299938429](https://github.com/QemmHD/2dgamerepo/actions/runs/29299938429) passed; live smoke passed | Preserve all four gates, dev Settings assertions, and harness receipts while completing the remaining proof and feature rows. |
+| A11-09 | 1.1 | Foundation delivery | `[x] SHIPPED` | The First Light accessibility/input/phone foundation is on `main` and deployed without claiming the complete 1.1 milestone. It also ships the one-transient-badge attention budget with typed `NEW`, `CLAIM`, and `GOAL` states. | A11-08 shipped | Feature `b06915e`; PR [#186](https://github.com/QemmHD/2dgamerepo/pull/186); squash merge `3ed29e072b6a5b8d5bd277eb8a3e30de6f6e60f3`; main CI `29299938429`; Pages `29299938437`; live 667×375 and 1280×720 semantic/focus/Run setup/back smoke with zero logs | Preserve this foundation; complete the proof rows and unbuilt A11-10–A11-14 scope without recreating it. |
+| A11-10 | 1.1 | Preference/accessibility suite | `[ ] PLANNED` | Complete the First Light player settings contract: UI scale 100/115/130%, high-contrast telegraphs, non-color status glyphs, mono audio, caption detail, independent voice volume, and vibration controls with save-safe defaults. Preserve the separate `?dev=1` Settings controls. | A11-01 semantics; audio/input setting ownership audit | The canonical roadmap names the player outcomes; PR #186 did not claim them. Developer Settings retention is covered by the current **860-check** phone/desktop gate | Inventory existing settings and migrations, then deliver UI scale plus high-contrast/non-color cues without removing or exposing the dev-only controls. |
+| A11-11 | 1.1 | Playable tutorial/debrief | `[ ] PLANNED` | Teach move, auto-fire, gem, level-up, blink, Focus, Kindle, coin, and boss through one playable lesson at a time; add a first-death debrief with cause, learning, coins, Pass progress, and one next action. | A11-01 announcements; A11-02 focus; tutorial state/save audit | Roadmap contract only; the existing guided tour is not proof of playable lesson beats | Prototype and validate the move→gem→level-up lesson chain plus first-death debrief before expanding all beats. |
+| A11-12 | 1.1 | Play/Now/Explore hierarchy | `[~] IN FLIGHT` | Complete the three-level Home reading order, one dominant run CTA, concise mode length/difficulty/seed/reward explanations, stable wallet/pinned goal, restrained RGB use, and typed attention clearing rules. | LV-07 clarity; A11-02 focus; A11-09 badge foundation | PR #186 ships one typed transient badge and the existing central menu route; the full hierarchy/comprehension contract is unproven | Ground the current Home/mode surfaces, then implement the Play/Now/Explore information hierarchy without adding a second menu system. |
+| A11-13 | 1.1 | Lock/source/context routing | `[ ] PLANNED` | Every locked hero, map, cosmetic, chapter, case, and mode explains why, source, and deterministic next route; Back/Escape restores tab, scroll, selection, filters, try-on, and mode setup without replaying entrances. | A11-02 stable focus keys; destination inventory | Roadmap contract only | Build a lock/source/destination matrix and state-restoration tests, then ship one Collection→source→Back vertical slice. |
+| A11-14 | 1.1 | First Light convergence | `[ ] PLANNED` | Close the exact release gate: five-second comprehension, grayscale/RGB-disabled hierarchy, one-animation attention ceiling, ≤100 ms discrete feedback, pointerless primary loop, five target viewports, text-scale/menu performance fixtures, and paired reduced-motion captures. | A11-01–A11-04 and A11-06–A11-13 complete | Partial proof exists in accessibility **193**, phone Settings **855**, reduced-frame comparison, and live 667×375/1280×720 smoke; no full convergence claim | After the feature rows land, run the named comprehension, timing, viewport, pointerless, grayscale, RGB-disabled, text-scale, and reduced-motion acceptance matrix before calling 1.1 complete. |
 
 ## Version implementation register
 
@@ -90,14 +112,14 @@ link back to its acceptance metrics before shipping.
 
 | ID | Category | Status | Dependency | Next bounded action | Evidence / PR |
 | --- | --- | --- | --- | --- | --- |
-| V1-UX | Menu/onboarding/accessibility | `[~] IN FLIGHT` | LV-07 shipped; A11 semantic/focus/motion/phone/zoom slice | Finish A11 browser/phone/zoom/AT proof, review, commit, PR, hosted CI and deploy; treat later attention/RGB work as a separate measured slice. | LV-07; A11-01–A11-08 |
-| V1-INPUT | Input/platform | `[~] IN FLIGHT` | V1-UX focus semantics | Land and ship the active-modality, menu/tour keyboard, and keyboard Mines slice. Full gamepad support, remapping, glyph switching, disconnect recovery, safe-area tuning, and haptics remain planned and unclaimed. | A11-02; A11-03; A11-05 |
-| V1-ECO | Cases/Mines/upgrades | `[~] IN FLIGHT` | LV-04 | Finish quote/receipt/economy tests, then Forge Reserve and collection planner. | LV-04 |
-| V1-PROG | Chapters/cosmetics/save | `[~] IN FLIGHT` | LV-03 | Ship Waylight set/stats, then permanent chapter shelf and export/recovery. | LV-03 |
-| V1-TACTICS | Encounters/enemies/navigation | `[~] IN FLIGHT` | LV-02 | Ship formations, then role budgets, door tactics and bounded stuck recovery. | LV-02 |
+| V1-UX | Menu/onboarding/accessibility | `[~] IN FLIGHT` | LV-07 and A11-08/A11-09 foundation shipped | Complete A11-01–A11-04, A11-06–A11-07 proof plus A11-10–A11-14 preferences, onboarding, hierarchy, routing, and convergence work. | LV-07; A11-01–A11-14; PR #186 |
+| V1-INPUT | Input/platform | `[~] IN FLIGHT` | V1-UX focus semantics; A11 keyboard/modality foundation shipped | Complete deployed hybrid-device, guided-tour, and Mines-flow proof. Full gamepad support, remapping, glyph switching, disconnect recovery, safe-area tuning, and haptics remain separate planned work. | A11-02; A11-03; A11-05; A11-09; PR #186 |
+| V1-ECO | Cases/Mines/upgrades | `[~] IN FLIGHT` | LV-04 fair-risk foundation shipped | Preserve the 644-check quote/receipt/economy contract; implement Forge Reserve and the collection planner as the next economy slice. | LV-04 |
+| V1-PROG | Chapters/cosmetics/save | `[~] IN FLIGHT` | LV-03 Waylight/progression foundation shipped | Preserve the Waylight Regalia unlock/receipt path; finish collection stats, then build the permanent chapter shelf and export/recovery flow. | LV-03 |
+| V1-TACTICS | Encounters/enemies/navigation | `[~] IN FLIGHT` | LV-02 formations shipped | Preserve the twelve formation and navigation fixtures; implement role budgets, door tactics, and bounded stuck recovery next. | LV-02 |
 | V1-BOSS | Boss choreography | `[ ] PLANNED` | V1-TACTICS collision truth | Rebuild one boss-family vertical slice: opener/phase/desperation/arena/scaling. | — |
-| V1-WORLD | Houses/maps/POIs | `[~] IN FLIGHT` | LV-01 | Ship four sites, then one modular house + six-event POI vertical slice. | LV-01 |
-| V1-HUD | Combat readability | `[~] IN FLIGHT` | LV-05 | Close dense HUD/site/pack feedback gates, then death-source/goal receipts. | LV-05 |
+| V1-WORLD | Houses/maps/POIs | `[~] IN FLIGHT` | LV-01 four-site foundation shipped | Preserve the four Vigil-site fixtures; implement one modular house plus a six-event POI vertical slice next. | LV-01 |
+| V1-HUD | Combat readability | `[~] IN FLIGHT` | LV-05 HUD/site/pack foundation shipped | Preserve the shipped dense-state HUD fixtures; add death-source/goal receipts and complete the remaining device proof. | LV-05 |
 | V1-AUDIO | Adaptive score/mix | `[~] IN FLIGHT` | Stable event vocabulary | Preserve the shipped 3 tracker menus + recorded feature, 2 songs/biome and 4 boss suites; extend the green 180-second continuity/suspend proof to the planned 30-minute device soak. | PR #183; LV-06 |
 | V1-ART | Heroes/bosses/houses | `[ ] PLANNED` | Gameplay silhouettes/collision measured | Produce one deterministic Blender batch and contact-sheet/runtime proof. | — |
 | V1-OFFLINE | PWA/native candidate | `[ ] PLANNED` | V1-UX/V1-INPUT/V1-AUDIO/save portability | Service worker/update rollback, adapters, Capacitor candidate and store-policy matrix. | — |
@@ -261,11 +283,13 @@ Update this block’s facts in the affected rows; do not merely append prose.
 
 - [x] 1.0.2 feature/ledger commits, PR #185, full squash merge SHA, PR/`main`
       CI, Pages deploy, live URL/smoke, and reconciled baseline are recorded.
-- [x] Active 1.1 row ids and player-visible outcomes are named (A11-01–A11-08).
-- [x] Status is honest: LV-01–LV-08 are shipped; every A11 row remains `[~]`.
+- [x] Active First Light row ids and player-visible outcomes are named (A11-01–A11-14),
+      with A11-05 explicitly identified as a pulled-forward 1.2 foundation.
+- [x] Status is honest: LV-01–LV-08 and A11-08/A11-09 are shipped; A11-01–A11-07
+      remain `[~]`; A11-10–A11-14 remain planned/in flight and prevent a false 1.1 close.
 - [x] A11 source systems, dependencies, proof gaps, and bounded next actions are listed.
 - [x] Current targeted evidence is recorded: accessibility **193**, save **20**,
-      minigame **14**, phone Settings **855**, UX **74**, gambling **644**;
+      minigame **14**, phone Settings **860**, UX **74**, gambling **644**;
       the final local Node 22 validator boundary is **18/18 OK** with syntax **149/149**.
 - [x] Real-browser Home focus/activation/back, byte-identical reduced Settings frames,
       and harness modality/Mines `EXC:0` are recorded without AT or phone overclaim.
@@ -273,30 +297,32 @@ Update this block’s facts in the affected rows; do not merely append prose.
       harness gates were re-run after concurrent edits settled.
 - [ ] Record the five-viewport/200% zoom pass and manual AT spot check; keep effective
       mobile pinch zoom and pre-Game loading motion explicitly outside this slice.
-- [x] Assign the 1.1 feature commit (`b06915e`) and draft PR (#186) slots.
-- [x] Hosted PR CI run `29299835745` passed at the feature/ledger head.
-- [ ] Assign merge, Pages deploy, and deployed smoke slots.
+- [x] Assign the 1.1 feature commit (`b06915e`) and merged PR (#186) slots.
+- [x] Hosted PR CI runs `29299835745` and `29299893474` passed.
+- [x] Squash merge `3ed29e0`, main CI `29299938429`, Pages `29299938437`, and live 667×375/1280×720 smoke are recorded.
 - [x] Full gamepad/remapping/glyph/disconnect/haptics support remains explicitly planned,
       not inferred from the keyboard/modality slice.
-- [x] Residual risk and one next bounded action remain explicit in every A11 row.
+- [x] Residual risk and one next bounded action remain explicit in every A11 row;
+      A11-14 owns the full comprehension/timing/viewport/pointerless convergence gate.
 
 ## Immediate next-agent handoff
 
-1. **Do not recreate or republish 1.0.2.** LV-01–LV-08 shipped through PR #185 at
-   `da88450ce4b223c7866ab0498d9d88a635865da3`; preserve those fixtures as regression
-   coverage and keep native territory/case evidence in its later policy gate.
-2. **Preserve the current 1.1 feature branch.** A11 semantic Canvas, live announcements,
-   menu/tour focus, active modality, reduced motion, keyboard Mines, phone Settings,
-   and zoom changes must be reviewed as one integration surface until publication.
-3. **Use the grounded local evidence.** Accessibility **193**, save **20**, minigame
-   **14**, phone Settings **855**, UX **74**, gambling **644**, the final Node 22
-   **18/18** boundary plus syntax **149/149**, real-browser Home focus/activation/back, byte-identical reduced
-   Settings frames, and receipt-asserted harness keyboard/reduced/focus/Mines `EXC:0`.
-   Re-run a gate when overlapping source changes; do not convert it into hosted proof.
-4. **Close the remaining A11 gates.** Retain the reviewed 844×390 and 667×375 phone
-   captures, record five viewports at 100%/200%, manual AT spot checks, syntax and diff;
-   then review, commit, open a PR, pass hosted CI, merge, deploy Pages, and smoke the
-   deployed build. Gamepad/remapping work remains a separate planned slice.
+1. **Do not recreate or republish shipped foundations.** LV-01–LV-08 shipped through
+   PR #185/main `da88450`; A11-08/A11-09 shipped through PR #186/main `3ed29e0`.
+   Preserve their validators and fixtures as regression coverage.
+2. **Continue the complete named First Light scope.** A11-01–A11-04, A11-06, and
+   A11-07 own AT/modal, cross-tab/tour, hybrid, loading/global-motion, phone/device,
+   and effective pinch/200% proof. A11-10–A11-13 own the unbuilt preferences,
+   tutorial/debrief, Play/Now/Explore hierarchy, and lock/source/context work. A11-14
+   prevents 1.1 from closing until its exact convergence matrix passes.
+3. **Use the grounded delivery evidence.** Local Node 22 **18/18**, syntax **149/149**,
+   accessibility **193**, phone Settings **860**, PR/main CI, Pages, live semantic/focus/
+   Run setup/back checks at 667×375 and 1280×720, and zero browser logs are recorded.
+4. **Ship each remaining gap as a bounded follow-up.** Retain matched phone evidence,
+   add the missing runtime/device/AT proof, update these rows in the same PR, then pass
+   hosted CI, merge, deploy, and smoke. A11-05 retains the already shipped keyboard-Mines
+   foundation, but its full input/accessibility acceptance belongs to 1.2. Gamepad and
+   remapping remain separate planned slices until their owning release is implemented.
 
 ## Handoff history
 
@@ -308,3 +334,4 @@ Update this block’s facts in the affected rows; do not merely append prose.
 | 2026-07-13 | 1.0.2 delivery reconciliation / `agent/living-vigil-content-update` | Marked LV-01–LV-08 shipped and replaced draft delivery actions | PR #185; feature `53db829`; ledger `377ad9b`; squash main `da88450ce4b223c7866ab0498d9d88a635865da3`; PR/main CI and Pages passed; live 1280×720 canvas/title/Home smoke passed | Preserve shipped fixtures; execute A11 as a separate release tranche. |
 | 2026-07-13 | 1.1 accessibility/input grounding / `agent/first-light-accessibility` feature branch | Added A11-01–A11-08; hardened repeat/modal/orphan focus behavior and CI receipts; updated V1-UX and V1-INPUT without claiming gamepad/remapping | Final Node 22 validators **18/18 OK**, syntax **149/149**; accessibility **193**, phone Settings **855**, UX **74**, minigame **14**; real-browser Home focus/activation/back; 844×390/667×375 phone Settings; byte-identical reduced Settings/case; exact harness keyboard/reduced/focus/Mines receipts at `EXC:0` | Pass hosted PR CI, merge, deploy, and smoke this foundation; keep zoom/AT/loading-motion completeness in flight. |
 | 2026-07-13 | 1.1 draft publication / `agent/first-light-accessibility` | Committed and pushed the First Light foundation; opened draft PR #186 without promoting incomplete A11 rows | Feature `b06915e`; draft PR [#186](https://github.com/QemmHD/2dgamerepo/pull/186); local Node 22 gates and hosted PR CI run `29299835745` passed | Mark ready, merge, deploy Pages, live-smoke, then reconcile delivery truth. |
+| 2026-07-14 | 1.1 foundation delivery reconciliation / `agent/first-light-delivery-ledger` | Marked A11-08 and A11-09 shipped; preserved A11-01–A11-07 proof gaps; added A11-10–A11-14 so the remaining canonical 1.1 contract cannot disappear; identified A11-05 as pulled-forward 1.2 work; added desktop/phone `?dev=1` Settings retention proof | PR #186; feature `b06915e`; squash main `3ed29e0`; PR CI `29299835745`/`29299893474`; main CI `29299938429`; Pages `29299938437`; live 667×375/1280×720 semantic/focus/Run setup/back smoke; zero logs; current phone Settings **860** | Preserve the shipped foundation and dev tools; execute the named proof and feature rows; close 1.1 only through A11-14. |

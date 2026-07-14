@@ -33,9 +33,9 @@ The recommended next releases are therefore:
 - **31-60 days - Hunters at the Door:** give the 20 existing enemies authored
   roles and house-aware tactics, deepen boss identity, modernize existing
   upgrades/cosmetic collection UX, and ship full controller accessibility.
-- **61-90 days - The Living Road Slice:** turn houses and roads into one
-  replayable POI event vertical slice, add deterministic run seeds/challenge
-  codes, and expand only what measured playtests prove is weak.
+- **61-90 days - The Living Road Slice:** extend the shipped Vigil Site/formation
+  framework with one deeper replayable Ruin Bell event, add deterministic run
+  seeds/challenge codes, and expand only what measured playtests prove is weak.
 
 ### Status language
 
@@ -49,8 +49,8 @@ The recommended next releases are therefore:
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At this snapshot, `src/` contains 285 files, including 118
-JavaScript modules and about 41,088 lines of JavaScript. Raw file counts are
+planning documents. At this snapshot, `src/` contains 293 files, including 126
+JavaScript modules and about 44,449 nonblank lines of JavaScript. Raw file counts are
 inventory context, not a quality claim.
 
 ### Exact playable/content inventory
@@ -63,10 +63,10 @@ inventory context, not a quality claim.
 | Boss vocabulary | 14 attack kinds: aimed, beam, charge, cross, fan, lingering, mines, rain, seekers, shockwave, spiral arms, summon, wall, and zones |
 | Arsenal | 40 weapons across 9 runtime kinds; 11 evolutions; 15 fusions; 20 passives |
 | Build/meta systems | 11 roads; 26 relics (8 attunable); 14 pacts; 10 keystones; 5 patrons; 18 rites (3 per hero) |
-| Equipment and looks | 21 gear pieces in 4 categories; 60 cosmetics in 5 categories; 6 complete cosmetic sets; 6 rarity tiers |
-| Long-term goals | 50 battle-pass levels; 16 achievements; 10 daily challenge templates; 11 run objectives; 9 permanent upgrades |
+| Equipment and looks | 21 gear pieces in 4 categories; 65 cosmetics in 5 categories; 7 complete cosmetic sets; 6 rarity tiers |
+| Long-term goals | 50 battle-pass levels; 22 achievements; 16 daily challenge templates; 16 run objectives; 9 permanent upgrades |
 | Modes | Standard run, Daily Road, Rite Trial, Boss Rush (12 apex fights), and Weekly Ember |
-| World dressing | 13 prop types; 4 structure styles; 4 biome themes; 11 generated structures per world by default |
+| World encounters/dressing | 4 interactive Vigil Sites; 12 named formation encounters; 13 prop types; 4 structure styles; 4 biome themes; 11 generated structures per world by default |
 | Presentation | 8 photo filters; photo mode; recap/share cards; 12 menu-tour steps; 11 screens grouped into 6 navigation sections |
 | Difficulty | 3 difficulty tiers; 9 run modifiers/trials; 6 wave bands; 6 elite affixes |
 | Cases | 6 coin-only cases: gear/cosmetic variants of Basic, Mystic, and Royal |
@@ -93,8 +93,8 @@ toolbox even when their names and parameters differ.
 - `src/core/GameUpdate.js` has a consolidated enemy scan, while combat, render, input,
   photo mode, and run state have been split out of the formerly monolithic
   `src/core/Game.js`. The split is real but incomplete: `src/core/Game.js` is
-  still about 2,831 lines, `src/systems/MenuRenderer.js` about 3,956, and
-  `src/systems/UISystem.js` about 2,905.
+  still about 2,874 nonblank lines, `src/systems/MenuRenderer.js` about 4,138, and
+  `src/systems/UISystem.js` about 3,098.
 - Save data is validated into schema/version 9 and stored locally. There is no
   export/import UI, cloud sync, or server dependency.
 - CI now syntax-checks modules, validates credited assets and boss kits, and
@@ -173,13 +173,25 @@ silent fallback paths; no synchronized recorded combat stems are claimed.
 
 Shipped: touch joystick/buttons, safe-area layout, staged onboarding, volume
 sliders, screen-shake toggle, damage-number toggle, particle toggle, and a
-reduced-effects option. A web-app manifest and icons exist.
+reduced-effects option. PR #186 additionally shipped a semantic/focusable Canvas,
+keyboard menu focus and back paths, active keyboard/pointer/touch modality, OS-derived
+reduced-motion defaults, keyboard Mines foundation, phone Settings, typed attention
+badges, and deterministic input/accessibility receipts. A web-app manifest and icons
+exist.
 
 The four generated boss lines now have exact captions. Still missing: gamepad
-polling, menu focus navigation, control remapping, text-size presets,
-high-contrast/color-safe telegraphs, a general subtitle system, independent
-voice volume, mono/low-hearing support, vibration controls, and a complete
-offline service-worker shell. No essential mechanic depends on hearing a cue.
+polling, control remapping, UI/text-scale presets, high-contrast/color-safe telegraphs,
+a general subtitle system, independent voice volume, mono/low-hearing support,
+vibration controls, complete device/assistive-tech/zoom proof, and a complete offline
+service-worker shell. No essential mechanic depends on hearing a cue.
+
+**2026-07-13 First Light foundation delta:**
+[PR #186](https://github.com/QemmHD/2dgamerepo/pull/186) is merged and deployed at
+`3ed29e0`; it closes the old “menu focus navigation and input gates do not exist” gap,
+but it does not close full 1.1. A11-01–A11-14 in the
+[development ledger](DEVELOPMENT_LEDGER.md) separate shipped foundations from the
+remaining preference, tutorial/debrief, hierarchy, routing, device/AT, and convergence
+work.
 
 ## 2. What changed since the older plans
 
@@ -194,13 +206,13 @@ but is stale as a current backlog. Its major claims now resolve as follows:
 | 6 weapons, about 4 behavior kinds | 40 weapons across 9 kinds, 11 evolutions, 15 fusions | Identity/balance pass; reduce visually redundant choices rather than add quantity |
 | 16 trash enemies on 5 behaviors; global mix | 20 trash enemies, 7 tagged behavior groups, biome enemy mixes, hazards, lieutenants | Role composition, house tactics, and clearer counters |
 | 3 roads | 11 roads | Improve discovery/route clarity before adding more |
-| No onboarding and 9-tab dump | 12-step tour; staged unlocks; 11 screens grouped into 6 sections | Controller/keyboard focus, text scaling, short first-run comprehension tests |
+| No onboarding and 9-tab dump | 12-step tour; staged unlocks; 11 screens grouped into 6 sections; PR #186 keyboard focus foundation | Controller focus, playable tutorial/debrief, text scaling, complete hierarchy/routing, short first-run comprehension tests |
 | Battle-pass run receipt is dead | Post-run XP buckets, claims, milestones, migration, and Everflame are live | Pacing measurement, collection/source filters, reward-preview polish |
 | Heirloom Cinders is a no-op | Starting-economy flow was repaired and all 9 permanent upgrades are surfaced | Make old upgrades more interesting at cap without breaking save IDs |
-| `Game.js` is 4,119 lines | About 2,831 lines after update/render/input/combat/photo/run-state splits | Continue seam extraction only when a feature needs it |
+| `Game.js` is 4,119 lines | About 2,874 nonblank lines after update/render/input/combat/photo/run-state splits | Continue seam extraction only when a feature needs it |
 | Obstacle queries allocate per enemy | Spatial obstacle/index work is GC-conscious and shared broadphase exists | Prove nav/collision at 180 bodies and cap unbounded projectile growth |
 | Save version 7 is write-only | Validated version 9 with battle-pass migration | Fixture-tested historical migrations plus export/import and recovery |
-| Deploy-only CI | Syntax, asset, progression, boss, navigation, deterministic-audio, and headless game smoke gates exist | Add historical save fixtures and input gates |
+| Deploy-only CI | Syntax, asset, progression, boss, navigation, deterministic-audio, headless game smoke, and PR #186 keyboard/reduced/phone receipt gates exist | Add historical save fixtures plus gamepad/remap/caption/device/AT convergence gates |
 
 Most P0/P1 work from that plan is therefore shipped or evolved. The remaining
 high-value pieces are save portability, full accessibility, measured load-time
@@ -221,7 +233,7 @@ bank, not be interpreted as a release log.
 | 6 UNDERTOW | **Planned:** no Descent mode, drowned family, or Tidewarden. |
 | 7 THRESHOLDS | **Partial:** adaptive scene music and four boss-family suites now ship; 12 signature weather/monument/theme packages do not. |
 | 8 GLOAMCALL | **Planned:** no playable Umbral element, Gloamwell, or sixth patron. |
-| 9 WAYLIGHT | **Planned:** generated structures exist, but no rescue/waystone/caravan/bell POI event system. |
+| 9 WAYLIGHT | **Partial shipped foundation:** PR #185 delivered `VigilSiteSystem`, four interactive sites, a Gloam Beacon guardian event, and twelve formations; rescue, waystone, caravan, and a deeper Ruin Bell event remain. |
 | 10 SEVENTH/EIGHTH WICKS | **Planned:** roster remains 6; no hero Chronicle chains. |
 | 11 FORGEHEART | **Planned:** no fifth biome or three-boss forge family. |
 | 12 CINDERS & SCRIPTURE | **Planned/partial art foundation:** no full Codex/Bestiary/archive progression. |
@@ -230,13 +242,14 @@ bank, not be interpreted as a release log.
 | 15 ASHBOUND | **Partial foundation:** difficulty and modifiers exist; no per-map Ash Rank ladder or Everburn seasons. |
 | 16 NIGHTFALL CYCLES | **Planned:** no Rekindled NG+, cross-map remix cycle, or prestige shelf. |
 | 17 SEALED STORM | **Partial foundation:** daily/weekly generators use local seeded logic and `Game.js` has begun splitting; no single simulation RNG, challenge codes, or Crucible composer. |
-| 18 FORGEGRIP | **Partial:** touch, manifest, icons, and reduced effects exist; gamepad, focus navigation, remaps, big text, vibration settings, and offline shell do not. |
+| 18 FORGEGRIP | **Partial shipped foundation:** touch, manifest, icons, reduced effects, active modality, semantic Canvas, and keyboard menu focus exist; gamepad, remaps, complete cross-screen/device proof, big text, vibration settings, and offline shell remain. |
 | 19 EMBER RACE | **Planned:** no deterministic ghost/race trace pipeline. |
 | 20 HEARTHHOLD | **Planned:** no personalized trophy camp. |
 
 Decision: do not begin Updates 5, 6, 8, 10, 11, 13, 16, 19, or 20 during this
 90-day roadmap. First prove that the current combat, presentation, and retention
-loops deserve more content. Update 9 receives a one-event vertical slice only;
+loops deserve more content. Update 9 receives one deeper Ruin Bell expansion atop the
+shipped Vigil Site/formation foundation only;
 Update 17 receives only the deterministic foundation that improves testing and
 shareability.
 
@@ -569,8 +582,8 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
 
 - Poll the standard Gamepad API through the existing input composite; do not
   fork movement/combat logic.
-- Walk menu focus through the existing hotspot registry and draw a persistent
-  focus ring.
+- Extend the shipped keyboard hotspot navigation and persistent focus ring to
+  gamepad/controller input without regressing keyboard, pointer, or touch.
 - Support remapping, dead-zone calibration, aim sensitivity, aim-assist amount,
   and vibration off/low/full.
 - Guarantee at least 44x44 CSS-pixel touch targets after safe-area scaling.
@@ -582,10 +595,11 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
 
 ## 7. 61-90 days - The Living Road Slice
 
-### P2.1 One Waylight POI vertical slice
+### P2.1 One deeper Waylight POI vertical slice
 
-Build one reusable event framework and ship only one polished Emberwood event:
-the **Ruin Bell**.
+Extend the shipped `VigilSiteSystem`/formation seams and ship only one deeper polished
+Emberwood event: the **Ruin Bell**. Do not recreate the four existing sites, Gloam
+Beacon guardian flow, or twelve formation packs.
 
 1. A generated structure exposes a valid interaction point and safe approach.
 2. Ringing the bell shows a clear risk/reward contract and starts a 45-60 second
@@ -717,9 +731,10 @@ Preserve the delivered gates, then add the remaining coverage in this order:
 5. **Progression/save:** preserve the existing 276 checks; add historical save
    fixtures, capstone migrations, per-hero cosmetic presets, case pity, and
    import corruption tests.
-6. **Input/accessibility:** action-level tests for keyboard/gamepad/touch,
-   dead-zone and remap persistence, focus order, reduced effects, and caption
-   state.
+6. **Input/accessibility:** keyboard focus order, active modality, reduced-effects save
+   inheritance, phone Settings, and receipt-bearing Home/Mines gates are delivered by
+   PR #186. Next add gamepad/touch hybrid-device proof, dead-zone/remap persistence,
+   complete caption/contrast/scale state, and manual device/assistive-tech review.
 7. **Visual/browser matrix:** desktop menu, 185-enemy house swarm, boss cast,
    second act, full SFX reel, and live score lifecycle are covered. Add narrow
    mobile, notched safe area, 125/150% text, reduced effects, high contrast, and
@@ -779,6 +794,6 @@ signature and opening, understand every point of post-run XP, dress each hero
 without re-equipping a set, and share/replay a deterministic challenge.
 
 A veteran should feel that the existing 40 weapons, 20 enemies, 12 bosses, 11
-roads, 50 pass levels, and 60 cosmetics became more coherent and valuable. If
+roads, 50 pass levels, and 65 cosmetics became more coherent and valuable. If
 that is not true, adding a fifth biome or another hundred rewards would only
 make the same problems larger.
