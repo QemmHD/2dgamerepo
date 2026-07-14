@@ -18,8 +18,9 @@ import {
 } from '../content/gear.js';
 import {
     COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement, cosmeticCoinCost,
-    COSMETIC_SETS,
+    COSMETIC_SETS, getCosmeticAcquisitionRoutes, getCosmeticSourceLabel,
 } from '../content/cosmetics.js';
+import { buildCosmeticCollectionPage } from './CosmeticCollection.js';
 import { CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining, CASE_PITY, WAGER_BETS } from './CaseSystem.js';
 import { MAPS, MAP_ORDER } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, BP_EVERFLAME_COINS, bpProgress, bpThreshold } from '../content/battlePass.js';
@@ -36,7 +37,6 @@ import {
 import { getMenuImages } from '../assets/MenuImages.js';
 import { getGearEmblem } from '../assets/GearEmblems.js';
 import { getCaseArt } from '../assets/CaseArt.js';
-import { getCosmeticEmblem } from '../assets/CosmeticEmblems.js';
 import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
 import { menuHotspotKey, menuHotspotLabel } from './AccessibilityBridge.js';
 import {
@@ -49,7 +49,7 @@ import {
 } from './AccessibilityPreferences.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
-import { drawAuraFx, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
+import { drawAuraFx, drawSetBonus, drawRarityFx, drawTrailPoint } from '../assets/CosmeticFx.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
 import { resolveWeaponSkin, resolveWeaponProp } from '../content/weaponSkins.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
@@ -2242,11 +2242,13 @@ export class MenuRenderer {
         ctx.save();
         // Animated cosmetic aura (prestige VFX) — the live preview shows the
         // exact pulse/spin/flame/rainbow/starfield effect you earn.
-        if (ap.auraColor) drawAuraFx(ctx, cx, cy, r * 1.32, ap.auraColor, ap.auraFx, t, 0.42);
+        if (ap.auraColor) drawAuraFx(ctx, cx, cy, r * 1.32, ap.auraColor,
+            ap.auraFx, t, 0.42, this._reducedMotion);
         // Rarity prestige FX in the customizer too — the preview IS the sales
         // pitch: rarer pieces visibly glow/pulse/sparkle before you commit.
         if (ap.fxTier >= 3) drawRarityFx(ctx, cx, cy, r * 1.26, ap.fxTier, ap.fxColor, t);
-        if (ap.set) drawSetBonus(ctx, cx, cy, r * 1.3, ap.set.color, t);
+        if (ap.set) drawSetBonus(ctx, cx, cy, r * 1.3,
+            ap.set.color, t, this._reducedMotion);
         ctx.translate(cx, cy);
         ctx.scale(avatarScale, avatarScale);
         // Cloak: imported LPC cape for LPC heroes (drawn at the body box so it
@@ -2254,7 +2256,10 @@ export class MenuRenderer {
         if (ap.cloakColor) {
             ctx.save();
             applyHeroAttachmentTransform(ctx, pose, 'shoulders');
-            const cape = isLpc ? getCloakSprite(ap.cloakColor) : null;
+            // Authored silhouettes must remain authored on LPC heroes too; the
+            // imported fallback cape is only valid for the classic style.
+            const cape = isLpc && (!ap.cloakStyle || ap.cloakStyle === 'classic')
+                ? getCloakSprite(ap.cloakColor) : null;
             if (cape) {
                 // Flared a touch larger + nudged down so it drapes behind the
                 // hero (matches Player._drawCloak exactly).
@@ -2263,7 +2268,8 @@ export class MenuRenderer {
                 ctx.drawImage(cape, -dw / 2, -dw / 2 + off, dw, dw);
             } else {
                 drawPixelCloak(ctx, 0, 0, HERO_CANONICAL_HALF,
-                    pose?.dir || 'down', ap.cloakColor, !!pose?.flip);
+                    pose?.dir || 'down', ap.cloakColor, !!pose?.flip,
+                    ap.cloakStyle || 'classic');
             }
             ctx.restore();
         }
@@ -2752,10 +2758,184 @@ export class MenuRenderer {
         ctx.restore();
     }
 
+    // Compact segmented controls shared by Collection and Boutique. Selected
+    // state is communicated with fill + border + text (not color alone); every
+    // other segment is a named Canvas hotspot for keyboard/pointer parity.
+    _segmentedRow(ctx, options, selected, x, y, w, h, action, accent = '#c08bff') {
+        const gap = 6;
+        const segW = (w - gap * (options.length - 1)) / Math.max(1, options.length);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        for (let i = 0; i < options.length; i++) {
+            const option = options[i];
+            const sx = x + i * (segW + gap);
+            const active = option.id === selected;
+            roundRectPath(ctx, sx, y, segW, h, 8);
+            ctx.fillStyle = active ? 'rgba(192,139,255,0.18)' : 'rgba(255,255,255,0.035)';
+            ctx.fill();
+            ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.10)';
+            ctx.lineWidth = active ? 2 : 1.25; ctx.stroke();
+            ctx.fillStyle = active ? '#fff' : 'rgba(220,228,238,0.66)';
+            ctx.font = `800 ${Math.max(10, Math.min(14, Math.round(h * 0.38)))}px ${FONT}`;
+            ctx.fillText(option.label, sx + segW / 2, y + h / 2 + 0.5);
+            if (!active) this._hot(sx, y, segW, h, action, option.id,
+                option.accessibleLabel || '');
+        }
+    }
+
+    _drawCollectionCard(ctx, state, entry, rect, mode = 'collection') {
+        const item = entry?.item;
+        if (!item) return;
+        const save = state.saveData;
+        const owned = entry.owned === true || save.cosmetics.unlocked.includes(item.id);
+        const equipped = save.cosmetics.equipped[item.category] === item.id;
+        const routes = Array.isArray(entry.sources)
+            ? entry.sources : getCosmeticAcquisitionRoutes(item);
+        const sourceLabel = getCosmeticSourceLabel(item) || 'Case';
+        const tried = mode === 'boutique' && state.tryOn?.[item.category] === item.id;
+        const col = rarityColor(item.rarity);
+        roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 10);
+        ctx.fillStyle = equipped ? 'rgba(255,206,84,0.13)'
+            : tried ? 'rgba(255,126,219,0.14)' : 'rgba(255,255,255,0.035)';
+        ctx.fill();
+        ctx.strokeStyle = equipped ? '#ffce54' : tried ? '#ff7edb' : owned ? col : 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = equipped || tried ? 2.5 : 1.5; ctx.stroke();
+
+        const swatch = Math.max(34, Math.min(58, rect.h - 22));
+        this._cosmeticSwatch(ctx, item.category, item,
+            rect.x + 10, rect.y + (rect.h - swatch) / 2, swatch);
+        const tx = rect.x + swatch + 22;
+        const textW = Math.max(40, rect.w - swatch - 34);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#fff';
+        ctx.font = `800 ${rect.h < 86 ? 14 : 17}px ${FONT}`;
+        ctx.fillText(this._ellip(ctx, item.name, textW), tx, rect.y + Math.max(22, rect.h * 0.29));
+        ctx.fillStyle = col; ctx.font = `800 ${rect.h < 86 ? 10 : 12}px ${FONT}`;
+        ctx.fillText(rarityName(item.rarity).toUpperCase(), tx, rect.y + Math.max(38, rect.h * 0.48));
+
+        let status = sourceLabel;
+        let statusColor = 'rgba(205,214,226,0.64)';
+        if (equipped) { status = `EQUIPPED · ${sourceLabel}`; statusColor = '#ffce54'; }
+        else if (owned) { status = `OWNED · ${sourceLabel}`; statusColor = '#5fd36a'; }
+        else if (mode === 'boutique') {
+            status = `◎ ${cosmeticCoinCost(item).toLocaleString()}${routes.includes('case') ? ' · Case' : ''}`;
+            statusColor = '#ffd86b';
+        }
+        ctx.fillStyle = statusColor;
+        this._fitFont(ctx, status, textW, 700, rect.h < 86 ? 10 : 12, FONT, 9);
+        ctx.fillText(status, tx, rect.y + rect.h - (rect.h < 86 ? 10 : 14));
+
+        let action = null, arg = null, label = '';
+        if (mode === 'boutique') {
+            action = 'tryOnCosmetic'; arg = { category: item.category, id: item.id };
+            label = `Try on ${item.name}. ${owned ? 'Owned.' : `${cosmeticCoinCost(item)} coins.`}`;
+        } else if (owned && !equipped) {
+            action = 'equipCosmetic'; arg = { category: item.category, id: item.id };
+            label = `Equip ${item.name}`;
+        } else if (!owned && routes.includes('boutique')) {
+            action = 'tryInBoutique'; arg = { category: item.category, id: item.id };
+            label = `Try ${item.name} in Boutique. ${cosmeticCoinCost(item)} coins.`;
+        } else if (!owned && routes.length === 1 && routes[0] === 'vigil') {
+            action = 'tab'; arg = 'battlepass'; label = `Open Battle Pass for ${item.name}`;
+        }
+        if (action) this._hot(rect.x, rect.y, rect.w, rect.h, action, arg, label);
+    }
+
+    // Reachable, scalable Collection: exactly one selected category, explicit
+    // ownership/source filters, and eight cards per page. This replaces the old
+    // five shrinking columns that silently clipped ten live cosmetics.
+    _drawCosmeticCollection(ctx, state, rect) {
+        const save = state.saveData;
+        const view = state.collectionView || {};
+        const model = buildCosmeticCollectionPage({
+            category: view.category || 'fur',
+            ownership: view.ownership || 'all',
+            source: view.source || 'all',
+            page: view.page || 1,
+            ownedIds: save.cosmetics.unlocked,
+        });
+        this._panel(ctx, rect.x, rect.y, rect.w, rect.h,
+            'rgba(16,20,28,0.82)', 'rgba(192,139,255,0.22)');
+        const pad = 10;
+        const x = rect.x + pad, w = rect.w - pad * 2;
+        const categories = [
+            { id: 'fur', label: 'FUR' }, { id: 'cloak', label: 'CLOAK' },
+            { id: 'hat', label: 'ACCESSORY' }, { id: 'aura', label: 'AURA' },
+            { id: 'trail', label: 'TRAIL' },
+        ];
+        const ownership = [
+            { id: 'all', label: 'ALL ITEMS' }, { id: 'owned', label: 'OWNED' },
+            { id: 'locked', label: 'LOCKED' },
+        ];
+        const sources = [
+            { id: 'all', label: 'ALL SOURCES' }, { id: 'starter', label: 'STARTER' },
+            { id: 'boutique', label: 'BOUTIQUE' }, { id: 'case', label: 'CASES' },
+            { id: 'achievement', label: 'ACHIEVEMENT' }, { id: 'vigil', label: 'VIGIL PATH' },
+        ];
+        this._segmentedRow(ctx, categories, model.category, x, rect.y + 9, w, 32,
+            'collectionCategory', '#c08bff');
+        this._segmentedRow(ctx, ownership, model.ownership, x, rect.y + 47, w, 26,
+            'collectionOwnership', '#8fd0ff');
+        this._segmentedRow(ctx, sources, model.source, x, rect.y + 79, w, 26,
+            'collectionSource', '#ffb45f');
+
+        const footerH = 38;
+        const gridY = rect.y + 113;
+        const gridBottom = rect.y + rect.h - footerH - 8;
+        const gridH = Math.max(1, gridBottom - gridY);
+        const entries = Array.isArray(model.entries) ? model.entries : [];
+        if (entries.length) {
+            const cols = w >= 720 ? 4 : 2;
+            const rows = Math.max(1, Math.ceil(8 / cols));
+            const gap = 8;
+            const cardW = (w - gap * (cols - 1)) / cols;
+            const cardH = (gridH - gap * (rows - 1)) / rows;
+            for (let i = 0; i < entries.length; i++) {
+                const col = i % cols, row = Math.floor(i / cols);
+                this._drawCollectionCard(ctx, state, entries[i], {
+                    x: x + col * (cardW + gap), y: gridY + row * (cardH + gap),
+                    w: cardW, h: cardH,
+                });
+            }
+        } else {
+            const empty = typeof model.emptyState === 'string'
+                ? model.emptyState
+                : model.emptyState
+                    ? `${model.emptyState.title}. ${model.emptyState.body}`
+                    : 'No cosmetics match these filters.';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(220,228,238,0.58)'; ctx.font = `700 17px ${FONT}`;
+            ctx.fillText(empty, rect.x + rect.w / 2, gridY + gridH / 2);
+        }
+
+        const page = model.page || 1;
+        const pageCount = model.pageCount || 1;
+        const hasPrev = model.hasPreviousPage ?? model.hasPrev ?? model.hasPrevious ?? page > 1;
+        const hasNext = model.hasNextPage ?? model.hasNext ?? page < pageCount;
+        const fy = rect.y + rect.h - 36;
+        this._button(ctx, { x, y: fy, w: 116, h: 28 }, '‹ PREV', {
+            enabled: hasPrev, action: hasPrev ? 'collectionPage' : null,
+            arg: page - 1, fontSize: 13, accessibleLabel: `Previous collection page, ${page - 1}`,
+        });
+        this._button(ctx, { x: x + w - 116, y: fy, w: 116, h: 28 }, 'NEXT ›', {
+            enabled: hasNext, action: hasNext ? 'collectionPage' : null,
+            arg: page + 1, fontSize: 13, accessibleLabel: `Next collection page, ${page + 1}`,
+        });
+        const total = model.totalItems ?? model.totalCount ?? model.filteredCount
+            ?? model.total ?? entries.length;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(220,228,238,0.68)'; ctx.font = `700 13px ${FONT}`;
+        ctx.fillText(`PAGE ${page}/${pageCount} · ${total} ITEM${total === 1 ? '' : 'S'}`,
+            rect.x + rect.w / 2, fy + 14);
+    }
+
     // ── LOADOUT / CHARACTER shared grid ──────────────────────────────────
     // `rect` lets the CHARACTER customizer constrain the cosmetic columns to
     // the right of the live model; LOADOUT passes none → full content rect.
     _drawItemGrid(ctx, state, kind, rect = null) {
+        if (kind === 'cosmetic') {
+            this._drawCosmeticCollection(ctx, state, rect || this._contentRect());
+            return;
+        }
         const c = rect || this._contentRect();
         const save = state.saveData;
         const cats = kind === 'gear' ? GEAR_CATEGORIES : COSMETIC_CATEGORIES;
@@ -2928,7 +3108,8 @@ export class MenuRenderer {
         }
         if (cat === 'cloak') {
             ctx.save(); ctx.beginPath(); ctx.rect(ix, iyy, isz, isz); ctx.clip();
-            const ps = isz * 0.78; drawPixelCloak(ctx, icx, icy - ps * 0.34, ps, 'down', item.color, false);
+            const ps = isz * 0.78; drawPixelCloak(ctx, icx, icy - ps * 0.34, ps,
+                'down', item.color, false, item.cloakStyle || 'classic');
             ctx.restore(); return;
         }
         if (cat === 'hat') {
@@ -2938,20 +3119,21 @@ export class MenuRenderer {
         }
         if (cat === 'aura') {
             const col = item.color || '#ff9a3c';
-            const g = ctx.createRadialGradient(icx, icy, 2, icx, icy, isz * 0.5);
-            g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(icx, icy, isz * 0.5, 0, Math.PI * 2); ctx.fill();
+            drawAuraFx(ctx, icx, icy, isz * 0.5, col, item.fx,
+                this._t, 0.62, this._reducedMotion);
             ctx.fillStyle = col; ctx.beginPath(); ctx.arc(icx, icy, 3.5, 0, Math.PI * 2); ctx.fill();
             return;
         }
         if (cat === 'trail') {
+            ctx.save();
             const baseA = ctx.globalAlpha;
-            ctx.fillStyle = item.color;
             for (let d = 0; d < 3; d++) {
                 ctx.globalAlpha = baseA * (1 - d * 0.28);
-                ctx.beginPath(); ctx.arc(ix + 7 + d * 8, icy, Math.max(1.6, 5 - d * 1.3), 0, Math.PI * 2); ctx.fill();
+                drawTrailPoint(ctx, ix + isz * (0.24 + d * 0.25), icy,
+                    Math.max(2, isz * (0.18 - d * 0.025)), 1 - d * 0.26,
+                    item.color, item.fx, this._t, d, this._reducedMotion);
             }
-            ctx.globalAlpha = baseA; return;
+            ctx.restore(); return;
         }
         // fur (and any fallback): a tint disc; natural (no color) gets a slash.
         ctx.fillStyle = item.color || '#b98a5a';
@@ -3264,7 +3446,8 @@ export class MenuRenderer {
             ctx.strokeStyle = rarityColor(item.rarity); ctx.lineWidth = 2; ctx.stroke();
             const boxR = Math.min(26, fcH / 2 - 8), bcx = fx + boxR + 14, bcy = fcTop + fcH / 2;
             ctx.save(); roundRectPath(ctx, fx, fcTop, fcW, fcH, 10); ctx.clip();
-            if (item.category === 'aura') drawAuraFx(ctx, bcx, bcy, boxR, item.color, item.fx, this._t, 0.5);
+            if (item.category === 'aura') drawAuraFx(ctx, bcx, bcy, boxR,
+                item.color, item.fx, this._t, 0.5, this._reducedMotion);
             else { const isz = boxR * 2; this._cosmeticSwatch(ctx, item.category, item, bcx - boxR, bcy - boxR, isz); }
             ctx.restore();
             const tx = fx + boxR * 2 + 24, tw = fcW - (boxR * 2 + 36);
@@ -3370,10 +3553,16 @@ export class MenuRenderer {
             const price = cosmeticCoinCost(item);
             let path, pcol;
             if (owned(id)) { path = '✓ owned'; pcol = '#5fd36a'; equippableN++; }
-            else if (price) { path = `◎ ${price}`; pcol = '#ffd86b'; total += price; equippableN++; }
-            else if (item.passLevel) { path = `✦ Vigil Lv ${item.passLevel}`; pcol = '#ff9a4a'; }
-            else if (item.achievement) { path = '🏆 achievement'; pcol = 'rgba(168,213,247,0.9)'; }
-            else { path = '🔒 case drop'; pcol = 'rgba(255,255,255,0.5)'; }
+            else if (price) {
+                const routes = getCosmeticAcquisitionRoutes(item);
+                path = `◎ ${price.toLocaleString()}${routes.includes('case') ? ' · Case' : ''}`;
+                pcol = '#ffd86b'; total += price; equippableN++;
+            } else {
+                path = getCosmeticSourceLabel(item) || 'Case';
+                pcol = item.passLevel ? '#ff9a4a'
+                    : item.achievement ? 'rgba(168,213,247,0.9)'
+                    : 'rgba(255,255,255,0.5)';
+            }
             ctx.fillStyle = rarityColor(item.rarity); ctx.font = `700 16px ${FONT}`;
             ctx.fillText(this._ellip(ctx, item.name, mw - 160), c.x + 24, ly);
             ctx.textAlign = 'right'; ctx.fillStyle = pcol; ctx.font = `700 15px ${FONT}`;
@@ -3406,16 +3595,21 @@ export class MenuRenderer {
         this._button(ctx, { x: c.x + 24, y: c.y + c.h - 66, w: bw2, h: 44 }, 'CLEAR TRY-ON',
             { enabled: trying, action: trying ? 'tryOnClear' : null, fontSize: 18 });
 
-        // ── Right side: themed SETS row, then the coin-stock grid ──
+        // ── Right side: paged themed SETS + category-focused stock ──
         const rx = c.x + mw + 20;
         const rw = c.w - mw - 20;
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = `800 17px ${HEAD}`;
         ctx.fillText('THEMED SETS — tap to try the whole combo', rx, c.y + 16);
-        const setH = 58, setGap = 10;
-        const setW = (rw - setGap * (COSMETIC_SETS.length - 1)) / COSMETIC_SETS.length;
-        for (let i = 0; i < COSMETIC_SETS.length; i++) {
-            const s = COSMETIC_SETS[i];
+        const setsPerPage = 3;
+        const setPageCount = Math.max(1, Math.ceil(COSMETIC_SETS.length / setsPerPage));
+        const requestedSetPage = Math.max(1, Math.floor(Number(state.boutiqueView?.setPage) || 1));
+        const setPage = Math.min(setPageCount, requestedSetPage);
+        const visibleSets = COSMETIC_SETS.slice((setPage - 1) * setsPerPage, setPage * setsPerPage);
+        const setH = 60, setGap = 10;
+        const setW = (rw - setGap * (setsPerPage - 1)) / setsPerPage;
+        for (let i = 0; i < visibleSets.length; i++) {
+            const s = visibleSets[i];
             const sx = rx + i * (setW + setGap), sy2 = c.y + 26;
             const ownedN = COSMETIC_CATEGORIES.filter((cat) => owned(s.pieces[cat])).length;
             const tryingSet = COSMETIC_CATEGORIES.every((cat) => tryOn[cat] === s.pieces[cat]);
@@ -3428,46 +3622,81 @@ export class MenuRenderer {
             ctx.fillText(this._ellip(ctx, s.name, setW - 20), sx + 12, sy2 + 24);
             ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 13px ${FONT}`;
             ctx.fillText(`${ownedN}/5 owned`, sx + 12, sy2 + 44);
-            this._hot(sx, sy2, setW, setH, 'tryOnSet', s.id);
+            this._hot(sx, sy2, setW, setH, 'tryOnSet', s.id,
+                `Try on ${s.name}. ${ownedN} of 5 pieces owned.`);
         }
+        const setPagerY = c.y + 26 + setH + 4;
+        this._button(ctx, { x: rx, y: setPagerY, w: 96, h: 24 }, '‹ SETS', {
+            enabled: setPage > 1, action: setPage > 1 ? 'boutiqueSetPage' : null,
+            arg: setPage - 1, fontSize: 11, accessibleLabel: `Previous Boutique set page, ${setPage - 1}`,
+        });
+        this._button(ctx, { x: rx + rw - 96, y: setPagerY, w: 96, h: 24 }, 'SETS ›', {
+            enabled: setPage < setPageCount, action: setPage < setPageCount ? 'boutiqueSetPage' : null,
+            arg: setPage + 1, fontSize: 11, accessibleLabel: `Next Boutique set page, ${setPage + 1}`,
+        });
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(220,228,238,0.55)'; ctx.font = `700 12px ${FONT}`;
+        ctx.fillText(`SET PAGE ${setPage}/${setPageCount}`, rx + rw / 2, setPagerY + 12);
 
-        // Stock grid: one column per category, coin-purchasable pieces only
-        // (cases/achievements advertise their own paths elsewhere).
-        const gTop = c.y + 26 + setH + 18;
-        const colGap = 14;
-        const colW = (rw - colGap * (COSMETIC_CATEGORIES.length - 1)) / COSMETIC_CATEGORIES.length;
-        const stock = {};
-        let maxRows = 0;
-        for (const cat of COSMETIC_CATEGORIES) {
-            stock[cat] = cosmeticsByCategory(cat).filter((it) => it.coinCost);
-            maxRows = Math.max(maxRows, stock[cat].length);
-        }
-        const availH = c.y + c.h - gTop - 26;
-        const cellH = Math.max(40, Math.min(64, Math.floor((availH - (maxRows - 1) * 8) / Math.max(1, maxRows))));
-        for (let ci = 0; ci < COSMETIC_CATEGORIES.length; ci++) {
-            const cat = COSMETIC_CATEGORIES[ci];
-            const cx2 = rx + ci * (colW + colGap);
-            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `700 14px ${FONT}`;
-            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-            ctx.fillText(COSMETIC_CATEGORY_LABELS[cat].toUpperCase(), cx2 + 2, gTop - 6);
-            let iy = gTop + 4;
-            for (const item of stock[cat]) {
-                const isTry = tryOn[cat] === item.id;
-                const own = owned(item.id);
-                roundRectPath(ctx, cx2, iy, colW, cellH, 8);
-                ctx.fillStyle = isTry ? 'rgba(64,32,52,0.95)' : 'rgba(18,14,18,0.88)'; ctx.fill();
-                ctx.strokeStyle = isTry ? '#ff7edb' : rarityColor(item.rarity);
-                ctx.globalAlpha = isTry ? 1 : 0.55; ctx.lineWidth = isTry ? 2.5 : 1.5; ctx.stroke();
-                ctx.globalAlpha = 1;
-                ctx.fillStyle = rarityColor(item.rarity); ctx.font = `700 14px ${FONT}`;
-                ctx.fillText(this._ellip(ctx, item.name, colW - 16), cx2 + 10, iy + 20);
-                ctx.fillStyle = own ? '#5fd36a' : (save.totalCoins >= cosmeticCoinCost(item) ? '#ffd86b' : 'rgba(255,216,107,0.45)');
-                ctx.font = `700 13px ${FONT}`;
-                ctx.fillText(own ? '✓ OWNED' : `◎ ${cosmeticCoinCost(item)}`, cx2 + 10, iy + cellH - 10);
-                this._hot(cx2, iy, colW, cellH, 'tryOnCosmetic', { category: cat, id: item.id });
-                iy += cellH + 8;
+        const categories = [
+            { id: 'fur', label: 'FUR' }, { id: 'cloak', label: 'CLOAK' },
+            { id: 'hat', label: 'ACCESSORY' }, { id: 'aura', label: 'AURA' },
+            { id: 'trail', label: 'TRAIL' },
+        ];
+        const categoryY = setPagerY + 31;
+        const stockModel = buildCosmeticCollectionPage({
+            category: state.boutiqueView?.category || 'fur',
+            ownership: 'all', source: 'boutique',
+            page: state.boutiqueView?.page || 1,
+            ownedIds: save.cosmetics.unlocked,
+        });
+        this._segmentedRow(ctx, categories, stockModel.category, rx, categoryY, rw, 30,
+            'boutiqueCategory', '#ff7edb');
+
+        const footerH = 34;
+        const gridY = categoryY + 38;
+        const gridBottom = c.y + c.h - footerH - 4;
+        const gridH = Math.max(1, gridBottom - gridY);
+        const stockEntries = Array.isArray(stockModel.entries) ? stockModel.entries : [];
+        if (stockEntries.length) {
+            const cols = rw >= 720 ? 4 : 2;
+            const rows = Math.max(1, Math.ceil(8 / cols));
+            const gap = 9;
+            const cardW = (rw - gap * (cols - 1)) / cols;
+            const cardH = (gridH - gap * (rows - 1)) / rows;
+            for (let i = 0; i < stockEntries.length; i++) {
+                const col = i % cols, row = Math.floor(i / cols);
+                this._drawCollectionCard(ctx, state, stockEntries[i], {
+                    x: rx + col * (cardW + gap), y: gridY + row * (cardH + gap),
+                    w: cardW, h: cardH,
+                }, 'boutique');
             }
+        } else {
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(220,228,238,0.55)'; ctx.font = `700 16px ${FONT}`;
+            ctx.fillText('No Boutique stock in this category.', rx + rw / 2, gridY + gridH / 2);
         }
+        const stockPage = stockModel.page || 1;
+        const stockPageCount = stockModel.pageCount || 1;
+        const stockPrev = stockModel.hasPreviousPage ?? stockModel.hasPrev
+            ?? stockModel.hasPrevious ?? stockPage > 1;
+        const stockNext = stockModel.hasNextPage ?? stockModel.hasNext
+            ?? stockPage < stockPageCount;
+        const stockPagerY = c.y + c.h - 30;
+        this._button(ctx, { x: rx, y: stockPagerY, w: 110, h: 26 }, '‹ PREV', {
+            enabled: stockPrev, action: stockPrev ? 'boutiquePage' : null,
+            arg: stockPage - 1, fontSize: 12, accessibleLabel: `Previous Boutique stock page, ${stockPage - 1}`,
+        });
+        this._button(ctx, { x: rx + rw - 110, y: stockPagerY, w: 110, h: 26 }, 'NEXT ›', {
+            enabled: stockNext, action: stockNext ? 'boutiquePage' : null,
+            arg: stockPage + 1, fontSize: 12, accessibleLabel: `Next Boutique stock page, ${stockPage + 1}`,
+        });
+        const stockTotal = stockModel.totalItems ?? stockModel.totalCount ?? stockModel.filteredCount
+            ?? stockModel.total ?? stockEntries.length;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(220,228,238,0.62)'; ctx.font = `700 12px ${FONT}`;
+        ctx.fillText(`STOCK ${stockPage}/${stockPageCount} · ${stockTotal}`,
+            rx + rw / 2, stockPagerY + 13);
     }
 
     // ── BATTLE PASS ──────────────────────────────────────────────────────
@@ -4644,9 +4873,9 @@ export class MenuRenderer {
     }
 
     // The face of a reel/reveal item: gear draws its category EMBLEM art (the
-    // same art the loadout cards use), a cosmetic draws its category MEDALLION
-    // (paw/cloak/hat/aura/comet) with the item's actual colour as a small
-    // swatch gem, anything else falls back to the kind glyph in a rarity disc.
+    // same art the loadout cards use), while cosmetics resolve the catalog id
+    // and draw the actual silhouette/effect used by Collection and Boutique.
+    // Anything else falls back to the kind glyph in a rarity disc.
     _itemFace(ctx, cx, cy, s, item) {
         const cc = rarityColor(item.rarity || 'common');
         if (item.kind === 'gear' && item.category) {
@@ -4654,19 +4883,16 @@ export class MenuRenderer {
             if (emblem) { ctx.drawImage(emblem, cx - s, cy - s, s * 2, s * 2); return; }
         }
         if (item.kind === 'cosmetic') {
-            const med = getCosmeticEmblem(item.category);
-            if (med) {
-                ctx.drawImage(med, cx - s, cy - s, s * 2, s * 2);
-                // The item's actual colour as a small swatch gem on the rim, so
-                // "Frost" vs "Ember" fur still read as different pulls.
-                if (item.color) {
-                    ctx.beginPath(); ctx.arc(cx + s * 0.62, cy + s * 0.62, s * 0.26, 0, TAU);
-                    ctx.fillStyle = item.color; ctx.fill();
-                    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2; ctx.stroke();
-                }
+            // Reel cells now carry the catalog id. Draw the same real silhouette/
+            // effect used by Collection and Boutique instead of a category badge.
+            const cosmetic = COSMETICS[item.id] || item;
+            if (cosmetic.category) {
+                ctx.save();
+                this._cosmeticSwatch(ctx, cosmetic.category, cosmetic,
+                    cx - s, cy - s, s * 2);
+                ctx.restore();
                 return;
             }
-            // Fallback: colour swatch disc with the sparkle glyph.
             ctx.beginPath(); ctx.arc(cx, cy, s * 0.78, 0, TAU);
             ctx.fillStyle = item.color || cc; ctx.fill();
             ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 2.5; ctx.stroke();

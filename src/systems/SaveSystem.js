@@ -6,7 +6,12 @@
 // mode, exceeded quota, blocked storage) so the game never crashes.
 
 import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR, GEAR_LIST } from '../content/gear.js';
-import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST } from '../content/cosmetics.js';
+import {
+    DEFAULT_UNLOCKED_COSMETICS,
+    DEFAULT_EQUIPPED_COSMETICS,
+    COSMETIC_LIST,
+    cosmeticById,
+} from '../content/cosmetics.js';
 import {
     RUN_OBJECTIVE_CANDIDATES,
     RUN_OBJECTIVE_MAX_REWARD_MULTIPLIER,
@@ -1114,6 +1119,7 @@ export class SaveSystem {
     // Returns true if this call NEWLY unlocked it (false if already owned) —
     // the case system uses that to convert duplicates into coins.
     unlockCosmetic(id) {
+        if (!cosmeticById(id)) return false;
         if (this.isCosmeticUnlocked(id)) return false;
         this.data.cosmetics.unlocked.push(id);
         this.save();
@@ -1493,6 +1499,7 @@ export class SaveSystem {
         this.data.gear.unlocked.push(id); return true;
     }
     unlockCosmeticSilent(id) {
+        if (!cosmeticById(id)) return false;
         if (this.data.cosmetics.unlocked.includes(id)) return false;
         this.data.cosmetics.unlocked.push(id); return true;
     }

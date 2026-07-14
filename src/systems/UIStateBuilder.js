@@ -85,6 +85,10 @@ export function buildUIState(game) {
         base.attuneSel = game.attuneSel;
         // BOUTIQUE fitting room: the session try-on map (category → id).
         base.tryOn = game.tryOn;
+        // Collection/Boutique browse state is copied so renderers can clamp and
+        // derive pages without mutating Game during a pure UI snapshot.
+        base.collectionView = { ...(game.collectionView || {}) };
+        base.boutiqueView = { ...(game.boutiqueView || {}) };
         // Preserve the most recent run's transparent Vigil-XP receipt after
         // returning to the menu so the Battle Pass can explain exactly what
         // moved its bar (kindling, endurance, hunt, deeds, Trials, threat).

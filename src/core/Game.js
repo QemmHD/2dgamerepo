@@ -196,6 +196,18 @@ export class Game {
         // equipped look for the fitting-room preview. Session-local; never
         // persisted — buying (buyTryOn) or clearing empties it.
         this.tryOn = {};
+        // Collection Growth I-A: scalable, session-only browsing state. The
+        // CHARACTER collection uses explicit category/ownership/source filters
+        // and an eight-card page; the BOUTIQUE keeps its own stock + set pages
+        // so switching between the two screens never loses the player's place.
+        // Save data remains limited to unlocks/equipment — browsing is not
+        // progression and therefore must never create migration work.
+        this.collectionView = {
+            category: 'fur', ownership: 'all', source: 'all', page: 1,
+        };
+        this.boutiqueView = {
+            category: 'fur', page: 1, setPage: 1,
+        };
         // Guided menu tour: { idx } while walking TOUR_STEPS, else null. While
         // active, _menuAction only honors tourNext/tourSkip — the tour is fully
         // guided. Armed on the first menu visit until save.onboarding.tourDone.

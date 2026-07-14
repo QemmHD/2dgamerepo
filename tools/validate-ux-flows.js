@@ -110,6 +110,66 @@ ok(uiSource.includes('Choose your first upgrade — every choice helps'),
 ok(!uiSource.includes('Collecting shards fills a bar;'),
     'level-up overlay must not restore tutorial rows behind card tops');
 
+// Collection Growth I-A: browse controls are session-only, reset dependent
+// pages, announce changes, and reject malformed direct dispatches.
+const browseAnnouncements = [];
+const browseScreens = [];
+const browseTabsSeen = [];
+let browseFocusResets = 0;
+const browseGame = {
+    audio: { resume() {}, click() {} },
+    menuTour: null,
+    resetConfirming: false,
+    menuTab: 'character',
+    tryOn: {},
+    collectionView: { category: 'fur', ownership: 'all', source: 'all', page: 3 },
+    boutiqueView: { category: 'fur', page: 2, setPage: 1 },
+    saveSystem: { markTabSeen(tab) { browseTabsSeen.push(tab); } },
+    _pressFeedback() {},
+    _resetMenuFocus() { browseFocusResets += 1; },
+    accessibility: {
+        announce(message) { browseAnnouncements.push(message); },
+        setScreen(screen, detail) { browseScreens.push({ screen, detail }); },
+    },
+};
+GameInputActionMethods._menuAction.call(browseGame, 'collectionCategory', 'hat');
+ok(browseGame.collectionView.category === 'hat' && browseGame.collectionView.page === 1,
+    'collection category changes reset to page one');
+GameInputActionMethods._menuAction.call(browseGame, 'collectionOwnership', 'locked');
+GameInputActionMethods._menuAction.call(browseGame, 'collectionSource', 'achievement');
+GameInputActionMethods._menuAction.call(browseGame, 'collectionPage', 2);
+ok(browseGame.collectionView.ownership === 'locked'
+    && browseGame.collectionView.source === 'achievement'
+    && browseGame.collectionView.page === 2,
+    'collection ownership/source/page actions update the session view');
+const stableCollection = JSON.stringify(browseGame.collectionView);
+GameInputActionMethods._menuAction.call(browseGame, 'collectionCategory', 'weapons');
+GameInputActionMethods._menuAction.call(browseGame, 'collectionPage', 0);
+ok(JSON.stringify(browseGame.collectionView) === stableCollection,
+    'malformed collection actions fail closed');
+GameInputActionMethods._menuAction.call(browseGame, 'boutiqueCategory', 'aura');
+GameInputActionMethods._menuAction.call(browseGame, 'boutiquePage', 2);
+GameInputActionMethods._menuAction.call(browseGame, 'boutiqueSetPage', 3);
+ok(browseGame.boutiqueView.category === 'aura'
+    && browseGame.boutiqueView.page === 2
+    && browseGame.boutiqueView.setPage === 3,
+    'Boutique category, stock page, and set page remain independent');
+const focusResetsBeforeRoute = browseFocusResets;
+GameInputActionMethods._menuAction.call(browseGame, 'tryInBoutique', {
+    category: 'cloak', id: 'cloak_splitwatch',
+});
+ok(browseGame.menuTab === 'boutique'
+    && browseGame.tryOn.cloak === 'cloak_splitwatch'
+    && browseTabsSeen.at(-1) === 'boutique',
+    'Character cosmetic shortcut stages the look and opens Boutique');
+ok(browseFocusResets === focusResetsBeforeRoute + 1
+    && browseScreens.at(-1)?.screen === 'start'
+    && /Boutique/i.test(browseScreens.at(-1)?.detail || '')
+    && /Boutique opened/i.test(browseAnnouncements.at(-1) || ''),
+    'Character to Boutique shortcut resets focus and updates accessible screen state');
+ok(browseAnnouncements.length >= 7,
+    'valid collection and Boutique browse actions are announced');
+
 // Pause confirmation behavior: same-action second press commits exactly once;
 // changing action or waiting past the deadline only re-arms.
 const realDateNow = Date.now;

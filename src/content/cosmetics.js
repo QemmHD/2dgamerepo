@@ -11,13 +11,18 @@
 //   category        'fur' | 'cloak' | 'hat' | 'aura' | 'trail'
 //   rarity          key into RARITIES (UI color only)
 //   color           hex used for the tint/glow/draw (null = "none"/natural)
+//   cloakStyle      (cloak only) silhouette variant: classic | splitwatch |
+//                   mothwing (resolved for every equipped cloak)
 //   shape           (hat only) which procedural accessory to draw — one of:
 //                   none | cap | candle | horns | crown | hood | tophat |
-//                   flower | antlers | halo | party | banana
+//                   flower | antlers | halo | party | banana | waylantern |
+//                   mothmask
 //                   (each authored in PixelArt.pixelHat)
 //   fx              (aura/trail only) animated VFX style — the prestige layer:
-//                   aura:  pulse | spin | flame | rainbow | starfield
-//                   trail: rainbow | flame | stars | hearts
+//                   aura:  pulse | spin | flame | rainbow | starfield |
+//                          oathwheel | gloam_moths
+//                   trail: rainbow | flame | stars | hearts | waymarks |
+//                          gloam_wisps
 //                   (rendered by assets/CosmeticFx.js in-game AND in the menu)
 //   description     short flavor
 //   defaultUnlocked owned from first launch
@@ -63,6 +68,8 @@ export const COSMETICS = {
     cloak_prism:   { id: 'cloak_prism',   category: 'cloak', name: 'Prismatic Cloak', rarity: 'mythic', color: '#b15cff', coinCost: 4000, description: 'It shifts through every hue.' },
     cloak_vigil:   { id: 'cloak_vigil',   category: 'cloak', name: 'Last-Watch Mantle', rarity: 'epic', color: '#8f2f3f', passLevel: 20, caseExcluded: true, description: 'A mantle cut for the final watch.' },
     cloak_waylight:{ id: 'cloak_waylight', category: 'cloak', name: 'Crossroads Mantle', rarity: 'epic', color: '#315b5d', achievement: 'waylight_encounters', caseExcluded: true, description: 'A deep-teal mantle for roads made safe.' },
+    cloak_splitwatch:{ id: 'cloak_splitwatch', category: 'cloak', name: 'Splitwatch Mantle', rarity: 'rare', color: '#d98b45', cloakStyle: 'splitwatch', coinCost: 900, caseExcluded: true, description: 'Twin road-panels part cleanly around a keeper in motion.' },
+    cloak_mothwing:{ id: 'cloak_mothwing', category: 'cloak', name: 'Duskmoth Wings', rarity: 'legendary', color: '#76538f', cloakStyle: 'mothwing', description: 'Broad velvet wings carry the hush of the Gloam.' },
 
     // ── Hat / accessory ─────────────────────────────────────────────────
     hat_none:   { id: 'hat_none',   category: 'hat', name: 'Bare',       rarity: 'common', color: null, shape: 'none', description: 'No accessory.', defaultUnlocked: true },
@@ -79,6 +86,8 @@ export const COSMETICS = {
     hat_banana: { id: 'hat_banana', category: 'hat', name: 'Top Banana',  rarity: 'rare',     color: '#ffd35a', shape: 'banana', coinCost: 1500, description: 'Peak monkey fashion.' },
     hat_vigil:  { id: 'hat_vigil', category: 'hat', name: 'Crown of Cinders', rarity: 'legendary', color: '#ffb24a', shape: 'crown', passLevel: 30, caseExcluded: true, description: 'Five embers for five sworn milestones.' },
     hat_waylight:{ id: 'hat_waylight', category: 'hat', name: 'Wayfinder Halo', rarity: 'epic', color: '#ffe0a0', shape: 'halo', achievement: 'waylight_cartographer', caseExcluded: true, description: 'Four roads resolved into one steady ring.' },
+    hat_waylantern:{ id: 'hat_waylantern', category: 'hat', name: 'Waylantern', rarity: 'epic', color: '#ffd06a', shape: 'waylantern', coinCost: 1400, caseExcluded: true, description: 'A road lantern worn high enough to guide the whole party.' },
+    hat_mothmask:{ id: 'hat_mothmask', category: 'hat', name: 'Duskmoth Mask', rarity: 'epic', color: '#b896cb', shape: 'mothmask', description: 'Soft antennae frame a moon-pale watch mask.' },
 
     // ── Aura (glow + light) — the prestige layer carries animated `fx` ───
     aura_ember:   { id: 'aura_ember',   category: 'aura', name: 'Ember Aura',  rarity: 'common', color: '#ff9a3c', description: 'A warm halo.', defaultUnlocked: true },
@@ -94,6 +103,8 @@ export const COSMETICS = {
     aura_mythic:  { id: 'aura_mythic',  category: 'aura', name: 'Last Light Aura', rarity: 'mythic', color: '#ff4d6d', fx: 'spin', passLevel: 50, caseExcluded: true, description: 'The final ember answers only to you.' },
     aura_waylight:{ id: 'aura_waylight', category: 'aura', name: 'Beacon Orbit', rarity: 'legendary', color: '#ffd27a', fx: 'spin', achievement: 'waylight_warden', caseExcluded: true, description: 'Every rekindled beacon turns in its glow.' },
     aura_prism:   { id: 'aura_prism',   category: 'aura', name: 'Prismatic Aura', rarity: 'mythic', color: '#ffffff', fx: 'rainbow', coinCost: 5000, description: 'Every colour at once — proof you ground for it.' },
+    aura_oathwheel:{ id: 'aura_oathwheel', category: 'aura', name: 'Oathwheel Aura', rarity: 'legendary', color: '#ffc85a', fx: 'oathwheel', coinCost: 2400, caseExcluded: true, description: 'Four bright vows turn around a steady central flame.' },
+    aura_gloam_moths:{ id: 'aura_gloam_moths', category: 'aura', name: 'Gloam Mothwake', rarity: 'mythic', color: '#a779c5', fx: 'gloam_moths', description: 'Moonlit moths gather wherever the darkness thins.' },
 
     // ── Trail ───────────────────────────────────────────────────────────
     trail_none:   { id: 'trail_none',   category: 'trail', name: 'No Trail', rarity: 'common', color: null, description: 'Leave no mark.', defaultUnlocked: true },
@@ -110,6 +121,8 @@ export const COSMETICS = {
     trail_rainbow:{ id: 'trail_rainbow',category: 'trail', name: 'Prism Trail', rarity: 'mythic',   color: '#ffffff', fx: 'rainbow', coinCost: 4000, description: 'A rainbow road, hard-earned.' },
     trail_vigil:  { id: 'trail_vigil', category: 'trail', name: 'Oathspark Trail', rarity: 'legendary', color: '#ff9a3c', fx: 'stars', passLevel: 40, caseExcluded: true, description: 'Each footfall writes a tiny ember oath.' },
     trail_waylight:{ id: 'trail_waylight', category: 'trail', name: 'Starpath Trail', rarity: 'legendary', color: '#ffcf78', fx: 'stars', achievement: 'waylight_guardian', caseExcluded: true, description: 'Safe crossings shine behind the pathkeeper.' },
+    trail_waymarks:{ id: 'trail_waymarks', category: 'trail', name: 'Waymark Trail', rarity: 'epic', color: '#73d7c3', fx: 'waymarks', coinCost: 1500, caseExcluded: true, description: 'Tiny route sigils mark every safe step behind you.' },
+    trail_gloam_wisps:{ id: 'trail_gloam_wisps', category: 'trail', name: 'Gloam Wisps', rarity: 'rare', color: '#8e70b6', fx: 'gloam_wisps', description: 'Dim wandering lights follow at a respectful distance.' },
 };
 
 export const COSMETIC_LIST = Object.values(COSMETICS);
@@ -120,7 +133,53 @@ export const DEFAULT_UNLOCKED_COSMETICS = COSMETIC_LIST.filter((c) => c.defaultU
 export const DEFAULT_EQUIPPED_COSMETICS = { fur: 'fur_natural', cloak: 'cloak_none', hat: 'hat_none', aura: 'aura_ember', trail: 'trail_none' };
 
 export function cosmeticById(id) {
-    return COSMETICS[id] ?? null;
+    return typeof id === 'string' && Object.prototype.hasOwnProperty.call(COSMETICS, id)
+        ? COSMETICS[id]
+        : null;
+}
+
+// Stable machine-facing acquisition routes. Keep this order fixed so filters,
+// save receipts, and validators never inherit an object's property order.
+export const COSMETIC_ACQUISITION_ROUTES = Object.freeze([
+    'starter', 'boutique', 'case', 'achievement', 'vigil',
+]);
+
+const COSMETIC_ACQUISITION_LABELS = Object.freeze({
+    starter: 'Starter',
+    boutique: 'Boutique',
+    case: 'Case',
+    achievement: 'Achievement',
+    vigil: 'Vigil Path',
+});
+
+const COSMETIC_SOURCE_LABEL_ORDER = Object.freeze([
+    'starter', 'boutique', 'achievement', 'vigil', 'case',
+]);
+
+// Return every real acquisition route for an item. Starter pieces never enter
+// cases, while coin/achievement pieces retain cases as an alternate route only
+// when caseExcluded is not set. Strings are accepted for menu/filter callers.
+export function getCosmeticAcquisitionRoutes(itemOrId) {
+    const item = typeof itemOrId === 'string' ? cosmeticById(itemOrId) : itemOrId;
+    if (!item || typeof item !== 'object') return Object.freeze([]);
+    const routes = [];
+    if (item.defaultUnlocked === true) routes.push('starter');
+    if (Number.isFinite(item.coinCost) && item.coinCost > 0) routes.push('boutique');
+    if (item.defaultUnlocked !== true && item.caseExcluded !== true) routes.push('case');
+    if (typeof item.achievement === 'string' && item.achievement) routes.push('achievement');
+    if (Number.isInteger(item.passLevel) && item.passLevel > 0) routes.push('vigil');
+    return Object.freeze(routes);
+}
+
+// Labels prioritize authored achievements/progression before the random-case
+// alternate, even though the route array above keeps its machine-stable order.
+// Example: ['case', 'achievement'] is displayed as "Achievement · Case".
+export function getCosmeticSourceLabel(itemOrId) {
+    const routes = new Set(getCosmeticAcquisitionRoutes(itemOrId));
+    return COSMETIC_SOURCE_LABEL_ORDER
+        .filter((route) => routes.has(route))
+        .map((route) => COSMETIC_ACQUISITION_LABELS[route])
+        .join(' · ');
 }
 
 // Grind multiplier on the direct coin-buy price of a cosmetic. Cosmetics are a
@@ -161,6 +220,10 @@ export const COSMETIC_SETS = [
       pieces: { fur: 'fur_jade', cloak: 'cloak_verdant', hat: 'hat_flower', aura: 'aura_verdant', trail: 'trail_leaf' } },
     { id: 'gloam',    name: 'Gloambound',       color: '#9a6cff',
       pieces: { fur: 'fur_shadow', cloak: 'cloak_shadow', hat: 'hat_horns', aura: 'aura_shadow', trail: 'trail_void' } },
+    { id: 'lanternward', name: 'Lanternward', color: '#ffc85a',
+      pieces: { fur: 'fur_waylight', cloak: 'cloak_splitwatch', hat: 'hat_waylantern', aura: 'aura_oathwheel', trail: 'trail_waymarks' } },
+    { id: 'duskmoth', name: 'Duskmoth Court', color: '#9a70b7',
+      pieces: { fur: 'fur_shadow', cloak: 'cloak_mothwing', hat: 'hat_mothmask', aura: 'aura_gloam_moths', trail: 'trail_gloam_wisps' } },
 ];
 
 // The set whose every piece is currently equipped, or null.
@@ -182,11 +245,11 @@ export function setProgress(equipped, set) {
 // Player renderer needs. Falls back to slot defaults for missing/locked ids.
 export function resolveAppearance(equipped) {
     const e = equipped ?? {};
-    const fur = COSMETICS[e.fur] ?? COSMETICS.fur_natural;
-    const cloak = COSMETICS[e.cloak] ?? COSMETICS.cloak_none;
-    const hat = COSMETICS[e.hat] ?? COSMETICS.hat_none;
-    const aura = COSMETICS[e.aura] ?? COSMETICS.aura_ember;
-    const trail = COSMETICS[e.trail] ?? COSMETICS.trail_none;
+    const fur = cosmeticById(e.fur) ?? COSMETICS.fur_natural;
+    const cloak = cosmeticById(e.cloak) ?? COSMETICS.cloak_none;
+    const hat = cosmeticById(e.hat) ?? COSMETICS.hat_none;
+    const aura = cosmeticById(e.aura) ?? COSMETICS.aura_ember;
+    const trail = cosmeticById(e.trail) ?? COSMETICS.trail_none;
     // Rarity drives the prestige VFX layer (see CosmeticFx.drawRarityFx):
     // the flashiest equipped piece sets the tier, and its own color drives the
     // effect so a legendary crown flashes GOLD, not a generic rarity hue.
@@ -201,6 +264,7 @@ export function resolveAppearance(equipped) {
     return {
         furColor: fur.color,
         cloakColor: cloak.color,
+        cloakStyle: cloak.cloakStyle ?? 'classic',
         hatShape: hat.shape ?? 'none',
         hatColor: hat.color,
         hatRarity: tiers[hat.rarity] || 1,
