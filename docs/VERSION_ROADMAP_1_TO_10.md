@@ -143,14 +143,15 @@ Settings, attention-badge, and receipt-bearing QA work at `3ed29e0`. Full 1.1 re
 open; the canonical execution truth and exact gaps live in
 [the shared development ledger](DEVELOPMENT_LEDGER.md).
 
-**2026-07-14 shipped First Light delta:** [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
+**2026-07-14 shipped First Light deltas:** [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
 delivered save-safe Combat HUD size 100/115/130, high-contrast combat tells, and
 seven source-backed non-color status badges at main `089d646`; PR/main CI, Pages,
-and live smoke passed. This bounded slice does not complete global text scaling or
-A11-14 convergence/full 1.1. The current branch candidate adds mono audio,
-Essential/Full gameplay captions, independent Voice volume, and capability-safe touch
-vibration, but those additions remain candidate work until PR CI, main, Pages, and live
-smoke pass. Exact evidence and remaining gates live in the ledger.
+and live smoke passed. [PR #190](https://github.com/QemmHD/2dgamerepo/pull/190)
+delivered mono audio, Essential/Full gameplay captions, independent Voice volume, and
+capability-safe touch vibration at main `bed6ac5`; PR CI `29330155481`, main CI
+`29330244561`, Pages `29330244572`, and deployed cold-boot/caption/`?dev=1` smoke passed.
+These bounded slices do not complete global text scaling, device/AT proof, A11-14
+convergence, or full 1.1. Exact evidence and remaining gates live in the ledger.
 
 ### 2026-07-14 additive scope allocation — planned, not shipped
 
@@ -162,9 +163,9 @@ without turning EMBERWAKE into a generic sword game.
 
 | Capability | First complete proof | Expansion arc | Acceptance before the roadmap may call it shipped |
 | --- | --- | --- | --- |
-| Cosmetic attachment rig and genuine collection growth | 1.6 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows idle/walk/cast/hurt/dash/death/victory frames in every direction; no layer remains at an old world position while the body animates. Only after that gate may the first 30-look silhouette pack ship, with paging, filters, source labels, set preview, and no power. |
+| Cosmetic attachment rig and genuine collection growth | 1.6 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows idle/walk/cast/hurt/dash/death/victory frames in every direction; no layer drifts from its pose-local anchor while the body animates. Only after that gate may the first 30-look silhouette pack ship, with paging, filters, source labels, set preview, and no power. |
 | Mobile High Refresh mode | 1.7 | 3.8, 7.8, 9.8 | Settings says **High Refresh**, never promises 120 FPS. Simulation remains fixed and deterministic; interpolated render state is proven for camera and all high-motion entities; Standard and High Refresh produce the same gameplay hash. 90/120 Hz physical-device, battery/heat, backgrounding, reduced-effects, and fallback tests pass before store copy mentions supported high-frame-rate play. |
-| Exact campaign map unlocks | 1.3 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; `?dev=1`/`unlockMaps` remains a QA bypass and never writes false campaign progress. |
+| Exact campaign map unlocks | 1.3 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; the currently persisted `?dev=1`/`unlockMaps` toggle becomes a session-only QA bypass and never writes false campaign progress. |
 | Guided, completable run objectives | 1.1–1.3 | 2.1, 3.1, 4.5 | One current task moves through Orientation → Tactic → Climax, with progress, reward, and next action. The seeded director filters by map, mode, available systems, and run state; invalid tasks substitute deterministically; reward receipts are idempotent. Every supported mode completes or cleanly substitutes its objective across the committed seed matrix. |
 | House V2 and authored map composition | 1.4 | 2.7, 3.3, 4.4, 6.5, 8.4 | One shared blueprint owns render, collision, navigation, line of sight, door openings, spawn exclusion, room zones, roof cutaway, and intact/damaged/lit/ruined state. The first original Emberwood cabin uses the supplied reference only for spatial principles—recognizable kitchen/hearth/dining/sleep/storage zones, thick perimeter walls, doors/windows, and clear circulation—without copying its pixels or unverified art. Seed, 180-body, projectile, and screenshot gates pass before kit multiplication. |
 | Graphics, map landmarks, boss models, and readable spectacle | 1.4–1.6 | 3.3, 4.x, 6.x, 9.7 | Macro layouts define sanctuary, loops, landmarks, quiet lanes, combat bowls, house lots, POIs, and boss arenas before scatter. Boss silhouettes and telegraph poses survive grayscale/reduced-effects captures. Wand and class VFX can be spectacular, but hostile tells, player position, pickups, and objectives remain legible inside measured particle, overdraw, palette, motion, and RGB budgets. |
@@ -406,9 +407,10 @@ shipped the semantic Canvas, menu keyboard focus, active modality, reduced-motio
 inheritance, phone Settings, typed attention badge, keyboard-Mines foundation, and
 deterministic QA gates at `3ed29e0`. [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
 then shipped the bounded Combat HUD size, high-contrast warning, and non-color status
-slice at `089d646`. The current candidate implements A11-10's mono, caption-detail,
-independent-Voice, and touch-vibration controls but is not called shipped before its PR,
-main, Pages, and live-smoke gates. These are foundations, not the complete release; the
+slice at `089d646`. [PR #190](https://github.com/QemmHD/2dgamerepo/pull/190)
+ships A11-10's mono, caption-detail, independent-Voice, and touch-vibration controls at
+`bed6ac5` after PR/main CI, Pages, and deployed live-smoke gates passed. These are
+foundations, not the complete release; the
 playable tutorial/debrief, full Play/Now/Explore hierarchy, lock/source/context routing,
 device/AT/zoom proof, and the exact acceptance matrix below remain open. See A11-01–A11-14 in the
 [development ledger](DEVELOPMENT_LEDGER.md); keyboard Mines is explicitly tracked as
@@ -423,8 +425,8 @@ pulled-forward 1.2 work.
 - Make the menu phone-aware: stacked Settings, minimum readable helper text, safe
   44-point primary targets, and no fixed two-column layout at narrow physical scale.
 - Preserve the shipped Combat HUD size presets (100/115/130%), high-contrast
-  telegraphs, and seven non-color status glyphs; ship and harden the current A11-10
-  mono, caption-detail, independent-Voice, and touch-vibration candidate. Combat HUD
+  telegraphs, seven non-color status glyphs, mono output, caption detail, independent
+  Voice, and touch vibration. Complete their physical-device/AT/zoom proof. Combat HUD
   size is not a claim of global app/menu text scaling.
 - “Reduce Motion & Effects” inherits the OS preference for new saves and freezes
   decorative pulse/overshoot while preserving static combat warnings.
@@ -579,8 +581,8 @@ possible without an expiring schedule.
 - Replace generic boss-count map locks with an exact ordered campaign ledger. The next
   map requires all three unique bosses from the immediately previous map; repeats and
   bosses defeated in practice, Daily, Weekly, Rite Trial, or Boss Rush do not count.
-  Preserve maps already unlocked by legacy saves, and keep `?dev=1`/`unlockMaps` as a
-  non-persistent QA bypass.
+  Preserve maps already unlocked by legacy saves, and convert `?dev=1`/`unlockMaps`
+  from persisted save state into a session-only QA bypass.
 
 **Exit gate:** scripted route tests for every structure and body size; every boss
 attack family checked at each difficulty; volatile→splitter/boss rewards exactly once;
@@ -1616,17 +1618,17 @@ Release scorecard:
 
 1. Preserve shipped 1.0.2 Waylight Calls and its PR #185 validators, screenshots,
    deterministic fixtures, deployed-main proof, and ledger record.
-2. Continue 1.1 from the shipped PR #186 foundation and PR #188 A11-10
-   scale/contrast/non-color slice: complete its mono/caption/voice/vibration controls;
-   close AT/device/zoom/motion proof; build the playable tutorial/debrief, complete
-   Play/Now/Explore hierarchy, and lock/source/context routing; then pass the exact
-   First Light comprehension, timing, pointerless, viewport, grayscale/RGB, and
-   reduced-motion gate.
+2. Continue 1.1 from the shipped PR #186 foundation plus the PR #188 and PR #190
+   A11-10 scale/contrast/non-color/caption/mono/Voice/touch-vibration slices: preserve
+   those controls and close AT/device/zoom/motion proof; build the playable
+   tutorial/debrief, complete Play/Now/Explore hierarchy, and lock/source/context
+   routing; then pass the exact First Light comprehension, timing, pointerless,
+   viewport, grayscale/RGB, and reduced-motion gate.
 3. Build 1.2 Fair Forge save/economy/territory-policy fixtures before adding pools,
    rewards, chapter currencies, high-stakes tables, or native storefront surfaces.
 4. Land the unique per-map boss ledger, centralized three-boss unlock predicate, legacy
    migration, and mode-aware objective director before adding maps or objective pools;
-   retain the non-persistent `?dev=1` QA bypass.
+   retain the visible `?dev=1` control but make its map bypass session-only.
 5. Produce one House V2 Emberwood cabin/Ruin Bell vertical slice while 1.3 enemy roles
    navigate and fight through it; do not mass-produce house art before shared render,
    collision, nav, LOS, door, spawn, room, and roof truth passes.
