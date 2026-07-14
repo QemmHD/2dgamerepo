@@ -727,7 +727,15 @@ jobs:
                 ;;
             esac
             cp "__out/${COLLECTION_IB_NAME}.png" "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png"
-            node tools/artshot/validate-receipt-png.mjs "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png"
+            if [ "$COLLECTION_IB_KIND" = collection-touch ]; then
+              # The production renderer intentionally drops its backing-store
+              # resolution on this phone viewport; validate that exact shipped
+              # performance tier instead of pretending it is a desktop canvas.
+              node tools/artshot/validate-receipt-png.mjs \
+                "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png" --width=439 --height=247
+            else
+              node tools/artshot/validate-receipt-png.mjs "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png"
+            fi
           }
 
           capture_collection_ib collection-fur-page2-desktop 1600,900 \
