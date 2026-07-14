@@ -606,14 +606,14 @@ jobs:
             COLLECTION_DOM="/tmp/collection-growth-ia-${COLLECTION_TAB}.html"
             case "$COLLECTION_TAB" in
               character)
-                COLLECTION_FOCUS='collectionCategory%3Afur%230'
+                COLLECTION_FOCUS='collectionCategory%3Ahat%230'
                 COLLECTION_EXTRA=''
-                COLLECTION_EXPECTED_FOCUS='collectionCategory:fur#0'
+                COLLECTION_EXPECTED_FOCUS='collectionCategory:hat#0'
                 ;;
               boutique)
-                COLLECTION_FOCUS='boutiqueCategory%3Acloak%230'
+                COLLECTION_FOCUS='boutiqueCategory%3Aaura%230'
                 COLLECTION_EXTRA='&tryset=lanternward'
-                COLLECTION_EXPECTED_FOCUS='boutiqueCategory:cloak#0'
+                COLLECTION_EXPECTED_FOCUS='boutiqueCategory:aura#0'
                 ;;
             esac
             timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
