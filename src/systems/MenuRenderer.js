@@ -28,6 +28,11 @@ import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { ATTUNABLE, getRelic, attuneCost } from '../content/relics.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
 import { getHeroFrames, getGlowSprite } from '../assets/ProceduralSprites.js';
+import {
+    applyHeroAttachmentTransform,
+    heroPosePoint,
+    resolveHeroPose,
+} from '../assets/HeroPose.js';
 import { getMenuImages } from '../assets/MenuImages.js';
 import { getGearEmblem } from '../assets/GearEmblems.js';
 import { getCaseArt } from '../assets/CaseArt.js';
@@ -64,6 +69,8 @@ const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 // back to the system stack until the woff2 loads (and in a non-DOM env).
 const HEAD = DISPLAY_FONT;
 const TAU = Math.PI * 2;
+const HERO_CANONICAL_SIZE = 182;
+const HERO_CANONICAL_HALF = HERO_CANONICAL_SIZE / 2;
 
 // Each tab carries an accent color so the menu reads as color-coded sections
 // at a glance (the active tab tints to its own hue; inactive tabs show a thin
@@ -1268,12 +1275,12 @@ export class MenuRenderer {
         const ch = getCharacter(save.selectedCharacter);
         const ap = resolveAppearance(save.cosmetics.equipped);
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
-        let charSprite = null;
-        const castFlash = !ch.lpc && (t % 3.6) > 3.0;
+        let avatarPose = null;
+        const avatarState = (t % 3.6) > 3.0 ? 'cast' : 'idle';
         try {
-            const d = getHeroFrames(ch.id, ch, ap.furColor).dirs.down;
-            charSprite = (t % 3.6) > 3.0 ? d.cast[0] : d.idle[0];
-        } catch (e) { charSprite = null; }
+            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
+            avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
+        } catch (e) { avatarPose = null; }
         const startWeaponId = resolveStartingWeapon(save);
         const skin = resolveWeaponSkin(startWeaponId);
         const heldProp = resolveWeaponProp(startWeaponId);
@@ -1302,7 +1309,7 @@ export class MenuRenderer {
         }
         ctx.restore();
         this._pedestal(ctx, hx, hy + 152 * heroScale, t, heroAccent, 1.48 * heroScale);
-        this._drawAvatar(ctx, hx, hy, 172 * heroScale, avatarAp, charSprite, skin, t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
+        this._drawAvatar(ctx, hx, hy, 172 * heroScale, avatarAp, avatarPose, skin, t, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#fff7e8';
         this._fitFont(ctx, `${ch.name} — ${ch.title}`, heroW - 80, 700, 31);
@@ -1644,16 +1651,14 @@ export class MenuRenderer {
         // The menu model is the REAL in-game character sprite (correct
         // silhouette + palette), with equipped cosmetics layered over it.
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
-        let charSprite = null;
+        let avatarPose = null;
         // Front-facing idle, with a brief cast-pose flash every few seconds so
-        // the preview shows the new attack animation + matches in-game. The
-        // flag rides along to _drawAvatar so the held wand jumps to the raised
-        // cast fist with the body (LPC bodies alias cast to idle — no jump).
-        const castFlash = !ch.lpc && (this._t % 3.6) > 3.0;
+        // body, cosmetics and held wand preview the same in-game frame.
+        const avatarState = (this._t % 3.6) > 3.0 ? 'cast' : 'idle';
         try {
-            const d = getHeroFrames(ch.id, ch, ap.furColor).dirs.down;
-            charSprite = (this._t % 3.6) > 3.0 ? d.cast[0] : d.idle[0];
-        } catch (e) { charSprite = null; }
+            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
+            avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
+        } catch (e) { avatarPose = null; }
         // The selected starting weapon drives the themed skin overlay so the
         // preview matches the in-game look (character + cosmetics + weapon).
         const startWeaponId = resolveStartingWeapon(save);
@@ -1668,7 +1673,7 @@ export class MenuRenderer {
         // down on short cards so its ring never bleeds into the CHARACTER label.
         const pedSc = Math.max(0.55, Math.min(1, c.h / 640));
         this._pedestal(ctx, ccx, c.y + c.h * 0.26 + 96 * pedSc, this._t, ch.accent || '#ff7a1e', pedSc);
-        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, charSprite, skin, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
+        this._drawAvatar(ctx, ccx, c.y + c.h * 0.26, 118, avatarAp, avatarPose, skin, this._t, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
         // Themed-skin caption ABOVE the name (with real clearance so long names
         // never collide with it), then the ellipsized name line.
         const nameY = c.y + c.h * 0.46;
@@ -2198,15 +2203,17 @@ export class MenuRenderer {
         ctx.textAlign = 'left';
     }
 
-    // Avatar honoring aura/fur/cloak/hat cosmetics. When `sprite` (the real
-    // cached character frame) is supplied it's drawn as the body so the menu
-    // model exactly matches the selected character; otherwise a procedural
-    // blob is used as a fallback.
-    _drawAvatar(ctx, cx, cy, r, ap, sprite = null, skin = null, t = 0, isLpc = false, heldProp = null, hold = null, pawColor = '#f0d2a5', castPose = false) {
-        // The avatar draws the body sprite at S=r*2.4, so the shared cosmetic +
-        // weapon-skin helpers (authored in sprite-half units) take s = S/2.
+    // Avatar honoring aura/fur/cloak/hat cosmetics. A resolved pose keeps the
+    // real body frame and every attachment anchor indivisible; if it is absent,
+    // the procedural blob remains as a safe body fallback.
+    _drawAvatar(ctx, cx, cy, r, ap, pose = null, skin = null, t = 0, heldProp = null, hold = null, pawColor = '#f0d2a5') {
+        // The avatar owns one centred, canonical 182px hero coordinate system.
+        // Scaling that system to S keeps body, cosmetics and prop on the exact
+        // same transform at every menu preview size.
         const S = r * 2.4;
-        const s = S / 2;
+        const avatarScale = S / HERO_CANONICAL_SIZE;
+        const fallbackR = HERO_CANONICAL_SIZE / 2.4;
+        const isLpc = pose?.kind === 'lpc';
         ctx.save();
         // Animated cosmetic aura (prestige VFX) — the live preview shows the
         // exact pulse/spin/flame/rainbow/starfield effect you earn.
@@ -2215,56 +2222,60 @@ export class MenuRenderer {
         // pitch: rarer pieces visibly glow/pulse/sparkle before you commit.
         if (ap.fxTier >= 3) drawRarityFx(ctx, cx, cy, r * 1.26, ap.fxTier, ap.fxColor, t);
         if (ap.set) drawSetBonus(ctx, cx, cy, r * 1.3, ap.set.color, t);
+        ctx.translate(cx, cy);
+        ctx.scale(avatarScale, avatarScale);
         // Cloak: imported LPC cape for LPC heroes (drawn at the body box so it
         // aligns), procedural drape otherwise — matches the in-game player.
         if (ap.cloakColor) {
+            ctx.save();
+            applyHeroAttachmentTransform(ctx, pose, 'shoulders');
             const cape = isLpc ? getCloakSprite(ap.cloakColor) : null;
             if (cape) {
                 // Flared a touch larger + nudged down so it drapes behind the
                 // hero (matches Player._drawCloak exactly).
-                const dw = S * 1.32, off = S * 0.075;
-                ctx.drawImage(cape, cx - dw / 2, cy - dw / 2 + off, dw, dw);
+                const dw = HERO_CANONICAL_SIZE * 1.32;
+                const off = HERO_CANONICAL_SIZE * 0.075;
+                ctx.drawImage(cape, -dw / 2, -dw / 2 + off, dw, dw);
             } else {
-                // Front-facing pixel cloak (matches in-game down-facing cloak).
-                drawPixelCloak(ctx, cx, cy, s, 'down', ap.cloakColor, false);
+                drawPixelCloak(ctx, 0, 0, HERO_CANONICAL_HALF,
+                    pose?.dir || 'down', ap.cloakColor, !!pose?.flip);
             }
+            ctx.restore();
         }
-        if (sprite) {
+        if (pose?.sprite) {
             // Real character sprite as the body, sized to the avatar box.
-            ctx.drawImage(sprite, cx - S / 2, cy - S / 2, S, S);
+            ctx.save();
+            if (pose.flip) ctx.scale(-1, 1);
+            ctx.drawImage(pose.sprite, -HERO_CANONICAL_HALF, -HERO_CANONICAL_HALF,
+                HERO_CANONICAL_SIZE, HERO_CANONICAL_SIZE);
+            ctx.restore();
         } else {
             // Fallback procedural blob.
             ctx.fillStyle = ap.furColor || '#8a6a4a';
-            ctx.beginPath(); ctx.arc(cx, cy, r * 0.62, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(0, 0, fallbackR * 0.62, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#e8d3b0';
-            ctx.beginPath(); ctx.arc(cx, cy - r * 0.05, r * 0.4, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(0, -fallbackR * 0.05, fallbackR * 0.4, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#2a2018';
-            ctx.beginPath(); ctx.arc(cx - r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2);
-            ctx.arc(cx + r * 0.16, cy - r * 0.1, r * 0.06, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath();
+            ctx.arc(-fallbackR * 0.16, -fallbackR * 0.1, fallbackR * 0.06, 0, Math.PI * 2);
+            ctx.arc(fallbackR * 0.16, -fallbackR * 0.1, fallbackR * 0.06, 0, Math.PI * 2);
+            ctx.fill();
         }
-        // Held weapon prop gripped in-hand (matches the in-game loadout). The
-        // hand sits at the lower-front of the body and the weapon angles down-out
-        // at a jaunty rest angle (the menu has no aim target); a little paw wraps
-        // the grip. Authored relative to the in-game spriteHalf (91), scaled to s.
-        if (heldProp) {
+        // Held weapon prop gripped at this exact pose's authored hand point.
+        // The menu has no aim target, so idle rests down-out and cast lifts.
+        if (heldProp && pose?.attachments?.handR) {
             const propSprite = getWeaponProp(heldProp.prop, heldProp.accent, heldProp.glow);
             if (propSprite) {
-                // Match the in-game hold: the wand rests in the body's OWN
-                // paw (the same measured anchors Player uses — no synthetic
-                // arm), with a little paw wrapped over the grip. During the
-                // periodic cast-pose flash the anchor jumps to the raised
-                // fist and the wand flicks up-out, mirroring the in-game cast.
+                // Match the in-game hold, including the paw over the grip.
                 const H = hold || { scale: 1.0, tilt: 0 };
-                const k = s / 91;
-                const pscale = k * 0.92 * (H.scale || 1);
-                // Anchors are the bone-exact down-facing grip offsets from the
-                // Blender grip-bone export (tools/blender anchors.json) — keep
-                // in sync with Player.js HAND.down idle[0]/cast[0].
-                const ang = (castPose ? -0.45 : -1.25) + (H.tilt || 0);
-                const hxp = cx + (castPose ? 50 : 31.5) * k;
-                const hyp = cy + (castPose ? 11 : 48.2) * k;
+                const pscale = 0.92 * (H.scale || 1);
+                const hand = heroPosePoint(pose, 'handR');
+                // LPC cast art aliases idle; keep its prop at the rest angle,
+                // while authored cast poses lift the wand from their own hand.
+                const firing = pose.state === 'cast' && pose.kind !== 'lpc';
+                const ang = (firing ? -0.45 : -1.25) + (H.tilt || 0);
                 ctx.save();
-                ctx.translate(hxp, hyp);
+                ctx.translate(hand[0], hand[1]);
                 ctx.rotate(ang);
                 ctx.drawImage(propSprite.canvas, -propSprite.gripX * pscale, -propSprite.gripY * pscale,
                     propSprite.w * pscale, propSprite.h * pscale);
@@ -2277,7 +2288,13 @@ export class MenuRenderer {
         }
         // Accessory on the head (direction-aware pixel hat, on top). The old
         // themed sash overlay was removed — the held weapon carries the identity.
-        if (ap.hatShape && ap.hatShape !== 'none') drawPixelHat(ctx, cx, cy, s, 'down', ap.hatShape, ap.hatColor, false);
+        if (ap.hatShape && ap.hatShape !== 'none') {
+            ctx.save();
+            applyHeroAttachmentTransform(ctx, pose, 'headSeat');
+            drawPixelHat(ctx, 0, 0, HERO_CANONICAL_HALF,
+                pose?.dir || 'down', ap.hatShape, ap.hatColor, !!pose?.flip);
+            ctx.restore();
+        }
         ctx.restore();
     }
 
@@ -2935,12 +2952,12 @@ export class MenuRenderer {
         const ch = getCharacter(save.selectedCharacter);
         const ap = resolveAppearance(save.cosmetics.equipped);
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
-        let charSprite = null;
-        const castFlash = !ch.lpc && (this._t % 4.0) > 3.4;
+        let avatarPose = null;
+        const avatarState = (this._t % 4.0) > 3.4 ? 'cast' : 'idle';
         try {
-            const d = getHeroFrames(ch.id, ch, ap.furColor).dirs.down;
-            charSprite = (this._t % 4.0) > 3.4 ? d.cast[0] : d.idle[0];
-        } catch (e) { charSprite = null; }
+            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
+            avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
+        } catch (e) { avatarPose = null; }
         const startWeaponId = resolveStartingWeapon(save);
         const heldProp = resolveWeaponProp(startWeaponId);
         const acx = c.x + avW / 2;
@@ -2956,7 +2973,7 @@ export class MenuRenderer {
         // halo) can't draw across the panel border into the tab-bar chrome.
         ctx.save();
         ctx.beginPath(); ctx.rect(c.x, c.y, avW, c.h); ctx.clip();
-        this._drawAvatar(ctx, acx, acy, r, avatarAp, charSprite, null, this._t, !!ch.lpc, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face, castFlash);
+        this._drawAvatar(ctx, acx, acy, r, avatarAp, avatarPose, null, this._t, heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
         ctx.restore();
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#fff'; ctx.font = `800 30px ${FONT}`;
@@ -3297,8 +3314,11 @@ export class MenuRenderer {
         const ap = resolveAppearance(merged);
         const ch = getCharacter(save.selectedCharacter);
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
-        let charSprite = null;
-        try { charSprite = getHeroFrames(ch.id, ch, ap.furColor).dirs.down.idle[0]; } catch (e) { charSprite = null; }
+        let avatarPose = null;
+        try {
+            avatarPose = resolveHeroPose(getHeroFrames(ch.id, ch, ap.furColor,
+                !!ap.hatShape && ap.hatShape !== 'none'), 'down', 'idle', 0);
+        } catch (e) { avatarPose = null; }
         // Mannequin radius scales with the panel (fixed 105 collided with the
         // caption once phone insets + the sub-tab row shrank c.h to ~557), and
         // the caption anchors BELOW the sprite box, whichever is lower.
@@ -3306,7 +3326,7 @@ export class MenuRenderer {
         const avCy = c.y + c.h * 0.24;
         const pedSc = Math.max(0.5, Math.min(0.9, c.h / 720));
         this._pedestal(ctx, mcx, avCy + avR * 0.86, t, '#ff7edb', pedSc);
-        this._drawAvatar(ctx, mcx, avCy, avR, avatarAp, charSprite, null, t, !!ch.lpc, null, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        this._drawAvatar(ctx, mcx, avCy, avR, avatarAp, avatarPose, null, t, null, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
         const capY = Math.max(c.y + c.h * 0.42, avCy + avR * 1.25 + 22);
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ff7edb'; ctx.font = `800 22px ${HEAD}`;

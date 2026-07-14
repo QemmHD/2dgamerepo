@@ -31,12 +31,13 @@ CHARACTER YAW (character rotates, camera fixed at -y):
   (which yaws camera+lights together): the relative camera/light/character
   geometry is the same; e.g. side here == setup_scene('side') there.
 
-ANCHORS — anchors.json per the HAND-BONE ANCHOR EXPORT spec:
-  GRIP is projected for all 27 rendered frames. The export keeps the 21
-  wand-bearing runtime frames (idle/walk/cast/hurt across three directions);
-  death/victory deliberately draw no wand. Offsets use the in-game 182px
-  sprite scale, y positive = DOWN. { down/up/side: { idle:[2], walk:[3],
-  cast:[1], hurt:[1] }, meta: { feetFrac, headFrac, bobPx } }.
+ANCHORS — anchors.json pose-local attachment export:
+  GRIP is projected for all 27 rendered frames. Legacy down/up/side hand arrays
+  remain byte-compatible in shape for current wand consumers. A parallel
+  attachments[direction][state][frame] tree exports evaluated ``headSeat`` and
+  ``shoulders`` segments plus ``handR`` for idle/walk/cast/hurt/death/victory.
+  All offsets use the in-game 182px sprite scale, y positive = DOWN, and carry
+  the same per-direction sheet dy as the rendered hero.
 
 BAKED BOB: HERO_BOB walk[1] = -2 (48-grid px). Only walk frame index 1 is
 raised, by exactly 2/48 of the cell = 10.67 px at 256. Validated numerically.
@@ -57,6 +58,7 @@ from mathutils import Vector  # noqa: E402
 from PIL import Image  # noqa: E402
 
 import monkey_rig as MR  # noqa: E402
+import hero_presets as HP  # noqa: E402
 
 RAW_DIR = os.path.join(HERE, 'raw')
 FRAME_DIR = os.path.join(RAW_DIR, 'frames')
@@ -125,21 +127,36 @@ def project_frac(world_pt):
     return 0.5 + y / CELL
 
 
+def screen_ordered_segment(world_pair):
+    """Project a rig segment at runtime scale and label it screen-left/right."""
+    points = [MR.world_to_cell_offset(point) for point in world_pair]
+    return sorted(points, key=lambda point: (point[0], point[1]))
+
+
+def shifted_anchor(point, direction_dy):
+    """Apply the sheet's 256px dy in the 182px runtime anchor space."""
+    return [round(point[0], 1),
+            round(point[1] + direction_dy * MR.SPRITE_SIZE / CELL, 1)]
+
+
 # ── main ─────────────────────────────────────────────────────────────────
 def main():
     os.makedirs(FRAME_DIR, exist_ok=True)
 
-    # Hero variant: HERO_NAME picks the output sheet/anchor prefix, HERO_PARAMS
-    # (optional JSON path) supplies a proportion/palette delta merged over
-    # DEFAULT_PARAMS. Unset => the canonical monkey (identical to before).
+    # Hero variant: HERO_NAME picks the output sheet/anchor prefix. The five
+    # shipped variants auto-load their committed hero_params/<name>.json delta;
+    # HERO_PARAMS remains an explicit override for one-off/new variants.
+    # Unset => the canonical monkey (identical to before).
     hero = os.environ.get('HERO_NAME', 'monkey')
-    delta = None
-    pj = os.environ.get('HERO_PARAMS')
-    if pj and os.path.exists(pj):
-        with open(pj) as f:
-            delta = json.load(f)
-        print(f'HERO {hero}: applying {len(delta)} param override(s) from {pj}',
-              flush=True)
+    delta, preset_path, preset_digest = HP.load_hero_delta(
+        hero, MR.DEFAULT_PARAMS, os.environ.get('HERO_PARAMS'))
+    # The canonical monkey intentionally has no JSON delta. Hash the empty
+    # semantic preset so every anchor receipt still carries one comparable,
+    # deterministic 64-character preset identity.
+    preset_digest = preset_digest or HP.canonical_digest({})
+    if delta is not None:
+        print(f'HERO {hero}: applying {len(delta)} param override(s) from '
+              f'{preset_path} (sha256 {preset_digest[:12]})', flush=True)
 
     rig = MR.build_rigged_monkey(params=delta)
     P = rig['params']
@@ -154,8 +171,9 @@ def main():
     head_frac_proj = project_frac((0, 0, P['head_z']))
     origin_x_px = MR.grip_cell_offset(Vector((0, 0, 0)), sprite=CELL)[0]
 
-    # ── render every direction/pose frame, collect grip + alpha stats ────
+    # ── render every direction/pose frame, collect rig anchors + alpha ──
     raw_grip = {}
+    raw_attachments = {}
     raw_stats = {}
     for d in DIRS:
         set_char_yaw(arm_ob, CHAR_YAW[d])
@@ -164,7 +182,18 @@ def main():
             path = os.path.join(FRAME_DIR, f'{d}_{pose}{idx}.png')
             MR.setup_render(P, path, res=CELL)
             bpy.ops.render.render(write_still=True)
-            raw_grip[(d, pose, idx)] = MR.grip_cell_offset()   # @182, y-down
+            attachment_world = MR.get_pose_attachment_world(d)
+            head_seat = screen_ordered_segment(attachment_world['headSeat'])
+            shoulders = screen_ordered_segment(attachment_world['shoulders'])
+            hand_r = MR.world_to_cell_offset(attachment_world['handR'])
+            raw_attachments[(d, pose, idx)] = {
+                'headSeat': head_seat,
+                'shoulders': shoulders,
+                'handR': hand_r,
+            }
+            # Keep the legacy grip path numerically identical to its established
+            # evaluated GRIP export; attachments.handR reuses that exact tuple.
+            raw_grip[(d, pose, idx)] = hand_r             # @182, y-down
             raw_stats[(d, pose, idx)] = alpha_stats(path)
             gx, gy = raw_grip[(d, pose, idx)]
             print(f'rendered {d}/{pose}{idx}  grip=({gx:6.1f},{gy:6.1f})  '
@@ -206,23 +235,46 @@ def main():
         sheet.save(sheet_paths[d])
         print(f'wrote {sheet_paths[d]}', flush=True)
 
-    # ── anchors.json (grip offsets carry the same per-direction dy) ──────
+    # ── anchors.json (all offsets carry the same per-direction dy) ──────
     anchors = {}
     for d in DIRS:
         anchors[d] = {}
         for p in ('idle', 'walk', 'cast', 'hurt'):
-            anchors[d][p] = [
-                [round(raw_grip[(d, p, i)][0], 1),
-                 round(raw_grip[(d, p, i)][1] + dy[d] * MR.SPRITE_SIZE / CELL,
-                       1)]
-                for i in range(MR.POSES[p])]
+            anchors[d][p] = [shifted_anchor(raw_grip[(d, p, i)], dy[d])
+                             for i in range(MR.POSES[p])]
+
+    anchors['attachments'] = {}
+    for d in DIRS:
+        anchors['attachments'][d] = {}
+        for p, frame_count in MR.POSES.items():
+            frames = []
+            for i in range(frame_count):
+                raw = raw_attachments[(d, p, i)]
+                frames.append({
+                    'headSeat': {
+                        'left': shifted_anchor(raw['headSeat'][0], dy[d]),
+                        'right': shifted_anchor(raw['headSeat'][1], dy[d]),
+                    },
+                    'shoulders': {
+                        'left': shifted_anchor(raw['shoulders'][0], dy[d]),
+                        'right': shifted_anchor(raw['shoulders'][1], dy[d]),
+                    },
+                    'handR': shifted_anchor(raw['handR'], dy[d]),
+                })
+            anchors['attachments'][d][p] = frames
+
     anchors['meta'] = {
+        'heroId': hero,
+        'presetSha256': preset_digest,
         'feetFrac': round(MR.FEET_FRAC, 6),
         'headFrac': round(MR.HEAD_FRAC, 6),
         # HERO_BOB (PixelArt.js): 48-grid px baked per walk frame, y-down
         'bobPx': [0, -2, 0],
         'spriteSize': int(MR.SPRITE_SIZE),
         'yDownPositive': True,
+        'attachmentSchema': 1,
+        'attachmentSpace': 'sprite-offset',
+        'attachmentStates': dict(MR.POSES),
     }
     anchors_path = ANCHORS_PATH if hero == 'monkey' \
         else os.path.join(HERE, f'{hero}_anchors.json')
@@ -319,6 +371,61 @@ def main():
             abs(ci['t'] - ii['t'])
         check(dx >= 10, f'{d} cast silhouette distinct from idle '
               f'(bbox delta {dx}px)')
+
+    # 6) pose-local cosmetic attachment contract (all 27 direction frames)
+    attachment_tree = anchors['attachments']
+    expected_frames = len(DIRS) * sum(MR.POSES.values())
+    actual_frames = sum(len(attachment_tree[d][p])
+                        for d in DIRS for p in MR.POSES)
+    check(set(attachment_tree) == set(DIRS),
+          'attachment directions are exactly down/up/side')
+    check(all(tuple(attachment_tree[d]) == tuple(MR.POSES) for d in DIRS),
+          'every direction exports idle/walk/cast/hurt/death/victory')
+    check(actual_frames == expected_frames,
+          f'attachment tree exports all {actual_frames}/{expected_frames} frames')
+
+    finite_points = True
+    in_bounds = True
+    point_count = 0
+    widths = {'headSeat': [], 'shoulders': []}
+    half_sprite = MR.SPRITE_SIZE / 2.0
+    legacy_hand_matches = True
+    for d in DIRS:
+        for p, frame_count in MR.POSES.items():
+            check(len(attachment_tree[d][p]) == frame_count,
+                  f'{d}/{p} attachment frame count is {frame_count}')
+            for i, frame in enumerate(attachment_tree[d][p]):
+                for segment_name in ('headSeat', 'shoulders'):
+                    segment = frame[segment_name]
+                    left, right = segment['left'], segment['right']
+                    widths[segment_name].append(right[0] - left[0])
+                    for point in (left, right):
+                        point_count += 1
+                        finite_points &= len(point) == 2 and all(
+                            isinstance(v, (int, float)) and math.isfinite(v)
+                            for v in point)
+                        in_bounds &= all(-half_sprite <= v <= half_sprite
+                                         for v in point)
+                hand = frame['handR']
+                point_count += 1
+                finite_points &= len(hand) == 2 and all(
+                    isinstance(v, (int, float)) and math.isfinite(v)
+                    for v in hand)
+                in_bounds &= all(-half_sprite <= v <= half_sprite for v in hand)
+                if p in ('idle', 'walk', 'cast', 'hurt'):
+                    legacy_hand_matches &= hand == anchors[d][p][i]
+
+    check(finite_points,
+          f'all {point_count} attachment points are finite numeric x/y pairs')
+    check(in_bounds,
+          f'all attachment offsets fit the {MR.SPRITE_SIZE:.0f}px runtime sprite '
+          f'(-{half_sprite:.0f}..+{half_sprite:.0f})')
+    for segment_name, segment_widths in widths.items():
+        check(min(segment_widths) > 0.0,
+              f'{segment_name} projected widths are positive '
+              f'({min(segment_widths):.1f}..{max(segment_widths):.1f}px)')
+    check(legacy_hand_matches,
+          'legacy grip arrays exactly match attachments.handR where shared')
 
     print('\nanchors.json grip offsets (@182px, y-down, incl. direction dy):')
     for d in DIRS:

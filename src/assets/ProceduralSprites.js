@@ -19,9 +19,27 @@ import { TWO_PI } from '../core/MathUtils.js';
 import { getLpcFrames, isLpcLoaded } from './LpcSprites.js';
 import { drawPixelMonkey, drawPixelHero } from './PixelArt.js';
 import { getAiHeroFrames } from './HeroAiSprites.js';
+import { HERO_POSE_ATTACHMENTS } from './HeroPoseData.js';
 import { getDecorSprite } from './DecorSprites.js';
 
 const cache = new Map();
+
+// LPC sheets do not ship authored attachment measurements. Keep every slot on
+// the one neutral seat instead of pretending Blender-monkey limb motion matches
+// a different 64px LPC skeleton. This preserves the historical stable overlay;
+// exact LPC motion can opt in later only with per-model measured anchors.
+const LPC_HERO_POSE_ATTACHMENTS = Object.fromEntries(
+    ['down', 'up', 'side'].map((dir) => {
+        const source = HERO_POSE_ATTACHMENTS[dir];
+        const neutral = source.idle[0];
+        return [dir, {
+            idle: [neutral],
+            walk: [neutral, neutral, neutral],
+            cast: [neutral],
+            hurt: [neutral],
+        }];
+    }),
+);
 
 // Soft white radial used as a light cutout (drawn with 'destination-out'
 // to carve holes in the darkness veil) and reused as a particle mask.
@@ -188,8 +206,9 @@ export function getMonkeySprite() {
 
 // ── Directional pose frame model ─────────────────────────────────────────
 // getHeroFrames returns a structured, cached set:
-//   { kind, dirs: { down, up, side } }, each dir = { idle:[c], walk:[c,c,c],
-//     cast:[c], hurt:[c] }.  `side` faces +x; callers flip it for left.
+//   { kind, dirs: { down, up, side }, attachments }, each dir contains the
+//   available animation canvases. `side` faces +x; callers flip it for left.
+//   Blender-exported attachment frames share the same state/index contract.
 // Pixel heroes get full per-direction pose art; LPC heroes get directional
 // walk built from their walk rows (cast/hurt reuse idle — Player adds the
 // transform lean/recoil), so the imported bodies stay feasible without new art.
@@ -202,7 +221,11 @@ function buildPixelHeroSet(opts) {
         cast: [drawPixelHero(opts, dir, 'cast', 0)],
         hurt: [drawPixelHero(opts, dir, 'hurt', 0)],
     });
-    return { kind: 'pixel', dirs: { down: mk('down'), up: mk('up'), side: mk('side') } };
+    return {
+        kind: 'pixel',
+        dirs: { down: mk('down'), up: mk('up'), side: mk('side') },
+        attachments: HERO_POSE_ATTACHMENTS,
+    };
 }
 
 // Copy a canvas so addOutline (which mutates in place) never touches the
@@ -231,7 +254,7 @@ function buildLpcHeroSet(model) {
     if (!down) return null;            // sheet failed → fall back to pixel set
     const up = pick(fr.up) || down;
     const side = pick(fr.right) || down; // side faces +x; Player flips for left
-    return { kind: 'lpc', dirs: { down, up, side } };
+    return { kind: 'lpc', dirs: { down, up, side }, attachments: LPC_HERO_POSE_ATTACHMENTS };
 }
 
 // ── True fur recolor for baked/imported frame sets (AI sheets, LPC) ──────
@@ -324,11 +347,13 @@ function furRecolorSet(set, color, baseFurHex) {
     } catch (e) { return set; }   // no-DOM env → uncolored fallback
 }
 
-export function getHeroFrames(id, char = null, furColor = null) {
+export function getHeroFrames(id, char = null, furColor = null, suppressReplaceableHeadwear = false) {
     // Fur cosmetics are a first-class variant: one cached set per (hero, fur),
     // so menu previews, the boutique mannequin and the in-run player all pull
     // the SAME recolored frames (the old draw-time tint only ran in-game).
-    const key = `heroFrames:${id}:${furColor || 'nat'}`;
+    const suppressFeature = suppressReplaceableHeadwear
+        && ['hat', 'horns', 'hood'].includes(char?.feature);
+    const key = `heroFrames:${id}:${furColor || 'nat'}:${suppressFeature ? 'cosmetic-headwear' : 'native-headwear'}`;
     if (cache.has(key)) return cache.get(key);
     let set = null;
     // Only use the LPC body if its sheet actually loaded; otherwise fall through
@@ -336,7 +361,7 @@ export function getHeroFrames(id, char = null, furColor = null) {
     if (char && char.lpc && char.lpcModel && isLpcLoaded(char.lpcModel)) set = buildLpcHeroSet(char.lpcModel);
     // Pixel-bodied heroes prefer the HQ AI body sheets (shared base + per-hero
     // tint/feature composite); null until loaded / on failure → procedural.
-    if (!set) set = getAiHeroFrames(id, char);
+    if (!set) set = getAiHeroFrames(id, char, suppressFeature);
     // Baked/imported bodies can't regenerate — recolor their fur pixels via
     // the per-pixel hue remap (true recolor, shading preserved).
     if (set && furColor) set = furRecolorSet(set, furColor, char && char.palette && char.palette.fur);
@@ -346,7 +371,7 @@ export function getHeroFrames(id, char = null, furColor = null) {
         // (shaded furD/furL variants derive from it correctly).
         const pal = char ? char.palette : null;
         const opts = char
-            ? { palette: furColor ? { ...pal, fur: furColor } : pal, feature: char.feature, accent: char.accent }
+            ? { palette: furColor ? { ...pal, fur: furColor } : pal, feature: suppressFeature ? null : char.feature, accent: char.accent }
             : (furColor ? { palette: { fur: furColor } } : {});
         set = buildPixelHeroSet(opts);
     }
@@ -365,7 +390,10 @@ export function clearHeroFrameCache() {
 export function heroSetFrames(set) {
     const out = [];
     for (const d of Object.values(set.dirs)) {
-        for (const arr of [d.idle, d.walk, d.cast, d.hurt]) for (const c of arr) if (c && !out.includes(c)) out.push(c);
+        for (const arr of Object.values(d)) {
+            if (!Array.isArray(arr)) continue;
+            for (const c of arr) if (c && !out.includes(c)) out.push(c);
+        }
     }
     return out;
 }

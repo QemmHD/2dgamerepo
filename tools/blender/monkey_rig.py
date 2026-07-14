@@ -15,11 +15,15 @@ monkey_r2_free.py) into a rigged asset:
                                 segmented plush model — no automatic weights,
                                 so poses can never candy-wrap), plus a GRIP
                                 empty bone-parented at the right paw.
-  * author_poses(...)         — ONE armature action keyed at scene frames 1..7
+  * author_poses(...)         — ONE armature action keyed at scene frames 1..9
                                 in POSE_COLS order [idle0, idle1(blink), walk0,
-                                walk1(+2px bob), walk2, cast, hurt].
+                                walk1(+2px bob), walk2, cast, hurt, death,
+                                victory].
   * set_pose(pose, i)         — jump the scene to that pose frame.
   * get_grip_world()          — depsgraph-evaluated GRIP world location.
+  * get_pose_attachment_world(direction)
+                              — evaluated head-seat and shoulder segments,
+                                plus handR, for the current pose/direction.
   * grip_cell_offset()        — project GRIP through the active camera to
                                 (x, y) px offsets from the 256-cell centre at
                                 the 182px in-game sprite scale (y positive =
@@ -580,7 +584,7 @@ def _apply_pose(arm_ob, pose, idx, T):
 
 
 def author_poses(arm_ob, glint_obs, tune=None):
-    """Keyframe all 7 POSE_COLS frames into one action (frames 1..7)."""
+    """Keyframe all 9 POSE_COLS frames into one action (frames 1..9)."""
     T = dict(POSE_TUNE)
     if tune:
         T.update(tune)
@@ -639,19 +643,85 @@ def get_grip_world():
     return _RIG['grip'].evaluated_get(dg).matrix_world.translation.copy()
 
 
-def grip_cell_offset(world_pt=None, sprite=SPRITE_SIZE):
-    """Project a world point (default: GRIP) through the ACTIVE ortho camera
-    into (x, y) px offsets from the sheet-cell centre AT THE IN-GAME SPRITE
-    SCALE (182 px). y positive = DOWN (screen coords) — anchors.json
-    convention. Projected manually (camera-space / ortho_scale) so the result
-    is independent of the scene render resolution/aspect: the sheet cell is
-    square by contract."""
-    if world_pt is None:
-        world_pt = get_grip_world()
+def _evaluated_rest_point_world(arm_eval, bone_name, rest_point):
+    """Move one armature-space rest point through an evaluated pose bone.
+
+    PoseBone.matrix and Bone.matrix_local both live in armature space. Their
+    product below is therefore the bone's evaluated rest-to-pose transform;
+    arm_eval.matrix_world then includes the sheet direction's object yaw.
+    """
+    pose_bone = arm_eval.pose.bones[bone_name]
+    rest_bone = arm_eval.data.bones[bone_name]
+    posed = pose_bone.matrix @ rest_bone.matrix_local.inverted() @ \
+        Vector(rest_point)
+    return arm_eval.matrix_world @ posed
+
+
+def get_pose_attachment_world(direction='down'):
+    """Evaluated attachment geometry for the current pose and sheet facing.
+
+    ``headSeat`` and ``shoulders`` are two-point, screen-readable segments;
+    ``handR`` remains the established GRIP point. Down/up use the character's
+    local left-right axis. A physical left/right pair collapses in profile, so
+    side uses the local front-back axis instead. The exporter sorts each pair
+    by projected screen X before assigning its semantic left/right labels.
+
+    The caller must already have applied the matching character yaw, as
+    render_sheets does before selecting each pose.
+    """
+    if direction not in ('down', 'up', 'side'):
+        raise ValueError(f'unknown attachment direction: {direction!r}')
+    if not _RIG:
+        raise RuntimeError('build_rigged_monkey() must run before export')
+
+    dg = bpy.context.evaluated_depsgraph_get()
+    arm_eval = _RIG['armature'].evaluated_get(dg)
+    P = _RIG['params']
+
+    head_center = Vector((
+        0.0,
+        0.0,
+        P['head_z'] + P['head_r'] * P['head_squash'] * 0.62,
+    ))
+    shoulder_center = Vector((0.0, -1.4, P['arm_top_z']))
+
+    if direction == 'side':
+        head_axis = Vector((0.0, P['head_r'] * 0.98 * 0.70, 0.0))
+        shoulder_axis = Vector((0.0, P['body_ry'] * 0.65, 0.0))
+    else:
+        head_axis = Vector((P['head_r'] * P['head_wide'] * 0.70, 0.0, 0.0))
+        shoulder_axis = Vector((P['arm_x'], 0.0, 0.0))
+
+    def segment(bone_name, center, axis):
+        return tuple(_evaluated_rest_point_world(
+            arm_eval, bone_name, center + sign * axis) for sign in (-1, 1))
+
+    return {
+        'headSeat': segment('head', head_center, head_axis),
+        'shoulders': segment('spine', shoulder_center, shoulder_axis),
+        'handR': get_grip_world(),
+    }
+
+
+def world_to_cell_offset(world_pt, sprite=SPRITE_SIZE):
+    """Project a world point through the active orthographic camera.
+
+    Returns x/y pixel offsets from cell centre at ``sprite`` scale. Positive y
+    is down, matching anchors.json and the runtime canvas coordinate system.
+    Projection is independent of render resolution/aspect because sheet cells
+    are square by contract.
+    """
     cam_ob = bpy.context.scene.camera
     p = cam_ob.matrix_world.inverted() @ Vector(world_pt)   # cam: x right, y up
     s = cam_ob.data.ortho_scale
     return (p.x / s * sprite, -p.y / s * sprite)
+
+
+def grip_cell_offset(world_pt=None, sprite=SPRITE_SIZE):
+    """Backward-compatible GRIP projection at the 182px runtime scale."""
+    if world_pt is None:
+        world_pt = get_grip_world()
+    return world_to_cell_offset(world_pt, sprite=sprite)
 
 
 # ── camera / lights / render ─────────────────────────────────────────────

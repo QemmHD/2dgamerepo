@@ -298,6 +298,8 @@ export const FEATURE_MOTION = {
     walk: [[-2, 0.4], [0.4, -2], [2, 0.4]], // pendulum sway + hop across the stride
     cast: [[1.7, -2.4]],                   // features perk up + lean into the cast
     hurt: [[-2.6, 1.8]],                   // recoil back + drop
+    death: [[-0.8, 1.4]],                  // settle with the collapsing head
+    victory: [[0.8, -1.2]],                // lift with the celebration pose
 };
 
 export function drawHeroFeatureOverlay(opts = {}, dir = 'down', bob = 0, pose = 'idle', frameIdx = 0) {

@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "generator": "tools/generate-hero-install-manifest.js",
+  "pixelation": {
+    "cell": 256,
+    "logical": 96,
+    "colors": 32,
+    "outline": 1
+  },
+  "sheets": [
+    {
+      "heroId": "monkey",
+      "direction": "down",
+      "path": "src/assets/hero/monkey_down.png",
+      "sha256": "ceea7301f1615d13772006c0e1334cc4d238fb61d3dbaa76bb05e628d6baf4d5"
+    },
+    {
+      "heroId": "monkey",
+      "direction": "up",
+      "path": "src/assets/hero/monkey_up.png",
+      "sha256": "ffa04546f1aa678425b91c5214e8ae5621aa8acce5ca77ca54b166bb4c915f89"
+    },
+    {
+      "heroId": "monkey",
+      "direction": "side",
+      "path": "src/assets/hero/monkey_side.png",
+      "sha256": "72f53b2d003cb98d48c5bd4a3927cba188e77ae3e13121b9b543d9114b96535f"
+    },
+    {
+      "heroId": "elf",
+      "direction": "down",
+      "path": "src/assets/hero/elf_down.png",
+      "sha256": "77bb049041be7a5045afbaeac5e22beb77fb04ee1d2652285ca8f592974c65bb"
+    },
+    {
+      "heroId": "elf",
+      "direction": "up",
+      "path": "src/assets/hero/elf_up.png",
+      "sha256": "cadff103b7aad7ddf2882caf753a08f1026d7a08d31768b8922fabaf84e63399"
+    },
+    {
+      "heroId": "elf",
+      "direction": "side",
+      "path": "src/assets/hero/elf_side.png",
+      "sha256": "d7af0eb2389ee4bd2bf03951e9719f732204b1fd4e8a316b1020438d4ba099e3"
+    },
+    {
+      "heroId": "orc",
+      "direction": "down",
+      "path": "src/assets/hero/orc_down.png",
+      "sha256": "a146ee6f4a31f9d9c7002d1b437a6040ea1c08358a0abdef6a20f7e26e31b339"
+    },
+    {
+      "heroId": "orc",
+      "direction": "up",
+      "path": "src/assets/hero/orc_up.png",
+      "sha256": "d140a2bc102408bea1660230787bd9184703bb883dffbfbc1a131ec64955b985"
+    },
+    {
+      "heroId": "orc",
+      "direction": "side",
+      "path": "src/assets/hero/orc_side.png",
+      "sha256": "56debe2df65c71fdbc1cbc3cd38b9f18a3233fdbd574156ebc4bdac4fd62e57d"
+    },
+    {
+      "heroId": "wizard",
+      "direction": "down",
+      "path": "src/assets/hero/wizard_down.png",
+      "sha256": "e435dfe4fe1d0244935d2fbcb8c4b1d93c38df7095cd21c63cf51768cdbeea70"
+    },
+    {
+      "heroId": "wizard",
+      "direction": "up",
+      "path": "src/assets/hero/wizard_up.png",
+      "sha256": "0d71e635265cc7ef1bf5ec097cdfc73afcabc8507dbcc6e9f6c7cb129498d355"
+    },
+    {
+      "heroId": "wizard",
+      "direction": "side",
+      "path": "src/assets/hero/wizard_side.png",
+      "sha256": "705fa8f16551d0010d5425c5dc62631e09fda905ac1c1d070c7084c56afaae45"
+    },
+    {
+      "heroId": "berserker",
+      "direction": "down",
+      "path": "src/assets/hero/berserker_down.png",
+      "sha256": "f7b986c6cfecf53c8d226c8933698dddd8548117c9926fb55e4b2c877d8f6a60"
+    },
+    {
+      "heroId": "berserker",
+      "direction": "up",
+      "path": "src/assets/hero/berserker_up.png",
+      "sha256": "d9b656a1cc60e329fb2027e2ac31ca9d4dc51933af04eaef89e16ec64cc25b7e"
+    },
+    {
+      "heroId": "berserker",
+      "direction": "side",
+      "path": "src/assets/hero/berserker_side.png",
+      "sha256": "8fc4f82dd4873963f42f376d652ede0a0805d51e3ad97565976f5867673b05fd"
+    },
+    {
+      "heroId": "assassin",
+      "direction": "down",
+      "path": "src/assets/hero/assassin_down.png",
+      "sha256": "cf7ee9d9b4bf9dc8039be51235e52d7862bc69dce249e39521691d2ba5583b1b"
+    },
+    {
+      "heroId": "assassin",
+      "direction": "up",
+      "path": "src/assets/hero/assassin_up.png",
+      "sha256": "ef22001d0c16dda9ff64107e7c7b6479c9a0d4efab2e0070a8a45b2fd69a5899"
+    },
+    {
+      "heroId": "assassin",
+      "direction": "side",
+      "path": "src/assets/hero/assassin_side.png",
+      "sha256": "d47952fe0f5660e644d81192635b229acd70d23ce59391ddb07a1530624b0565"
+    }
+  ]
+}
