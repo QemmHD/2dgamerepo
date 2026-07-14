@@ -125,6 +125,28 @@ const FRAMES_BY_TYPE = {
     solnakh:         { get: () => getPixelBossFrames('solnakh')         || getSolnakhFrames(),          hz: 5 },
 };
 
+// Boss provenance is gameplay authority, not presentation metadata. Keep the
+// vocabulary closed so an omitted/typoed source can never accidentally earn
+// campaign credit. Direct construction defaults to UNKNOWN; Game's explicit
+// warning/spawn entry point uses DIRECT for intentional out-of-director calls.
+export const BOSS_SPAWN_PROVENANCE = Object.freeze({
+    MAP_DIRECTOR: 'map-director',
+    BOSS_RUSH: 'boss-rush',
+    WEEKLY: 'weekly',
+    DEBUG: 'debug',
+    DIRECT: 'direct',
+    UNKNOWN: 'unknown',
+});
+
+const BOSS_SPAWN_PROVENANCE_VALUES = new Set(Object.values(BOSS_SPAWN_PROVENANCE));
+
+export function normalizeBossSpawnProvenance(value, fallback = BOSS_SPAWN_PROVENANCE.UNKNOWN) {
+    if (BOSS_SPAWN_PROVENANCE_VALUES.has(value)) return value;
+    return BOSS_SPAWN_PROVENANCE_VALUES.has(fallback)
+        ? fallback
+        : BOSS_SPAWN_PROVENANCE.UNKNOWN;
+}
+
 // Construction-time options:
 //   healthMul   scales maxHp/hp from the wave director's current state
 //   speedMul    scales chase speed from the wave director
@@ -175,6 +197,12 @@ export class Enemy {
 
         this.elite = elite;
         this.boss = isBoss;
+        // Carries the boss's origin all the way from scheduler -> warning ->
+        // spawn -> corpse. Unknown is deliberately ineligible: only Game's
+        // normal map director explicitly stamps `map-director`.
+        this.bossSpawnProvenance = isBoss
+            ? normalizeBossSpawnProvenance(opts.bossSpawnProvenance)
+            : null;
         // Mild flat damage resistance (bosses only, set by Game at spawn based
         // on the run minute). 0 = takes full damage.
         this.resist = 0;

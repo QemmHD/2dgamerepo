@@ -121,7 +121,7 @@ Human-shareable string: **`EW1-XXXXX-XXXXX-XXXXX-XXXXX-XXX`** — Crockford base
 ## 3. The Crucible composer UI
 
 A "FORGE TRIAL" button on the PLAY tab (MenuRenderer `MENU_TABS`, MenuRenderer.js:56–66) opens a full-screen composer overlay drawn by MenuRenderer using the existing hotspot registry (`this.hotspots` / `_hot`, MenuRenderer.js:115–119 — the exact seam #18's focus-ring will later walk). Panels:
-1. **Map** — unlocked maps only (`isMapUnlocked`), locked ones shown greyed with their unlock line.
+1. **Map** — use `SaveSystem.getAllMapUnlockStatuses()`; honestly unlocked maps are selectable, locked maps expose exact predecessor progress, and a session QA bypass clearly disables campaign credit.
 2. **Difficulty + Trials** — reuses the `selectedModifiers` toggle pattern (Game.js:174); Torment rows appear here when #15's data ships.
 3. **Storm Clause** — one clause + its parameter (single-clause v1 keeps the combinatorial balance surface sane).
 4. **Seed** — dice-reroll button, and "SEAL LAST RUN" (copies `runSummary.seed`).

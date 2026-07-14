@@ -22,6 +22,8 @@ function check(condition, message) {
 const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
     .replace(/\r\n/g, '\n');
 const gameSource = source('src/core/Game.js');
+const inputSource = source('src/core/GameInputActions.js');
+const enemySource = source('src/entities/Enemy.js');
 const runStateSource = source('src/core/RunState.js');
 const updateSource = source('src/core/GameUpdate.js');
 const renderSource = source('src/core/GameRender.js');
@@ -29,8 +31,10 @@ const combatSource = source('src/core/CombatResolver.js');
 const uiStateSource = source('src/systems/UIStateBuilder.js');
 const uiSource = source('src/systems/UISystem.js');
 const menuSource = source('src/systems/MenuRenderer.js');
+const accessibilitySource = source('src/systems/AccessibilityBridge.js');
 const saveSource = source('src/systems/SaveSystem.js');
 const battlePassSource = source('src/systems/BattlePassSystem.js');
+const harnessSource = source('tools/artshot/harness.html');
 
 function sourceCheck(text, pattern, message) {
     check(pattern.test(text), message);
@@ -53,6 +57,80 @@ sourceCheck(gameSource, /canceledEncounter[\s\S]*?vigilTracker\?\.ingest/,
     'boss cancellation is forwarded to the visible tracker');
 sourceCheck(gameSource, /retireEncounterEnemyTags\(this\.enemies, canceledEncounter\.packId\)[\s\S]*?vigilTracker\?\.ingest/,
     'boss cancellation removes stale guardian markers before the tracker abort');
+
+// Campaign runs and boss provenance are fail-closed across every integration
+// seam: only the three explicit normal-run launch routes opt in, while every
+// warning carries its source into the Enemy corpse consumed by combat.
+sourceCheck(gameSource, /_startRun\(\{ campaignEligible = false \} = \{\}\)/,
+    'direct/future _startRun callers default campaign-ineligible');
+sourceCheck(gameSource, /restart\(\)[\s\S]*?_startRun\(\{ campaignEligible: true \}\)/,
+    'normal Restart explicitly opts into campaign credit');
+sourceCheck(inputSource, /_menuKeyboardActivate\(\)[\s\S]*?_startRun\(\{ campaignEligible: true \}\)/,
+    'scoped keyboard Start explicitly opts into campaign credit');
+sourceCheck(inputSource, /case 'startRun':[\s\S]*?_startRun\(\{ campaignEligible: true \}\)/,
+    'normal pointer Start explicitly opts into campaign credit');
+for (const action of ['startDaily', 'startRiteTrial', 'startBossRush', 'startWeeklyEmber']) {
+    sourceCheck(inputSource, new RegExp(`case '${action}':[\\s\\S]*?this\\._startRun\\(\\);`),
+        `${action} remains deny-by-default`);
+}
+sourceCheck(gameSource, /getMapBypassActive\?\.\(\) === true[\s\S]*?debugActive[\s\S]*?campaignEligible === true && normalMode && !bypassActive && !debugActive[\s\S]*?this\.campaignRun = \{ eligible, mapId, taintReason \}/,
+    'campaign eligibility and map are latched with QA bypass and debug mode excluded');
+sourceCheck(inputSource, /case 'selectMap':[\s\S]*?getMapUnlockStatus\(arg\.id\)[\s\S]*?Defeat all \$\{status\.requiredCount\}[\s\S]*?\$\{status\.defeatedCount\}\/\$\{status\.requiredCount\} complete[\s\S]*?QA map open · campaign credit off/,
+    'map selection uses exact predecessor progress and discloses QA credit exclusion');
+check(!inputSource.includes('getMap(arg.id)?.unlockBosses'),
+    'obsolete generic boss-total map toast source is gone');
+sourceCheck(inputSource, /_toggleSetting\(key\)[\s\S]*?key === 'unlockMaps' \|\| key === 'debug'[\s\S]*?!DEV_MODE\) return false/,
+    'both directly dispatched dev toggles are DEV_MODE guarded');
+sourceCheck(inputSource, /case 'cheatCoins':[\s\S]*?if \(!DEV_MODE\) break;[\s\S]*?case 'cheatUnlockAll':[\s\S]*?if \(!DEV_MODE\) break;/,
+    'all directly dispatched economy cheats are DEV_MODE guarded');
+sourceCheck(gameSource, /_taintCampaignRun\(reason = 'debug-action'\)[\s\S]*?eligible: false[\s\S]*?taintReason: reason/,
+    'one fail-closed helper taints campaign credit for gameplay debug actions');
+sourceCheck(gameSource, /KeyK[\s\S]*?_taintCampaignRun\('debug-kindle'\)[\s\S]*?debugGrant\(50\)/,
+    'Kindle debug grant taints campaign credit before changing combat state');
+sourceCheck(gameSource, /_debugSkipTime\(seconds\)[\s\S]*?_taintCampaignRun\('debug-time-jump'\)/,
+    'debug time jump permanently taints campaign credit');
+sourceCheck(menuSource, /const qaActive = status\.qaBypass === true[\s\S]*?const subline = qaActive[\s\S]*?'QA MODE · credit off'/,
+    'every map card discloses campaign credit off while QA bypass is active');
+sourceCheck(harnessSource, /LOCAL_QA_ORIGIN = location\.hostname === 'localhost'[\s\S]*?location\.hostname === '127\.0\.0\.1'/,
+    'campaign harness mutation controls recognize only local QA origins');
+sourceCheck(harnessSource, /RESET_PROFILE && LOCAL_QA_ORIGIN[\s\S]*?localStorage\.removeItem\('monkey-survivor:save:v1'\)/,
+    'profile reset cannot touch a deployed player save');
+sourceCheck(harnessSource, /for \(const token of LOCAL_QA_ORIGIN \? CAMPAIGN_BOSS_TOKENS : \[\]\)/,
+    'campaign boss seeding cannot write progression on a deployed origin');
+sourceCheck(updateSource, /weeklyEmberMode[\s\S]*?BOSS_SPAWN_PROVENANCE\.WEEKLY[\s\S]*?BOSS_SPAWN_PROVENANCE\.BOSS_RUSH[\s\S]*?_startBossWarning\(act\.spawn, provenance\)/,
+    'Rush and Weekly scheduler origins enter the warning explicitly');
+sourceCheck(updateSource, /campaignRun\?\.taintReason === 'debug-time-jump'[\s\S]*?BOSS_SPAWN_PROVENANCE\.DEBUG[\s\S]*?BOSS_SPAWN_PROVENANCE\.MAP_DIRECTOR[\s\S]*?_startBossWarning\(bossId, provenance\)/,
+    'normal/debug map scheduling stamps an explicit warning provenance');
+sourceCheck(updateSource, /bossWarning\.provenance[\s\S]*?BOSS_SPAWN_PROVENANCE\.UNKNOWN[\s\S]*?_spawnBoss\(id, provenance\)/,
+    'warning provenance reaches spawn and legacy warnings fail closed');
+sourceCheck(gameSource, /_startBossWarning\(id, provenance = BOSS_SPAWN_PROVENANCE\.DIRECT\)[\s\S]*?provenance: bossSpawnProvenance/,
+    'direct warnings are explicitly marked and retain provenance');
+sourceCheck(gameSource, /_spawnBoss\(id, provenance = BOSS_SPAWN_PROVENANCE\.DIRECT\)[\s\S]*?new Enemy\(id[\s\S]*?bossSpawnProvenance/,
+    'spawn passes normalized provenance into Enemy');
+sourceCheck(enemySource, /this\.bossSpawnProvenance = isBoss[\s\S]*?normalizeBossSpawnProvenance\(opts\.bossSpawnProvenance\)/,
+    'Enemy retains provenance and direct construction defaults unknown');
+sourceCheck(combatSource, /campaignRun\?\.eligible === true[\s\S]*?e\.bossSpawnProvenance === BOSS_SPAWN_PROVENANCE\.MAP_DIRECTOR[\s\S]*?recordCampaignBossDefeat\(\{[\s\S]*?mapId: this\.campaignRun\.mapId[\s\S]*?bossId: e\.type[\s\S]*?eligible: true/,
+    'canonical eligible map-director corpse records the latched map and stable boss id');
+sourceCheck(combatSource, /_latestCampaignBossDefeatReceipt = receipt[\s\S]*?_campaignUnlockReceipt = receipt/,
+    'combat retains latest/new unlock receipts for later victory routing');
+sourceCheck(gameSource, /victoryToMenu\(selectNewMap = false\)[\s\S]*?newlyUnlockedMapId = this\._campaignUnlockReceipt\?\.newlyUnlockedMapId[\s\S]*?selectNewMap && newlyUnlockedMapId[\s\S]*?setSelectedMap\(newlyUnlockedMapId\)/,
+    'victory selection routes only to this run receipt newly-unlocked map');
+sourceCheck(gameSource, /openMapPicker = selectNewMap && !newlyUnlockedMapId[\s\S]*?returnToShop\(\)[\s\S]*?if \(openMapPicker\)[\s\S]*?this\.menuTab = 'play'/,
+    'generic CHOOSE MAP victory action opens the Play map picker');
+sourceCheck(gameSource, /_queueVictoryCard\(\)[\s\S]*?clearedMapId = this\.campaignRun\?\.mapId[\s\S]*?newlyUnlockedMapId = this\._campaignUnlockReceipt\?\.newlyUnlockedMapId[\s\S]*?mapName: clearedMapName/,
+    'victory card uses the latched cleared map and accepted unlock receipt');
+sourceCheck(renderSource, /const isBossRush = !!this\.bossRush[\s\S]*?unlockedMapId = this\._campaignUnlockReceipt\?\.newlyUnlockedMapId[\s\S]*?unlockedMap \? `SELECT \$\{unlockedMap\.name\.toUpperCase\(\)\}` : 'CHOOSE MAP'/,
+    'victory overlay treats Weekly as a gauntlet and names only a receipt-unlocked destination');
+sourceCheck(renderSource, /campaignRun\?\.eligible === false[\s\S]*?Campaign map progress was not recorded/,
+    'debug/direct victory copy explicitly discloses excluded campaign credit');
+sourceCheck(gameSource, /_showVictory\(\)[\s\S]*?_victoryPresentation\?\.\(\)[\s\S]*?setScreen\?\.\([\s\S]*?'victory'[\s\S]*?announce\?\.\([\s\S]*?presentation\.choices/,
+    'victory announces the same receipt-driven outcome and choices used by Canvas');
+sourceCheck(accessibilitySource, /screen === 'victory'[\s\S]*?'EMBERWAKE victory'/,
+    'semantic Canvas label exposes the victory state');
+for (const obsoleteCopy of ['Three apex Hollow', 'A new biome opens', 'PLAY NEW BIOME']) {
+    check(!gameSource.includes(obsoleteCopy) && !renderSource.includes(obsoleteCopy),
+        `obsolete victory promise is gone: ${obsoleteCopy}`);
+}
 
 for (const field of [
     'vigilSitesActivated',
@@ -193,8 +271,26 @@ check(directorContext.defeatedMemberIds[0] === 'pack:guardian' && directorGame._
 // Fixed-frame setpiece arbitration: a Beacon owns the stage ahead of bosses
 // and Lieutenants; a tactical pack owns it ahead of Lieutenants; and a warning
 // that expires this frame is visible to EncounterDirector immediately.
-function directorFixture({ encounterPhase = 'idle', siteChallenge = false, warning = null, bossWarning = null, pendingDeaths = [] } = {}) {
-    const calls = { bossUpdates: 0, bossWarnings: 0, bossSpawns: 0, lieutenantUpdates: 0, lieutenantWarnings: 0, spawns: 0 };
+function directorFixture({
+    encounterPhase = 'idle',
+    siteChallenge = false,
+    warning = null,
+    bossWarning = null,
+    pendingDeaths = [],
+    bossRushSpawn = null,
+    weeklyEmberMode = false,
+    campaignRun = { eligible: true, mapId: 'emberwood', taintReason: null },
+} = {}) {
+    const calls = {
+        bossUpdates: 0,
+        bossWarnings: 0,
+        bossSpawns: 0,
+        lieutenantUpdates: 0,
+        lieutenantWarnings: 0,
+        spawns: 0,
+        warningArgs: [],
+        spawnArgs: [],
+    };
     const game = {
         time: 90,
         enemies: [],
@@ -207,12 +303,19 @@ function directorFixture({ encounterPhase = 'idle', siteChallenge = false, warni
         },
         _applyRunScale(state) { return state; },
         _lastWaveIdx: 0,
-        bossRush: null,
+        bossRush: bossRushSpawn ? { update: () => ({ spawn: bossRushSpawn }) } : null,
+        weeklyEmberMode,
+        campaignRun: { ...campaignRun },
         bossWarning: bossWarning ? { ...bossWarning } : null,
         bossDirector: { update() { calls.bossUpdates++; return 'forest-guardian'; } },
-        _startBossWarning() { calls.bossWarnings++; },
-        _spawnBoss(type) {
+        _startBossWarning(id, provenance) {
+            calls.bossWarnings++;
+            calls.warningArgs.push({ id, provenance });
+            this.bossWarning = { id, provenance, timer: 1, total: 1 };
+        },
+        _spawnBoss(type, provenance) {
             calls.bossSpawns++;
+            calls.spawnArgs.push({ type, provenance });
             this.enemies.push({ active: true, boss: true, type });
         },
         arena: null,
@@ -257,18 +360,55 @@ check(earnedBoundaryFrame.calls.bossUpdates === 0 && earnedBoundaryFrame.calls.b
     && earnedBoundaryFrame.calls.encounterArgs,
     'queued guardian death reaches tactical lifecycle before a due boss can abort it');
 
+const campaignBossFrame = directorFixture();
+GameUpdateMethods._updateDirectors.call(campaignBossFrame.game, 0.1);
+check(campaignBossFrame.calls.warningArgs.length === 1
+    && campaignBossFrame.calls.warningArgs[0].provenance === 'map-director',
+'normal BossDirector warning carries campaign provenance');
+
+const debugBossFrame = directorFixture({
+    campaignRun: { eligible: false, mapId: 'emberwood', taintReason: 'debug-time-jump' },
+});
+GameUpdateMethods._updateDirectors.call(debugBossFrame.game, 0.1);
+check(debugBossFrame.calls.warningArgs.length === 1
+    && debugBossFrame.calls.warningArgs[0].provenance === 'debug',
+'time-jumped BossDirector warning carries debug provenance');
+
+const rushBossFrame = directorFixture({ bossRushSpawn: 'forest-guardian' });
+GameUpdateMethods._updateDirectors.call(rushBossFrame.game, 0.1);
+check(rushBossFrame.calls.warningArgs.length === 1
+    && rushBossFrame.calls.warningArgs[0].provenance === 'boss-rush',
+'Boss Rush warning carries gauntlet provenance');
+
+const weeklyBossFrame = directorFixture({ bossRushSpawn: 'forest-guardian', weeklyEmberMode: true });
+GameUpdateMethods._updateDirectors.call(weeklyBossFrame.game, 0.1);
+check(weeklyBossFrame.calls.warningArgs.length === 1
+    && weeklyBossFrame.calls.warningArgs[0].provenance === 'weekly',
+'Weekly Ember warning carries weekly provenance');
+
 const lieutenantSpawnFrame = directorFixture({ warning: { type: 'brute', timer: 0.01, total: 1 } });
 lieutenantSpawnFrame.game.bossDirector.update = () => { lieutenantSpawnFrame.calls.bossUpdates++; return null; };
 GameUpdateMethods._updateDirectors.call(lieutenantSpawnFrame.game, 0.02);
 check(lieutenantSpawnFrame.calls.spawns === 1 && lieutenantSpawnFrame.calls.encounterArgs.lieutenantActive === true,
     'same-frame Lieutenant spawn owns the stage before EncounterDirector advances');
 
-const bossSpawnFrame = directorFixture({ bossWarning: { id: 'forest-guardian', timer: 0.01, total: 1 } });
+const bossSpawnFrame = directorFixture({
+    bossWarning: { id: 'forest-guardian', provenance: 'weekly', timer: 0.01, total: 1 },
+});
 GameUpdateMethods._updateDirectors.call(bossSpawnFrame.game, 0.02);
 check(bossSpawnFrame.calls.bossSpawns === 1 && bossSpawnFrame.calls.encounterArgs.bossActive === true,
     'same-frame boss spawn owns the stage before EncounterDirector advances');
+check(bossSpawnFrame.calls.spawnArgs[0].provenance === 'weekly',
+    'warning provenance survives the warning-to-spawn boundary');
 check(bossSpawnFrame.calls.lieutenantUpdates === 0 && bossSpawnFrame.calls.lieutenantWarnings === 0,
     'same-frame boss spawn cannot emit a false Lieutenant warning');
+
+const legacyBossSpawnFrame = directorFixture({
+    bossWarning: { id: 'forest-guardian', timer: 0.01, total: 1 },
+});
+GameUpdateMethods._updateDirectors.call(legacyBossSpawnFrame.game, 0.02);
+check(legacyBossSpawnFrame.calls.spawnArgs[0].provenance === 'unknown',
+    'missing warning provenance fails closed as unknown');
 
 // Placement methods must refuse all work once the live cap is reached. The
 // fixture deliberately omits constructors/obstacle APIs beyond that point, so

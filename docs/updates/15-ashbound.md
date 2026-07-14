@@ -272,7 +272,7 @@ ASHBOUND is the only update that gives the game a PRESCRIPTIVE, repeatable diffi
 
 ## Roadmap corrections found while grounding
 
-- The task brief's claim of an existing 'SaveSystem per-map records pattern' is WRONG: SaveSystem has no per-map record store today (selectedMap at SaveSystem.js:92 is selection only; map unlocks derive from lifetime totalBosses at :548-550). The actual patterns to clone are per-CHARACTER pactMastery (SaveSystem.js:118, validated :331-340, recordPactClear :657-666) and the day-keyed dailyRoad reset (:689-719). ASHBOUND introduces the first per-map record block (ashbound.clears/best) — additive, no bump.
+- **Superseded 2026-07-14:** Save v10 now has an exact per-map campaign boss ledger in `CampaignProgression`, exposed through `SaveSystem` status/record APIs. ASHBOUND's clears/best block is still a separate performance record (not campaign access), but it should copy the ledger's fixed-shape sanitize/receipt/persistence discipline rather than lifetime totals.
 - The Emberglass card compositor (roadmap dep #2, 'reused by update 15') does not exist in the codebase yet — grep for compositor/Emberglass/shareCard finds nothing under src/. Expected (update 2 unstarted), but the spec therefore treats all card minting as a guarded optional hook with a banner/seal fallback rather than a hard integration point.
 - All other synopsis claims VERIFIED: _applyRunScale clamped scalars (eliteChance ≤0.85 Game.js:1891, maxAlive ≤220 Game.js:1894); Trials fold loop Game.js:786-818; BattlePass payout hooks Game.js:2542-2547 + runBonus cap :811-814; dailyRoad mulberry32 day-PRNG with distinct salts dailyRoad.js:28-30.
 

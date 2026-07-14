@@ -215,7 +215,8 @@ try {
         'explicit high-contrast off survives reload');
 
     // The fixed-shape settings normalizer must add safe defaults to an old save
-    // without losing historical values or the dev-only escape switches.
+    // without losing historical player settings. The old persisted map bypass
+    // is deliberately dropped because it is session-only in save v10.
     const legacyStorage = new MemoryStorage(existingRaw({
         screenShake: false,
         debug: true,
@@ -244,8 +245,9 @@ try {
         && legacy.getSetting('reducedEffects') === true
         && legacy.getSetting('volMusic') === 0.35
         && legacy.getSetting('volSfx') === 0.65
-        && legacy.getSetting('unlockMaps') === true,
-    'old-save migration preserves progression, player settings, and dev settings');
+        && legacy.getSetting('unlockMaps') === false
+        && !Object.prototype.hasOwnProperty.call(legacy.data.settings, 'unlockMaps'),
+    'old-save migration preserves progression and player settings while dropping the persisted map bypass');
 
     for (const value of [null, false, true, '130', 1.15, 0, 99, 101, 114, 116, 129, 131, 1000, {}, []]) {
         setGlobal('localStorage', new MemoryStorage(existingRaw({ uiScale: value })));

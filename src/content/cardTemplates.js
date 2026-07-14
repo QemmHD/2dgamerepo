@@ -294,7 +294,7 @@ function drawVictoryCard(ctx, data, helpers) {
     ctx.fillText(fmtTime(d.time), tx, py + 96);
     ctx.font = `600 26px ${DISPLAY_FONT}`;
     ctx.fillStyle = ASH;
-    ctx.fillText(d.sub || 'Three apex Hollow have fallen', tx, py + 130);
+    ctx.fillText(d.sub || 'Vigil cleared', tx, py + 130);
     ctx.restore();
 
     drawChips(ctx, tx, py + 150, d.chips || [], GOLD_ACCENT);
