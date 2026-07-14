@@ -6,7 +6,9 @@
 // save/audio/toast access; created once in the Game constructor.
 
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
-import { openCase, buildCaseReel, MINES, MINES_HOUSE, rollMines, minesRawMultiplier } from './CaseSystem.js';
+import {
+    openCase, buildCaseReel, MINES, WAGER_BETS, rollMines, minesPayoutQuote,
+} from './CaseSystem.js';
 import { getGlowSprite } from '../assets/ProceduralSprites.js';
 import { roundRectPath, clamp01, easeOutCubic, easeOutBack } from '../render/DrawUtils.js';
 
@@ -65,16 +67,14 @@ export class MinigameOverlay {
         const { reel, landingIndex } = buildCaseReel(caseType, res);
         // Anticipation: a better pull takes LONGER to settle (tenser slow-down),
         // so the reveal feels earned. Tier drives spin time + the overlay's FX.
-        // Timing follows the case-reel doctrine: a readable ease-out tail, a
-        // NEAR-MISS landing offset (the marker rarely stops dead-centre — the
-        // winner sits just off, as if it "almost" was the neighbour), and a
-        // dead-air settle pause before the reveal fires (see settleHold).
+        // Timing follows the case-reel doctrine: a readable ease-out tail and a
+        // dead-air settle pause before the reveal fires (see settleHold). The
+        // awarded item lands exactly under the marker; no manufactured near miss.
         const tier = ({ common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, mythic: 5 })[res.rarity] ?? 0;
         // The old 4.2–6s reel overstayed its welcome on repeat opens. This keeps
         // the suspenseful slow tail while making the open-again loop feel snappy.
         const spinTime = 3.65 + tier * 0.28;
-        const landOff = (Math.random() * 0.7 - 0.35);   // ±0.35 cell widths
-        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier, landOff, settleHold: 0.52 };
+        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier, landOff: 0, settleHold: 0.52 };
     }
 
     dismissCase() { this.caseAnim = null; }
@@ -117,15 +117,26 @@ export class MinigameOverlay {
     // lose it. Gated by the hourly gamble quota (5 plays / rolling hour).
     openMines(bet) {
         if (this.caseAnim || this.mines) return;
-        if (this.game.saveSystem.data.totalCoins < bet) { this.game._setToast('Not enough coins'); return; }
-        if (!this.game.saveSystem.consumeGamblePlay()) {
-            const info = this.game.saveSystem.gamblePlaysInfo();
+        // UI dispatches authored integer presets. Do not coerce fractional or
+        // string-shaped external input into a valid wager at this trust seam.
+        const stake = Number.isSafeInteger(bet) ? bet : 0;
+        if (!WAGER_BETS.includes(stake)) { this.game._setToast('Unavailable wager'); return; }
+        if (this.game.saveSystem.data.totalCoins < stake) { this.game._setToast('Not enough coins'); return; }
+        const info = this.game.saveSystem.gamblePlaysInfo();
+        if (info.remaining <= 0) {
             this.game._setToast(`No plays left — resets in ${Math.ceil(info.resetInMs / 60000)}m`);
             return;
         }
-        this.game.saveSystem.spendCoins(bet);
+        if (!this.game.saveSystem.spendCoins(stake)) { this.game._setToast('Not enough coins'); return; }
+        // The read above and this consume are synchronous. Refund defensively if
+        // malformed external state ever makes the quota change between them.
+        if (!this.game.saveSystem.consumeGamblePlay()) {
+            this.game.saveSystem.addCoins(stake);
+            this.game._setToast('Wager window changed — stake refunded');
+            return;
+        }
         this.mines = {
-            bet, mineSet: rollMines(), revealed: [], safeRevealed: 0, mul: 1,
+            bet: stake, mineSet: rollMines(), revealed: [], safeRevealed: 0, mul: 1,
             stopped: false, busted: false, cashed: false, result: null, age: 0,
             // Overhaul juice (all keyed off this._menuClock):
             revealTimes: {}, // idx → clock stamp (per-tile reveal pop)
@@ -140,7 +151,7 @@ export class MinigameOverlay {
     // Reveal one tile. Safe → ratchet the multiplier; mine → bust + lose stake.
     minesReveal(i) {
         const m = this.mines;
-        if (!m || m.stopped || i == null || i < 0 || i >= MINES.tiles || m.revealed.includes(i)) return;
+        if (!m || m.stopped || !Number.isInteger(i) || i < 0 || i >= MINES.tiles || m.revealed.includes(i)) return;
         m.revealed.push(i);
         if (m.mineSet.includes(i)) {
             m.busted = true; m.stopped = true;
@@ -151,7 +162,7 @@ export class MinigameOverlay {
         }
         const prevMul = m.mul;
         m.safeRevealed += 1;
-        m.mul = minesRawMultiplier(m.safeRevealed) * MINES_HOUSE;
+        m.mul = minesPayoutQuote(m.bet, m.safeRevealed).multiplier;
         m.mulPrev = prevMul; m.mulPopT = this._menuClock; m.revealTimes[i] = this._menuClock;
         this.game.audio.spinTick();
         // Cleared every safe tile → auto cash-out at the max multiplier.
@@ -163,8 +174,10 @@ export class MinigameOverlay {
         const m = this.mines;
         if (!m || m.stopped || m.safeRevealed <= 0) return;
         m.stopped = true; m.cashed = true; m.stopFxT = this._menuClock;
-        const payout = Math.floor(m.bet * m.mul);
-        m.result = { mul: m.mul, payout, net: payout - m.bet };
+        const quote = minesPayoutQuote(m.bet, m.safeRevealed);
+        const payout = quote.payout;
+        m.mul = quote.multiplier;
+        m.result = { mul: quote.multiplier, payout, net: quote.net };
         if (payout > 0) this.game.saveSystem.addCoins(payout);
         this.game.audio.reveal(m.mul >= 8 ? 'mythic' : m.mul >= 4 ? 'legendary' : m.mul >= 2 ? 'epic' : 'rare');
     }
@@ -177,10 +190,10 @@ export class MinigameOverlay {
     // so the geometry stays in lock-step.
     minesTileRects() {
         const cols = MINES.cols, rows = Math.ceil(MINES.tiles / cols);
-        const cell = 112, gap = 12;
+        const cell = 104, gap = 10;
         const gw = cols * cell + (cols - 1) * gap;
         const ox = INTERNAL_WIDTH / 2 - gw / 2;
-        const oy = 314;   // leaves a header band (118..300) for the multiplier
+        const oy = 342;   // leaves two honest quote lines under the multiplier
         const rects = [];
         for (let i = 0; i < MINES.tiles; i++) {
             const c = i % cols, r = Math.floor(i / cols);
@@ -190,7 +203,7 @@ export class MinigameOverlay {
     }
 
     minesCashRect() {
-        return { x: INTERNAL_WIDTH / 2 - 220, y: 942, w: 440, h: 76 };
+        return { x: INTERNAL_WIDTH / 2 - 220, y: 920, w: 440, h: 70 };
     }
 
     // ── Mines overhaul helpers (local "ember forge" primitives — deliberately
@@ -261,14 +274,13 @@ export class MinigameOverlay {
         // PASS 3 — vault panel around the whole cluster.
         const rects = this.minesTileRects();
         const cb = this.minesCashRect();
-        const gx = rects[0].x, gw = (rects[24].x + rects[24].w) - rects[0].x;
-        const px = gx - 48, pw = gw + 96, py = 118, ph = (cb.y + cb.h + 46) - py;
+        const px = cx - 490, pw = 980, py = 118, ph = (cb.y + cb.h + 46) - py;
         this._mPanel(ctx, px, py, pw, ph, { corners: true, stroke: 'rgba(255,180,120,0.12)' });
 
         // PASS 4 — kicker + big live multiplier (colour + glow escalate with mul).
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.font = `700 24px ${FONT}`;
-        this._mText(ctx, 'EMBER VAULT', cx, py + 40, 'rgba(255,180,120,0.8)');
+        this._mText(ctx, 'EMBER VAULT  ·  COIN-ONLY  ·  ABOUT 7% HOUSE EDGE', cx, py + 40, 'rgba(255,180,120,0.8)');
         const mul = m.mul;
         const tier = mul < 2 ? { c: '#ff8a3a', g: '#ff7a1e', a: 0.28 }
             : mul < 4 ? { c: '#ffb257', g: '#ff8a3a', a: 0.34 }
@@ -283,10 +295,26 @@ export class MinigameOverlay {
         ctx.font = `800 ${Math.round(74 * pop)}px ${MONO}`;
         this._mText(ctx, `${mul.toFixed(2)}×`, cx, my, tier.c);
         ctx.textBaseline = 'alphabetic';
-        ctx.font = `600 24px ${FONT}`;
-        const potential = Math.floor(m.bet * m.mul);
-        this._mText(ctx, m.safeRevealed > 0 ? `BET ◎ ${m.bet}    ·    CASH ◎ ${potential}` : `BET ◎ ${m.bet}    ·    reveal a tile to begin`,
-            cx, my + 62, 'rgba(255,255,255,0.75)');
+        const quote = minesPayoutQuote(m.bet, m.safeRevealed);
+        const potential = quote.payout;
+        ctx.font = `700 21px ${FONT}`;
+        const net = quote.net >= 0 ? `+${quote.net}` : `${quote.net}`;
+        const balanceLine = m.busted
+            ? `STAKE LOST ◎ ${m.bet}   ·   ${m.safeRevealed} SAFE BEFORE THE MINE`
+            : m.cashed
+                ? `FINAL CASHOUT ◎ ${m.result.payout}   ·   NET ${m.result.net >= 0 ? '+' : ''}${m.result.net}`
+                : m.safeRevealed > 0
+                    ? `CASHOUT ◎ ${potential}   ·   NET ${net}   ·   MAX LOSS ◎ ${m.bet}`
+                    : `STAKE ◎ ${m.bet}   ·   MAX LOSS ◎ ${m.bet}   ·   CASHOUT UNLOCKS AFTER 1 SAFE`;
+        this._mText(ctx, balanceLine, cx, my + 55, 'rgba(255,255,255,0.78)');
+        if (!m.stopped && quote.odds.available) {
+            const safePct = (quote.odds.safeChance * 100).toFixed(1);
+            const minePct = (quote.odds.mineChance * 100).toFixed(1);
+            ctx.font = `700 19px ${MONO}`;
+            this._mText(ctx,
+                `NEXT: ${safePct}% SAFE  ·  ${minePct}% MINE  ·  SAFE → ${quote.nextMultiplier.toFixed(2)}× / ◎ ${quote.nextPayout}`,
+                cx, my + 84, '#ffd49a');
+        }
 
         // PASS 5 — board tiles.
         for (let i = 0; i < rects.length; i++) {

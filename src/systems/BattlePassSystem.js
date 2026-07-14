@@ -24,6 +24,10 @@ export const RUN_XP_RULES = Object.freeze({
     chest: 18,
     wave: 16,
     objective: 25,
+    vigilSite: 12,
+    tacticalEncounter: 24,
+    guardianPack: 24,
+    fourfoldMastery: 36,
     clear: 140,
     bossRushClear: 160,
     deedsCap: 520,
@@ -35,38 +39,77 @@ function whole(value) {
 }
 
 export function runXpBreakdown(summary, options = {}) {
-    if (!summary) return { eligible: false, kindling: 0, endurance: 0, hunt: 0, deeds: 0, trials: 0, core: 0, bonusRate: 0, threat: 0, total: 0 };
+    if (!summary) return { eligible: false, kindling: 0, endurance: 0, hunt: 0, deeds: 0, livingVigil: 0, trials: 0, core: 0, bonusRate: 0, threat: 0, total: 0 };
     const time = Math.max(0, Number(summary.time) || 0);
     const kills = whole(summary.kills);
     const bosses = whole(summary.bossesDefeated);
     const chests = whole(summary.chestsOpened);
     const wave = Math.max(1, whole(summary.finalWave) || 1);
     const objectives = whole(summary.objectivesCompleted ?? summary.objectivesDone);
+    const vigilSites = whole(summary.vigilSitesActivated);
+    const siteKinds = whole(summary.vigilSiteKindsMastered);
+    const encounters = whole(summary.encountersCleared);
+    const guardianPacks = whole(summary.guardianPacksDefeated);
     const cleared = summary.cleared === true || summary.victory === true || bosses >= 3;
     const bossRushClear = summary.bossRushCleared === true;
     const eligible = time >= 30 || kills >= 25 || bosses > 0 || chests > 0 || wave > 1;
-    if (!eligible) return { eligible, kindling: 0, endurance: 0, hunt: 0, deeds: 0, trials: 0, core: 0, bonusRate: 0, threat: 0, total: 0 };
+    if (!eligible) return { eligible, kindling: 0, endurance: 0, hunt: 0, deeds: 0, livingVigil: 0, trials: 0, core: 0, bonusRate: 0, threat: 0, total: 0 };
 
     const kindling = RUN_XP_RULES.kindling;
     const endurance = Math.min(RUN_XP_RULES.enduranceCap, Math.floor(time * RUN_XP_RULES.endurancePerSecond));
     const hunt = Math.min(RUN_XP_RULES.huntCap, Math.floor(Math.sqrt(kills) * RUN_XP_RULES.huntSqrt));
-    const deeds = Math.min(RUN_XP_RULES.deedsCap,
+    const standardDeeds =
         bosses * RUN_XP_RULES.boss
         + chests * RUN_XP_RULES.chest
         + Math.max(0, wave - 1) * RUN_XP_RULES.wave
         + objectives * RUN_XP_RULES.objective
         + (cleared ? RUN_XP_RULES.clear : 0)
-        + (bossRushClear ? RUN_XP_RULES.bossRushClear : 0));
+        + (bossRushClear ? RUN_XP_RULES.bossRushClear : 0);
+    const livingVigilRaw = vigilSites * RUN_XP_RULES.vigilSite
+        + encounters * RUN_XP_RULES.tacticalEncounter
+        + guardianPacks * RUN_XP_RULES.guardianPack
+        + (siteKinds >= 4 ? RUN_XP_RULES.fourfoldMastery : 0);
+    const deedsWithoutVigil = Math.min(RUN_XP_RULES.deedsCap, standardDeeds);
+    const deeds = Math.min(RUN_XP_RULES.deedsCap, standardDeeds + livingVigilRaw);
+    const livingVigil = deeds - deedsWithoutVigil;
     const trials = whole(summary.dailyVigilXp);
     const core = kindling + endurance + hunt + deeds;
     const bonusRate = Math.min(RUN_XP_RULES.bonusCap, Math.max(0, Number(options.bonus) || 0));
     const threat = Math.round(core * bonusRate);
-    return { eligible, kindling, endurance, hunt, deeds, trials, core, bonusRate, threat, total: core + trials + threat };
+    return { eligible, kindling, endurance, hunt, deeds, livingVigil, trials, core, bonusRate, threat, total: core + trials + threat };
 }
 
 // XP earned from one finished run (compatibility helper used by tests/tools).
 export function runXp(summary, options = {}) {
     return runXpBreakdown(summary, options).total;
+}
+
+// Normalize the player-facing receipt into additive XP buckets. Waylight is a
+// disclosed slice of Deeds, never a fifth plus-sign bucket; this structure lets
+// every renderer show that relationship without visually double-counting it.
+export function battlePassRunReceipt(result) {
+    const breakdown = result?.breakdown;
+    if (!breakdown) return null;
+    const kindling = whole(breakdown.kindling);
+    const endurance = whole(breakdown.endurance);
+    const hunt = whole(breakdown.hunt);
+    const deeds = whole(breakdown.deeds);
+    const trials = whole(breakdown.trials);
+    const threat = whole(breakdown.threat);
+    const gained = whole(result.gained ?? breakdown.total);
+    const additiveTotal = kindling + endurance + hunt + deeds + trials + threat;
+    return {
+        gained,
+        additiveTotal,
+        reconciles: gained === additiveTotal,
+        kindling,
+        endurance,
+        hunt,
+        deeds,
+        trials,
+        threat,
+        waylightWithinDeeds: Math.min(deeds, whole(breakdown.livingVigil)),
+    };
 }
 
 // Fold a run into the battle-pass track. Returns a summary of the gain.

@@ -22,6 +22,8 @@ import {
     BLINK,
     LIGHT_COLORS,
     EMBERGLASS,
+    ENEMY,
+    WAVE_LIMITS,
 } from '../config/GameConfig.js';
 import { clamp, compactInPlace } from './MathUtils.js';
 import { Player } from '../entities/Player.js';
@@ -31,6 +33,7 @@ import { Chest } from '../entities/Chest.js';
 import { Shrine } from '../entities/Shrine.js';
 import { Coin } from '../entities/Coin.js';
 import { DamageNumber } from '../entities/DamageNumber.js';
+import { retireEncounterEnemyTags } from '../systems/EncounterDirector.js';
 import { AUTO_AIM_RANGE } from '../systems/WeaponSystem.js';
 import { HazardSystem } from '../systems/HazardSystem.js';
 import { nextMusicState } from '../systems/MusicDirector.js';
@@ -242,6 +245,13 @@ export const GameUpdateMethods = {
         // A scheduled boss first opens a WARNING window (BOSS INCOMING) so the
         // player can reposition; it actually spawns when the warning expires.
         const bossAlive = this.enemies.some((e) => e.active && e.boss);
+        const siteChallengeActive = !!this.vigilSiteSystem?.hasActiveChallenge?.();
+        const encounterPhase = this.encounterDirector?.getSnapshot?.().phase;
+        // Combat resolution runs after directors, so a guardian killed on the
+        // prior frame may be waiting in this queue. Give that earned lifecycle
+        // one frame to clear/pay before a due boss can abort the active pack.
+        const pendingEncounterLifecycle = encounterPhase === 'active'
+            && (this._encounterDefeatedIds?.length ?? 0) > 0;
         if (this.bossRush) {
             // Boss Rush drives its own cadence: when the prep phase elapses it
             // asks for the next boss's warning, which the shared warning→spawn
@@ -252,7 +262,7 @@ export const GameUpdateMethods = {
                 const act = this.bossRush.update(dt);
                 if (act && act.spawn) this._startBossWarning(act.spawn);
             }
-        } else if (!bossAlive && !this.bossWarning) {
+        } else if (!bossAlive && !this.bossWarning && !siteChallengeActive && !pendingEncounterLifecycle) {
             const bossId = this.bossDirector.update(this.time, bossAlive);
             if (bossId) this._startBossWarning(bossId);
         }
@@ -264,19 +274,24 @@ export const GameUpdateMethods = {
                 this._spawnBoss(id);
             }
         }
+        const bossActiveForLieutenant = !!this.bossWarning || !!this.arena
+            || this.enemies.some((e) => e.active && e.boss);
         // Lieutenant: one mid-segment mini-boss per boss window. Gated on NO boss
         // incoming/alive AND no live lieutenant so it never overlaps the boss
         // setpiece; the swarm keeps running (unlike a boss). A short telegraph
         // precedes the spawn. `bossAlive` is reused from the boss gate above.
-        const lieutenantAlive = this.enemies.some((e) => e.active && e.lieutenant);
-        if (!this.bossRush && !bossAlive && !this.bossWarning && !this.lieutenantWarning && !lieutenantAlive) {
+        let lieutenantAlive = this.enemies.some((e) => e.active && e.lieutenant);
+        const authoredChallengeActive = siteChallengeActive
+            || (!!encounterPhase && encounterPhase !== 'idle');
+        if (!this.bossRush && !bossActiveForLieutenant && !this.lieutenantWarning
+            && !lieutenantAlive && !authoredChallengeActive) {
             if (this.lieutenantDirector.update(this.time)) this._startLieutenantWarning();
         }
         if (this.lieutenantWarning) {
             // If a boss window opened during the telegraph (a late boss kill can
             // push the next boss warning into it), cancel the Lieutenant so it
             // never spawns into the boss setpiece — it re-arms next segment.
-            if (bossAlive || this.bossWarning) {
+            if (bossActiveForLieutenant) {
                 this.lieutenantWarning = null;
             } else {
                 this.lieutenantWarning.timer -= dt;
@@ -287,6 +302,10 @@ export const GameUpdateMethods = {
                 }
             }
         }
+        // A warning can expire and spawn on this frame. Re-scan before handing
+        // stage ownership to EncounterDirector so it cannot also advance a pack
+        // from the stale pre-warning snapshot.
+        lieutenantAlive = this.enemies.some((e) => e.active && e.lieutenant);
         // Drain any queued boss summon requests into themed, capped spawns.
         if (this.bossSummons.length) {
             for (const s of this.bossSummons) {
@@ -296,6 +315,295 @@ export const GameUpdateMethods = {
         }
         // Boss HP-threshold phases (75/50/25%) — one-shot support + aggression.
         this._updateBossThresholds();
+        const bossActiveNow = !!this.arena || this.enemies.some((e) => e.active && e.boss);
+        this._updateEncounterDirector(dt, bossActiveNow, lieutenantAlive);
+    },
+
+    // Curated tactical packs run beside the time-based spawner, but only when
+    // no boss, lieutenant, modal, or site guardian challenge owns the stage.
+    _updateEncounterDirector(dt, bossActive = false, lieutenantActive = false) {
+        const director = this.encounterDirector;
+        if (!director) return;
+        const defeated = this._encounterDefeatedIds.splice(0);
+        const output = director.update(dt, {
+            gameTime: this.time,
+            waveState: this.waveState,
+            liveEnemyCount: this.enemies.reduce((n, enemy) => n + (enemy.active ? 1 : 0), 0),
+            enemyCap: this.waveState?.maxAlive,
+            bossActive,
+            bossWarning: !!this.bossWarning,
+            overlayActive: lieutenantActive || !!this.lieutenantWarning
+                || !!this.vigilSiteSystem?.hasActiveChallenge?.(),
+            defeatedMemberIds: defeated,
+        });
+        this._applyEncounterOutput(output);
+    },
+
+    _applyEncounterOutput(output) {
+        if (!output) return;
+        for (const event of output.events || []) this._handleEncounterEvent(event);
+        for (const request of output.spawnRequests || []) {
+            const acceptedMemberIds = this._spawnEncounterPack(request);
+            // Acknowledge synchronously: accepted ids already reference live,
+            // tagged enemies, so no impossible pending pack survives a frame.
+            const follow = this.encounterDirector?.update?.(0, {
+                gameTime: this.time,
+                spawnResults: [{ packId: request.packId, acceptedMemberIds }],
+                bossActive: !!this.arena,
+                bossWarning: !!this.bossWarning,
+                overlayActive: !!this.vigilSiteSystem?.hasActiveChallenge?.(),
+            });
+            for (const event of follow?.events || []) this._handleEncounterEvent(event);
+        }
+    },
+
+    _spawnEncounterPack(request) {
+        if (!request || !Array.isArray(request.units)) return [];
+        let live = this.enemies.reduce((n, enemy) => n + (enemy.active ? 1 : 0), 0);
+        const cap = Math.min(
+            WAVE_LIMITS.maxEnemyCap,
+            Math.max(0, Math.floor(this.waveState?.maxAlive ?? WAVE_LIMITS.maxEnemyCap)),
+            Math.max(0, Math.floor(request.enemyCapAtIssue ?? WAVE_LIMITS.maxEnemyCap)),
+        );
+        const angle = Number.isFinite(request.anchor?.angle) ? request.anchor.angle : 0;
+        const distance = Math.max(500, Number.isFinite(request.anchor?.distance) ? request.anchor.distance : 1000);
+        const rotation = Number.isFinite(request.anchor?.rotation) ? request.anchor.rotation : angle - Math.PI / 2;
+        const anchorX = this.player.x + Math.cos(angle) * distance;
+        const anchorY = this.player.y + Math.sin(angle) * distance;
+        const cos = Math.cos(rotation), sin = Math.sin(rotation);
+        const placed = [];
+        const accepted = [];
+        for (let index = 0; index < request.units.length && live < cap; index++) {
+            const unit = request.units[index];
+            const def = ENEMY[unit?.type];
+            if (!def || def.boss || typeof unit.memberId !== 'string') continue;
+            const radius = Math.max(8, def.radius ?? 30);
+            const ox = Number.isFinite(unit.offset?.x) ? unit.offset.x : 0;
+            const oy = Number.isFinite(unit.offset?.y) ? unit.offset.y : 0;
+            const targetX = anchorX + ox * cos - oy * sin;
+            const targetY = anchorY + ox * sin + oy * cos;
+            let spot = null;
+            const attempts = Math.max(1, Math.min(8, Math.floor(request.placementAttemptsPerUnit ?? 6)));
+            for (let attempt = 0; attempt < attempts; attempt++) {
+                const spread = attempt === 0 ? 0 : (radius + 46) * attempt;
+                const bearing = index * 2.399963 + attempt * 1.618034;
+                const candidate = this._clearSpot(
+                    targetX + Math.cos(bearing) * spread,
+                    targetY + Math.sin(bearing) * spread,
+                    radius + 8,
+                );
+                if (this.obstacleSystem.isBlocked(candidate.x, candidate.y, radius + 6)) continue;
+                const pdx = candidate.x - this.player.x, pdy = candidate.y - this.player.y;
+                if (pdx * pdx + pdy * pdy < 360 * 360) continue;
+                let overlaps = false;
+                for (const prior of placed) {
+                    const dx = candidate.x - prior.x, dy = candidate.y - prior.y;
+                    const min = radius + prior.radius + 12;
+                    if (dx * dx + dy * dy < min * min) { overlaps = true; break; }
+                }
+                if (!overlaps) { spot = candidate; break; }
+            }
+            if (!spot) continue;
+            const enemy = new Enemy(unit.type, spot.x, spot.y, {
+                healthMul: this.waveState.healthMul,
+                speedMul: this.waveState.speedMul,
+                contactDamageMul: this.waveState.damageMul ?? 1,
+                elite: false,
+            });
+            enemy.encounterMemberId = unit.memberId;
+            enemy.encounterPackId = request.packId;
+            enemy.encounterGuardian = unit.guardian === true;
+            enemy.encounterName = request.name;
+            this.enemies.push(enemy);
+            placed.push({ x: spot.x, y: spot.y, radius });
+            accepted.push(unit.memberId);
+            live++;
+            this.waveDirector.notifySpawn?.(1);
+        }
+        return accepted;
+    },
+
+    _handleEncounterEvent(event) {
+        if (!event) return;
+        this.vigilTracker?.ingest?.(event);
+        if (event.type === 'encounter-warning') {
+            this.waveDirector.announce(event.title.toUpperCase(), event.duration ?? 2.8, event.color ?? '#ffd166');
+            this.audio.lieutenantWarn();
+            return;
+        }
+        if (event.type === 'encounter-spawned') {
+            this.waveDirector.announce(`${event.title.toUpperCase()} FORMED`, 1.8, event.color ?? '#ffd166');
+            return;
+        }
+        if (event.type === 'encounter-aborted') {
+            // Placement may have produced a sub-minimum fragment. It remains
+            // ordinary swarm pressure, but loses guardian markers and reward
+            // lifecycle so a one-body fragment cannot pay the full pack prize.
+            retireEncounterEnemyTags(this.enemies, event.packId);
+            return;
+        }
+        if (event.type !== 'encounter-cleared') return;
+        this.encountersCleared += 1;
+        this.vigilTracker?.setProgress?.({
+            activatedSiteKinds: this._vigilKindsActivated,
+            encountersCleared: this.encountersCleared,
+        });
+        const pos = this._encounterRewardPos || { x: this.player.x, y: this.player.y };
+        this._grantVigilXp(24, pos.x, pos.y);
+        this._dropCoinBurst(pos.x, pos.y, 5, 3);
+        this._spawnRing(pos.x, pos.y, { maxR: 220, width: 9, life: 0.55, color: event.color ?? '#ffd166' });
+        this.particles.pickupSparkle(pos.x, pos.y, event.color ?? '#ffd166');
+        this.audio.objective();
+        this.waveDirector.announce(`${event.title.toUpperCase()}  +24 XP · 15 COINS DROPPED`, 2.4, event.color ?? '#ffd166');
+        this._encounterRewardPos = null;
+    },
+
+    _updateVigilSites(dt) {
+        const sites = this.vigilSiteSystem;
+        if (!sites) return;
+        sites.update(dt, this);
+        const events = sites.drainEvents([]);
+        for (const event of events) this._handleVigilSiteEvent(event);
+        this.vigilTracker?.update?.(dt, {
+            siteFocus: sites.getFocusSnapshot?.() ?? null,
+            reducedEffects: this.reducedEffects,
+            frozen: false,
+        });
+    },
+
+    // Living Vigil rewards are already earned when their clear/interaction
+    // event fires, so grant their XP immediately through Player.gainXP instead
+    // of dropping a pickup the player could reasonably mistake for an unpaid
+    // reward. Queue level drafts through the same pending counter as gem XP.
+    _grantVigilXp(value, x = this.player.x, y = this.player.y) {
+        const amount = Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
+        if (amount <= 0) return 0;
+        const levels = this.player.gainXP(amount);
+        if (levels > 0) {
+            this.pendingLevelUps += levels;
+            this._pushFeedback('levelup', 0.5);
+            this.audio.levelUp();
+            this._hitStop(0.07);
+            this.particles.levelUpBurst(this.player.x, this.player.y);
+            this._spawnRing(x, y, {
+                maxR: 200, width: 9, life: 0.6, color: '#8fe1ff', ease: 'outCubic',
+            });
+        }
+        return amount;
+    },
+
+    _handleVigilSiteEvent(event) {
+        if (!event) return;
+        if (event.kind === 'spawn') {
+            const spawned = this._spawnVigilGuardians(event);
+            const acknowledged = this.vigilSiteSystem?.acknowledgeGuardianSpawn?.(event.siteId, spawned);
+            if (acknowledged) {
+                // The Beacon becomes visible progress only after at least one
+                // guardian exists. A cap/placement rejection instead feeds its
+                // status event below, without a false 1/4 tracker celebration.
+                this.vigilTracker?.ingest?.(event);
+                this._recordVigilSiteActivation(event);
+                this.waveDirector.announce('GLOAM BEACON — GUARDIANS AWAKEN', 2.4, '#ff6a78');
+                this.audio.lieutenantWarn();
+            }
+            // A rejected acknowledgement emits a status event immediately.
+            for (const follow of this.vigilSiteSystem?.drainEvents?.([]) || []) {
+                this._handleVigilSiteEvent(follow);
+            }
+            return;
+        }
+        this.vigilTracker?.ingest?.(event);
+        if (event.kind === 'status') {
+            if (event.reason === 'spawn-deferred') {
+                this.waveDirector.announce('GLOAM BEACON — CLEAR SPACE AND TRY AGAIN', 2.0, '#d8b16b');
+            } else if (event.reason !== 'boss-conflict') {
+                this.waveDirector.announce('WAYLIGHT FADES — THE SITE IS SPENT', 2.0, '#a9a1b5');
+            }
+            return;
+        }
+        if (event.kind !== 'reward' || !event.reward) return;
+        this._recordVigilSiteActivation(event);
+        const reward = event.reward;
+        let receipt = '';
+        if (reward.type === 'heal') {
+            const before = this.player.hp;
+            this.player.hp = Math.min(this.player.maxHp, this.player.hp + Math.max(0, reward.amount || 0));
+            const gained = Math.max(0, Math.round(this.player.hp - before));
+            if (gained > 0) {
+                this.damageNumbers.push(new DamageNumber(this.player.x, this.player.y - this.player.radius, gained, '#6bff8a'));
+                this._pushFeedback('heal', 0.3);
+            }
+            receipt = `+${gained} HP`;
+        } else if (reward.type === 'xp') {
+            const amount = Math.max(0, Math.round(reward.amount || 0));
+            this._grantVigilXp(amount, event.x, event.y);
+            receipt = `${amount} XP`;
+        } else if (reward.type === 'coins') {
+            const amount = Math.max(0, Math.round(reward.amount || 0));
+            this.player.coins = (this.player.coins ?? 0) + amount;
+            this.damageNumbers.push(new DamageNumber(event.x, event.y - 36, amount, '#ffd166'));
+            receipt = `+${amount} COINS`;
+        } else if (reward.type === 'bundle') {
+            const coins = Math.max(0, Math.round(reward.coins || 0));
+            const xp = Math.max(0, Math.round(reward.xp || 0));
+            this.player.coins = (this.player.coins ?? 0) + coins;
+            this._grantVigilXp(xp, event.x, event.y);
+            this.guardianPacksDefeated += 1;
+            receipt = `${coins} COINS + ${xp} XP`;
+        }
+        this.particles.pickupSparkle(event.x, event.y, event.color ?? '#ffd166');
+        this._spawnRing(event.x, event.y, { maxR: 180, width: 8, life: 0.5, color: event.color ?? '#ffd166' });
+        this.audio.shrineChime();
+        this.waveDirector.announce(`${String(event.label || 'WAYLIGHT').toUpperCase()} — ${receipt}`, 2.5, event.color ?? '#ffd166');
+    },
+
+    _recordVigilSiteActivation(event) {
+        if (!event?.siteId || this._activatedVigilSiteIds.has(event.siteId)) return false;
+        this._activatedVigilSiteIds.add(event.siteId);
+        this.vigilSitesActivated += 1;
+        if (event.archetype) this._vigilKindsActivated.add(event.archetype);
+        this.vigilTracker?.setProgress?.({
+            activatedSiteKinds: this._vigilKindsActivated,
+            encountersCleared: this.encountersCleared,
+        });
+        return true;
+    },
+
+    _spawnVigilGuardians(event) {
+        if (!Array.isArray(event.spawns)) return [];
+        const live = this.enemies.reduce((n, enemy) => n + (enemy.active ? 1 : 0), 0);
+        const cap = Math.min(WAVE_LIMITS.maxEnemyCap, Math.max(0, Math.floor(this.waveState?.maxAlive ?? WAVE_LIMITS.maxEnemyCap)));
+        const limit = Math.max(0, Math.floor(event.maxAlive ?? 3));
+        const requests = event.spawns.slice(0, limit);
+        // Beacon rewards are authored for one complete pack. Capacity pressure
+        // keeps the landmark retryable; it never creates a smaller, full-paying
+        // encounter or consumes the site with zero guardians.
+        if (!requests.length || cap - live < requests.length) return [];
+        const placements = [];
+        for (const request of requests) {
+            const def = ENEMY[request?.type];
+            if (!def || def.boss) return [];
+            const radius = Math.max(8, def.radius ?? 30);
+            const spot = this._clearSpot(request.x, request.y, Math.max(radius + 8, request.clearance ?? 0));
+            if (this.obstacleSystem.isBlocked(spot.x, spot.y, radius + 6)) return [];
+            placements.push({ request, def, radius, spot });
+        }
+        const spawned = [];
+        for (const { request, spot } of placements) {
+            const enemy = new Enemy(request.type, spot.x, spot.y, {
+                healthMul: this.waveState.healthMul,
+                speedMul: this.waveState.speedMul,
+                contactDamageMul: this.waveState.damageMul ?? 1,
+                elite: false,
+            });
+            enemy.vigilSiteId = event.siteId;
+            enemy.vigilGuardian = true;
+            enemy.encounterGuardian = true;
+            this.enemies.push(enemy);
+            spawned.push(enemy);
+            this.waveDirector.notifySpawn?.(1);
+        }
+        return spawned;
     },
 
     // Player movement/caps/aura, the trash-spawner gate, and weapon fire.
@@ -339,6 +647,7 @@ export const GameUpdateMethods = {
         }
         // Boss arena: confine the player inside the ring (can't flee the fight).
         if (this.arena) this._confineToArena(this.player, this.player.radius);
+        this._updateVigilSites(dt);
         // Boss = main event: while a boss is incoming or alive, halt the normal
         // trash spawner so the fight is the player vs. the boss (and only the
         // boss's own themed adds), not a swarm. Normal spawns resume once the
@@ -449,6 +758,10 @@ export const GameUpdateMethods = {
                     // the normal pipeline via _selfDetonated instead of
                     // leaking the rewards its elite roll promised.
                     e.active = false;
+                    if (e.encounterMemberId) {
+                        this._encounterDefeatedIds.push(e.encounterMemberId);
+                        if (e.encounterGuardian) this._encounterRewardPos = { x: e.x, y: e.y };
+                    }
                     if (e.elite) this._selfDetonated.push(e);
                     else this.particles.deathBurst(e.x, e.y, '#ff9a4a');
                     if (this._inView(e.x, e.y, 120)) this.audio.volatileBoom();

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TOUR_STEPS } from '../src/content/tutorialTour.js';
-import { MENU_TABS } from '../src/systems/MenuRenderer.js';
+import { MENU_TABS, completedDailyCount } from '../src/systems/MenuRenderer.js';
 import {
     GameInputActionMethods,
     PAUSE_EXIT_CONFIRM_MS,
@@ -40,7 +40,20 @@ for (const step of TOUR_STEPS) {
 }
 ok(tourTabs.has('modes') && tourTabs.has('boutique'), 'Modes and Boutique need explicit lessons');
 
-// Fresh saves must see HOME before they choose to launch their guided run.
+// A selector change deployed mid-day can leave old ids in the save. Only
+// challenges present in the active deterministic set count toward menu badges.
+const activeDaily = [{ id: 'kills_today' }, { id: 'boss_today' }, { id: 'time_today' }];
+ok(completedDailyCount({ day: 42, completed: ['kills_today', 'retired_id'] }, 42, activeDaily) === 1,
+    'stale same-day challenge ids must not count as active completions');
+ok(completedDailyCount({ day: 41, completed: ['kills_today'] }, 42, activeDaily) === 0,
+    'prior-day completions must not count');
+ok(completedDailyCount({ day: 42, completed: ['kills_today', 'boss_today', 'time_today'] }, 42, activeDaily) === 3,
+    'all active daily ids count exactly once');
+ok(completedDailyCount({ day: 42, completed: ['kills_today', 'kills_today'] }, 42, activeDaily) === 1,
+    'duplicate stored ids cannot inflate completion');
+
+// Fresh saves must see HOME before they choose to launch their guided run, and
+// HOME must define the game's lore terms in plain first-player language.
 const gameSource = fs.readFileSync(path.join(ROOT, 'src/core/Game.js'), 'utf8');
 const bootStart = gameSource.indexOf('// First contact belongs to the player');
 const bootEnd = gameSource.indexOf('this._updateJoystickEnabled();', bootStart);
@@ -49,7 +62,11 @@ ok(bootStart >= 0 && bootEnd > bootStart, 'fresh-save boot contract block is dis
 ok(!bootBlock.includes('this._startRun()'), 'fresh-save boot must not auto-launch gameplay');
 ok(bootBlock.includes('stats?.runs ?? 0) > 0'), 'only veteran saves may auto-resume the menu tour');
 const menuSource = fs.readFileSync(path.join(ROOT, 'src/systems/MenuRenderer.js'), 'utf8');
-ok(menuSource.includes('FIRST VIGIL · GUIDED'), 'fresh-save menu needs the guided first-vigil treatment');
+ok(menuSource.includes('START FIRST RUN'), 'fresh-save menu needs a plain-language start action');
+ok(menuSource.includes('A Vigil is a survival run'), 'HOME must explain Vigil before using it as a game term');
+for (const label of ["'MAP'", "'WEAPON'", "'DIFFICULTY'", "'SELECTED HERO'"]) {
+    ok(menuSource.includes(label), `HOME needs the clear ${label.replaceAll("'", '')} label`);
+}
 ok(gameSource.includes("this.menuTab === 'home'") && gameSource.includes("this.menuTab = 'play'"),
     'keyboard activation on fresh HOME must open guided setup before launch');
 

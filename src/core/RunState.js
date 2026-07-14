@@ -218,6 +218,18 @@ export const RunStateMethods = {
         // summary). Repeatable each run.
         this._objDone = new Set();
         this._objCompleted = [];
+        // LIVING VIGIL exploration + encounter mastery. The content systems
+        // increment these run counters; run-end summaries bank them once.
+        this.vigilSitesActivated = 0;
+        this._vigilKindsActivated = new Set();
+        this._activatedVigilSiteIds = new Set();
+        this.encountersCleared = 0;
+        this.guardianPacksDefeated = 0;
+        this.vigilSiteSystem = null;
+        this.encounterDirector = null;
+        this.vigilTracker = null;
+        this._encounterDefeatedIds = [];
+        this._encounterRewardPos = null;
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.gameOver = false;

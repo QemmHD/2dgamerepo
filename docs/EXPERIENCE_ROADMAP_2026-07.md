@@ -1,7 +1,7 @@
 # EMBERWAKE Experience Roadmap - July 2026
 
-The versioned release sequence that grows this audit into major 2.0, 3.0, and
-4.0 milestones lives in [`VERSION_ROADMAP_1_TO_4.md`](VERSION_ROADMAP_1_TO_4.md).
+The versioned release sequence that grows this audit through the 2.0–10.0
+milestones lives in [`VERSION_ROADMAP_1_TO_10.md`](VERSION_ROADMAP_1_TO_10.md).
 
 Status: code-grounded implementation baseline and update plan, 2026-07-13. It
 reconciles the current game with

@@ -61,11 +61,13 @@ for (const safeArea of safeAreas) {
                 loadoutCount: 15,
                 relicCount: 9,
                 abilityCount: 8,
+                hasVigil: true,
             });
 
             for (const key of [
                 'header', 'boss', 'lieutenant', 'bossRush', 'vitals',
                 'loadout', 'pause', 'combo', 'abilities', 'kindle',
+                'vigil',
             ]) {
                 ok(inside(hud[key], hud), `${name}: ${key} escapes the safe viewport`);
             }
@@ -81,6 +83,13 @@ for (const safeArea of safeAreas) {
             ok(!hudRectsOverlap(hud.boss, hud.loadout, 8), `${name}: boss plate overlaps loadout`);
             ok(!hudRectsOverlap(hud.vitals, hud.loadout, 8), `${name}: vitals overlap loadout`);
             ok(!hudRectsOverlap(hud.abilities, hud.kindle, 4), `${name}: abilities overlap Kindle meter`);
+            ok(!hudRectsOverlap(hud.vigil, hud.pause, 8), `${name}: Living Vigil overlaps pause`);
+            ok(!hudRectsOverlap(hud.vigil, hud.combo, 8), `${name}: Living Vigil overlaps combo`);
+            ok(!hudRectsOverlap(hud.vigil, hud.header, 8), `${name}: Living Vigil overlaps command rail`);
+            ok(!hudRectsOverlap(hud.vigil, hud.boss, 6), `${name}: Living Vigil overlaps boss plate`);
+            ok(!hudRectsOverlap(hud.vigil, hud.lieutenant, 6), `${name}: Living Vigil overlaps lieutenant`);
+            ok(!hudRectsOverlap(hud.vigil, hud.bossRush, 6), `${name}: Living Vigil overlaps boss-rush status`);
+            ok(!hudRectsOverlap(hud.vigil, hud.abilities, 6), `${name}: Living Vigil overlaps abilities`);
 
             // Touch removes Blink from the passive cooldown row because its
             // action-disc rim is already the meter; geometry must reflect it.
@@ -96,6 +105,8 @@ for (const safeArea of safeAreas) {
         }
     }
 }
+
+ok(!active(computeHUDLayout({ hasVigil: false }).vigil), 'disabled Living Vigil still allocates HUD space');
 
 if (failures) {
     console.error(`HUD layout validation failed: ${failures}/${checks} checks across ${scenarios} scenarios.`);

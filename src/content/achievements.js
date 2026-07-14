@@ -1,8 +1,8 @@
 // Lifetime achievement milestones — one-time, evaluated against save.stats at
-// the end of each run. Each grants a coin reward on first completion (kept to
-// coins so there's zero unlock-plumbing risk). Claimed ids persist in
-// save.achievements.claimed (added to the v5 schema). `check` receives the
-// stats object directly.
+// the end of each run. Each grants coins on first completion; some also serve
+// as permanent cosmetic unlock routes through matching `achievement` metadata
+// in cosmetics.js. Claimed ids persist in save.achievements.claimed (added to
+// the v5 schema). `check` receives the stats object directly.
 
 export const ACHIEVEMENTS = [
     { id: 'first_boss',   name: 'First Light',      desc: 'Defeat your first boss.',          coins: 50,  check: (s) => (s.totalBosses || 0) >= 1 },
@@ -26,6 +26,16 @@ export const ACHIEVEMENTS = [
     { id: 'playtime_1h',  name: 'Devoted',          desc: 'Play for 1 hour total.',           coins: 150, check: (s) => (s.playtimeSec || 0) >= 3600 },
     { id: 'nightmare_10', name: 'Dread Reaper',     desc: 'Fell 10 bosses on Nightmare.',     coins: 350, check: (s) => (s.eliteBossesDefeated || 0) >= 10 },
     { id: 'wave_master',  name: 'Wavebreaker',      desc: 'Reach wave 6 in a run.',           coins: 120, check: (s) => (s.bestWave || 0) >= 6 },
+
+    // Waylight mastery uses lifetime additive counters. The first reward lands
+    // immediately, while the full Regalia remains a modest multi-run chase.
+    { id: 'waylight_first_site',   name: 'First Spark',       desc: 'Activate your first Waylight site.',                       coins: 40,  check: (s) => (s.vigilSitesActivated || 0) >= 1 },
+    { id: 'waylight_pathfinder',   name: 'Roadkindled',       desc: 'Activate 10 Waylight sites.',                              coins: 90,  check: (s) => (s.vigilSitesActivated || 0) >= 10 },
+    { id: 'waylight_cartographer', name: 'The Fourfold Way',  desc: 'Master all 4 kinds of Waylight site.',                     coins: 120, check: (s) => (s.vigilSiteKindsMastered || 0) >= 4 },
+    { id: 'waylight_encounters',   name: 'Hold the Crossing', desc: 'Break 8 roaming tactical formations.',                     coins: 140, check: (s) => (s.encountersCleared || 0) >= 8 },
+    { id: 'waylight_guardian',     name: 'Guardianbreaker',   desc: 'Defeat 6 Gloam Beacon guardian packs.',                    coins: 160, check: (s) => (s.guardianPacksDefeated || 0) >= 6 },
+    { id: 'waylight_warden',       name: 'Waylight Warden',   desc: 'Activate 30 sites, master all 4 kinds, clear 16 encounters, and defeat 10 guardian packs.', coins: 320,
+      check: (s) => (s.vigilSitesActivated || 0) >= 30 && (s.vigilSiteKindsMastered || 0) >= 4 && (s.encountersCleared || 0) >= 16 && (s.guardianPacksDefeated || 0) >= 10 },
 ];
 
 // Returns the achievement objects newly earned (passed-but-unclaimed). The

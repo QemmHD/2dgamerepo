@@ -72,6 +72,9 @@ import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
 import { HazardSystem } from '../systems/HazardSystem.js';
 import { MinigameOverlay } from '../systems/MinigameOverlay.js';
+import { VigilSiteSystem, livingVigilRunSeed } from '../systems/VigilSiteSystem.js';
+import { EncounterDirector, retireEncounterEnemyTags } from '../systems/EncounterDirector.js';
+import { VigilTracker } from '../systems/VigilTracker.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { getCardCompositor } from '../systems/CardCompositor.js';
@@ -902,6 +905,34 @@ export class Game {
         this._mapMix = biome.enemyMix ?? null;
         this._mapMixCache = {};
         this.biomeHazard = biome.hazard ? { kind: biome.hazard, timer: BIOME_HAZARD.firstDelay } : null;
+        // LIVING VIGIL: four deterministic house discoveries plus authored
+        // tactical formations. Standard boards rotate after recorded runs;
+        // Daily/Rite boards ignore account run history for a fair UTC-day setup.
+        const runSerial = Math.max(0, this.saveSystem.data.stats?.runs ?? 0);
+        const mapSerial = Math.max(0, MAP_ORDER.indexOf(biome.id)) + 1;
+        const heroSerial = Math.max(0, CHARACTER_IDS.indexOf(this._heroId)) + 1;
+        this._livingVigilSeed = livingVigilRunSeed({
+            day: currentDayNumber(),
+            runSerial,
+            mapSerial,
+            heroSerial,
+            dailyMode: this.dailyMode,
+            riteTrialMode: this.riteTrialMode,
+        });
+        if (!this._bossRushConfig) {
+            this.vigilSiteSystem = new VigilSiteSystem();
+            this.vigilSiteSystem.initialize(this.obstacleSystem, biome.id, { seed: this._livingVigilSeed });
+            this.encounterDirector = new EncounterDirector({
+                biomeId: biome.id,
+                seed: `${this._livingVigilSeed}:${biome.id}`,
+                startTime: this.time,
+            });
+            this.vigilTracker = new VigilTracker({ reducedEffects: this.reducedEffects });
+        } else {
+            this.vigilSiteSystem = null;
+            this.encounterDirector = null;
+            this.vigilTracker = null;
+        }
         // Crypts gloom pools: 0..1 player-light squeeze, eased by HazardSystem
         // each frame and read by the render pass's player light.
         this.gloomT = 0;
@@ -1291,6 +1322,10 @@ export class Game {
                 finalWaveName: this.waveState?.name ?? '',
                 chestsOpened: this.chestsOpened ?? 0,
                 objectivesCompleted: this._objDone?.size ?? 0,
+                vigilSitesActivated: this.vigilSitesActivated ?? 0,
+                vigilSiteKindsMastered: this._vigilKindsActivated?.size ?? 0,
+                encountersCleared: this.encountersCleared ?? 0,
+                guardianPacksDefeated: this.guardianPacksDefeated ?? 0,
                 cleared: true,
             };
             this.saveSystem.recordRun(this.runSummary);
@@ -1573,6 +1608,9 @@ export class Game {
             level: this.player.level,
             comboBest: this.comboBest,
             bosses: this.bossesDefeated,
+            sites: this.vigilSitesActivated ?? 0,
+            siteKinds: this._vigilKindsActivated?.size ?? 0,
+            encounters: this.encountersCleared ?? 0,
         };
         for (const o of OBJECTIVES) {
             if (this._objDone.has(o.id)) continue;
@@ -2223,6 +2261,13 @@ export class Game {
     _startBossWarning(id) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
+        // Apex choreography owns the field. Cancel any authored pack before
+        // the warning so the later trash banish never pays an unearned clear.
+        const canceledEncounter = this.encounterDirector?.cancel?.('boss-warning');
+        if (canceledEncounter) {
+            retireEncounterEnemyTags(this.enemies, canceledEncounter.packId);
+            this.vigilTracker?.ingest?.(canceledEncounter);
+        }
         this.bossWarning = { id, name: def.bossName ?? id, epithet: def.epithet ?? null, tier: def.tier ?? null, timer: BOSS.warningDuration, total: BOSS.warningDuration };
         // Select the encounter suite and decode its short voice cues during the
         // warning window, not on the first vulnerable frame of the fight.
@@ -2588,6 +2633,10 @@ export class Game {
             finalWaveName: this.waveState?.name ?? '',
             chestsOpened: this.chestsOpened ?? 0,
             objectivesCompleted: this._objDone?.size ?? 0,
+            vigilSitesActivated: this.vigilSitesActivated ?? 0,
+            vigilSiteKindsMastered: this._vigilKindsActivated?.size ?? 0,
+            encountersCleared: this.encountersCleared ?? 0,
+            guardianPacksDefeated: this.guardianPacksDefeated ?? 0,
             cleared: this.bossesDefeated >= 3 || this._gauntletActive === true,
             weapons: this.weaponSystem.snapshotForUI(),
             passives: this.passiveSystem.snapshotForUI(),

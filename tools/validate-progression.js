@@ -11,12 +11,16 @@ import {
     PASS_COSMETIC_MILESTONES, bpProgress, bpThreshold, bpXpForLevel,
     migrateBattlePassXpV1,
 } from '../src/content/battlePass.js';
-import { COSMETICS, COSMETIC_SETS } from '../src/content/cosmetics.js';
+import { ACHIEVEMENTS } from '../src/content/achievements.js';
+import {
+    COSMETICS, COSMETIC_CATEGORIES, COSMETIC_SETS, cosmeticsForAchievement,
+} from '../src/content/cosmetics.js';
 import { GEAR } from '../src/content/gear.js';
 import { PERMANENT_UPGRADES } from '../src/content/permanentUpgrades.js';
-import { DAILY_POOL, pickDailyChallenges } from '../src/content/dailyChallenges.js';
+import { DAILY_POOL, challengeProgress, pickDailyChallenges } from '../src/content/dailyChallenges.js';
+import { OBJECTIVES } from '../src/content/objectives.js';
 import {
-    awardRun, claim, claimAll, runXp, runXpBreakdown,
+    awardRun, battlePassRunReceipt, claim, claimAll, runXp, runXpBreakdown,
 } from '../src/systems/BattlePassSystem.js';
 import { openCase } from '../src/systems/CaseSystem.js';
 import { applyLoadout, resolveStartingWeapon } from '../src/systems/LoadoutSystem.js';
@@ -92,6 +96,80 @@ for (const [levelText, id] of Object.entries(PASS_COSMETIC_MILESTONES)) {
     check(Object.values(lastLight.pieces).includes(id), `${id} is absent from Last Light Regalia`);
 }
 
+// Content ids and dictionary keys are persistence contracts. Duplicate or
+// mismatched ids make old saves ambiguous, so validate them before route-level
+// progression checks.
+const cosmeticIds = [];
+for (const [key, item] of Object.entries(COSMETICS)) {
+    check(item.id === key, `cosmetic key ${key} does not match id ${item.id}`);
+    check(COSMETIC_CATEGORIES.includes(item.category), `${item.id} has unsupported category ${item.category}`);
+    cosmeticIds.push(item.id);
+}
+check(new Set(cosmeticIds).size === cosmeticIds.length, 'cosmetic ids are not unique');
+const achievementIds = ACHIEVEMENTS.map((achievement) => achievement.id);
+check(new Set(achievementIds).size === achievementIds.length, 'achievement ids are not unique');
+const cosmeticSetIds = COSMETIC_SETS.map((set) => set.id);
+check(new Set(cosmeticSetIds).size === cosmeticSetIds.length, 'cosmetic set ids are not unique');
+
+// Waylight Regalia is a permanent mastery collection. Every piece has one
+// named achievement source, never enters cases, and only uses effects already
+// implemented by the player cosmetic renderers.
+const waylight = COSMETIC_SETS.find((set) => set.id === 'waylight');
+check(!!waylight, 'Waylight Regalia set is missing');
+check(waylight.name === 'Waylight Regalia', 'Waylight Regalia has the wrong display name');
+const waylightRoutes = {
+    fur:   { id: 'fur_waylight',   achievement: 'waylight_pathfinder' },
+    cloak: { id: 'cloak_waylight', achievement: 'waylight_encounters' },
+    hat:   { id: 'hat_waylight',   achievement: 'waylight_cartographer' },
+    aura:  { id: 'aura_waylight',  achievement: 'waylight_warden' },
+    trail: { id: 'trail_waylight', achievement: 'waylight_guardian' },
+};
+check(Object.keys(waylight.pieces).length === COSMETIC_CATEGORIES.length, 'Waylight Regalia does not map exactly five categories');
+for (const category of COSMETIC_CATEGORIES) {
+    const route = waylightRoutes[category];
+    const item = COSMETICS[route.id];
+    check(!!item, `Waylight ${category} piece ${route.id} is missing`);
+    check(item.category === category, `${route.id} is assigned to ${item.category}, not ${category}`);
+    check(waylight.pieces[category] === route.id, `Waylight set maps the wrong ${category} piece`);
+    check(item.achievement === route.achievement, `${route.id} has the wrong achievement route`);
+    check(item.caseExcluded === true, `${route.id} can bypass mastery through cases`);
+    check(item.defaultUnlocked !== true && item.coinCost == null && item.passLevel == null, `${route.id} has a competing unlock route`);
+    check(achievementIds.includes(route.achievement), `${route.id} references missing achievement ${route.achievement}`);
+    const routedItems = cosmeticsForAchievement(route.achievement);
+    check(routedItems.length === 1 && routedItems[0] === route.id, `${route.achievement} does not unlock exactly ${route.id}`);
+}
+check(COSMETICS.hat_waylight.shape === 'halo', 'Wayfinder Halo uses an unsupported accessory shape');
+check(COSMETICS.aura_waylight.fx === 'spin', 'Beacon Orbit uses an unsupported aura effect');
+check(COSMETICS.trail_waylight.fx === 'stars', 'Starpath Trail uses an unsupported trail effect');
+
+const waylightAchievements = ACHIEVEMENTS.filter((achievement) => achievement.id.startsWith('waylight_'));
+check(waylightAchievements.length === 6, 'Waylight mastery must contain exactly six permanent achievements');
+for (const achievement of waylightAchievements) {
+    check(Number.isInteger(achievement.coins) && achievement.coins > 0, `${achievement.id} has an invalid coin reward`);
+    check(typeof achievement.check === 'function', `${achievement.id} has no progression check`);
+    check(!('expiresAt' in achievement) && !('season' in achievement), `${achievement.id} is not permanent`);
+}
+const waylightAchievement = (id) => {
+    const achievement = ACHIEVEMENTS.find((entry) => entry.id === id);
+    check(!!achievement, `Waylight achievement ${id} is missing`);
+    return achievement;
+};
+check(!waylightAchievement('waylight_first_site').check({}), 'First Spark unlocks without a site');
+check(waylightAchievement('waylight_first_site').check({ vigilSitesActivated: 1 }), 'First Spark misses its 1-site boundary');
+check(!waylightAchievement('waylight_pathfinder').check({ vigilSitesActivated: 9 }), 'Roadkindled unlocks before 10 sites');
+check(waylightAchievement('waylight_pathfinder').check({ vigilSitesActivated: 10 }), 'Roadkindled misses its 10-site boundary');
+check(!waylightAchievement('waylight_cartographer').check({ vigilSiteKindsMastered: 3 }), 'The Fourfold Way unlocks before all 4 kinds');
+check(waylightAchievement('waylight_cartographer').check({ vigilSiteKindsMastered: 4 }), 'The Fourfold Way misses its 4-kind boundary');
+check(!waylightAchievement('waylight_encounters').check({ encountersCleared: 7 }), 'Hold the Crossing unlocks before 8 encounters');
+check(waylightAchievement('waylight_encounters').check({ encountersCleared: 8 }), 'Hold the Crossing misses its 8-encounter boundary');
+check(!waylightAchievement('waylight_guardian').check({ guardianPacksDefeated: 5 }), 'Guardianbreaker unlocks before 6 packs');
+check(waylightAchievement('waylight_guardian').check({ guardianPacksDefeated: 6 }), 'Guardianbreaker misses its 6-pack boundary');
+const almostWarden = { vigilSitesActivated: 30, vigilSiteKindsMastered: 4, encountersCleared: 16, guardianPacksDefeated: 9 };
+check(!waylightAchievement('waylight_warden').check(almostWarden), 'Waylight Warden unlocks before every mastery goal');
+const wardenStats = { ...almostWarden, guardianPacksDefeated: 10 };
+check(waylightAchievement('waylight_warden').check(wardenStats), 'Waylight Warden misses its exact mastery boundary');
+check(waylightAchievements.every((achievement) => achievement.check(wardenStats)), 'full mastery does not imply every Waylight achievement');
+
 // XP is transparent, mode-safe and independent of run coins.
 const normalRun = { time: 600, kills: 900, bossesDefeated: 2, chestsOpened: 3, finalWave: 6, objectivesCompleted: 2 };
 const normal = runXpBreakdown(normalRun);
@@ -104,6 +182,23 @@ const withThreat = runXpBreakdown(normalRun, { bonus: 0.5 });
 check(withThreat.threat === Math.round(normal.core * 0.5), 'Threat bonus is not applied to core XP exactly once');
 const withDaily = runXpBreakdown({ ...normalRun, dailyVigilXp: 120 }, { bonus: 0.5 });
 check(withDaily.total - withThreat.total === 120, 'daily XP was multiplied or dropped');
+const livingVigilRun = runXpBreakdown({
+    ...normalRun,
+    vigilSitesActivated: 4,
+    vigilSiteKindsMastered: 4,
+    encountersCleared: 3,
+});
+check(livingVigilRun.deeds > normal.deeds, 'Living Vigil activity contributes no battle-pass XP');
+check(livingVigilRun.deeds - normal.deeds === 156,
+    'Living Vigil site/encounter XP does not match its disclosed rules');
+check(livingVigilRun.livingVigil === 156, 'Living Vigil XP receipt does not disclose the awarded amount');
+const guardianVigilRun = runXpBreakdown({
+    ...normalRun,
+    vigilSitesActivated: 1,
+    guardianPacksDefeated: 1,
+});
+check(guardianVigilRun.livingVigil === 36,
+    'a beacon activation plus its guardian clear does not award the disclosed 12 + 24 XP');
 
 // Award receipts must describe the state that was actually saved.
 const awardSave = {
@@ -114,6 +209,13 @@ const awardSave = {
 const award = awardRun(awardSave, normalRun, { bonus: 0.5 });
 check(award.levelAfter === bpProgress(awardSave.xp).level, 'award receipt level is stale');
 check(award.gained === award.breakdown.total, 'award receipt total does not match its buckets');
+const visibleAward = battlePassRunReceipt(award);
+check(visibleAward.reconciles && visibleAward.additiveTotal === visibleAward.gained,
+    'visible battle-pass additive buckets do not reconcile to the displayed total');
+const visibleWaylight = battlePassRunReceipt({ gained: livingVigilRun.total, breakdown: livingVigilRun });
+check(visibleWaylight.waylightWithinDeeds === livingVigilRun.livingVigil
+    && visibleWaylight.additiveTotal === visibleWaylight.gained,
+    'Waylight receipt is not represented as a disclosed slice within Deeds');
 
 // Claims reject malformed levels and Claim All preserves player-facing labels.
 function claimSave(xp) {
@@ -141,6 +243,25 @@ check(cacheResult.everflameCaches === 1, 'Everflame cache did not cross once');
 check(cacheResult.everflameCoins === BP_EVERFLAME_COINS && save.data.totalCoins === BP_EVERFLAME_COINS, 'Everflame cache payout is wrong');
 const veteran = save._validate({ battlePass: { xp: 2000, claimed: [10, 20, 30, 40, 50] } });
 for (const id of Object.values(PASS_COSMETIC_MILESTONES)) check(veteran.cosmetics.unlocked.includes(id), `veteran did not receive ${id}`);
+
+// Living Vigil save fields are additive, old-save safe, and banked exactly
+// once through the same run-summary seam as the other lifetime records.
+const legacyVigil = save._validate({ stats: { runs: 12, totalKills: 345 } });
+for (const key of ['vigilSitesActivated', 'vigilSiteKindsMastered', 'encountersCleared', 'guardianPacksDefeated']) {
+    check(legacyVigil.stats[key] === 0, `legacy save did not default ${key}`);
+}
+check(save._validate({ stats: { vigilSiteKindsMastered: 999 } }).stats.vigilSiteKindsMastered === 4,
+    'tampered site-kind mastery was not clamped during load');
+save.data = save._validate({ stats: {} });
+save.recordRun({ time: 80, vigilSitesActivated: 3, vigilSiteKindsMastered: 3, encountersCleared: 2, guardianPacksDefeated: 1 });
+save.recordRun({ time: 90, vigilSitesActivated: 2, vigilSiteKindsMastered: 99, encountersCleared: 4, guardianPacksDefeated: 2 });
+check(save.data.stats.vigilSitesActivated === 5, 'site activations did not accumulate exactly');
+check(save.data.stats.vigilSiteKindsMastered === 4, 'site-kind mastery did not clamp to four');
+check(save.data.stats.encountersCleared === 6, 'encounter clears did not accumulate exactly');
+check(save.data.stats.guardianPacksDefeated === 3, 'guardian packs did not accumulate exactly');
+save.recordRun({ vigilSitesActivated: -5, encountersCleared: -5, guardianPacksDefeated: -5 });
+check(save.data.stats.vigilSitesActivated === 5 && save.data.stats.encountersCleared === 6
+    && save.data.stats.guardianPacksDefeated === 3, 'negative Living Vigil summary values reduced lifetime totals');
 
 // Save normalization enforces authored upgrade caps, and live increments cannot
 // step past them even if a caller bypasses the shop UI.
@@ -200,6 +321,23 @@ for (let day = 1; day <= 1000; day++) {
 check(dailySignatures.size > 100, 'daily challenge rotation has too little variety');
 check(pickDailyChallenges(42, 0).length === 0, 'zero-count daily request returned challenges');
 check(pickDailyChallenges(42, DAILY_POOL.length).length === DAILY_POOL.length, 'full daily request lost overflow challenges');
+
+const livingDailyMetrics = {
+    sites: { vigilSitesActivated: 2 },
+    siteKinds: { vigilSiteKindsMastered: 4 },
+    encounters: { encountersCleared: 2 },
+    guardians: { guardianPacksDefeated: 1 },
+};
+for (const [metric, summary] of Object.entries(livingDailyMetrics)) {
+    const challenge = DAILY_POOL.find((entry) => entry.metric === metric);
+    check(!!challenge, `daily pool is missing the ${metric} family`);
+    check(challengeProgress(challenge, summary) > 0, `${metric} daily ignores its Living Vigil summary field`);
+}
+const objectiveIds = new Set(OBJECTIVES.map((objective) => objective.id));
+check(objectiveIds.size === OBJECTIVES.length, 'run objective ids are not unique');
+for (const metric of ['sites', 'siteKinds', 'encounters']) {
+    check(OBJECTIVES.some((objective) => objective.metric === metric), `run objectives are missing ${metric}`);
+}
 
 // A fresh free cosmetic case can no longer land on a starter duplicate.
 storage.clear();

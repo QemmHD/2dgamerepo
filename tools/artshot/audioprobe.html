@@ -46,7 +46,17 @@ for (const name of CUES) {
     // letting the fn receive t=currentTime, then offsetting via a patched
     // _play that adds t0.
     const orig = a._play.bind(a);
-    a._play = (n, gap, fn) => { a._lastSfx[n] = -999; orig(n, 0, () => fn(t0)); };
+    a._play = (n, gap, fn) => {
+      // OfflineAudioContext.currentTime remains zero until rendering, so the
+      // live 100ms texture budget would otherwise treat every independently
+      // staged cue as one giant same-frame swarm and intentionally drop most
+      // of the reel. Reset only that live admission window; each voice still
+      // renders at its explicit t0 slot through the callback below.
+      a._lastSfx[n] = -999;
+      a._sfxWindowT = -Infinity;
+      a._sfxWindowN = 0;
+      orig(n, 0, () => fn(t0));
+    };
     if (name === 'reveal') a.reveal('legendary'); else a[name]();
     a._play = orig;
     report.cues[name] = { t: t0 };

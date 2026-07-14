@@ -58,7 +58,10 @@ export const CASE_PITY = { basic: 16, basicCosmetic: 16, mystic: 12, mysticCosme
 // (and the next pick gets riskier). Cash out anytime to bank stake × the live
 // multiplier; hit a mine and lose the stake. ~7% house edge — gambling is a
 // risky flex, not a steady coin faucet (average play loses coins over time).
-export const WAGER_BETS = [100, 500, 2000];
+// Fixed coin-only presets keep the wager flow fast while putting a hard ceiling
+// on a single play. 250 fills the old gap between the entry and committed
+// stakes; there is deliberately no custom/all-in wager or real-money path.
+export const WAGER_BETS = Object.freeze([100, 250, 500, 2000]);
 export const MINES = { tiles: 25, cols: 5, mines: 6 };
 export const MINES_HOUSE = 0.93;
 
@@ -81,6 +84,61 @@ export function minesRawMultiplier(safe, mines = MINES.mines, tiles = MINES.tile
         mul *= unrevealed / safeUnrevealed;
     }
     return mul;
+}
+
+function normalizedMinesConfig(mines, tiles) {
+    const tileCount = Number.isInteger(tiles) && tiles > 1 ? tiles : MINES.tiles;
+    const fallbackMines = Math.min(MINES.mines, tileCount - 1);
+    const mineCount = Number.isInteger(mines) && mines > 0 && mines < tileCount ? mines : fallbackMines;
+    return { tileCount, mineCount, safeTotal: tileCount - mineCount };
+}
+
+// Exact conditional odds for the NEXT pick after `safe` safe tiles have been
+// revealed. Reaching this state proves every revealed tile was safe, so all
+// mines remain hidden. The game auto-cashes at the terminal state instead of
+// offering a guaranteed mine pick.
+export function minesNextPickOdds(safe, mines = MINES.mines, tiles = MINES.tiles) {
+    const { tileCount, mineCount, safeTotal } = normalizedMinesConfig(mines, tiles);
+    const safeRevealed = Math.max(0, Math.min(safeTotal, Number.isFinite(safe) ? Math.floor(safe) : 0));
+    const remaining = tileCount - safeRevealed;
+    const safeRemaining = safeTotal - safeRevealed;
+    const available = safeRemaining > 0;
+    return {
+        available,
+        remaining,
+        safeRemaining,
+        mineRemaining: mineCount,
+        safeChance: available ? safeRemaining / remaining : 0,
+        mineChance: available ? mineCount / remaining : 1,
+    };
+}
+
+// One source of truth for every number shown in the Mines overlay. Payouts use
+// the exact same floor rule as the bank transaction, and are clamped to a safe
+// integer defensively even though selectable wagers are capped at 2,000.
+export function minesPayoutQuote(bet, safe, mines = MINES.mines, tiles = MINES.tiles) {
+    const stake = Number.isFinite(bet) ? Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(bet))) : 0;
+    const { tileCount, mineCount, safeTotal } = normalizedMinesConfig(mines, tiles);
+    const safeRevealed = Math.max(0, Math.min(safeTotal, Number.isFinite(safe) ? Math.floor(safe) : 0));
+    const multiplier = safeRevealed > 0 ? minesRawMultiplier(safeRevealed, mineCount, tileCount) * MINES_HOUSE : 1;
+    const boundedPayout = (value) => Number.isFinite(value)
+        ? Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value)))
+        : Number.MAX_SAFE_INTEGER;
+    const payout = safeRevealed > 0 ? boundedPayout(stake * multiplier) : 0;
+    const odds = minesNextPickOdds(safeRevealed, mineCount, tileCount);
+    const nextMultiplier = odds.available ? minesRawMultiplier(safeRevealed + 1, mineCount, tileCount) * MINES_HOUSE : multiplier;
+    const nextPayout = odds.available ? boundedPayout(stake * nextMultiplier) : payout;
+    return {
+        bet: stake,
+        safeRevealed,
+        multiplier,
+        payout,
+        net: payout - stake,
+        odds,
+        nextMultiplier,
+        nextPayout,
+        nextNet: nextPayout - stake,
+    };
 }
 
 // One flat index of everything a case can award, tagged by kind + rarity.
@@ -241,7 +299,9 @@ export function caseOddsRows(caseType) {
     const def = CASES[caseType];
     if (!def) return [];
     return RARITY_ORDER.filter((r) => def.odds[r])
-        .map((r) => ({ rarity: r, pct: Math.round(def.odds[r] * 100) }))
+        // Keep authored half-percent tiers exact (royal Epic 18.5%, Mythic
+        // 1.5%). Rounding each row independently used to display a false 101%.
+        .map((r) => ({ rarity: r, pct: def.odds[r] * 100 }))
         .reverse();
 }
 
