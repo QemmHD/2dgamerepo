@@ -59,6 +59,9 @@
     mines=<preset> / minessafe=<n>  stage an honest Mines quote (menu only)
     minesFocus=<0..24>  select a Mines tile for keyboard-focus visual QA
     tryset=<set id>  stage a known cosmetic set in the Boutique fitting room
+    collectioncat=<category>  stage a Collection category (character menu only)
+    collectionpage=<n>  stage an exact positive Collection page (character menu only)
+    pursuit=<set id>  stage a known tracked set in Collection (character menu only)
     boss=1 / bossid=<id> / bosshp=<0..1> / bossattack=<move id> / bosskill=1
              spawn a live apex directly and stage its choreography state
     tp       teleport before the shot: "building" (just south of the first
@@ -114,7 +117,11 @@ import { loadDecorSprites } from '../../src/assets/DecorSprites.js';
 import { loadRenderedProps } from '../../src/assets/RenderedWeaponProps.js';
 import { getMenuImages } from '../../src/assets/MenuImages.js';
 import { PASS_COSMETIC_MILESTONES, bpProgress } from '../../src/content/battlePass.js';
-import { COSMETIC_SETS } from '../../src/content/cosmetics.js';
+import {
+    COSMETIC_CATEGORIES,
+    COSMETIC_SETS,
+    cosmeticsByCategory,
+} from '../../src/content/cosmetics.js';
 import { Enemy } from '../../src/entities/Enemy.js';
 import { XPGem } from '../../src/entities/XPGem.js';
 import { Coin } from '../../src/entities/Coin.js';
@@ -136,6 +143,19 @@ const TAB = params.get('tab') || 'play';
 const TRY_SET_REQUEST = params.get('tryset');
 const QA_TRY_SET = TRY_SET_REQUEST
     ? COSMETIC_SETS.find((set) => set.id === TRY_SET_REQUEST) ?? null
+    : null;
+const COLLECTION_CATEGORY_REQUEST = params.get('collectioncat');
+const QA_COLLECTION_CATEGORY = COLLECTION_CATEGORY_REQUEST
+    && COSMETIC_CATEGORIES.includes(COLLECTION_CATEGORY_REQUEST)
+    ? COLLECTION_CATEGORY_REQUEST
+    : null;
+const COLLECTION_PAGE_REQUEST = params.get('collectionpage');
+const QA_COLLECTION_PAGE = COLLECTION_PAGE_REQUEST != null && /^[1-9]\d*$/.test(COLLECTION_PAGE_REQUEST)
+    ? Number(COLLECTION_PAGE_REQUEST)
+    : null;
+const PURSUIT_SET_REQUEST = params.get('pursuit');
+const QA_PURSUIT_SET = PURSUIT_SET_REQUEST
+    ? COSMETIC_SETS.find((set) => set.id === PURSUIT_SET_REQUEST) ?? null
     : null;
 const QA_DEV = params.get('dev') === '1';
 const RESET_PROFILE = params.get('resetprofile') === '1';
@@ -431,6 +451,27 @@ async function boot() {
     if (QA_TRY_SET && (SCREEN !== 'menu' || TAB !== 'boutique')) {
         ERR.push('tryset: staging requires screen=menu and tab=boutique');
     }
+    if (COLLECTION_CATEGORY_REQUEST != null && !QA_COLLECTION_CATEGORY) {
+        ERR.push(`collectioncat: unknown cosmetic category '${COLLECTION_CATEGORY_REQUEST}'`);
+    }
+    if (COLLECTION_PAGE_REQUEST != null && QA_COLLECTION_PAGE == null) {
+        ERR.push(`collectionpage: expected an exact positive integer, got '${COLLECTION_PAGE_REQUEST}'`);
+    }
+    const collectionReceiptRequested = COLLECTION_CATEGORY_REQUEST != null
+        || COLLECTION_PAGE_REQUEST != null || PURSUIT_SET_REQUEST != null;
+    if (collectionReceiptRequested && (SCREEN !== 'menu' || TAB !== 'character')) {
+        ERR.push('collectionqa: staging requires screen=menu and tab=character');
+    }
+    if (PURSUIT_SET_REQUEST && !QA_PURSUIT_SET) {
+        ERR.push(`pursuit: unknown cosmetic set '${PURSUIT_SET_REQUEST}'`);
+    }
+    if (QA_COLLECTION_PAGE != null) {
+        const category = QA_COLLECTION_CATEGORY || 'fur';
+        const pageCount = Math.max(1, Math.ceil(cosmeticsByCategory(category).length / 8));
+        if (QA_COLLECTION_PAGE > pageCount) {
+            ERR.push(`collectionpage: page ${QA_COLLECTION_PAGE} exceeds ${category} page count ${pageCount}`);
+        }
+    }
 
     if (SCREEN === 'menu') {
         game.screen = 'start';
@@ -444,6 +485,16 @@ async function boot() {
                 page: 1,
                 setPage: Math.floor(setIndex / 3) + 1,
             };
+        }
+        if (collectionReceiptRequested) {
+            game.collectionView = {
+                ...(game.collectionView || {}),
+                category: QA_COLLECTION_CATEGORY || game.collectionView?.category || 'fur',
+                page: QA_COLLECTION_PAGE || game.collectionView?.page || 1,
+            };
+            if (QA_PURSUIT_SET) {
+                game.saveSystem.data.cosmetics.pursuitSetId = QA_PURSUIT_SET.id;
+            }
         }
         if (BPXP != null) {
             game.saveSystem.data.battlePass.xp = BPXP;
@@ -956,6 +1007,9 @@ async function boot() {
         cosmeticSet: QA_TRY_SET && Object.entries(QA_TRY_SET.pieces).every(
             ([category, id]) => game.tryOn?.[category] === id,
         ) ? QA_TRY_SET.id : '',
+        collectionCategory: game.collectionView?.category || '',
+        collectionPage: Number(game.collectionView?.page) || 0,
+        pursuitSet: game.saveSystem.data.cosmetics.pursuitSetId || '',
         boutiqueCategory: game.boutiqueView?.category || '',
         boutiqueSetPage: Number(game.boutiqueView?.setPage) || 0,
         statuses: allStatusTimersActive ? 'all' : '',
@@ -1056,6 +1110,15 @@ async function boot() {
     }
     if (QA_TRY_SET && qaState.cosmeticSet !== QA_TRY_SET.id) {
         ERR.push(`receipt: tryset expected '${QA_TRY_SET.id}', got '${qaState.cosmeticSet}'`);
+    }
+    if (QA_COLLECTION_CATEGORY && qaState.collectionCategory !== QA_COLLECTION_CATEGORY) {
+        ERR.push(`receipt: collectioncat expected '${QA_COLLECTION_CATEGORY}', got '${qaState.collectionCategory}'`);
+    }
+    if (QA_COLLECTION_PAGE != null && qaState.collectionPage !== QA_COLLECTION_PAGE) {
+        ERR.push(`receipt: collectionpage expected ${QA_COLLECTION_PAGE}, got ${qaState.collectionPage}`);
+    }
+    if (QA_PURSUIT_SET && qaState.pursuitSet !== QA_PURSUIT_SET.id) {
+        ERR.push(`receipt: pursuit expected '${QA_PURSUIT_SET.id}', got '${qaState.pursuitSet}'`);
     }
     if (QA_STATUSES === 'all' && qaState.statuses !== 'all') {
         ERR.push('receipt: statuses=all did not stage all seven combat statuses');
@@ -1175,6 +1238,9 @@ async function boot() {
     qaRoot.dataset.qaCampaignStatus = window.__qaState.campaignStatus;
     qaRoot.dataset.qaSettingsPane = window.__qaState.settingsPane;
     qaRoot.dataset.qaCosmeticSet = window.__qaState.cosmeticSet;
+    qaRoot.dataset.qaCollectionCategory = window.__qaState.collectionCategory;
+    qaRoot.dataset.qaCollectionPage = String(window.__qaState.collectionPage);
+    qaRoot.dataset.qaPursuitSet = window.__qaState.pursuitSet;
     qaRoot.dataset.qaBoutiqueCategory = window.__qaState.boutiqueCategory;
     qaRoot.dataset.qaBoutiqueSetPage = String(window.__qaState.boutiqueSetPage);
     qaRoot.dataset.qaStatuses = window.__qaState.statuses;

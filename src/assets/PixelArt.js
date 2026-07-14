@@ -383,6 +383,167 @@ export function drawPixelMonkey(frame = 0, opts = {}) {
 
 const cosmeticCache = new Map();
 
+// Public finite vocabularies keep the authored catalog, previews, runtime and
+// validators on one visual contract. New collection cuts stay procedural so
+// they inherit the same shoulder/head seats as every animated hero pose.
+export const CLOAK_STYLES = Object.freeze([
+    'classic', 'splitwatch', 'mothwing',
+    'embertail', 'rimecoat', 'briarwing', 'stormsplit', 'sunscarf', 'graveveil',
+]);
+export const HAT_SHAPES = Object.freeze([
+    'none', 'cap', 'candle', 'waylantern', 'mothmask', 'horns', 'crown',
+    'hood', 'tophat', 'flower', 'antlers', 'halo', 'party', 'banana',
+    'embercrest', 'rimeantlers', 'briarcrown', 'stormcoil', 'sunvisor', 'gravecowl',
+]);
+
+function emberTailCloak(p, dir, cx, color, dark, light) {
+    // Three flame-cut panels: a short lit tongue, a deep centre coal and an
+    // offset long tongue. The side view becomes one swept, forked flame.
+    if (dir === 'side') {
+        p.rect(cx - 3, 18, 6, 5, dark); p.rect(cx - 1, 18, 2, 4, light);
+        for (let y = 22; y <= 45; y++) {
+            const t = (y - 22) / 23;
+            const left = cx - 4 - Math.round(t * 15);
+            const width = Math.max(3, 11 - Math.round(t * 7));
+            p.rect(left, y, width, 1, color); p.dot(left, y, dark);
+            if (y > 28 && y < 41) p.dot(left + width - 1, y, light);
+        }
+        p.rect(cx - 13, 39, 5, 2, dark); p.rect(cx - 18, 45, 4, 1, light);
+        return;
+    }
+    p.rect(cx - 10, 18, 21, 4, dark);
+    p.rect(cx - 7, 18, 5, 2, light); p.rect(cx + 3, 18, 5, 2, light);
+    for (let y = 21; y <= 45; y++) {
+        const t = (y - 21) / 24;
+        const half = 10 + Math.round(t * 6);
+        const centreGap = y < 29 ? 0 : 1 + Math.round((y - 29) / 7);
+        if (centreGap === 0) p.rect(cx - half, y, half * 2 + 1, 1, color);
+        else {
+            p.rect(cx - half, y, Math.max(2, half - centreGap), 1, color);
+            p.rect(cx + centreGap + 1, y, Math.max(2, half - centreGap), 1, color);
+            p.dot(cx - centreGap - 1, y, dark); p.dot(cx + centreGap + 1, y, dark);
+        }
+        p.dot(cx - half, y, light); p.dot(cx + half, y, dark);
+    }
+    // Unequal flame tips keep this from reading as the Splitwatch's tidy fork.
+    p.rect(cx - 16, 43, 5, 3, dark); p.rect(cx + 11, 41, 5, 5, dark);
+    p.rect(cx - 8, 45, 4, 2, light); p.rect(cx + 5, 43, 3, 4, light);
+}
+
+function rimeCoatCloak(p, dir, cx, color, dark, light) {
+    // Heavy squared expedition coat with an ice-crystal shoulder shelf and a
+    // stepped frozen hem; deliberately compact rather than a flowing cape.
+    if (dir === 'side') {
+        p.rect(cx - 5, 18, 10, 6, dark); p.rect(cx - 2, 18, 5, 3, light);
+        for (let y = 23; y <= 42; y++) {
+            const left = cx - 5 - Math.round((y - 23) * 0.28);
+            p.rect(left, y, 12, 1, color); p.dot(left, y, light); p.dot(left + 11, y, dark);
+        }
+        p.rect(cx - 11, 42, 14, 3, dark); p.rect(cx - 9, 45, 4, 2, light);
+        p.rect(cx - 3, 45, 5, 1, light); return;
+    }
+    p.rect(cx - 13, 18, 27, 5, dark);
+    p.rect(cx - 11, 18, 7, 2, light); p.rect(cx + 5, 18, 7, 2, light);
+    p.line(cx - 13, 18, cx - 16, 23, light, 2);
+    p.line(cx + 13, 18, cx + 16, 23, dark, 2);
+    for (let y = 22; y <= 43; y++) {
+        const half = 12 + Math.round((y - 22) * 0.12);
+        p.rect(cx - half, y, half * 2 + 1, 1, color);
+        p.dot(cx - half, y, light); p.dot(cx + half, y, dark);
+        if (y > 25) { p.dot(cx - 5, y, dark); p.dot(cx + 5, y, dark); }
+    }
+    p.rect(cx - 14, 43, 29, 2, dark);
+    for (let x = cx - 12; x <= cx + 12; x += 6) {
+        p.rect(x, 45, 3, 2, color); p.dot(x + 1, 46, light);
+    }
+}
+
+function briarWingCloak(p, dir, cx, color, dark, light) {
+    // Layered leaf mantle with a thorned centre vine. Elliptical lobes make a
+    // materially softer silhouette than cloth while the dark vine reads at 48px.
+    if (dir === 'side') {
+        p.ell(cx - 7, 28, 13, 8, color); p.ell(cx - 13, 37, 9, 7, color);
+        p.ell(cx - 6, 43, 7, 4, color); p.line(cx - 1, 20, cx - 13, 43, dark, 2);
+        p.line(cx - 7, 31, cx - 17, 34, light, 1); p.dot(cx - 16, 34, dark);
+        p.dot(cx - 11, 39, light); return;
+    }
+    p.ell(cx - 10, 28, 11, 9, color); p.ell(cx + 10, 28, 11, 9, color);
+    p.ell(cx - 12, 38, 10, 8, color); p.ell(cx + 12, 38, 10, 8, color);
+    p.ell(cx - 6, 44, 7, 4, color); p.ell(cx + 6, 44, 7, 4, color);
+    p.rect(cx - 2, 19, 5, 26, dark); p.rect(cx - 1, 20, 2, 23, light);
+    p.line(cx - 2, 25, cx - 18, 32, dark, 1); p.line(cx + 2, 25, cx + 18, 32, dark, 1);
+    p.line(cx - 2, 32, cx - 14, 42, dark, 1); p.line(cx + 2, 32, cx + 14, 42, dark, 1);
+    for (const x of [-17, -10, 10, 17]) p.dot(cx + x, x < 0 ? 34 : 35, light);
+}
+
+function stormSplitCloak(p, dir, cx, color, dark, light) {
+    // Short angular storm poncho. A lightning-bolt hem and hard diagonal seams
+    // keep it visually distinct from every long drape.
+    if (dir === 'side') {
+        p.rect(cx - 4, 18, 8, 5, dark); p.line(cx - 1, 19, cx - 13, 34, color, 5);
+        p.line(cx - 12, 32, cx - 18, 38, color, 4); p.line(cx - 4, 24, cx - 17, 33, light, 1);
+        p.rect(cx - 18, 38, 6, 2, dark); return;
+    }
+    p.rect(cx - 12, 18, 25, 4, dark); p.rect(cx - 9, 18, 19, 1, light);
+    for (let y = 21; y <= 35; y++) {
+        const half = 12 + Math.round((y - 21) * 0.45);
+        p.rect(cx - half, y, half * 2 + 1, 1, color);
+        p.dot(cx - half, y, light); p.dot(cx + half, y, dark);
+    }
+    p.line(cx - 17, 35, cx - 10, 40, dark, 3);
+    p.line(cx - 10, 40, cx - 3, 35, color, 3);
+    p.line(cx - 3, 35, cx + 4, 41, dark, 3);
+    p.line(cx + 4, 41, cx + 11, 35, color, 3);
+    p.line(cx + 11, 35, cx + 18, 38, dark, 3);
+    p.line(cx - 8, 23, cx + 7, 34, light, 1);
+}
+
+function sunScarfCloak(p, dir, cx, color, dark, light) {
+    // Narrow wrapped scarf with two wind-ribbons. It leaves most of the body
+    // visible, producing a radically lighter silhouette than a conventional cape.
+    p.ell(cx, 20, dir === 'side' ? 7 : 11, 4, dark);
+    p.rect(cx - (dir === 'side' ? 4 : 8), 19, dir === 'side' ? 9 : 17, 2, light);
+    if (dir === 'side') {
+        p.line(cx - 3, 22, cx - 19, 32, color, 4);
+        p.line(cx - 10, 30, cx - 20, 42, color, 3);
+        p.line(cx - 2, 24, cx - 16, 34, light, 1);
+        p.rect(cx - 21, 41, 5, 2, dark); return;
+    }
+    p.line(cx - 6, 22, cx - 13, 42, color, 5);
+    p.line(cx + 6, 22, cx + 15, 39, color, 4);
+    p.line(cx - 5, 23, cx - 12, 39, light, 1);
+    p.line(cx + 5, 23, cx + 14, 36, dark, 1);
+    p.rect(cx - 16, 41, 7, 3, dark); p.rect(cx + 12, 38, 6, 3, dark);
+    p.dot(cx - 14, 42, light); p.dot(cx + 14, 39, light);
+}
+
+function graveVeilCloak(p, dir, cx, color, dark, light) {
+    // Tall funereal veil with negative-space tears and small weighted bells.
+    // Opaque holes are punched by leaving gaps during row construction.
+    if (dir === 'side') {
+        p.rect(cx - 5, 17, 9, 6, dark); p.rect(cx - 3, 18, 4, 3, light);
+        for (let y = 22; y <= 45; y++) {
+            const left = cx - 4 - Math.round((y - 22) * 0.55);
+            const w = 10 + Math.round((y - 22) * 0.18);
+            p.rect(left, y, w, 1, color); p.dot(left, y, dark);
+            if ((y === 31 || y === 37) && w > 7) p.rect(left + 4, y, 3, 1, dark);
+        }
+        p.disc(cx - 15, 46, 2, light); return;
+    }
+    p.rect(cx - 10, 17, 21, 5, dark); p.rect(cx - 7, 17, 15, 2, light);
+    for (let y = 21; y <= 45; y++) {
+        const half = 10 + Math.round((y - 21) * 0.22);
+        p.rect(cx - half, y, half * 2 + 1, 1, color);
+        p.dot(cx - half, y, dark); p.dot(cx + half, y, dark);
+        if (y === 29 || y === 36) {
+            p.rect(cx - 7, y, 3, 1, dark); p.rect(cx + 5, y, 3, 1, dark);
+        }
+    }
+    p.line(cx, 22, cx, 43, dark, 1);
+    p.rect(cx - 13, 45, 6, 2, dark); p.rect(cx - 3, 44, 6, 3, dark); p.rect(cx + 8, 45, 6, 2, dark);
+    p.disc(cx - 10, 46, 2, light); p.disc(cx, 46, 2, light); p.disc(cx + 11, 46, 2, light);
+}
+
 // A draped cape. dir 'down'/'side' draw BEHIND the body (caller draws it first
 // → only the collar + hem wings peek out); 'up' draws a full back drape OVER
 // the body. `side` trails to the left (caller flips for right/left facing).
@@ -391,7 +552,19 @@ function pixelCloak(dir, color, style = 'classic') {
     const light = shade(color, 0.26, 'light');
     const p = pixelCanvas(MONKEY_L);
     const cx = CX;
-    if (style === 'splitwatch') {
+    if (style === 'embertail') {
+        emberTailCloak(p, dir, cx, color, dark, light);
+    } else if (style === 'rimecoat') {
+        rimeCoatCloak(p, dir, cx, color, dark, light);
+    } else if (style === 'briarwing') {
+        briarWingCloak(p, dir, cx, color, dark, light);
+    } else if (style === 'stormsplit') {
+        stormSplitCloak(p, dir, cx, color, dark, light);
+    } else if (style === 'sunscarf') {
+        sunScarfCloak(p, dir, cx, color, dark, light);
+    } else if (style === 'graveveil') {
+        graveVeilCloak(p, dir, cx, color, dark, light);
+    } else if (style === 'splitwatch') {
         // A sentry mantle with a high collar and two forked tails. The split is
         // authored into every direction instead of being a detached overlay,
         // so the shoulder transform and side-view mirroring remain canonical.
@@ -584,7 +757,94 @@ function pixelHat(dir, shape, color) {
     const p = pixelCanvas(MONKEY_L);
     p.ctx.translate(0, HAT_DROP);
     const cx = CX;
-    if (shape === 'cap') {
+    if (shape === 'embercrest') {
+        // A hammered circlet carrying a directional fan of coal-red flame
+        // feathers. The stepped tips read as a crest, not another crown.
+        p.rect(cx - 10, 9, 21, 3, dark);
+        p.rect(cx - 8, 9, 17, 1, light);
+        if (dir === 'side') {
+            p.line(cx - 6, 8, cx + 8, -3, col, 4);
+            p.line(cx - 2, 8, cx + 11, 1, col, 3);
+            p.line(cx + 2, 8, cx + 12, 5, light, 2);
+            p.dot(cx + 8, -4, '#fff0a0');
+        } else {
+            for (const [dx, top] of [[-7, 1], [-3, -3], [1, -5], [5, -2], [8, 2]]) {
+                p.line(cx + dx, 9, cx + dx, top, col, 3);
+                p.dot(cx + dx, top, light);
+            }
+            p.line(cx - 7, 7, cx + 8, 4, dark, 1);
+        }
+    } else if (shape === 'rimeantlers') {
+        // Broad ice-crystal antlers with asymmetric facets and a low frost band.
+        p.rect(cx - 10, 9, 21, 3, dark); p.rect(cx - 8, 9, 17, 1, light);
+        if (dir === 'side') {
+            p.line(cx - 5, 8, cx + 7, -4, col, 3);
+            p.line(cx + 2, 1, cx + 10, -1, col, 2);
+            p.line(cx + 5, -2, cx + 4, -5, light, 2);
+            p.dot(cx + 8, -3, '#eefcff');
+        } else {
+            for (const s of [-1, 1]) {
+                p.line(cx + s * 6, 9, cx + s * 10, -3, col, 3);
+                p.line(cx + s * 8, 3, cx + s * 14, 0, col, 2);
+                p.line(cx + s * 9, 0, cx + s * 7, -5, light, 2);
+                p.dot(cx + s * 14, -1, '#eefcff');
+            }
+        }
+    } else if (shape === 'briarcrown') {
+        // Living vine circlet. Five leaf lobes and visible thorns distinguish it
+        // from the Flower Crown's soft petals.
+        p.ell(cx, 8, dir === 'side' ? 10 : 13, 4, dark);
+        p.ell(cx, 7, dir === 'side' ? 8 : 11, 2, col);
+        const leaves = dir === 'side' ? [-7, -2, 4, 9] : [-10, -5, 0, 5, 10];
+        for (let i = 0; i < leaves.length; i++) {
+            const x = cx + leaves[i];
+            const y = 4 - (i & 1) * 2;
+            p.ell(x, y, 3, 5, col); p.dot(x - 1, y - 2, light);
+            p.line(x, y + 2, x + (i & 1 ? 3 : -3), y - 3, dark, 1);
+        }
+        p.dot(cx - 12, 7, light); p.dot(cx + 12, 7, light);
+    } else if (shape === 'stormcoil') {
+        // A copper induction coil with a captured lightning fork suspended
+        // above the head; side art compresses the rear loop convincingly.
+        const rx = dir === 'side' ? 8 : 12;
+        p.ell(cx, 8, rx, 4, dark); p.ell(cx, 7, Math.max(4, rx - 2), 2, col);
+        p.line(cx - rx + 2, 7, cx - 4, 0, col, 2);
+        p.line(cx + rx - 2, 7, cx + 4, 0, col, 2);
+        p.line(cx - 4, 0, cx + 2, -4, light, 2);
+        p.line(cx + 2, -4, cx - 1, 1, '#f2fbff', 2);
+        p.line(cx - 1, 1, cx + 5, -1, light, 2);
+        p.disc(cx - rx + 1, 8, 2, col); p.disc(cx + rx - 1, 8, 2, col);
+    } else if (shape === 'sunvisor') {
+        // Wide desert orrery visor: a solid sun disc, horizon slit and two
+        // suspended side beads. Back view retains the recognisable disc.
+        const w = dir === 'side' ? 17 : 25;
+        p.ell(cx, 6, Math.floor(w / 2), 7, col);
+        p.ell(cx - 3, 3, Math.max(3, Math.floor(w / 4)), 3, light);
+        p.rect(cx - Math.floor(w / 2), 7, w, 3, dark);
+        if (dir !== 'up') {
+            p.rect(cx - (dir === 'side' ? 2 : 7), 7, dir === 'side' ? 9 : 15, 1, '#281b19');
+            p.dot(cx + (dir === 'side' ? 4 : -4), 7, '#fff3b0');
+        }
+        p.line(cx - Math.floor(w / 2), 8, cx - Math.floor(w / 2) - 2, 12, dark, 1);
+        p.line(cx + Math.floor(w / 2), 8, cx + Math.floor(w / 2) + 2, 12, dark, 1);
+        p.disc(cx - Math.floor(w / 2) - 2, 13, 2, light);
+        p.disc(cx + Math.floor(w / 2) + 2, 13, 2, light);
+    } else if (shape === 'gravecowl') {
+        // Tall bell-shaped mourning cowl with a hollow face and tiny clapper.
+        // Its peaked canopy is visibly different from the soft Wanderer's Hood.
+        p.ell(cx, 6, dir === 'side' ? 10 : 13, 10, col);
+        p.line(cx, -5, cx - (dir === 'side' ? 2 : 5), 4, light, 2);
+        p.rect(cx - (dir === 'side' ? 8 : 11), 8, dir === 'side' ? 17 : 23, 5, dark);
+        if (dir === 'up') {
+            p.rect(cx - 8, 10, 17, 2, light); p.line(cx, 11, cx + 4, 16, dark, 2);
+        } else {
+            const eyeX = dir === 'side' ? cx + 3 : cx;
+            p.ell(eyeX, 7, dir === 'side' ? 4 : 7, 3, '#211b28');
+            p.dot(eyeX + (dir === 'side' ? 2 : -3), 7, light);
+            if (dir !== 'side') p.dot(eyeX + 3, 7, light);
+        }
+        p.line(cx, 12, cx, 16, dark, 1); p.disc(cx, 17, 2, light);
+    } else if (shape === 'cap') {
         // Seated 3px higher than the original art so the brim lands at the
         // hairline (like the tophat's y8 brim) instead of across the eyes of
         // the rounder Blender head. HAT_DROP headroom absorbs the lift.
@@ -753,12 +1013,84 @@ function pixelHat(dir, shape, color) {
     return p.finish();
 }
 
+function pixelFurSwatch(color, style = 'solid', accent = null, accent2 = null) {
+    // A material sample, not another detached hero layer. The live treatment is
+    // baked into hero frames by ProceduralSprites; this cached 48px tuft gives
+    // Collection/Boutique/case cards an honest preview of the same vocabulary.
+    const base = color || '#8b5a2b';
+    const hi = accent || shade(base, 0.38, 'light');
+    const low = accent2 || shade(base, 0.42, 'dark');
+    const p = pixelCanvas(MONKEY_L);
+    const cx = CX;
+    p.ell(cx, 25, 16, 15, base);
+    p.rect(cx - 13, 13, 27, 22, base);
+    // Tufted crown and lower points make the sample read as fur/material.
+    p.line(cx - 12, 15, cx - 9, 8, base, 4);
+    p.line(cx - 6, 13, cx - 3, 6, base, 4);
+    p.line(cx, 12, cx + 2, 5, base, 4);
+    p.line(cx + 7, 13, cx + 10, 7, base, 4);
+    p.line(cx - 10, 35, cx - 6, 42, base, 4);
+    p.line(cx, 37, cx + 1, 44, base, 4);
+    p.line(cx + 10, 35, cx + 7, 42, base, 4);
+
+    if (style === 'embervein') {
+        p.line(cx - 10, 17, cx - 3, 23, hi, 2);
+        p.line(cx - 3, 23, cx - 7, 31, hi, 2);
+        p.line(cx - 3, 23, cx + 6, 18, low, 2);
+        p.line(cx + 2, 26, cx + 10, 34, hi, 2);
+        p.dot(cx - 7, 31, '#fff0a0'); p.dot(cx + 10, 34, '#fff0a0');
+    } else if (style === 'frosttip') {
+        p.line(cx - 10, 13, cx - 7, 8, hi, 3);
+        p.line(cx - 4, 11, cx - 2, 6, hi, 3);
+        p.line(cx + 2, 10, cx + 3, 5, hi, 3);
+        p.line(cx + 8, 12, cx + 10, 7, hi, 3);
+        p.rect(cx - 13, 31, 27, 3, low);
+        for (let x = cx - 11; x <= cx + 11; x += 5) p.dot(x, 26 + ((x - cx) & 3), hi);
+    } else if (style === 'sunstripe') {
+        for (let x = cx - 16; x <= cx + 12; x += 7) p.line(x, 15, x + 12, 35, hi, 3);
+        p.line(cx - 13, 31, cx - 7, 39, low, 2);
+        p.line(cx + 3, 13, cx + 14, 28, low, 2);
+    } else if (style === 'mossmottle') {
+        p.disc(cx - 9, 18, 4, hi); p.disc(cx + 7, 15, 3, low);
+        p.disc(cx - 2, 27, 5, low); p.disc(cx + 10, 31, 4, hi);
+        p.disc(cx - 10, 35, 3, low); p.dot(cx + 1, 14, hi);
+    } else if (style === 'starspeck') {
+        for (let i = 0; i < 12; i++) {
+            const x = cx - 12 + ((i * 11) % 25);
+            const y = 13 + ((i * 17) % 23);
+            p.dot(x, y, (i % 3) ? hi : low);
+            if (i === 2 || i === 8) { p.dot(x - 1, y, hi); p.dot(x + 1, y, hi); }
+        }
+    } else if (style === 'gloammask') {
+        p.ell(cx, 18, 13, 8, low);
+        p.rect(cx - 12, 18, 25, 4, low);
+        p.ell(cx - 6, 19, 3, 2, '#171321'); p.ell(cx + 6, 19, 3, 2, '#171321');
+        p.dot(cx - 5, 19, hi); p.dot(cx + 5, 19, hi);
+        p.line(cx - 11, 29, cx - 5, 35, hi, 1); p.line(cx + 11, 29, cx + 5, 35, hi, 1);
+    } else {
+        p.line(cx - 11, 15, cx - 5, 9, hi, 2);
+        p.line(cx + 10, 15, cx + 7, 9, hi, 2);
+        p.rect(cx - 12, 33, 25, 2, low);
+    }
+    outline(p, shade(base, 0.62, 'dark'));
+    return p.finish();
+}
+
 function cachedCosmetic(key, build) {
     if (cosmeticCache.has(key)) return cosmeticCache.get(key);
     let c = null;
     try { c = build(); } catch (e) { c = null; }
     cosmeticCache.set(key, c);
     return c;
+}
+
+export function drawPixelFurSwatch(ctx, ox, oy, size, color, style = 'solid', accent = null, accent2 = null) {
+    const furStyle = style || 'solid';
+    const base = color || '#8b5a2b';
+    const c = cachedCosmetic(`fur:${furStyle}:${base}:${accent || 'auto'}:${accent2 || 'auto'}`,
+        () => pixelFurSwatch(base, furStyle, accent, accent2));
+    if (!c) return;
+    ctx.drawImage(c, ox, oy, size, size);
 }
 
 // Draw a cached pixel cloak onto the body box centred at (ox,oy) with half-size

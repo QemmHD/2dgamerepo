@@ -17,10 +17,14 @@ const TAU = Math.PI * 2;
 export const AURA_FX_STYLES = Object.freeze([
     'static', 'pulse', 'flame', 'spin', 'starfield', 'rainbow',
     'oathwheel', 'gloam_moths',
+    'cinder_run', 'snow_orbit', 'thorn_bloom', 'storm_arc',
+    'sun_mirage', 'grave_bells',
 ]);
 export const TRAIL_FX_STYLES = Object.freeze([
     'puffs', 'hearts', 'stars', 'flame', 'rainbow',
     'waymarks', 'gloam_wisps',
+    'ember_paws', 'ice_runes', 'briar_leaves', 'storm_sparks',
+    'sand_steps', 'grave_candles',
 ]);
 
 // Prismatic hue-cycle colour (the classic "I grinded for this" flex look).
@@ -52,7 +56,123 @@ export function drawAuraFx(ctx, cx, cy, r, color, fx, t, intensity = 0.3, reduce
     const glow = getGlowSprite(color);
     if (!glow) { ctx.restore(); return; }
     const blit = (gx, gy, gr, a) => { ctx.globalAlpha = Math.max(0, a); ctx.drawImage(glow, gx - gr, gy - gr, gr * 2, gr * 2); };
-    if (fx === 'oathwheel') {
+    if (fx === 'cinder_run') {
+        // A furnace halo with six climbing coal-runes. The central warmth uses
+        // one glow blit; every outer mark is a tiny bounded geometric sigil.
+        blit(cx, cy, r * 0.88, intensity * 0.72);
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1.5, r * 0.038);
+        for (let i = 0; i < 6; i++) {
+            const a = time * 0.72 + i * (TAU / 6);
+            const rr = r * (0.92 + 0.08 * Math.sin(time * 2.4 + i));
+            const x = cx + Math.cos(a) * rr;
+            const y = cy + Math.sin(a) * rr * 0.68;
+            const s = r * 0.13;
+            ctx.globalAlpha = Math.min(0.84, intensity * (1.55 + 0.25 * Math.sin(time * 4 + i)));
+            ctx.beginPath();
+            ctx.moveTo(x, y - s); ctx.lineTo(x + s * 0.55, y);
+            ctx.lineTo(x, y + s * 0.62); ctx.lineTo(x - s * 0.55, y);
+            ctx.closePath(); ctx.stroke();
+            ctx.fillRect(x - s * 0.1, y - s * 0.1, s * 0.2, s * 0.2);
+        }
+    } else if (fx === 'snow_orbit') {
+        // Two counter-rotating rings of readable six-spoke snow crystals.
+        blit(cx, cy, r * 0.72, intensity * 0.52);
+        ctx.strokeStyle = color;
+        ctx.lineCap = 'square';
+        ctx.lineWidth = Math.max(1.2, r * 0.027);
+        for (let i = 0; i < 6; i++) {
+            const ring = i & 1;
+            const a = (ring ? -time * 0.48 : time * 0.62) + i * (TAU / 6);
+            const x = cx + Math.cos(a) * r * (0.82 + ring * 0.22);
+            const y = cy + Math.sin(a) * r * (0.55 + ring * 0.11);
+            const s = r * (0.1 + ring * 0.02);
+            ctx.globalAlpha = Math.min(0.78, intensity * 1.75);
+            ctx.beginPath();
+            ctx.moveTo(x - s, y); ctx.lineTo(x + s, y);
+            ctx.moveTo(x - s * 0.5, y - s * 0.86); ctx.lineTo(x + s * 0.5, y + s * 0.86);
+            ctx.moveTo(x + s * 0.5, y - s * 0.86); ctx.lineTo(x - s * 0.5, y + s * 0.86);
+            ctx.stroke();
+        }
+    } else if (fx === 'thorn_bloom') {
+        // A breathing bramble rosette: six leaf shields open around a quiet
+        // core and the alternating tips form an unmistakable thorn silhouette.
+        blit(cx, cy, r * 0.7, intensity * 0.46);
+        const open = 0.86 + 0.12 * Math.sin(time * 1.8);
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1.2, r * 0.03);
+        for (let i = 0; i < 6; i++) {
+            const a = i * (TAU / 6) + time * 0.18;
+            const x = cx + Math.cos(a) * r * 0.9 * open;
+            const y = cy + Math.sin(a) * r * 0.62 * open;
+            const s = r * 0.16;
+            ctx.save(); ctx.translate(x, y); ctx.rotate(a + Math.PI * 0.5);
+            ctx.globalAlpha = Math.min(0.74, intensity * 1.65);
+            ctx.beginPath(); ctx.moveTo(0, -s * 1.35);
+            ctx.quadraticCurveTo(s, -s * 0.15, 0, s);
+            ctx.quadraticCurveTo(-s, -s * 0.15, 0, -s * 1.35);
+            ctx.fill();
+            ctx.beginPath(); ctx.moveTo(0, -s * 1.6); ctx.lineTo(0, s * 0.75); ctx.stroke();
+            ctx.restore();
+        }
+    } else if (fx === 'storm_arc') {
+        // Four deterministic lightning cages snap between two elliptical bands.
+        blit(cx, cy, r * 0.78, intensity * 0.5);
+        ctx.strokeStyle = color;
+        ctx.lineJoin = 'miter';
+        ctx.lineWidth = Math.max(1.5, r * 0.035);
+        for (let i = 0; i < 4; i++) {
+            const a = time * 0.9 + i * Math.PI * 0.5;
+            const x1 = cx + Math.cos(a) * r * 1.05;
+            const y1 = cy + Math.sin(a) * r * 0.7;
+            const a2 = a + 0.72 + 0.08 * Math.sin(time * 5 + i);
+            const x2 = cx + Math.cos(a2) * r * 0.72;
+            const y2 = cy + Math.sin(a2) * r * 0.46;
+            const mx = (x1 + x2) * 0.5 + Math.sin(time * 7 + i * 2) * r * 0.12;
+            const my = (y1 + y2) * 0.5 + Math.cos(time * 6 + i) * r * 0.08;
+            ctx.globalAlpha = Math.min(0.9, intensity * 2.0);
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(mx, my); ctx.lineTo(x2, y2); ctx.stroke();
+        }
+    } else if (fx === 'sun_mirage') {
+        // Heat-haze ellipses slide past a steady solar disc. Reduced Effects
+        // freezes their offsets while preserving all three readable bands.
+        blit(cx, cy, r * 0.82, intensity * 0.68);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1.5, r * 0.032);
+        for (let i = 0; i < 5; i++) {
+            const phase = time * 0.55 + i * 0.78;
+            const ox = Math.sin(phase) * r * 0.2;
+            const oy = (i - 2) * r * 0.24;
+            ctx.globalAlpha = Math.min(0.7, intensity * (1.15 + i * 0.11));
+            ctx.beginPath();
+            ctx.ellipse(cx + ox, cy + oy, r * (0.58 + i * 0.09), r * 0.11, 0, 0, TAU);
+            ctx.stroke();
+        }
+    } else if (fx === 'grave_bells') {
+        // Five mourning bells orbit on different pendulum phases. Each is one
+        // compact canopy path plus clapper, with no per-frame object allocation.
+        blit(cx, cy, r * 0.74, intensity * 0.42);
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1.3, r * 0.03);
+        for (let i = 0; i < 5; i++) {
+            const a = time * 0.36 + i * (TAU / 5);
+            const x = cx + Math.cos(a) * r * 1.0;
+            const y = cy + Math.sin(a) * r * 0.63;
+            const s = r * 0.13;
+            ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(time * 1.5 + i) * 0.28);
+            ctx.globalAlpha = Math.min(0.76, intensity * 1.7);
+            ctx.beginPath(); ctx.moveTo(-s, s * 0.5);
+            ctx.quadraticCurveTo(-s * 0.78, -s, 0, -s * 1.18);
+            ctx.quadraticCurveTo(s * 0.78, -s, s, s * 0.5);
+            ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(-s * 1.12, s * 0.5); ctx.lineTo(s * 1.12, s * 0.5); ctx.stroke();
+            ctx.fillRect(-s * 0.13, s * 0.62, s * 0.26, s * 0.42);
+            ctx.restore();
+        }
+    } else if (fx === 'oathwheel') {
         // A bounded four-rune wheel. Paths are issued directly each frame: no
         // temporary arrays, offscreen canvases, or unbounded cache colours.
         blit(cx, cy, r * 0.78, intensity * 0.65);
@@ -240,10 +360,101 @@ export function trailFxColor(color, fx, t, idx, k) {
 // sets globalAlpha (age fade); we set composite + shape per fx.
 export function drawTrailPoint(ctx, px, py, b, k, color, fx, t, idx, reducedEffects = false) {
     const time = reducedEffects ? 0 : t;
-    ctx.globalCompositeOperation = fx === 'hearts' ? 'source-over' : 'lighter';
+    ctx.globalCompositeOperation = (fx === 'hearts' || fx === 'grave_candles')
+        ? 'source-over' : 'lighter';
     ctx.fillStyle = trailFxColor(color, fx, time, idx, k) || color;
     if (fx === 'stars') { star(ctx, px, py, b * 0.95); return; }
     if (fx === 'hearts') { heart(ctx, px, py, b * 0.95); return; }
+    if (fx === 'ember_paws') {
+        // Four square toe embers and a coal pad form a crisp footprint. History
+        // parity alternates a slight left/right lean without animating in place.
+        const lean = (idx & 1) ? b * 0.2 : -b * 0.2;
+        ctx.save(); ctx.translate(px + lean, py); ctx.rotate((idx & 1) ? 0.18 : -0.18);
+        ctx.fillRect(-b * 0.48, -b * 0.12, b * 0.96, b * 0.68);
+        const toe = Math.max(1.5, b * 0.28);
+        ctx.fillRect(-b * 0.72, -b * 0.72, toe, toe);
+        ctx.fillRect(-b * 0.26, -b * 0.92, toe, toe);
+        ctx.fillRect(b * 0.2, -b * 0.92, toe, toe);
+        ctx.fillRect(b * 0.58, -b * 0.62, toe, toe);
+        ctx.restore(); return;
+    }
+    if (fx === 'ice_runes') {
+        // A planted six-spoke frost rune; the sequence chooses one of four
+        // fixed orientations, so Reduced Effects never needs special geometry.
+        const s = b * 0.95;
+        ctx.save(); ctx.translate(px, py); ctx.rotate((idx & 3) * Math.PI * 0.25);
+        ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.2, b * 0.16);
+        ctx.beginPath();
+        ctx.moveTo(-s, 0); ctx.lineTo(s, 0);
+        ctx.moveTo(-s * 0.5, -s * 0.86); ctx.lineTo(s * 0.5, s * 0.86);
+        ctx.moveTo(s * 0.5, -s * 0.86); ctx.lineTo(-s * 0.5, s * 0.86);
+        ctx.stroke();
+        ctx.fillRect(-b * 0.14, -b * 0.14, b * 0.28, b * 0.28);
+        ctx.restore(); return;
+    }
+    if (fx === 'briar_leaves') {
+        // Twin leaves share a short stem; each dropped mark alternates which
+        // lobe leads, making a readable rooted path rather than generic puffs.
+        ctx.save(); ctx.translate(px, py); ctx.rotate((idx & 3) * Math.PI * 0.5 + 0.25);
+        ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.1, b * 0.14);
+        ctx.beginPath(); ctx.moveTo(-b * 0.9, b * 0.72); ctx.lineTo(b * 0.9, -b * 0.72); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-b * 0.1, b * 0.05);
+        ctx.quadraticCurveTo(-b * 1.15, -b * 0.2, -b * 0.92, -b * 0.92);
+        ctx.quadraticCurveTo(-b * 0.18, -b * 1.0, -b * 0.1, b * 0.05);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(b * 0.1, -b * 0.05);
+        ctx.quadraticCurveTo(b * 1.15, b * 0.2, b * 0.92, b * 0.92);
+        ctx.quadraticCurveTo(b * 0.18, b * 1.0, b * 0.1, -b * 0.05);
+        ctx.fill();
+        ctx.restore(); return;
+    }
+    if (fx === 'storm_sparks') {
+        // A hard zig-zag fulgurite mark with one bright satellite shard.
+        const sway = reducedEffects ? 0 : Math.sin(time * 5 + idx) * b * 0.18;
+        ctx.save(); ctx.translate(px + sway, py); ctx.rotate((idx & 3) * Math.PI * 0.5);
+        ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, b * 0.26);
+        ctx.lineJoin = 'miter';
+        ctx.beginPath(); ctx.moveTo(-b * 0.82, -b * 0.72);
+        ctx.lineTo(b * 0.04, -b * 0.2); ctx.lineTo(-b * 0.16, b * 0.12);
+        ctx.lineTo(b * 0.84, b * 0.72); ctx.stroke();
+        ctx.fillRect(b * 0.6, -b * 0.62, b * 0.28, b * 0.28);
+        ctx.restore(); return;
+    }
+    if (fx === 'sand_steps') {
+        // Alternating heel/toe impressions sit in the world as a real walking
+        // path. Three inner bars evoke rippled sand without extra particles.
+        ctx.save(); ctx.translate(px, py); ctx.rotate((idx & 1) ? 0.28 : -0.28);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, b * 0.56, b * 1.0, 0, 0, TAU); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha *= 0.32;
+        ctx.fillStyle = '#2b211c';
+        ctx.fillRect(-b * 0.38, -b * 0.38, b * 0.76, b * 0.12);
+        ctx.fillRect(-b * 0.42, 0, b * 0.84, b * 0.12);
+        ctx.fillRect(-b * 0.32, b * 0.38, b * 0.64, b * 0.12);
+        ctx.restore(); return;
+    }
+    if (fx === 'grave_candles') {
+        // Tiny planted vigil candles: wax body, dark foot and one steady flame.
+        // Flame sway freezes through the shared reduced-effects time source.
+        const sway = Math.sin(time * 3.2 + idx * 1.4) * b * 0.18;
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.fillRect(px - b * 0.34, py - b * 0.2, b * 0.68, b * 1.12);
+        ctx.fillStyle = 'rgba(28,22,34,0.72)';
+        ctx.fillRect(px - b * 0.42, py + b * 0.72, b * 0.84, b * 0.22);
+        ctx.fillStyle = '#ffcf72';
+        ctx.beginPath();
+        ctx.moveTo(px, py - b * 0.24);
+        ctx.quadraticCurveTo(px + b * 0.56 + sway, py - b * 0.82,
+            px + sway * 0.45, py - b * 1.18);
+        ctx.quadraticCurveTo(px - b * 0.48 + sway, py - b * 0.7, px, py - b * 0.24);
+        ctx.fill();
+        ctx.fillStyle = '#fff0b0'; ctx.fillRect(px - b * 0.1, py - b * 0.8, b * 0.2, b * 0.28);
+        ctx.restore(); return;
+    }
     if (fx === 'waymarks') {
         // Planted compass-runes alternate orientation by history index. They do
         // not rotate after being dropped, so movement reads as a marked path.

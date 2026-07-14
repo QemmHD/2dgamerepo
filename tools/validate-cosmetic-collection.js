@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import * as CosmeticContent from '../src/content/cosmetics.js';
-import { MenuRenderer } from '../src/systems/MenuRenderer.js';
+import { MenuRenderer, boutiquePreviewGuidance } from '../src/systems/MenuRenderer.js';
 import { buildCaseReel } from '../src/systems/CaseSystem.js';
 import {
     COSMETIC_COLLECTION_CATEGORY_FILTERS,
@@ -272,23 +272,33 @@ for (const id of legacyClippedIds) {
     check(derivedClippedIds.includes(id), `legacy clipped cosmetic ${id} moved outside the paged tail`);
 }
 
-// Collection Growth I-A adds eight pieces to the prior 65-item catalog. When
-// any growth marker is present, require the complete 73-item authored set;
-// otherwise synthesize the projection so pagination stays covered in isolation.
-const growthMarkerIds = [
+// I-A added eight reachability/rig styles; I-B adds a separate 30-look pack.
+// Any marker requires its complete slice so a partial content merge cannot
+// silently ship. The final authored/projection contract is 103 reachable looks.
+const growthIaMarkerIds = [
     'cloak_splitwatch', 'cloak_mothwing', 'hat_waylantern', 'hat_mothmask',
     'aura_oathwheel', 'aura_gloam_moths', 'trail_waymarks', 'trail_gloam_wisps',
 ];
-const growthContentLanded = growthMarkerIds.some((id) => authoredIds.includes(id));
-if (growthContentLanded) {
-    check(COSMETIC_LIST.length === 73, 'partial Collection Growth catalog landed; expected 73 items');
-    for (const id of growthMarkerIds) check(authoredIds.includes(id), `growth cosmetic ${id} is missing`);
+const growthIbMarkerIds = [
+    'fur_kilncracked', 'cloak_coalwing', 'hat_crucible', 'aura_forgehalo', 'trail_slagprints',
+    'fur_rimeglass', 'cloak_icefall', 'hat_glaciercrest', 'aura_snowprism', 'trail_hoarfrost',
+    'fur_briarhide', 'cloak_thornbough', 'hat_briarhelm', 'aura_brambleward', 'trail_rootstitch',
+    'fur_stormglass', 'cloak_stormkite', 'hat_thundercrest', 'aura_tempestcage', 'trail_fulgurite',
+    'fur_dunebanded', 'cloak_sunsail', 'hat_sunorrery', 'aura_miragecrown', 'trail_sandglass',
+    'fur_ossuary', 'cloak_pallbearer', 'hat_gravebell', 'aura_requiem', 'trail_epitaph',
+];
+if (growthIaMarkerIds.some((id) => authoredIds.includes(id))) {
+    for (const id of growthIaMarkerIds) check(authoredIds.includes(id), `I-A cosmetic ${id} is missing`);
+}
+if (growthIbMarkerIds.some((id) => authoredIds.includes(id))) {
+    check(COSMETIC_LIST.length === 103, 'partial Collection Growth I-B catalog landed; expected 103 items');
+    for (const id of growthIbMarkerIds) check(authoredIds.includes(id), `I-B cosmetic ${id} is missing`);
 }
 
-function projectedCatalog73() {
-    if (COSMETIC_LIST.length === 73) return COSMETIC_LIST;
-    const catalog = COSMETIC_LIST.slice(0, 73);
-    for (let index = catalog.length; index < 73; index++) {
+function projectedCatalog103() {
+    if (COSMETIC_LIST.length === 103) return COSMETIC_LIST;
+    const catalog = COSMETIC_LIST.slice(0, 103);
+    for (let index = catalog.length; index < 103; index++) {
         const item = {
             id: `collection_projection_${index + 1}`,
             category: COSMETIC_CATEGORIES[index % COSMETIC_CATEGORIES.length],
@@ -307,15 +317,15 @@ function projectedCatalog73() {
     return Object.freeze(catalog);
 }
 
-const projected = projectedCatalog73();
-check(projected.length === 73, 'projected catalog is not exactly 73 items');
+const projected = projectedCatalog103();
+check(projected.length === 103, 'projected catalog is not exactly 103 items');
 const projectedOwned = new Set(projected.filter((_, index) => index % 2 === 0).map((item) => item.id));
 const projectedAll = buildCosmeticCollectionPage({ catalog: projected, ownedIds: projectedOwned, page: 1 });
-check(projectedAll.pageCount === 10, '73-item collection must span ten pages');
-validateTraversal('projected-73/all/all/all',
+check(projectedAll.pageCount === 13, '103-item collection must span thirteen pages');
+validateTraversal('projected-103/all/all/all',
     { catalog: projected, category: 'all', ownership: 'all', source: 'all', ownedIds: projectedOwned },
     projected);
-if (projected !== COSMETIC_LIST) validateFilterMatrix('projected-73', projected);
+if (projected !== COSMETIC_LIST) validateFilterMatrix('projected-103', projected);
 
 // Malformed requests and catalogs expose no cosmetics. Valid records preserve
 // first occurrence/order while malformed and duplicate records are discarded.
@@ -373,6 +383,7 @@ check(noMatches.page === 0 && noMatches.pageCount === 0, 'valid empty result exp
 // geometry, filters, page controls, and item dispatch loop all execute.
 const renderer = new MenuRenderer({ safeArea: { top: 0, right: 0, bottom: 0, left: 0 } });
 const rendered = [];
+const renderedText = [];
 const segmentedActions = [];
 const pageButtons = [];
 renderer._panel = () => {};
@@ -392,7 +403,8 @@ renderer._button = (_ctx, rect, label, options = {}) => {
 };
 const recordCtx = {
     fillStyle: '', font: '', textAlign: '', textBaseline: '',
-    fillText() {},
+    fillText(value) { renderedText.push(String(value)); },
+    measureText(value) { return { width: String(value ?? '').length * 7 }; },
 };
 const renderState = {
     saveData: {
@@ -407,6 +419,7 @@ const renderState = {
 const collectionRect = { x: 540, y: 250, w: 980, h: 390 };
 for (const page of [1, 2]) {
     rendered.length = 0;
+    renderedText.length = 0;
     segmentedActions.length = 0;
     pageButtons.length = 0;
     renderState.collectionView.page = page;
@@ -417,6 +430,11 @@ for (const page of [1, 2]) {
     });
     same(rendered.map((entry) => entry.id), expected.itemIds,
         `renderer hat page ${page} diverged from collection authority`);
+    check(renderedText.some((text) => text.includes(`${expected.totalItems} MATCHES`)
+        && text.includes('OWNED') && text.includes('SETS')),
+    `renderer hat page ${page} lacks clear matches/owned/set summary copy`);
+    check(renderedText.every((text) => !text.includes(' SHOWN')),
+        `renderer hat page ${page} retained ambiguous SHOWN copy`);
     same(segmentedActions, ['collectionCategory', 'collectionOwnership', 'collectionSource'],
         `renderer hat page ${page} omitted a filter lane`);
     check(pageButtons.length === 2, `renderer hat page ${page} omitted pager controls`);
@@ -434,6 +452,22 @@ for (const page of [1, 2]) {
         }
     }
 }
+
+same(boutiquePreviewGuidance(['case']),
+    'RANDOM DROP · every piece comes from cosmetic cases',
+    'case-only Boutique preview does not disclose its random-only path');
+same(boutiquePreviewGuidance(['achievement']),
+    'Every piece unlocks through achievements',
+    'achievement-only Boutique preview has vague acquisition copy');
+same(boutiquePreviewGuidance(['vigil']),
+    'Every piece unlocks on the Vigil Path',
+    'Vigil-only Boutique preview has vague acquisition copy');
+same(boutiquePreviewGuidance(['case', 'achievement']),
+    'Earn locked pieces through random cases or achievements',
+    'mixed-source Boutique preview lost its exact acquisition paths');
+same(boutiquePreviewGuidance(['__unknown__']),
+    'Earn this look outside the Boutique',
+    'unknown Boutique preview route did not fail closed');
 
 // Case reels carry stable ids, and the production item-face path resolves the
 // actual cosmetic catalog entry rather than falling back to category art.
@@ -454,4 +488,4 @@ same(actualFace, { category: 'hat', id: 'hat_mothmask' },
     'case face did not render the actual cosmetic silhouette');
 
 console.log(`cosmetic collection: ${checks} checks passed `
-    + `(${COSMETIC_LIST.length} authored, 73 projected, ${derivedClippedIds.length} clipped-tail ids reachable).`);
+    + `(${COSMETIC_LIST.length} authored, 103 projected, ${derivedClippedIds.length} clipped-tail ids reachable).`);

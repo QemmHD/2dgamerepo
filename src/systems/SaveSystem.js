@@ -10,7 +10,9 @@ import {
     DEFAULT_UNLOCKED_COSMETICS,
     DEFAULT_EQUIPPED_COSMETICS,
     COSMETIC_LIST,
+    COSMETIC_SETS,
     cosmeticById,
+    cosmeticCoinCost,
 } from '../content/cosmetics.js';
 import {
     RUN_OBJECTIVE_CANDIDATES,
@@ -62,6 +64,7 @@ const GUIDED_OBJECTIVE_RUN_RE = /^go([0-9a-z]{1,46})$/;
 const UPGRADE_MAX_BY_ID = Object.freeze(Object.fromEntries(
     PERMANENT_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxLevel]),
 ));
+const COSMETIC_PRESET_SLOTS = Object.freeze(Object.keys(DEFAULT_EQUIPPED_COSMETICS));
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -220,6 +223,11 @@ function defaultData({ reducedEffects = false } = {}) {
         cosmetics: {
             unlocked: [...DEFAULT_UNLOCKED_COSMETICS],
             equipped: { ...DEFAULT_EQUIPPED_COSMETICS },
+            // Per-hero looks are additive. `equipped` remains the compatibility
+            // mirror for the selected hero so existing render/menu code keeps
+            // reading the same stable shape.
+            presets: createCosmeticPresets(DEFAULT_EQUIPPED_COSMETICS),
+            pursuitSetId: null,
         },
         // Loadout gear (small buffs + chosen starting weapon).
         gear: {
@@ -333,6 +341,38 @@ function validateEquipped(raw, defaults) {
             const v = raw[key];
             if (typeof v === 'string' || v === null) out[key] = v;
         }
+    }
+    return out;
+}
+
+function copyCosmeticLook(look = DEFAULT_EQUIPPED_COSMETICS) {
+    return Object.fromEntries(COSMETIC_PRESET_SLOTS.map((category) => [
+        category,
+        look && Object.prototype.hasOwnProperty.call(look, category)
+            ? look[category]
+            : DEFAULT_EQUIPPED_COSMETICS[category],
+    ]));
+}
+
+function createCosmeticPresets(look = DEFAULT_EQUIPPED_COSMETICS) {
+    return Object.fromEntries(CHARACTER_IDS.map((characterId) => [
+        characterId,
+        copyCosmeticLook(look),
+    ]));
+}
+
+// A preset may only retain known, owned items in their authored slots. The
+// supplied fallback is already validated, so malformed or stale fields repair
+// per slot without discarding the rest of a veteran's look.
+function validateCosmeticLook(raw, fallback, ownedIds) {
+    const candidate = validateEquipped(raw, fallback);
+    const out = {};
+    for (const category of COSMETIC_PRESET_SLOTS) {
+        const id = candidate[category];
+        const item = cosmeticById(id);
+        out[category] = item && item.category === category && ownedIds.has(id)
+            ? id
+            : fallback[category];
     }
     return out;
 }
@@ -463,6 +503,13 @@ export class SaveSystem {
             }
         }
 
+        // Selected character is needed while normalizing per-hero cosmetic
+        // presets. Keeping it here also lets `cosmetics.equipped` remain an
+        // exact compatibility mirror for the selected hero.
+        const selectedCharacter = CHARACTER_IDS.includes(data.selectedCharacter)
+            ? data.selectedCharacter
+            : DEFAULT_CHARACTER;
+
         // Cosmetics + gear: validate id lists and equipped maps, always
         // seeded with the baseline unlocks/equips (so they survive any save).
         const dc = data.cosmetics && typeof data.cosmetics === 'object' ? data.cosmetics : {};
@@ -496,13 +543,34 @@ export class SaveSystem {
 
         // Equipped ids must be known, owned, and belong to the slot they occupy.
         // Old/tampered values fall back without deleting valid unlock history.
-        for (const category of Object.keys(cosmetics.equipped)) {
-            const id = cosmetics.equipped[category];
-            const item = COSMETIC_LIST.find((entry) => entry.id === id);
-            if (!item || item.category !== category || !cosmetics.unlocked.includes(id)) {
-                cosmetics.equipped[category] = def.cosmetics.equipped[category];
-            }
+        const ownedCosmeticIds = new Set(cosmetics.unlocked);
+        cosmetics.equipped = validateCosmeticLook(
+            cosmetics.equipped,
+            def.cosmetics.equipped,
+            ownedCosmeticIds,
+        );
+
+        // Old saves have no presets: clone their validated global look into
+        // every known hero, exactly preserving what they saw before migration.
+        // New saves validate each hero independently, then refresh the legacy
+        // `equipped` mirror from the currently selected hero.
+        const rawPresets = dc.presets && typeof dc.presets === 'object'
+            && !Array.isArray(dc.presets) ? dc.presets : null;
+        cosmetics.presets = {};
+        for (const characterId of CHARACTER_IDS) {
+            const rawPreset = rawPresets && dc.presets[characterId]
+                && typeof dc.presets[characterId] === 'object'
+                && !Array.isArray(dc.presets[characterId])
+                ? dc.presets[characterId] : null;
+            cosmetics.presets[characterId] = rawPreset
+                ? validateCosmeticLook(rawPreset, cosmetics.equipped, ownedCosmeticIds)
+                : copyCosmeticLook(cosmetics.equipped);
         }
+        if (rawPresets) cosmetics.equipped = copyCosmeticLook(cosmetics.presets[selectedCharacter]);
+        cosmetics.pursuitSetId = typeof dc.pursuitSetId === 'string'
+            && COSMETIC_SETS.some((set) => set.id === dc.pursuitSetId)
+            ? dc.pursuitSetId : null;
+
         for (const category of Object.keys(gear.equipped)) {
             const id = gear.equipped[category];
             const item = GEAR_LIST.find((entry) => entry.id === id);
@@ -510,12 +578,6 @@ export class SaveSystem {
                 gear.equipped[category] = def.gear.equipped[category];
             }
         }
-
-        // Selected character: keep only a known id; otherwise fall back to the
-        // default (so an old save with no field, or a stale id, loads cleanly).
-        const selectedCharacter = CHARACTER_IDS.includes(data.selectedCharacter)
-            ? data.selectedCharacter
-            : DEFAULT_CHARACTER;
 
         const dfr = data.forge && typeof data.forge === 'object' ? data.forge : {};
         const forge = { pity: Number.isFinite(dfr.pity) && dfr.pity >= 0 ? Math.floor(dfr.pity) : 0 };
@@ -1112,6 +1174,20 @@ export class SaveSystem {
     }
 
     // ── Cosmetics ──────────────────────────────────────────────────────
+    _ensureCosmeticPresets() {
+        if (!this.data.cosmetics.presets || typeof this.data.cosmetics.presets !== 'object'
+            || Array.isArray(this.data.cosmetics.presets)) {
+            this.data.cosmetics.presets = createCosmeticPresets(this.data.cosmetics.equipped);
+        }
+        for (const characterId of CHARACTER_IDS) {
+            const preset = this.data.cosmetics.presets[characterId];
+            if (!preset || typeof preset !== 'object' || Array.isArray(preset)) {
+                this.data.cosmetics.presets[characterId] = copyCosmeticLook(this.data.cosmetics.equipped);
+            }
+        }
+        return this.data.cosmetics.presets;
+    }
+
     isCosmeticUnlocked(id) {
         return this.data.cosmetics.unlocked.includes(id);
     }
@@ -1126,19 +1202,118 @@ export class SaveSystem {
         return true;
     }
 
-    equipCosmetic(category, id) {
+    equipCosmetic(category, id, characterId = this.getSelectedCharacter()) {
         if (!(category in this.data.cosmetics.equipped)) return false;
+        if (!CHARACTER_IDS.includes(characterId)) return false;
         if (id !== null) {
             const item = COSMETIC_LIST.find((entry) => entry.id === id);
             if (!item || item.category !== category || !this.isCosmeticUnlocked(id)) return false;
         }
-        this.data.cosmetics.equipped[category] = id;
+        const presets = this._ensureCosmeticPresets();
+        presets[characterId] = { ...presets[characterId], [category]: id };
+        if (characterId === this.getSelectedCharacter()) {
+            this.data.cosmetics.equipped = copyCosmeticLook(presets[characterId]);
+        }
         this.save();
         return true;
     }
 
-    getEquippedCosmetics() {
+    // Atomic all-or-nothing full-look equip. Every slot must be present, known,
+    // correctly categorized, and owned before either the preset or compatibility
+    // mirror mutates; one save write commits the complete appearance.
+    equipCosmeticLook(look, characterId = this.getSelectedCharacter()) {
+        if (!look || typeof look !== 'object' || Array.isArray(look)
+            || !CHARACTER_IDS.includes(characterId)) return false;
+        const keys = Object.keys(look);
+        if (keys.length !== COSMETIC_PRESET_SLOTS.length
+            || keys.some((key) => !COSMETIC_PRESET_SLOTS.includes(key))) return false;
+        const next = {};
+        for (const category of COSMETIC_PRESET_SLOTS) {
+            if (!Object.prototype.hasOwnProperty.call(look, category)) return false;
+            const id = look[category];
+            const item = cosmeticById(id);
+            if (!item || item.category !== category || !this.isCosmeticUnlocked(id)) return false;
+            next[category] = id;
+        }
+        const presets = this._ensureCosmeticPresets();
+        presets[characterId] = next;
+        if (characterId === this.getSelectedCharacter()) {
+            this.data.cosmetics.equipped = copyCosmeticLook(next);
+        }
+        this.save();
+        return true;
+    }
+
+    // One-save Boutique transaction: validate the charged ids, exact shared
+    // catalog prices, resulting ownership, and complete target look before any
+    // coin/unlock/preset field mutates. This closes the old spend -> N unlocks
+    // -> N equips persistence window while retaining earned-coin economics.
+    purchaseCosmeticLook(purchaseIds, totalCost, look,
+        characterId = this.getSelectedCharacter()) {
+        if (!Array.isArray(purchaseIds) || !Number.isInteger(totalCost)
+            || totalCost < 0 || totalCost > MAX_COIN_BALANCE
+            || !CHARACTER_IDS.includes(characterId)
+            || !look || typeof look !== 'object' || Array.isArray(look)) return false;
+        const uniqueIds = [...new Set(purchaseIds)];
+        if (uniqueIds.length !== purchaseIds.length) return false;
+        let expectedCost = 0;
+        const newlyOwned = new Set(this.data.cosmetics.unlocked);
+        for (const id of uniqueIds) {
+            const item = cosmeticById(id);
+            if (!item || this.isCosmeticUnlocked(id)) return false;
+            const cost = cosmeticCoinCost(item);
+            if (!Number.isInteger(cost) || cost <= 0) return false;
+            expectedCost += cost;
+            newlyOwned.add(id);
+        }
+        if (expectedCost !== totalCost) return false;
+        const rawBalance = this.data.totalCoins;
+        const balance = rawBalance === Infinity ? MAX_COIN_BALANCE
+            : Number.isFinite(rawBalance)
+                ? Math.max(0, Math.min(MAX_COIN_BALANCE, Math.floor(rawBalance))) : 0;
+        if (balance < totalCost) return false;
+        const keys = Object.keys(look);
+        if (keys.length !== COSMETIC_PRESET_SLOTS.length
+            || keys.some((key) => !COSMETIC_PRESET_SLOTS.includes(key))) return false;
+        const next = {};
+        for (const category of COSMETIC_PRESET_SLOTS) {
+            const id = look[category];
+            const item = cosmeticById(id);
+            if (!item || item.category !== category || !newlyOwned.has(id)) return false;
+            next[category] = id;
+        }
+
+        this.data.totalCoins = balance - totalCost;
+        this.data.cosmetics.unlocked.push(...uniqueIds);
+        const presets = this._ensureCosmeticPresets();
+        presets[characterId] = next;
+        if (characterId === this.getSelectedCharacter()) {
+            this.data.cosmetics.equipped = copyCosmeticLook(next);
+        }
+        this.save();
+        return true;
+    }
+
+    setCosmeticPursuit(setId) {
+        if (setId !== null && !COSMETIC_SETS.some((set) => set.id === setId)) return false;
+        this.data.cosmetics.pursuitSetId = setId;
+        this.save();
+        return true;
+    }
+
+    // Zero arguments preserve the historical global-equipment API. Supplying a
+    // known hero returns that hero's preset for session-local overrides such as
+    // Rite Trial without mutating the selected character.
+    getEquippedCosmetics(characterId = null) {
+        if (characterId !== null && characterId !== undefined && CHARACTER_IDS.includes(characterId)) {
+            return this._ensureCosmeticPresets()[characterId];
+        }
         return this.data.cosmetics.equipped;
+    }
+
+    getCosmeticPreset(characterId) {
+        if (!CHARACTER_IDS.includes(characterId)) return null;
+        return copyCosmeticLook(this._ensureCosmeticPresets()[characterId]);
     }
 
     // ── Gear ───────────────────────────────────────────────────────────
@@ -1175,7 +1350,9 @@ export class SaveSystem {
 
     setSelectedCharacter(id) {
         if (!CHARACTER_IDS.includes(id)) return false;
+        const presets = this._ensureCosmeticPresets();
         this.data.selectedCharacter = id;
+        this.data.cosmetics.equipped = copyCosmeticLook(presets[id]);
         this.save();
         return true;
     }

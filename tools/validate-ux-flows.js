@@ -124,7 +124,11 @@ const browseGame = {
     tryOn: {},
     collectionView: { category: 'fur', ownership: 'all', source: 'all', page: 3 },
     boutiqueView: { category: 'fur', page: 2, setPage: 1 },
-    saveSystem: { markTabSeen(tab) { browseTabsSeen.push(tab); } },
+    saveSystem: {
+        data: { cosmetics: { pursuitSetId: null } },
+        markTabSeen(tab) { browseTabsSeen.push(tab); },
+        setCosmeticPursuit(id) { this.data.cosmetics.pursuitSetId = id; return true; },
+    },
     _pressFeedback() {},
     _resetMenuFocus() { browseFocusResets += 1; },
     accessibility: {
@@ -154,6 +158,17 @@ ok(browseGame.boutiqueView.category === 'aura'
     && browseGame.boutiqueView.page === 2
     && browseGame.boutiqueView.setPage === 3,
     'Boutique category, stock page, and set page remain independent');
+GameInputActionMethods._menuAction.call(browseGame, 'pursueCosmeticSet', 'stormglass');
+ok(browseGame.saveSystem.data.cosmetics.pursuitSetId === 'stormglass'
+    && /tracking started/i.test(browseAnnouncements.at(-1) || ''),
+    'valid cosmetic-set pursuit did not persist or announce');
+GameInputActionMethods._menuAction.call(browseGame, 'pursueCosmeticSet', '__unknown__');
+ok(browseGame.saveSystem.data.cosmetics.pursuitSetId === 'stormglass',
+    'unknown cosmetic-set pursuit mutated the tracked set');
+GameInputActionMethods._menuAction.call(browseGame, 'pursueCosmeticSet', 'stormglass');
+ok(browseGame.saveSystem.data.cosmetics.pursuitSetId === null
+    && /tracking stopped/i.test(browseAnnouncements.at(-1) || ''),
+    'tracked cosmetic set could not be cleared');
 const focusResetsBeforeRoute = browseFocusResets;
 GameInputActionMethods._menuAction.call(browseGame, 'tryInBoutique', {
     category: 'cloak', id: 'cloak_splitwatch',

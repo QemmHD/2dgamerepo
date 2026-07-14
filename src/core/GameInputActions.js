@@ -373,9 +373,9 @@ export const GameInputActionMethods = {
         if (!entries.length) return;
         const buys = [];
         let total = 0, ownedN = 0;
-        for (const [, id] of entries) {
+        for (const [category, id] of entries) {
             const item = COSMETICS[id];
-            if (!item) continue;
+            if (!item || item.category !== category) continue;
             if (this.saveSystem.isCosmeticUnlocked(id)) { ownedN++; continue; }
             const price = cosmeticCoinCost(item);
             if (!price) continue;              // case/achievement drop: preview-only
@@ -388,15 +388,29 @@ export const GameInputActionMethods = {
             this._setToast('Preview only — earn these through the Vigil Path, cases, or achievements');
             return;
         }
-        if (total > 0 && !this.saveSystem.spendCoins(total)) {
+        if (total > 0 && this.saveSystem.data.totalCoins < total) {
             this.audio.deny();
             this._setToast(`Need ◎ ${(total - this.saveSystem.data.totalCoins).toLocaleString()} more`);
             return;
         }
-        for (const item of buys) this.saveSystem.unlockCosmetic(item.id);
+        const purchased = new Set(buys.map((item) => item.id));
+        const fullLook = { ...this.saveSystem.getEquippedCosmetics() };
         let equippedN = 0;
         for (const [cat, id] of entries) {
-            if (this.saveSystem.isCosmeticUnlocked(id)) { this.saveSystem.equipCosmetic(cat, id); equippedN++; }
+            const item = COSMETICS[id];
+            if (item?.category === cat
+                && (this.saveSystem.isCosmeticUnlocked(id) || purchased.has(id))) {
+                fullLook[cat] = id;
+                equippedN++;
+            }
+        }
+        const committed = buys.length
+            ? this.saveSystem.purchaseCosmeticLook(buys.map((item) => item.id), total, fullLook)
+            : this.saveSystem.equipCosmeticLook(fullLook);
+        if (!committed) {
+            this.audio.deny();
+            this._setToast('Look changed before checkout — please review it again');
+            return;
         }
         // Honest toast: name what was bought AND what stayed source-locked (a
         // set can mix coin pieces with Vigil/case/achievement rewards).
@@ -563,6 +577,19 @@ export const GameInputActionMethods = {
                 this._pressFeedback(`tryset:${arg}`);
                 const set = COSMETIC_SETS.find((s) => s.id === arg);
                 if (set) this.tryOn = { ...set.pieces };
+                break;
+            }
+            case 'pursueCosmeticSet': {
+                const set = COSMETIC_SETS.find((entry) => entry.id === arg);
+                if (!set) break;
+                const current = this.saveSystem.data.cosmetics.pursuitSetId;
+                const next = current === set.id ? null : set.id;
+                if (this.saveSystem.setCosmeticPursuit(next)) {
+                    this._pressFeedback(`pursue:${set.id}`);
+                    this.accessibility?.announce?.(next
+                        ? `${set.name} collection tracking started.`
+                        : `${set.name} collection tracking stopped.`);
+                }
                 break;
             }
             case 'tryOnClear': this._pressFeedback('tryclear'); this.tryOn = {}; break;

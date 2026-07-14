@@ -593,6 +593,22 @@ jobs:
             && grep -q 'data-qa-error-keys="voicevol"' "$EMPTY_VOICE_DOM" || {
               echo 'FAIL: empty voicevol bypassed the exact lexical allowlist'; exit 1;
             }
+
+          INVALID_COLLECTION_DOM="/tmp/harness-invalid-collection-controls.html"
+          INVALID_COLLECTION_PROFILE=$(mktemp -d)
+          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+            --disable-background-networking --disable-component-update \
+            --force-device-scale-factor=1 --window-size=1280,720 \
+            --virtual-time-budget=7000 --user-data-dir="$INVALID_COLLECTION_PROFILE" \
+            --dump-dom \
+            "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=boutique&collectioncat=weapon&collectionpage=0&pursuit=missing-set" \
+            > "$INVALID_COLLECTION_DOM"
+          INVALID_COLLECTION_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_COLLECTION_DOM" | head -1)
+          echo "Invalid Collection controls: $INVALID_COLLECTION_TITLE"
+          echo "$INVALID_COLLECTION_TITLE" | grep -q 'DONE EXC:4 ' \
+            && grep -q 'data-qa-error-keys="collectioncat,collectionpage,collectionqa,pursuit"' "$INVALID_COLLECTION_DOM" || {
+              echo 'FAIL: invalid Collection receipt controls did not fail closed'; exit 1;
+            }
           # Durable Collection Growth I-A visual receipts. These use the same
           # production Canvas/harness path as the exception matrix above and are
           # uploaded for human layout review; deterministic geometry/source truth
@@ -646,6 +662,98 @@ jobs:
           cmp -s "$COLLECTION_RECEIPTS/character-1600x900.png" \
             "$COLLECTION_RECEIPTS/boutique-1600x900.png" \
             && { echo 'FAIL: Character and Boutique receipts are byte-identical'; exit 1; }
+
+          # Collection Growth I-B: preserve strict, human-reviewable receipts for
+          # the new baked fur materials, persistent Set Pursuit, deterministic
+          # Stormglass price ceiling, and honest case-only Gravebell preview.
+          COLLECTION_IB_RECEIPTS=/tmp/collection-growth-ib
+          rm -rf "$COLLECTION_IB_RECEIPTS"
+          mkdir -p "$COLLECTION_IB_RECEIPTS"
+
+          capture_collection_ib() {
+            COLLECTION_IB_NAME="$1"
+            COLLECTION_IB_WINDOW="$2"
+            COLLECTION_IB_QUERY="$3"
+            COLLECTION_IB_KIND="$4"
+            COLLECTION_IB_DOM="/tmp/collection-growth-ib-${COLLECTION_IB_NAME}.html"
+            COLLECTION_IB_PROFILE=$(mktemp -d)
+            timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+              --autoplay-policy=no-user-gesture-required \
+              --disable-background-networking --disable-component-update \
+              --force-device-scale-factor=1 --window-size="$COLLECTION_IB_WINDOW" \
+              --virtual-time-budget=7000 --user-data-dir="$COLLECTION_IB_PROFILE" \
+              --dump-dom \
+              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&out=${COLLECTION_IB_NAME}.png&${COLLECTION_IB_QUERY}" \
+              > "$COLLECTION_IB_DOM"
+            COLLECTION_IB_TITLE=$(grep -o '<title>[^<]*</title>' "$COLLECTION_IB_DOM" | head -1)
+            echo "Collection I-B ${COLLECTION_IB_NAME}: $COLLECTION_IB_TITLE"
+            echo "$COLLECTION_IB_TITLE" | grep -q 'DONE EXC:0 ' \
+              && grep -q 'data-qa-ready="1"' "$COLLECTION_IB_DOM" \
+              && grep -q "data-qa-output=\"${COLLECTION_IB_NAME}.png\"" "$COLLECTION_IB_DOM" || {
+                echo "FAIL: ${COLLECTION_IB_NAME} did not finish with a clean canvas receipt"; exit 1;
+              }
+            case "$COLLECTION_IB_KIND" in
+              collection-keyboard)
+                grep -q 'data-qa-input="keyboard"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-focus="collectionCategory:cloak#0"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-focus-visible="true"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-category="fur"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-page="2"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-pursuit-set="stormglass"' "$COLLECTION_IB_DOM" || {
+                    echo 'FAIL: desktop Collection receipt did not stage fur page 2 with Stormglass pursuit'; exit 1;
+                  }
+                ;;
+              collection-touch)
+                grep -q 'data-qa-input="touch"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-category="fur"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-page="2"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-pursuit-set="stormglass"' "$COLLECTION_IB_DOM" || {
+                    echo 'FAIL: phone Collection receipt did not stage the touch pursuit state'; exit 1;
+                  }
+                ;;
+              stormglass)
+                grep -q 'data-qa-cosmetic-set="stormglass"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-boutique-category="cloak"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-boutique-set-page="5"' "$COLLECTION_IB_DOM" || {
+                    echo 'FAIL: Boutique receipt did not stage the Stormglass mixed-source set'; exit 1;
+                  }
+                ;;
+              gravebell)
+                grep -q 'data-qa-cosmetic-set="gravebell"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-boutique-category="cloak"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-boutique-set-page="5"' "$COLLECTION_IB_DOM" || {
+                    echo 'FAIL: Boutique receipt did not stage the Gravebell case-only set'; exit 1;
+                  }
+                ;;
+            esac
+            cp "__out/${COLLECTION_IB_NAME}.png" "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png"
+            if [ "$COLLECTION_IB_KIND" = collection-touch ]; then
+              # The production renderer intentionally drops its backing-store
+              # resolution on this phone viewport; validate that exact shipped
+              # performance tier instead of pretending it is a desktop canvas.
+              node tools/artshot/validate-receipt-png.mjs \
+                "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png" --width=439 --height=247
+            else
+              node tools/artshot/validate-receipt-png.mjs "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png"
+            fi
+          }
+
+          capture_collection_ib collection-fur-page2-desktop 1600,900 \
+            'screen=menu&tab=character&collectioncat=fur&collectionpage=2&pursuit=stormglass&input=keyboard&focus=collectionCategory%3Acloak%230' \
+            collection-keyboard
+          capture_collection_ib collection-fur-page2-phone 844,390 \
+            'screen=menu&tab=character&collectioncat=fur&collectionpage=2&pursuit=stormglass&input=touch' \
+            collection-touch
+          capture_collection_ib boutique-stormglass 1600,900 \
+            'screen=menu&tab=boutique&tryset=stormglass&input=keyboard&focus=boutiqueCategory%3Aaura%230' \
+            stormglass
+          capture_collection_ib boutique-gravebell 1600,900 \
+            'screen=menu&tab=boutique&tryset=gravebell&input=keyboard&focus=boutiqueCategory%3Aaura%230' \
+            gravebell
+
+          [ "$(sha256sum "$COLLECTION_IB_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 4 ] || {
+            echo 'FAIL: Collection I-B visual receipts were not four distinct frames'; exit 1;
+          }
           echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, Collection, Boutique, menus, Mines)"
 
       - name: Upload Collection Growth I-A visual receipts
@@ -653,5 +761,13 @@ jobs:
         with:
           name: collection-growth-ia-visual-receipts
           path: /tmp/collection-growth-ia/*.png
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Collection Growth I-B visual receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-growth-ib-visual-receipts
+          path: /tmp/collection-growth-ib/*.png
           if-no-files-found: error
           retention-days: 30

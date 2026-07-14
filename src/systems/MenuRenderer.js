@@ -17,7 +17,7 @@ import {
     GEAR, GEAR_CATEGORIES, GEAR_CATEGORY_LABELS, gearByCategory, buffSummary,
 } from '../content/gear.js';
 import {
-    COSMETICS, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement, cosmeticCoinCost,
+    COSMETICS, COSMETIC_LIST, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement, cosmeticCoinCost,
     COSMETIC_SETS, getCosmeticAcquisitionRoutes, getCosmeticSourceLabel,
 } from '../content/cosmetics.js';
 import { buildCosmeticCollectionPage } from './CosmeticCollection.js';
@@ -47,7 +47,7 @@ import {
     normalizeUiScale,
     normalizeVibrationStrength,
 } from './AccessibilityPreferences.js';
-import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
+import { drawPixelCloak, drawPixelFurSwatch, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus, drawRarityFx, drawTrailPoint } from '../assets/CosmeticFx.js';
 import { resolveStartingWeapon } from './LoadoutSystem.js';
@@ -71,6 +71,34 @@ const HEAD = DISPLAY_FONT;
 const TAU = Math.PI * 2;
 const HERO_CANONICAL_SIZE = 182;
 const HERO_CANONICAL_HALF = HERO_CANONICAL_SIZE / 2;
+
+// Preview-only Boutique looks must name their real acquisition path. Keeping
+// this pure makes the promise independently testable instead of burying source
+// truth inside a draw branch.
+export function boutiquePreviewGuidance(routes) {
+    const known = new Set();
+    if (routes && typeof routes[Symbol.iterator] === 'function') {
+        for (const route of routes) {
+            if (['case', 'achievement', 'vigil', 'boutique'].includes(route)) known.add(route);
+        }
+    }
+    if (known.size === 1 && known.has('case')) {
+        return 'RANDOM DROP · every piece comes from cosmetic cases';
+    }
+    if (known.size === 1 && known.has('achievement')) {
+        return 'Every piece unlocks through achievements';
+    }
+    if (known.size === 1 && known.has('vigil')) {
+        return 'Every piece unlocks on the Vigil Path';
+    }
+    if (known.size > 0) {
+        const labels = [...known].map((route) => route === 'case'
+            ? 'random cases' : route === 'achievement'
+                ? 'achievements' : route === 'vigil' ? 'Vigil Path' : 'the Boutique');
+        return `Earn locked pieces through ${labels.join(' or ')}`;
+    }
+    return 'Earn this look outside the Boutique';
+}
 
 // Each tab carries an accent color so the menu reads as color-coded sections
 // at a glance (the active tab tints to its own hue; inactive tabs show a thin
@@ -1278,7 +1306,7 @@ export class MenuRenderer {
         let avatarPose = null;
         const avatarState = (t % 3.6) > 3.0 ? 'cast' : 'idle';
         try {
-            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
+            const frames = getHeroFrames(ch.id, ch, ap, !!ap.hatShape && ap.hatShape !== 'none');
             avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
         } catch (e) { avatarPose = null; }
         const startWeaponId = resolveStartingWeapon(save);
@@ -1658,7 +1686,7 @@ export class MenuRenderer {
         // body, cosmetics and held wand preview the same in-game frame.
         const avatarState = (this._t % 3.6) > 3.0 ? 'cast' : 'idle';
         try {
-            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
+            const frames = getHeroFrames(ch.id, ch, ap, !!ap.hatShape && ap.hatShape !== 'none');
             avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
         } catch (e) { avatarPose = null; }
         // The selected starting weapon drives the themed skin overlay so the
@@ -2878,7 +2906,7 @@ export class MenuRenderer {
         this._segmentedRow(ctx, sources, model.source, x, rect.y + 79, w, 26,
             'collectionSource', '#ffb45f');
 
-        const footerH = 38;
+        const footerH = 56;
         const gridY = rect.y + 113;
         const gridBottom = rect.y + rect.h - footerH - 8;
         const gridH = Math.max(1, gridBottom - gridY);
@@ -2911,21 +2939,61 @@ export class MenuRenderer {
         const pageCount = model.pageCount || 1;
         const hasPrev = model.hasPreviousPage ?? model.hasPrev ?? model.hasPrevious ?? page > 1;
         const hasNext = model.hasNextPage ?? model.hasNext ?? page < pageCount;
-        const fy = rect.y + rect.h - 36;
-        this._button(ctx, { x, y: fy, w: 116, h: 28 }, '‹ PREV', {
+        const fy = rect.y + rect.h - 50;
+        this._button(ctx, { x, y: fy + 5, w: 116, h: 38 }, '‹ PREV', {
             enabled: hasPrev, action: hasPrev ? 'collectionPage' : null,
             arg: page - 1, fontSize: 13, accessibleLabel: `Previous collection page, ${page - 1}`,
         });
-        this._button(ctx, { x: x + w - 116, y: fy, w: 116, h: 28 }, 'NEXT ›', {
+        this._button(ctx, { x: x + w - 116, y: fy + 5, w: 116, h: 38 }, 'NEXT ›', {
             enabled: hasNext, action: hasNext ? 'collectionPage' : null,
             arg: page + 1, fontSize: 13, accessibleLabel: `Next collection page, ${page + 1}`,
         });
         const total = model.totalItems ?? model.totalCount ?? model.filteredCount
             ?? model.total ?? entries.length;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = 'rgba(220,228,238,0.68)'; ctx.font = `700 13px ${FONT}`;
-        ctx.fillText(`PAGE ${page}/${pageCount} · ${total} ITEM${total === 1 ? '' : 'S'}`,
-            rect.x + rect.w / 2, fy + 14);
+        // Unknown legacy ids are intentionally retained by SaveSystem for
+        // forward/backward compatibility, but they are not authored collection
+        // entries and must never inflate the visible completion count.
+        const unlockedIds = new Set(Array.isArray(save.cosmetics.unlocked)
+            ? save.cosmetics.unlocked : []);
+        const ownedIds = new Set(COSMETIC_LIST
+            .filter((item) => unlockedIds.has(item.id))
+            .map((item) => item.id));
+        const completedSets = COSMETIC_SETS.filter((set) => COSMETIC_CATEGORIES
+            .every((category) => ownedIds.has(set.pieces[category]))).length;
+        const pursued = COSMETIC_SETS.find((set) => set.id === save.cosmetics.pursuitSetId) || null;
+        let focusSet = pursued;
+        if (!focusSet) {
+            focusSet = COSMETIC_SETS.reduce((best, set) => {
+                const progress = COSMETIC_CATEGORIES.filter((category) => ownedIds.has(set.pieces[category])).length;
+                const bestProgress = best
+                    ? COSMETIC_CATEGORIES.filter((category) => ownedIds.has(best.pieces[category])).length : -1;
+                return progress > bestProgress && progress < COSMETIC_CATEGORIES.length ? set : best;
+            }, null);
+        }
+        ctx.fillStyle = 'rgba(220,228,238,0.72)'; ctx.font = `800 12px ${FONT}`;
+        ctx.fillText(`PAGE ${page}/${pageCount} · ${total} MATCHES  |  OWNED ${ownedIds.size}/${COSMETIC_LIST.length} · SETS ${completedSets}/${COSMETIC_SETS.length}`,
+            rect.x + rect.w / 2, fy + 12);
+        if (focusSet) {
+            const progress = COSMETIC_CATEGORIES.filter((category) => ownedIds.has(focusSet.pieces[category])).length;
+            const missingCategory = COSMETIC_CATEGORIES.find((category) => !ownedIds.has(focusSet.pieces[category]));
+            const missing = missingCategory ? COSMETICS[focusSet.pieces[missingCategory]] : null;
+            let next = 'COMPLETE · equip the full look in Boutique';
+            if (missing) {
+                const routes = getCosmeticAcquisitionRoutes(missing);
+                if (routes.includes('boutique')) {
+                    next = `NEXT ${missing.name}: ◎ ${cosmeticCoinCost(missing).toLocaleString()}`
+                        + (routes.includes('case') ? ' or RANDOM cosmetic case' : '');
+                } else if (routes.includes('achievement')) next = `NEXT ${missing.name}: Achievement`;
+                else if (routes.includes('vigil')) next = `NEXT ${missing.name}: Vigil Path Lv ${missing.passLevel}`;
+                else if (routes.includes('case')) next = `NEXT ${missing.name}: RANDOM cosmetic case drop`;
+                else next = `NEXT ${missing.name}: ${getCosmeticSourceLabel(missing)}`;
+            }
+            ctx.fillStyle = focusSet.color; ctx.font = `800 11px ${FONT}`;
+            ctx.fillText(this._ellip(ctx,
+                `${pursued ? 'TRACKING' : 'CLOSEST'} ${focusSet.name} ${progress}/5 · ${next}`,
+                Math.max(120, w - 260)), rect.x + rect.w / 2, fy + 33);
+        }
     }
 
     // ── LOADOUT / CHARACTER shared grid ──────────────────────────────────
@@ -3135,10 +3203,12 @@ export class MenuRenderer {
             }
             ctx.restore(); return;
         }
-        // fur (and any fallback): a tint disc; natural (no color) gets a slash.
-        ctx.fillStyle = item.color || '#b98a5a';
-        ctx.beginPath(); ctx.arc(icx, icy, isz * 0.42, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+        // Fur material swatches use the same finite style vocabulary as the
+        // baked live frames, so I-B patterns are visible before try-on/opening.
+        ctx.save(); ctx.beginPath(); ctx.rect(ix, iyy, isz, isz); ctx.clip();
+        drawPixelFurSwatch(ctx, ix, iyy, isz, item.color || '#b98a5a',
+            item.furStyle || 'solid', item.furAccent, item.furAccent2);
+        ctx.restore();
         if (!item.color) {
             ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(icx - isz * 0.24, icy + isz * 0.24); ctx.lineTo(icx + isz * 0.24, icy - isz * 0.24); ctx.stroke();
@@ -3162,7 +3232,7 @@ export class MenuRenderer {
         let avatarPose = null;
         const avatarState = (this._t % 4.0) > 3.4 ? 'cast' : 'idle';
         try {
-            const frames = getHeroFrames(ch.id, ch, ap.furColor, !!ap.hatShape && ap.hatShape !== 'none');
+            const frames = getHeroFrames(ch.id, ch, ap, !!ap.hatShape && ap.hatShape !== 'none');
             avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
         } catch (e) { avatarPose = null; }
         const startWeaponId = resolveStartingWeapon(save);
@@ -3524,7 +3594,7 @@ export class MenuRenderer {
         const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
         let avatarPose = null;
         try {
-            avatarPose = resolveHeroPose(getHeroFrames(ch.id, ch, ap.furColor,
+            avatarPose = resolveHeroPose(getHeroFrames(ch.id, ch, ap,
                 !!ap.hatShape && ap.hatShape !== 'none'), 'down', 'idle', 0);
         } catch (e) { avatarPose = null; }
         // Mannequin radius scales with the panel (fixed 105 collided with the
@@ -3544,6 +3614,7 @@ export class MenuRenderer {
 
         // Tried-on pieces, listed with their path (price / owned / drop-only).
         let total = 0, equippableN = 0;
+        const previewRoutes = new Set();
         let ly = capY + 54;
         ctx.textAlign = 'left';
         for (const cat of COSMETIC_CATEGORIES) {
@@ -3558,6 +3629,7 @@ export class MenuRenderer {
                 path = `◎ ${price.toLocaleString()}${routes.includes('case') ? ' · Case' : ''}`;
                 pcol = '#ffd86b'; total += price; equippableN++;
             } else {
+                for (const route of getCosmeticAcquisitionRoutes(item)) previewRoutes.add(route);
                 path = getCosmeticSourceLabel(item) || 'Case';
                 pcol = item.passLevel ? '#ff9a4a'
                     : item.achievement ? 'rgba(168,213,247,0.9)'
@@ -3586,7 +3658,8 @@ export class MenuRenderer {
               action: trying && !previewOnly ? 'buyTryOn' : null, fontSize: 24 });
         if (previewOnly) {
             ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 14px ${FONT}`;
-            ctx.fillText('Earn these through the Vigil Path, cases, or achievements', mcx, by2 - 10);
+            const guidance = boutiquePreviewGuidance(previewRoutes);
+            ctx.fillText(this._ellip(ctx, guidance, bw2 - 12), mcx, by2 - 10);
         }
         if (total > 0 && !afford) {
             ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 14px ${FONT}`;
@@ -3613,17 +3686,29 @@ export class MenuRenderer {
             const sx = rx + i * (setW + setGap), sy2 = c.y + 26;
             const ownedN = COSMETIC_CATEGORIES.filter((cat) => owned(s.pieces[cat])).length;
             const tryingSet = COSMETIC_CATEGORIES.every((cat) => tryOn[cat] === s.pieces[cat]);
+            const pursued = save.cosmetics.pursuitSetId === s.id;
+            const trackW = Math.min(72, Math.max(58, setW * 0.25));
             roundRectPath(ctx, sx, sy2, setW, setH, 10);
             ctx.fillStyle = tryingSet ? 'rgba(64,32,52,0.95)' : 'rgba(20,14,20,0.9)'; ctx.fill();
-            ctx.strokeStyle = tryingSet ? s.color : 'rgba(255,255,255,0.12)';
+            ctx.strokeStyle = tryingSet || pursued ? s.color : 'rgba(255,255,255,0.12)';
             ctx.lineWidth = tryingSet ? 2.5 : 1.5; ctx.stroke();
             if (tryingSet) this._selGlow(ctx, sx, sy2, setW, setH, 10, s.color, t);
             ctx.fillStyle = s.color; ctx.font = `700 15px ${FONT}`;
-            ctx.fillText(this._ellip(ctx, s.name, setW - 20), sx + 12, sy2 + 24);
+            ctx.fillText(this._ellip(ctx, s.name, setW - trackW - 26), sx + 12, sy2 + 24);
             ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 13px ${FONT}`;
             ctx.fillText(`${ownedN}/5 owned`, sx + 12, sy2 + 44);
-            this._hot(sx, sy2, setW, setH, 'tryOnSet', s.id,
+            const trackX = sx + setW - trackW;
+            roundRectPath(ctx, trackX + 5, sy2 + 8, trackW - 10, setH - 16, 8);
+            ctx.fillStyle = pursued ? `${s.color}33` : 'rgba(255,255,255,0.05)'; ctx.fill();
+            ctx.strokeStyle = pursued ? s.color : 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = pursued ? s.color : 'rgba(255,255,255,0.68)'; ctx.font = `800 10px ${FONT}`;
+            ctx.fillText(pursued ? 'TRACKED' : 'TRACK', trackX + trackW / 2, sy2 + setH / 2);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            this._hot(sx, sy2, setW - trackW, setH, 'tryOnSet', s.id,
                 `Try on ${s.name}. ${ownedN} of 5 pieces owned.`);
+            this._hot(trackX, sy2, trackW, setH, 'pursueCosmeticSet', s.id,
+                `${pursued ? 'Stop tracking' : 'Track'} ${s.name}. ${ownedN} of 5 pieces owned.`);
         }
         const setPagerY = c.y + 26 + setH + 4;
         this._button(ctx, { x: rx, y: setPagerY, w: 96, h: 24 }, '‹ SETS', {

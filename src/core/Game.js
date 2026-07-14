@@ -956,7 +956,9 @@ export class Game {
         // Loadout gear buffs stack ON TOP of permanent upgrades (applied after
         // so multipliers compound). Cosmetics drive the player's appearance.
         applyLoadout(this.player, this.saveSystem.data);
-        this.player.appearance = resolveAppearance(this.saveSystem.getEquippedCosmetics());
+        // Rite Trials can override the run hero without mutating the menu pick;
+        // resolve that hero's own cosmetic preset, not the compatibility mirror.
+        this.player.appearance = resolveAppearance(this.saveSystem.getEquippedCosmetics(this._heroId));
         // Fur cosmetics bake into the pose frames (per-(hero,fur) cache) —
         // rebuild now that the appearance is known.
         this.player.refreshHeroFrames();

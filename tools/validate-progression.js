@@ -26,6 +26,7 @@ import {
     resolveAppearance,
 } from '../src/content/cosmetics.js';
 import { GEAR } from '../src/content/gear.js';
+import { CHARACTER_IDS } from '../src/content/characters.js';
 import { PERMANENT_UPGRADES } from '../src/content/permanentUpgrades.js';
 import { DAILY_POOL, challengeProgress, pickDailyChallenges } from '../src/content/dailyChallenges.js';
 import { OBJECTIVES } from '../src/content/objectives.js';
@@ -134,17 +135,17 @@ for (const set of COSMETIC_SETS) {
     }
 }
 
-// Collection Growth I-A adds two genuine silhouette families without inflating
-// fur recolors. Counts, acquisition routes, source labels, and complete sets
+// I-A established rig-safe reachability; I-B adds a separate 30-piece,
+// six-set material/silhouette pack. Counts, routes and complete-set identities
 // are persistence/UI contracts rather than incidental menu presentation.
-check(COSMETIC_LIST.length === 73, 'Collection Growth I-A must contain exactly 73 cosmetics');
-const expectedCategoryCounts = { fur: 12, cloak: 14, hat: 16, aura: 15, trail: 16 };
+check(COSMETIC_LIST.length === 103, 'Collection Growth I-B must contain exactly 103 cosmetics');
+const expectedCategoryCounts = { fur: 18, cloak: 20, hat: 22, aura: 21, trail: 22 };
 for (const category of COSMETIC_CATEGORIES) {
     const actual = COSMETIC_LIST.filter((item) => item.category === category).length;
     check(actual === expectedCategoryCounts[category],
         `${category} catalog count ${actual} does not match ${expectedCategoryCounts[category]}`);
 }
-check(COSMETIC_SETS.length === 9, 'Collection Growth I-A must contain exactly nine complete sets');
+check(COSMETIC_SETS.length === 15, 'Collection Growth I-B must contain exactly fifteen complete sets');
 check(JSON.stringify(COSMETIC_ACQUISITION_ROUTES)
     === JSON.stringify(['starter', 'boutique', 'case', 'achievement', 'vigil']),
 'cosmetic acquisition-route ids/order changed');
@@ -260,6 +261,120 @@ check(duskmothAppearance.cloakStyle === 'mothwing'
     && duskmothAppearance.auraFx === 'gloam_moths'
     && duskmothAppearance.trailFx === 'gloam_wisps',
 'Duskmoth appearance metadata did not reach the shared resolver');
+
+const collectionGrowthIbSets = {
+    kilnheart: {
+        route: 'boutique', rawTotal: 12900,
+        pieces: {
+            fur: ['fur_kilncracked', 'furStyle', 'embervein'],
+            cloak: ['cloak_coalwing', 'cloakStyle', 'embertail'],
+            hat: ['hat_crucible', 'shape', 'embercrest'],
+            aura: ['aura_forgehalo', 'fx', 'cinder_run'],
+            trail: ['trail_slagprints', 'fx', 'ember_paws'],
+        },
+    },
+    rimeglass: {
+        route: 'case', rawTotal: 0,
+        pieces: {
+            fur: ['fur_rimeglass', 'furStyle', 'frosttip'],
+            cloak: ['cloak_icefall', 'cloakStyle', 'rimecoat'],
+            hat: ['hat_glaciercrest', 'shape', 'rimeantlers'],
+            aura: ['aura_snowprism', 'fx', 'snow_orbit'],
+            trail: ['trail_hoarfrost', 'fx', 'ice_runes'],
+        },
+    },
+    thorncrown: {
+        route: 'boutique', rawTotal: 7100,
+        pieces: {
+            fur: ['fur_briarhide', 'furStyle', 'mossmottle'],
+            cloak: ['cloak_thornbough', 'cloakStyle', 'briarwing'],
+            hat: ['hat_briarhelm', 'shape', 'briarcrown'],
+            aura: ['aura_brambleward', 'fx', 'thorn_bloom'],
+            trail: ['trail_rootstitch', 'fx', 'briar_leaves'],
+        },
+    },
+    stormglass: {
+        route: 'mixed', rawTotal: 13000,
+        pieces: {
+            fur: ['fur_stormglass', 'furStyle', 'starspeck'],
+            cloak: ['cloak_stormkite', 'cloakStyle', 'stormsplit'],
+            hat: ['hat_thundercrest', 'shape', 'stormcoil'],
+            aura: ['aura_tempestcage', 'fx', 'storm_arc'],
+            trail: ['trail_fulgurite', 'fx', 'storm_sparks'],
+        },
+    },
+    sunscar: {
+        route: 'boutique', rawTotal: 9000,
+        pieces: {
+            fur: ['fur_dunebanded', 'furStyle', 'sunstripe'],
+            cloak: ['cloak_sunsail', 'cloakStyle', 'sunscarf'],
+            hat: ['hat_sunorrery', 'shape', 'sunvisor'],
+            aura: ['aura_miragecrown', 'fx', 'sun_mirage'],
+            trail: ['trail_sandglass', 'fx', 'sand_steps'],
+        },
+    },
+    gravebell: {
+        route: 'case', rawTotal: 0,
+        pieces: {
+            fur: ['fur_ossuary', 'furStyle', 'gloammask'],
+            cloak: ['cloak_pallbearer', 'cloakStyle', 'graveveil'],
+            hat: ['hat_gravebell', 'shape', 'gravecowl'],
+            aura: ['aura_requiem', 'fx', 'grave_bells'],
+            trail: ['trail_epitaph', 'fx', 'grave_candles'],
+        },
+    },
+};
+const ibPieceIds = [];
+for (const [setId, contract] of Object.entries(collectionGrowthIbSets)) {
+    const set = COSMETIC_SETS.find((entry) => entry.id === setId);
+    check(!!set, `${setId} I-B set is missing`);
+    let rawTotal = 0;
+    for (const category of COSMETIC_CATEGORIES) {
+        const [id, visualKey, visualValue] = contract.pieces[category];
+        const item = COSMETICS[id];
+        ibPieceIds.push(id);
+        check(set?.pieces?.[category] === id, `${setId} maps the wrong ${category} piece`);
+        check(item?.category === category, `${id} is not a ${category} cosmetic`);
+        check(item?.[visualKey] === visualValue, `${id} lost authored ${visualKey} ${visualValue}`);
+        check(typeof item?.description === 'string' && item.description.length >= 24,
+            `${id} lacks reviewed material/silhouette art direction`);
+        const routes = getCosmeticAcquisitionRoutes(item);
+        if (contract.route === 'boutique') {
+            check(JSON.stringify(routes) === JSON.stringify(['boutique']) && item.caseExcluded === true,
+                `${id} is not honestly Boutique-only`);
+        } else if (contract.route === 'case') {
+            check(JSON.stringify(routes) === JSON.stringify(['case']) && item.coinCost == null,
+                `${id} is not honestly case-only`);
+        } else {
+            check(JSON.stringify(routes) === JSON.stringify(['boutique', 'case'])
+                && item.coinCost > 0 && item.caseExcluded !== true,
+            `${id} lost its Boutique + Case alternate routes`);
+        }
+        rawTotal += item?.coinCost || 0;
+    }
+    check(rawTotal === contract.rawTotal, `${setId} raw Boutique total changed`);
+    check(rawTotal === 0 || Object.values(set.pieces)
+        .reduce((sum, id) => sum + cosmeticCoinCost(COSMETICS[id]), 0) === rawTotal * 2,
+    `${setId} effective Boutique total diverges from the shared multiplier`);
+
+    const appearance = resolveAppearance(set.pieces);
+    check(appearance.furStyle === contract.pieces.fur[2]
+        && appearance.cloakStyle === contract.pieces.cloak[2]
+        && appearance.hatShape === contract.pieces.hat[2]
+        && appearance.auraFx === contract.pieces.aura[2]
+        && appearance.trailFx === contract.pieces.trail[2],
+    `${setId} visual metadata did not reach the shared appearance resolver`);
+    check(typeof appearance.furAccent === 'string' && typeof appearance.furAccent2 === 'string',
+        `${setId} patterned fur lacks its two authored material accents`);
+}
+check(ibPieceIds.length === 30 && new Set(ibPieceIds).size === 30,
+    'Collection Growth I-B is not thirty unique individual pieces');
+for (const category of COSMETIC_CATEGORIES) {
+    const vocab = Object.values(collectionGrowthIbSets)
+        .map((contract) => contract.pieces[category][2]);
+    check(new Set(vocab).size === 6, `I-B ${category} vocabulary contains recolor padding`);
+}
+
 const hostileAppearance = resolveAppearance({
     fur: '__proto__', cloak: 'constructor', hat: '__proto__',
     aura: 'not_a_cosmetic', trail: null,
@@ -481,6 +596,76 @@ const cloakBefore = save.data.cosmetics.equipped.cloak;
 check(save.equipCosmetic('cloak', 'hat_wool') === false && save.data.cosmetics.equipped.cloak === cloakBefore,
     'wrong-slot cosmetic was equipped');
 check(save.equipCosmetic('hat', 'hat_wool') === true, 'valid hat equip was rejected');
+
+// I-B per-hero looks are additive and preserve the old global equipped map as
+// the selected hero's compatibility mirror. Legacy looks seed every hero;
+// malformed presets/pursuits fail closed without deleting valid ownership.
+const migratedPresetSave = save._validate({
+    selectedCharacter: 'elf',
+    cosmetics: {
+        unlocked: ['hat_wool', 'cloak_crimson'],
+        equipped: { hat: 'hat_wool', cloak: 'cloak_crimson' },
+    },
+});
+check(Object.keys(migratedPresetSave.cosmetics.presets).length === CHARACTER_IDS.length,
+    'legacy look did not seed every hero preset');
+for (const heroId of CHARACTER_IDS) {
+    check(migratedPresetSave.cosmetics.presets[heroId].hat === 'hat_wool'
+        && migratedPresetSave.cosmetics.presets[heroId].cloak === 'cloak_crimson',
+    `legacy look did not seed ${heroId}`);
+}
+check(migratedPresetSave.cosmetics.equipped.hat === 'hat_wool',
+    'selected-hero compatibility mirror changed during preset migration');
+check(save._validate({ cosmetics: { pursuitSetId: '__unknown__' } }).cosmetics.pursuitSetId === null,
+    'unknown cosmetic pursuit escaped save validation');
+check(save._validate({ cosmetics: { pursuitSetId: 'stormglass' } }).cosmetics.pursuitSetId === 'stormglass',
+    'valid cosmetic pursuit did not survive save validation');
+
+storage.clear();
+const presetSave = new SaveSystem();
+presetSave.data.totalCoins = 50000;
+presetSave.unlockCosmetic('hat_wool');
+check(presetSave.equipCosmetic('hat', 'hat_wool', 'elf') === true,
+    'nonselected hero preset rejected a valid owned cosmetic');
+check(presetSave.getCosmeticPreset('elf').hat === 'hat_wool'
+    && presetSave.getCosmeticPreset('monkey').hat === 'hat_none'
+    && presetSave.data.cosmetics.equipped.hat === 'hat_none',
+'nonselected hero equip leaked into another preset or compatibility mirror');
+check(presetSave.setSelectedCharacter('elf') === true
+    && presetSave.data.cosmetics.equipped.hat === 'hat_wool',
+'hero selection did not restore that hero preset');
+check(presetSave.getEquippedCosmetics('monkey').hat === 'hat_none'
+    && presetSave.getEquippedCosmetics('elf').hat === 'hat_wool',
+'effective-hero cosmetic lookup does not isolate Rite Trial-style overrides');
+
+const purchaseLook = {
+    ...presetSave.getCosmeticPreset('elf'),
+    fur: 'fur_kilncracked',
+};
+const kilnCost = cosmeticCoinCost(COSMETICS.fur_kilncracked);
+const balanceBeforePurchase = presetSave.data.totalCoins;
+check(presetSave.purchaseCosmeticLook(['fur_kilncracked'], kilnCost, purchaseLook, 'elf') === true,
+    'valid atomic Boutique look purchase was rejected');
+check(presetSave.data.totalCoins === balanceBeforePurchase - kilnCost
+    && presetSave.isCosmeticUnlocked('fur_kilncracked')
+    && presetSave.getCosmeticPreset('elf').fur === 'fur_kilncracked'
+    && presetSave.data.cosmetics.equipped.fur === 'fur_kilncracked',
+'atomic Boutique purchase did not commit coin, ownership, preset, and mirror together');
+const beforeRejectedPurchase = JSON.stringify(presetSave.data);
+check(presetSave.purchaseCosmeticLook(['fur_briarhide'], 1, {
+    ...purchaseLook, fur: 'fur_briarhide',
+}, 'elf') === false && JSON.stringify(presetSave.data) === beforeRejectedPurchase,
+'wrong-price Boutique transaction mutated save data');
+check(presetSave.setCosmeticPursuit('stormglass') === true
+    && presetSave.data.cosmetics.pursuitSetId === 'stormglass'
+    && presetSave.setCosmeticPursuit('__unknown__') === false
+    && presetSave.data.cosmetics.pursuitSetId === 'stormglass',
+'cosmetic pursuit setter accepts unknown sets or loses a valid pursuit');
+const presetReload = new SaveSystem();
+check(presetReload.getCosmeticPreset('elf').fur === 'fur_kilncracked'
+    && presetReload.data.cosmetics.pursuitSetId === 'stormglass',
+'per-hero cosmetic preset or pursuit did not survive JSON round-trip');
+
 const malformedPlayer = { coinMul: 1 };
 applyLoadout(malformedPlayer, { gear: { equipped: { armor: 't_emberband' } } });
 check(malformedPlayer.coinMul === 1, 'applyLoadout applied a wrong-slot item');
