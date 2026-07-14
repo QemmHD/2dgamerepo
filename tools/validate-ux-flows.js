@@ -67,8 +67,11 @@ ok(menuSource.includes('A Vigil is a survival run'), 'HOME must explain Vigil be
 for (const label of ["'MAP'", "'WEAPON'", "'DIFFICULTY'", "'SELECTED HERO'"]) {
     ok(menuSource.includes(label), `HOME needs the clear ${label.replaceAll("'", '')} label`);
 }
-ok(gameSource.includes("this.menuTab === 'home'") && gameSource.includes("this.menuTab = 'play'"),
-    'keyboard activation on fresh HOME must open guided setup before launch');
+const inputActionSource = fs.readFileSync(path.join(ROOT, 'src/core/GameInputActions.js'), 'utf8');
+ok(gameSource.includes('this._menuKeyboardActivate()')
+    && inputActionSource.includes("stats?.runs ?? 0) === 0 && tab === 'home'")
+    && inputActionSource.includes("this._menuAction('tab', 'play')"),
+'keyboard activation on fresh HOME must open guided setup through the central tab action before launch');
 
 // Every modal owner suppresses the free-floating tutorial banner/pointer.
 ok(!onboardingModalActive({}), 'ordinary gameplay must allow onboarding guidance');

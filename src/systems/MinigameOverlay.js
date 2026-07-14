@@ -26,33 +26,62 @@ export class MinigameOverlay {
         this._menuClock = 0;
     }
 
+    // Read the live menu preference first so toggling Reduced Effects does not
+    // have to wait for a run transition to refresh Game.reducedEffects. A UI
+    // snapshot can override it when drawMines is called from a state-driven
+    // renderer.
+    _reducedEffects(state = null) {
+        if (state && typeof state.reducedEffects === 'boolean') return state.reducedEffects;
+        const saved = this.game?.saveSystem?.getSetting?.('reducedEffects');
+        if (typeof saved === 'boolean') return saved;
+        return this.game?.reducedEffects === true;
+    }
+
     // Start-screen tick: advance the case reel + the Mines juice clock.
     update(dt) {
         if (this.caseAnim) {
-            const spinTime = this.caseAnim.spinTime ?? 2.6;
-            const wasSpinning = this.caseAnim.age < spinTime;
-            this.caseAnim.age += dt;
-            if (wasSpinning) {
-                // Ratchet tick that SLOWS as the reel decelerates (50ms → ~290ms)
-                // and RISES in pitch toward the landing — climbing higher when a
-                // Rare+ is incoming, so your ears feel the pull coming.
-                const p = Math.min(1, this.caseAnim.age / spinTime);
-                const interval = 0.05 + p * p * 0.24;
-                this.caseAnim._tick = (this.caseAnim._tick ?? 0) + dt;
-                if (this.caseAnim.age < spinTime && this.caseAnim._tick >= interval) {
-                    this.caseAnim._tick = 0;
-                    const tier = this.caseAnim.tier || 0;
-                    const pitch = 0.72 + p * p * 1.0 + (tier >= 2 ? p * p * 0.55 : 0);
-                    this.game.audio.spinTick(pitch);
+            const a = this.caseAnim;
+            // Reduced Effects presents the won item immediately at a stable,
+            // post-reveal frame. Freezing age also freezes the renderer's
+            // decorative rays/orbit instead of merely shortening the reel.
+            if (a.reducedEffects || this._reducedEffects()) {
+                a.reducedEffects = true;
+                a.spinTime = 0;
+                a.settleHold = 0;
+                a.age = 1;
+                if (!a._revealPlayed) {
+                    this.game.audio.reveal(a.result?.rarity);
+                    a._revealPlayed = true;
+                }
+            } else {
+                const spinTime = a.spinTime ?? 2.6;
+                const wasSpinning = a.age < spinTime;
+                a.age += dt;
+                if (wasSpinning) {
+                    // Ratchet tick that SLOWS as the reel decelerates (50ms → ~290ms)
+                    // and RISES in pitch toward the landing — climbing higher when a
+                    // Rare+ is incoming, so your ears feel the pull coming.
+                    const p = Math.min(1, a.age / spinTime);
+                    const interval = 0.05 + p * p * 0.24;
+                    a._tick = (a._tick ?? 0) + dt;
+                    if (a.age < spinTime && a._tick >= interval) {
+                        a._tick = 0;
+                        const tier = a.tier || 0;
+                        const pitch = 0.72 + p * p * 1.0 + (tier >= 2 ? p * p * 0.55 : 0);
+                        this.game.audio.spinTick(pitch);
+                    }
+                }
+                // Fire the reveal chime AFTER the dead-air settle beat (the reel
+                // stops, holds a breath, THEN the reveal bursts — the pause is what
+                // sells it). Pitch/richness scales with the won rarity.
+                const hold = a.settleHold ?? 0;
+                const revealAt = spinTime + hold;
+                const wasHeld = a.age - dt < revealAt;
+                if (!a._revealPlayed && wasHeld && a.age >= revealAt) {
+                    this.game.audio.reveal(a.result?.rarity);
+                    a._revealPlayed = true;
                 }
             }
-            // Fire the reveal chime AFTER the dead-air settle beat (the reel
-            // stops, holds a breath, THEN the reveal bursts — the pause is what
-            // sells it). Pitch/richness scales with the won rarity.
-            const hold = this.caseAnim.settleHold ?? 0;
-            const revealAt = spinTime + hold;
-            const wasHeld = this.caseAnim.age - dt < revealAt;
-            if (wasHeld && this.caseAnim.age >= revealAt) this.game.audio.reveal(this.caseAnim.result?.rarity);
         }
         if (this.mines) this._menuClock += dt;   // drives Mines reveal-pop / multiplier juice
         if (this.mines && this.mines.stopped) this.mines.age += dt;
@@ -73,8 +102,14 @@ export class MinigameOverlay {
         const tier = ({ common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, mythic: 5 })[res.rarity] ?? 0;
         // The old 4.2–6s reel overstayed its welcome on repeat opens. This keeps
         // the suspenseful slow tail while making the open-again loop feel snappy.
-        const spinTime = 3.65 + tier * 0.28;
-        this.caseAnim = { caseType, result: res, age: 0, reel, landingIndex, spinTime, tier, landOff: 0, settleHold: 0.52 };
+        const reducedEffects = this._reducedEffects();
+        const spinTime = reducedEffects ? 0 : 3.65 + tier * 0.28;
+        this.caseAnim = {
+            caseType, result: res, age: reducedEffects ? 1 : 0, reel, landingIndex,
+            spinTime, tier, landOff: 0, settleHold: reducedEffects ? 0 : 0.52,
+            reducedEffects, _revealPlayed: reducedEffects,
+        };
+        if (reducedEffects) this.game.audio.reveal(res.rarity);
     }
 
     dismissCase() { this.caseAnim = null; }
@@ -100,6 +135,7 @@ export class MinigameOverlay {
             // update()'s crossing check won't see this jump, so chime here.
             a.age = revealAt;
             this.game.audio.reveal(a.result?.rarity);
+            a._revealPlayed = true;
         } else if (pos && a._againRect && a.caseType
             && pos.x >= a._againRect.x && pos.x <= a._againRect.x + a._againRect.w
             && pos.y >= a._againRect.y && pos.y <= a._againRect.y + a._againRect.h) {
@@ -242,13 +278,46 @@ export class MinigameOverlay {
         ctx.fillStyle = color; ctx.fillText(text, x, y);
     }
 
+    // High-contrast double outline + corner brackets: keyboard focus remains
+    // unambiguous without depending on hue or a pulsing animation.
+    _mKeyboardFocus(ctx, r) {
+        const x = r.x - 5, y = r.y - 5, w = r.w + 10, h = r.h + 10;
+        ctx.save();
+        roundRectPath(ctx, x, y, w, h, 20);
+        ctx.strokeStyle = 'rgba(0,0,0,0.96)'; ctx.lineWidth = 10; ctx.stroke();
+        roundRectPath(ctx, x, y, w, h, 20);
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke();
+        const inset = 10, arm = 19;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6;
+        for (const [cx, cy, dx, dy] of [
+            [x + inset, y + inset, 1, 1], [x + w - inset, y + inset, -1, 1],
+            [x + inset, y + h - inset, 1, -1], [x + w - inset, y + h - inset, -1, -1],
+        ]) {
+            ctx.beginPath();
+            ctx.moveTo(cx + dx * arm, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + dy * arm);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
     // Mines overlay: an "ember vault" — a smoked-glass frame around a glowing
     // live-multiplier readout, a board of dark rune slabs that pop into gems
     // (safe) or cracked molten tiles (mine), and a CASH OUT button. Bust shakes
     // the vault + flashes the screen red. All juice keys off this._menuClock.
-    drawMines(ctx) {
+    drawMines(ctx, state = {}) {
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT, m = this.mines;
+        if (!m) return;
+        state = state || {};
         const cx = W / 2, t = this._menuClock;
+        const reducedEffects = this._reducedEffects(state);
+        const inputModality = state.inputModality
+            ?? this.game?.input?.getModality?.()
+            ?? 'pointer';
+        const focusIndex = Number.isInteger(state.minesFocusIndex)
+            ? state.minesFocusIndex
+            : (Number.isInteger(this.game?.minesFocusIndex) ? this.game.minesFocusIndex : -1);
+        const keyboardFocusVisible = inputModality === 'keyboard'
+            && focusIndex >= 0 && focusIndex < MINES.tiles && !m.stopped;
         const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
         const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
@@ -264,7 +333,7 @@ export class MinigameOverlay {
         // PASS 2 — bust shake wrap (panel + board jitter; scrim + flash do not).
         const dtStop = t - m.stopFxT;
         let sx = 0, sy = 0;
-        if (m.busted && dtStop < 0.35) {
+        if (!reducedEffects && m.busted && dtStop < 0.35) {
             const mag = 14 * Math.max(0, 1 - dtStop / 0.35);
             sx = (Math.random() * 2 - 1) * mag; sy = (Math.random() * 2 - 1) * mag;
         }
@@ -286,10 +355,12 @@ export class MinigameOverlay {
             : mul < 4 ? { c: '#ffb257', g: '#ff8a3a', a: 0.34 }
                 : mul < 8 ? { c: '#ffd06a', g: '#ffb257', a: 0.40 }
                     : { c: '#fff1c8', g: '#ffd06a', a: 0.5 };
-        const pop = 1 + 0.16 * (1 - easeOutCubic(clamp01((t - m.mulPopT) / 0.35)));
+        const pop = reducedEffects ? 1
+            : 1 + 0.16 * (1 - easeOutCubic(clamp01((t - m.mulPopT) / 0.35)));
         const my = py + 118;
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        this._mEmber(ctx, cx, my, 92 * pop, tier.g, tier.a * (0.9 + 0.1 * Math.sin(t * 4)));
+        const pulse = reducedEffects ? 1 : 0.9 + 0.1 * Math.sin(t * 4);
+        this._mEmber(ctx, cx, my, 92 * pop, tier.g, tier.a * pulse);
         ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
         ctx.textBaseline = 'middle';
         ctx.font = `800 ${Math.round(74 * pop)}px ${MONO}`;
@@ -340,7 +411,7 @@ export class MinigameOverlay {
                 this._mEmber(ctx, tcx, tcy, 84, '#ff5a4a', 0.5); this._mEmber(ctx, tcx, tcy, 46, '#ffb257', 0.3);
                 ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
                 // Expanding shock ring from the tile that detonated.
-                if (i === m.bustIdx) {
+                if (!reducedEffects && i === m.bustIdx) {
                     const sa = clamp01(dtStop / 0.5);
                     if (sa < 1) {
                         ctx.strokeStyle = `rgba(255,90,60,${1 - sa})`; ctx.lineWidth = Math.max(1, 8 * (1 - sa));
@@ -350,7 +421,7 @@ export class MinigameOverlay {
             } else if (isRevealed) {
                 // Safe gem — pops in with an overshoot + green halo + brief +mult float.
                 const age = t - (m.revealTimes[i] ?? t);
-                const s = easeOutBack(clamp01(age / 0.32));
+                const s = reducedEffects ? 1 : easeOutBack(clamp01(age / 0.32));
                 ctx.save(); ctx.translate(tcx, tcy); ctx.scale(s, s);
                 ctx.save(); ctx.globalCompositeOperation = 'lighter';
                 this._mEmber(ctx, 0, 0, 70, '#74e890', 0.34); this._mEmber(ctx, 0, 0, 40, '#b6ffcf', 0.22);
@@ -365,8 +436,8 @@ export class MinigameOverlay {
                 ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
                 ctx.restore();
                 if (age < 0.7) {
-                    const dy = -30 - 24 * easeOutCubic(clamp01(age / 0.7));
-                    const fa = 1 - clamp01((age - 0.35) / 0.35);
+                    const dy = reducedEffects ? -54 : -30 - 24 * easeOutCubic(clamp01(age / 0.7));
+                    const fa = reducedEffects ? 1 : 1 - clamp01((age - 0.35) / 0.35);
                     ctx.globalAlpha = fa; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                     ctx.font = `800 26px ${MONO}`;
                     this._mText(ctx, `+${(m.mul / (m.mulPrev || 1)).toFixed(2)}×`, tcx, tcy + dy, '#b6ffcf');
@@ -387,6 +458,7 @@ export class MinigameOverlay {
                 ctx.beginPath(); ctx.moveTo(tcx, tcy - rr); ctx.lineTo(tcx + rr, tcy); ctx.lineTo(tcx, tcy + rr); ctx.lineTo(tcx - rr, tcy); ctx.closePath(); ctx.stroke();
                 ctx.globalAlpha = 1;
             }
+            if (keyboardFocusVisible && focusIndex === i) this._mKeyboardFocus(ctx, r);
         }
 
         // PASS 6 — cash-out button / result.
@@ -400,7 +472,10 @@ export class MinigameOverlay {
             ctx.textBaseline = 'middle'; ctx.font = `800 32px ${FONT}`;
             this._mText(ctx, can ? `CASH OUT ◎ ${potential}` : 'REVEAL A TILE', cx, cb.y + cb.h / 2, '#fff');
             ctx.textBaseline = 'alphabetic'; ctx.font = `600 22px ${FONT}`;
-            this._mText(ctx, 'Tap tiles to dig · cash out before a mine', cx, cb.y + cb.h + 34, 'rgba(255,255,255,0.55)');
+            const help = inputModality === 'keyboard'
+                ? 'Arrows move · Enter reveals · Space cashes out'
+                : 'Tap tiles to dig · cash out before a mine';
+            this._mText(ctx, help, cx, cb.y + cb.h + 34, 'rgba(255,255,255,0.55)');
         } else {
             ctx.textBaseline = 'alphabetic';
             ctx.font = `800 46px ${FONT}`;
@@ -409,13 +484,16 @@ export class MinigameOverlay {
             this._mText(ctx, m.busted ? `Lost ◎ ${m.bet}`
                 : `Won ◎ ${m.result.payout}   (${m.result.net >= 0 ? '+' : ''}${m.result.net})`, cx, cb.y + 70, '#fff');
             ctx.font = `600 22px ${FONT}`;
-            this._mText(ctx, 'Tap / Space to continue', cx, cb.y + 108, 'rgba(255,255,255,0.6)');
+            const help = inputModality === 'keyboard'
+                ? 'Enter / Space continues · Esc closes'
+                : 'Tap to continue';
+            this._mText(ctx, help, cx, cb.y + 108, 'rgba(255,255,255,0.6)');
         }
 
         ctx.restore();   // end shake wrap
 
         // PASS 7 — bust flash (screen-space, over everything).
-        if (m.busted && dtStop < 0.35) {
+        if (!reducedEffects && m.busted && dtStop < 0.35) {
             ctx.fillStyle = `rgba(255,60,40,${0.35 * (1 - dtStop / 0.35)})`;
             ctx.fillRect(0, 0, W, H);
         }

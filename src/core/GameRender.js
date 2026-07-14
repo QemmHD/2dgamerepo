@@ -453,7 +453,7 @@ export const GameRenderMethods = {
                 const photoUIState = buildUIState(this);
                 if (this.screen === 'gameplay' && this.vigilTracker) {
                     const vigilRect = this.ui.getHUDLayout(photoUIState).vigil;
-                    this.vigilTracker.drawHUD(ctx, vigilRect, { compact: !!this.input.buttons?.supported });
+                    this.vigilTracker.drawHUD(ctx, vigilRect, { compact: !!this.input.isTouchMode?.() });
                 }
                 this.ui.draw(ctx, photoUIState);
             }
@@ -476,7 +476,7 @@ export const GameRenderMethods = {
         const gameplayUIState = buildUIState(this);
         if (this.screen === 'gameplay' && this.vigilTracker) {
             const vigilRect = this.ui.getHUDLayout(gameplayUIState).vigil;
-            this.vigilTracker.drawHUD(ctx, vigilRect, { compact: !!this.input.buttons?.supported });
+            this.vigilTracker.drawHUD(ctx, vigilRect, { compact: !!this.input.isTouchMode?.() });
         }
 
         this.profiler.begin('ui');
@@ -485,12 +485,12 @@ export const GameRenderMethods = {
 
         if (this.victory) this._drawVictory(ctx);
 
-        if (this.screen === 'gameplay' && this.input.touch) this.input.touch.draw(ctx);
-        // KINDLED touch action buttons (blink + Kindle ult). Gated on `supported`
-        // so non-touch (desktop/headless) skips the snapshot build + draw entirely
-        // — the desktop view is byte-for-byte untouched. Fed the live meter/cooldown
-        // the buttons don't own.
-        if (this.screen === 'gameplay' && this.input.buttons && this.input.buttons.supported) {
+        if (this.screen === 'gameplay' && this.input.touch && this.input.isTouchMode?.()) this.input.touch.draw(ctx);
+        // KINDLED touch action buttons (blink + Kindle ult). Active modality,
+        // rather than touch-capable hardware, owns this HUD convention so a
+        // hybrid laptop returns cleanly to desktop prompts after keyboard use.
+        // Fed the live meter/cooldown the buttons don't own.
+        if (this.screen === 'gameplay' && this.input.buttons && this.input.isTouchMode?.()) {
             const k = this.kindleSystem, sig = signatureFor(this._heroId);
             this.input.buttons.draw(ctx, {
                 fill: k ? k.fill / k.max : 0,
@@ -498,6 +498,7 @@ export const GameRenderMethods = {
                 ultColor: sig ? sig.color : '#ff8c4a',
                 aiming: !!(k && k.aiming),
                 blinkFrac: k ? (k.blinkCooldown / BLINK.cooldown) : 0,
+                reducedMotion: this.reducedEffects === true,
             });
         }
     },

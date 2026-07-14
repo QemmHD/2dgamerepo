@@ -31,8 +31,13 @@
     seconds  game-time to simulate before the shot (default 12)
     badge    "1" stamps an EXC:<n> exception-count badge top-left (self-check)
     screen   "menu" to shoot the main menu instead of a run; with tab=<name>
+    input    active input convention: "keyboard", "pointer", or "touch"
+             (legacy touch=1 still forces touch and takes precedence)
+    focus    current menu hotspot key (encode # as %23), or an action fallback
+    reduced "1" persists Reduced Effects before staging the requested frame
     bpxp / bpclaimthrough / bpreceipt  seed Battle-Pass QA states (menu only)
     mines=<preset> / minessafe=<n>  stage an honest Mines quote (menu only)
+    minesFocus=<0..24>  select a Mines tile for keyboard-focus visual QA
     boss=1 / bossid=<id> / bosshp=<0..1> / bossattack=<move id> / bosskill=1
              spawn a live apex directly and stage its choreography state
     tp       teleport before the shot: "building" (just south of the first
@@ -126,6 +131,12 @@ const QABOSSATTACK = params.get('bossattack');
 const QABOSSFRAMES = Math.max(1, parseInt(params.get('bossframes') || '12', 10) || 12);
 const QABOSSKILL = params.get('bosskill') === '1';
 const MAP = params.get('map');                               // force selected map (weather)
+const INPUT_REQUEST = params.get('input');
+const INPUT_MODE = ['keyboard', 'pointer', 'touch'].includes(INPUT_REQUEST)
+    ? INPUT_REQUEST
+    : null;
+const MENU_FOCUS = (params.get('focus') || '').trim();
+const REDUCED = params.get('reduced') === '1';
 // Roadmap #6 profiling pass (tooling only). profile=<N> runs N measured frames
 // with the FrameProfiler enabled, wrapping update()/render() so the top-level
 // buckets (normally timed by GameLoop, which sync-stepping bypasses) populate,
@@ -137,13 +148,24 @@ const VEILSCALE = params.has('veilscale') ? parseFloat(params.get('veilscale')) 
 // touch=1 wires TouchButtons with supported forced on, so the touch-only HUD
 // branches (action discs, lifted pips, hidden kindle bar) are verifiable
 // headlessly — desktop Chromium never reports touch support on its own.
-const TOUCH = params.get('touch') === '1';
+const FORCED_TOUCH = params.get('touch') === '1';
+const TOUCH = FORCED_TOUCH || INPUT_MODE === 'touch';
+// touch=1 is the historical forced-touch visual branch. Keep it authoritative
+// even when a conflicting input= value is accidentally supplied.
+const ACTIVE_INPUT_MODE = FORCED_TOUCH ? 'touch' : INPUT_MODE;
 const BPXP = params.has('bpxp') ? Math.max(0, parseInt(params.get('bpxp'), 10) || 0) : null;
 const BPCLAIMTHROUGH = Math.max(0, parseInt(params.get('bpclaimthrough') || '0', 10) || 0);
 const BPRECEIPT = params.get('bpreceipt') === '1';
 const MINESBET = params.has('mines') ? Number(params.get('mines')) : null;
 const MINESSAFE = Math.max(0, Math.min(18, parseInt(params.get('minessafe') || '2', 10) || 0));
+const MINES_FOCUS_REQUEST = params.get('minesFocus');
+const MINES_FOCUS_PARSED = MINES_FOCUS_REQUEST == null ? null : Number(MINES_FOCUS_REQUEST);
+const MINES_FOCUS = Number.isInteger(MINES_FOCUS_PARSED)
+    && MINES_FOCUS_PARSED >= 0 && MINES_FOCUS_PARSED <= 24
+    ? MINES_FOCUS_PARSED
+    : null;
 let qaBossSummary = '';
+let qaExpectedMenuFocusKey = null;
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -155,6 +177,7 @@ async function boot() {
     let buttons = null;
     if (TOUCH) { buttons = new TouchButtons(renderer); buttons.supported = true; }
     const input = new Input({ keyboard, touch, buttons });
+    if (TOUCH) input.setModality('touch');
 
     let game;
     const loop = new GameLoop({ update: (dt) => game.update(dt), render: () => game.render() });
@@ -169,6 +192,24 @@ async function boot() {
 
     game = new Game({ renderer, input, loop });
     game.showDebug = false;          // no debug grid/HUD in the art frame
+    // Apply QA preferences after Game registers its modality listener, so
+    // keyboard mode also follows the production focusCanvas path. Reduced
+    // Effects goes through SaveSystem instead of mutating renderer-only state:
+    // both menu and run branches therefore consume the persisted setting.
+    if (REDUCED) {
+        game.saveSystem.setSetting('reducedEffects', true);
+        game.reducedEffects = true;
+    }
+    if (ACTIVE_INPUT_MODE) input.setModality(ACTIVE_INPUT_MODE);
+
+    if (INPUT_REQUEST && !INPUT_MODE) ERR.push(`input: unsupported mode '${INPUT_REQUEST}'`);
+    if (MINES_FOCUS_REQUEST != null && MINES_FOCUS == null) {
+        ERR.push(`minesFocus: expected an integer from 0 through 24, got '${MINES_FOCUS_REQUEST}'`);
+    }
+    if (MENU_FOCUS && SCREEN !== 'menu') ERR.push('focus: menu hotspot selection requires screen=menu');
+    if (MINES_FOCUS != null && (SCREEN !== 'menu' || MINESBET == null)) {
+        ERR.push('minesFocus: tile selection requires screen=menu and mines=<preset>');
+    }
 
     if (SCREEN === 'menu') {
         game.screen = 'start';
@@ -213,6 +254,7 @@ async function boot() {
                 // safe reveals deterministic while all displayed math still
                 // comes from the production quote/cashout path.
                 game.minigame.mines.mineSet = [19, 20, 21, 22, 23, 24];
+                if (MINES_FOCUS != null) game.minesFocusIndex = MINES_FOCUS;
                 for (let i = 0; i < MINESSAFE; i++) game.minigame.minesReveal(i);
                 for (let i = 0; i < 42; i++) game.update(DT);
             } catch (e) { ERR.push('mines: ' + String(e && e.stack || e)); }
@@ -223,6 +265,23 @@ async function boot() {
         // transparent tab content. Force the transition complete and render
         // again so menu shots show the settled screen, not the fade-in.
         if (game.ui && game.ui.menu) { game.ui.menu._transT0 = -10; game.render(); }
+        if (MENU_FOCUS) {
+            // Hotspots are generated by the real settled render above. Resolve
+            // by stable identity (full key/base key) or semantic action, never
+            // by a position that changes when controls are inserted/reordered.
+            const hotspots = game.ui?.menu?.hotspots || [];
+            const target = hotspots.find((entry) => entry.key === MENU_FOCUS
+                || entry.baseKey === MENU_FOCUS)
+                || hotspots.find((entry) => entry.action === MENU_FOCUS);
+            if (!target) {
+                ERR.push(`focus: no current hotspot matches '${MENU_FOCUS}' on tab '${TAB}'`);
+            } else {
+                qaExpectedMenuFocusKey = target.key;
+                game.menuFocusKey = target.key;
+                game.menuFocusNeedsRefresh = false;
+                game.render();
+            }
+        }
     } else {
         if (MAP) {
             try {
@@ -499,6 +558,35 @@ async function boot() {
         game.render();
     }
 
+    // Verify every requested QA branch against production-owned state before
+    // stamping the frame/title. This makes EXC:0 a receipt assertion, not only
+    // an exception smoke: a query that silently stops staging its requested
+    // modality, focus, motion, or Mines cell now fails both local and CI runs.
+    const qaState = {
+        inputModality: input.getModality(),
+        menuFocusKey: game.menuFocusKey || null,
+        menuFocusVisible: game.screen === 'start'
+            && input.getModality() === 'keyboard'
+            && !!game.menuFocusKey,
+        reducedEffects: game.saveSystem.getSetting('reducedEffects') === true,
+        minesFocusIndex: game.minigame?.mines ? game.minesFocusIndex : null,
+    };
+    if (ACTIVE_INPUT_MODE && qaState.inputModality !== ACTIVE_INPUT_MODE) {
+        ERR.push(`receipt: input expected '${ACTIVE_INPUT_MODE}', got '${qaState.inputModality}'`);
+    }
+    if (REDUCED && !qaState.reducedEffects) {
+        ERR.push('receipt: reduced=1 did not persist Reduced Effects');
+    }
+    if (MENU_FOCUS && qaExpectedMenuFocusKey && qaState.menuFocusKey !== qaExpectedMenuFocusKey) {
+        ERR.push(`receipt: focus expected '${qaExpectedMenuFocusKey}', got '${qaState.menuFocusKey || ''}'`);
+    }
+    if (MENU_FOCUS && ACTIVE_INPUT_MODE === 'keyboard' && !qaState.menuFocusVisible) {
+        ERR.push('receipt: keyboard menu focus is not visible');
+    }
+    if (MINES_FOCUS != null && qaState.minesFocusIndex !== MINES_FOCUS) {
+        ERR.push(`receipt: Mines focus expected ${MINES_FOCUS}, got ${qaState.minesFocusIndex}`);
+    }
+
     // Final frame is on the canvas. Optionally stamp an exception badge.
     if (BADGE) {
         const ctx = renderer.ctx;
@@ -515,6 +603,21 @@ async function boot() {
     // build never loads this harness). Lets a Playwright test start Boss Rush and
     // step/inspect the sim after boot.
     window.__game = game;
+    // Compact machine-readable receipt for screenshot drivers. These are the
+    // exact production-facing values that own each visual branch, so a driver
+    // can assert setup without inferring state from pixels or hotspot order.
+    window.__qaState = qaState;
+    // Mirror the receipt into inert DOM data so constrained browser drivers can
+    // inspect it even when their read-only world cannot see page-owned globals.
+    const qaRoot = document.documentElement;
+    qaRoot.dataset.qaInput = window.__qaState.inputModality;
+    qaRoot.dataset.qaFocus = window.__qaState.menuFocusKey || '';
+    qaRoot.dataset.qaFocusVisible = String(window.__qaState.menuFocusVisible);
+    qaRoot.dataset.qaReduced = String(window.__qaState.reducedEffects);
+    qaRoot.dataset.qaMinesFocus = window.__qaState.minesFocusIndex == null
+        ? ''
+        : String(window.__qaState.minesFocusIndex);
+    qaRoot.dataset.qaReady = '1';
     document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1) +
         ' map:' + (game._obstacleBiome || 'unknown') + qaBossSummary
         + (ERR.length ? ' error:' + ERR[0].slice(0, 320).replace(/\s+/g, ' ') : '');

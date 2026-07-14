@@ -33,6 +33,7 @@ import { getGearEmblem } from '../assets/GearEmblems.js';
 import { getCaseArt } from '../assets/CaseArt.js';
 import { getCosmeticEmblem } from '../assets/CosmeticEmblems.js';
 import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
+import { menuHotspotKey, menuHotspotLabel } from './AccessibilityBridge.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
@@ -173,9 +174,111 @@ const SETTING_TOGGLES = [
     { key: 'screenShake', label: 'Screen Shake' },
     { key: 'damageNumbers', label: 'Damage Numbers' },
     { key: 'particles', label: 'Particles' },
-    { key: 'reducedEffects', label: 'Reduced Effects (mobile)' },
+    { key: 'reducedEffects', label: 'Reduce Motion & Effects' },
     { key: 'unlockMaps', label: 'Unlock All Maps (testing)', dev: true },
 ];
+
+export function phoneToggleLabelLines(toggle) {
+    if (toggle.key === 'damageNumbers') return ['Damage', 'Numbers'];
+    if (toggle.key === 'reducedEffects') return ['Reduce Motion', '& Effects'];
+    if (toggle.key === 'debug') return ['Debug', 'Mode'];
+    if (toggle.key === 'unlockMaps') return ['Unlock', 'Maps'];
+    return [toggle.label];
+}
+
+// Phone Settings use the wide internal canvas created by cover-fit rendering,
+// but every useful dimension must survive the roughly 0.44 CSS scale of a
+// landscape phone. Keeping this math pure makes the no-overlap and 44px-touch
+// guarantees independently testable without needing a canvas or DOM.
+export function computePhoneSettingsLayout(content, options = {}) {
+    const devToggleCount = Math.max(0, Math.min(2, Math.trunc(options.devToggleCount || 0)));
+    const showCheats = options.showCheats === true;
+    const cssScale = Number.isFinite(options.cssScale) && options.cssScale > 0
+        ? options.cssScale : 1;
+    const pad = 28;
+    const colGap = 24;
+    // 44 CSS px is the touch-floor. At 844px this becomes 101 logical px;
+    // at the supported 667px-wide phone it becomes 127 logical px.
+    const rowH = Math.max(100, Math.ceil(44 / cssScale));
+    const rowGap = 2;
+    const inner = {
+        x: content.x + pad,
+        y: content.y + pad,
+        w: content.w - pad * 2,
+        h: content.h - pad * 2,
+    };
+    const columnsW = inner.w - colGap * 2;
+    const gameplayW = Math.round(columnsW * 0.35);
+    const audioW = Math.round(columnsW * 0.37);
+    const supportW = columnsW - gameplayW - audioW;
+    const columns = {
+        gameplay: { x: inner.x, y: inner.y, w: gameplayW, h: inner.h },
+        audio: { x: inner.x + gameplayW + colGap, y: inner.y, w: audioW, h: inner.h },
+        support: { x: inner.x + gameplayW + audioW + colGap * 2, y: inner.y, w: supportW, h: inner.h },
+    };
+
+    const headerY = inner.y + 32;
+    const bodyTop = inner.y + 52;
+    const cheatButtonY = showCheats ? inner.y + inner.h - rowH : null;
+    const cheatHeaderY = showCheats ? cheatButtonY - 10 : null;
+    const bodyBottom = showCheats ? cheatHeaderY - 30 : inner.y + inner.h;
+    const coreFontPx = Math.max(36, Math.ceil(16 / cssScale));
+    const sectionFontPx = Math.max(32, Math.ceil(13 / cssScale));
+    const statusFontPx = Math.max(26, Math.ceil(12 / cssScale));
+    const coreLineHeight = Math.round(coreFontPx * 0.92);
+    const switchH = Math.max(84, rowH - 8);
+    const switchW = Math.max(150, Math.round(switchH * 1.65));
+    const rowsFor = (column, count) => Array.from({ length: count }, (_, i) => ({
+        x: column.x,
+        y: bodyTop + i * (rowH + rowGap),
+        w: column.w,
+        h: rowH,
+    }));
+
+    const audioGap = 12;
+    const audioBlockH = (bodyBottom - bodyTop - audioGap) / 2;
+    const audioBlocks = [0, 1].map((i) => ({
+        x: columns.audio.x,
+        y: bodyTop + i * (audioBlockH + audioGap),
+        w: columns.audio.w,
+        h: audioBlockH,
+    }));
+    const volumeControls = audioBlocks.map((block) => {
+        const buttonW = rowH;
+        const percentW = 72;
+        const controlY = block.y + 52;
+        const minus = { x: block.x, y: controlY, w: buttonW, h: rowH };
+        const plus = { x: block.x + block.w - percentW - buttonW, y: controlY, w: buttonW, h: rowH };
+        return {
+            minus,
+            plus,
+            bar: { x: minus.x + buttonW + 12, y: controlY + 40, w: plus.x - minus.x - buttonW - 24, h: 20 },
+            percent: { x: plus.x + plus.w, y: controlY, w: percentW, h: rowH },
+        };
+    });
+
+    let cheatButtons = [];
+    if (showCheats) {
+        const gap = 18;
+        const w = (inner.w - gap * 2) / 3;
+        cheatButtons = Array.from({ length: 3 }, (_, i) => ({
+            x: inner.x + i * (w + gap), y: cheatButtonY, w, h: rowH,
+        }));
+    }
+
+    return {
+        inner, columns, headerY, bodyTop, bodyBottom, rowH, rowGap,
+        cssScale, coreFontPx, sectionFontPx, statusFontPx, coreLineHeight,
+        switchH, switchW,
+        labelWidths: {
+            gameplay: columns.gameplay.w - switchW - 30,
+            support: columns.support.w - switchW - 30,
+        },
+        gameplayRows: rowsFor(columns.gameplay, 4),
+        supportRows: rowsFor(columns.support, 2 + devToggleCount),
+        audioBlocks, volumeControls, cheatHeaderY, cheatButtons,
+    };
+}
 
 export class MenuRenderer {
     constructor(renderer) {
@@ -184,17 +287,27 @@ export class MenuRenderer {
     }
 
     _sa() { return this.renderer.safeArea; }
-    _hot(x, y, w, h, action, arg) { this.hotspots.push({ x, y, w, h, action, arg }); }
+    _hot(x, y, w, h, action, arg, label = '') {
+        const baseKey = menuHotspotKey(action, arg, 0).replace(/#0$/, '');
+        const occurrence = this.hotspots.reduce((count, hotspot) => count + (hotspot.baseKey === baseKey ? 1 : 0), 0);
+        this.hotspots.push({
+            x, y, w, h, action, arg,
+            baseKey,
+            key: menuHotspotKey(action, arg, occurrence),
+            label: menuHotspotLabel(action, arg, label),
+        });
+    }
 
     // Clamped frame delta (seconds), used to damp the sliding tab indicator.
     // Snaps (via _tabStale) when the menu was off-screen for a beat so the
     // indicator doesn't fling across on the first frame back.
     _dt() {
-        const t = this._t || 0;
+        const t = this._clockT || 0;
         const prev = this._tPrev == null ? t : this._tPrev;
         let dt = t - prev;
-        this._tabStale = dt > 0.2 || dt < 0;
+        this._tabStale = this._reducedMotion || dt > 0.2 || dt < 0;
         this._tPrev = t;
+        if (this._reducedMotion) return 0;
         return Math.max(0, Math.min(0.05, dt));
     }
 
@@ -489,7 +602,10 @@ export class MenuRenderer {
 
     // A labelled button. Registers a hotspot when an action is supplied.
     _button(ctx, r, label, opts = {}) {
-        const { primary = false, enabled = true, accent = null, sub = null, action = null, arg = null, fontSize = 30 } = opts;
+        const {
+            primary = false, enabled = true, accent = null, sub = null,
+            action = null, arg = null, fontSize = 30, accessibleLabel = undefined,
+        } = opts;
         roundRectPath(ctx, r.x, r.y, r.w, r.h, 14);
         let fill = 'rgba(40,46,58,0.95)';
         if (primary) fill = enabled ? '#3ea65b' : 'rgba(40,46,58,0.6)';
@@ -524,7 +640,10 @@ export class MenuRenderer {
             ctx.fillStyle = enabled ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.3)';
             ctx.fillText(sub, r.x + r.w / 2, r.y + r.h / 2 + 18);
         }
-        if (action && enabled) this._hot(r.x, r.y, r.w, r.h, action, arg);
+        if (action && enabled) this._hot(
+            r.x, r.y, r.w, r.h, action, arg,
+            accessibleLabel === undefined ? label : accessibleLabel,
+        );
     }
 
     _contentRect() {
@@ -540,6 +659,7 @@ export class MenuRenderer {
 
     draw(ctx, state) {
         this.hotspots = [];
+        this._attentionBadgeUsed = false;
         // Kick off the display-font load (idempotent, guarded); canvas text using
         // HEAD picks up Cinzel once ready, staying on the system fallback until then.
         ensureMenuFont();
@@ -549,7 +669,12 @@ export class MenuRenderer {
         // START pulse, selected-chip glow). Frame-rate independent.
         const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
         if (this._t0 === undefined) this._t0 = now;
-        this._t = (now - this._t0) / 1000;
+        this._clockT = (now - this._t0) / 1000;
+        this._reducedMotion = save.settings?.reducedEffects === true;
+        // Existing drawing code consumes `_t`; freezing it at zero makes every
+        // decorative menu pulse, shimmer, rune, badge, and avatar idle stable.
+        // Functional transitions below use `_clockT` and snap when reduced.
+        this._t = this._reducedMotion ? 0 : this._clockT;
         const t = this._t;
 
         // Atmospheric "ember forge" backdrop (cached sky + bloom + embers +
@@ -581,6 +706,55 @@ export class MenuRenderer {
 
         // Case-opening overlay sits above everything (and owns input while up).
         if (state.caseAnim) this._drawCaseOverlay(ctx, state.caseAnim, state);
+        else this._drawKeyboardFocus(ctx, state);
+    }
+
+    _drawKeyboardFocus(ctx, state) {
+        if (!state.menuFocusVisible || !state.menuFocusKey) return;
+        const hotspot = this.hotspots.find((entry) => entry.key === state.menuFocusKey);
+        if (!hotspot) return;
+        const pad = 7;
+        const x = hotspot.x - pad, y = hotspot.y - pad;
+        const w = hotspot.w + pad * 2, h = hotspot.h + pad * 2;
+        const contrast = state.saveData?.settings?.highContrast === true;
+        ctx.save();
+        roundRectPath(ctx, x, y, w, h, 17);
+        ctx.strokeStyle = '#08090b';
+        ctx.lineWidth = contrast ? 10 : 8;
+        ctx.stroke();
+        roundRectPath(ctx, x, y, w, h, 17);
+        ctx.strokeStyle = contrast ? '#ffffff' : '#ffd27d';
+        ctx.lineWidth = contrast ? 5 : 4;
+        ctx.stroke();
+
+        const label = `FOCUS · ${hotspot.label}`;
+        ctx.font = `800 16px ${FONT}`;
+        const labelW = Math.min(w - 16, ctx.measureText(label).width + 24);
+        const labelX = x + 10, labelY = Math.max(this._sa().top + 4, y - 24);
+        roundRectPath(ctx, labelX, labelY, labelW, 26, 8);
+        ctx.fillStyle = '#08090b'; ctx.fill();
+        ctx.strokeStyle = contrast ? '#ffffff' : '#ffd27d'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffffff';
+        ctx.fillText(this._ellip(ctx, label, labelW - 12), labelX + labelW / 2, labelY + 13);
+        ctx.restore();
+    }
+
+    _drawAttentionBadge(ctx, x, y, label, color = '#ffce54') {
+        if (this._attentionBadgeUsed) return false;
+        this._attentionBadgeUsed = true;
+        const text = String(label || 'NEW').toUpperCase();
+        ctx.save();
+        ctx.font = `800 12px ${FONT}`;
+        const w = Math.max(44, ctx.measureText(text).width + 18);
+        const h = 22;
+        ctx.globalAlpha = this._reducedMotion ? 1 : 0.88 + Math.sin((this._t || 0) * 3) * 0.12;
+        roundRectPath(ctx, x - w, y, w, h, h / 2);
+        ctx.fillStyle = color; ctx.fill();
+        ctx.strokeStyle = '#08090b'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#181006'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(text, x - w / 2, y + h / 2 + 0.5);
+        ctx.restore();
+        return true;
     }
 
     // Rect of a tab's pill in the section bar (same math as _drawTabBar).
@@ -705,6 +879,10 @@ export class MenuRenderer {
         }
         ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 15px ${FONT}`;
         ctx.fillText(`${tour.idx + 1} / ${total}`, W / 2, cy + chh - 72);
+        // The overlay owns interaction. Keep the underlying hotspots only long
+        // enough to locate the highlighted control, then expose a true modal
+        // focus scope containing SKIP and NEXT alone.
+        this.hotspots = [];
         // Buttons: SKIP (subtle, left) + NEXT/FINISH (primary, right).
         const last = tour.idx >= total - 1;
         this._button(ctx, { x: W / 2 - 330, y: cy + chh - 62, w: 260, h: 50 }, 'SKIP TOUR',
@@ -861,9 +1039,7 @@ export class MenuRenderer {
             const dPicked = pickDailyChallenges(dDay);
             const dDone = completedDailyCount(dDd, dDay, dPicked);
             if (((save.stats?.runs ?? 0) >= 1) && dDone < dPicked.length) {
-                ctx.beginPath(); ctx.arc(playR.x + playR.w - 10, playR.y + 10, 8, 0, TAU);
-                ctx.fillStyle = '#ff6a4a'; ctx.fill();
-                ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+                this._drawAttentionBadge(ctx, playR.x + playR.w - 8, playR.y - 8, 'GOAL', '#ffce54');
             }
         }
 
@@ -931,14 +1107,7 @@ export class MenuRenderer {
             ctx.font = `700 20px ${FONT}`; ctx.fillText('›', x + cardW - 16, y + cardH / 2 + 1);
             const isNew = r.kids.some((k) => !seen.includes(k) && k !== 'play' && k !== 'settings');
             if (isNew) {
-                const bx = x + cardW - 57, by2 = y - 7, bw2 = 40, bh2 = 18;
-                ctx.globalAlpha = 0.85 + Math.sin(t * 3) * 0.15;
-                roundRectPath(ctx, bx, by2, bw2, bh2, 10);
-                ctx.fillStyle = '#ffce54'; ctx.fill();
-                ctx.fillStyle = '#221604'; ctx.font = `800 11px ${FONT}`;
-                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText('NEW', bx + bw2 / 2, by2 + bh2 / 2 + 0.5);
-                ctx.globalAlpha = 1;
+                this._drawAttentionBadge(ctx, x + cardW - 8, y - 8, 'NEW', '#ffce54');
             }
             this._hot(x, y, cardW, cardH, 'tab', r.target);
         }
@@ -1211,12 +1380,13 @@ export class MenuRenderer {
         // content moves — chrome (bar/header) stays planted. Hotspots are
         // registered at the untranslated rest positions; the offset lives for
         // under 200ms, so taps land where the content is about to settle.
-        if (this._transTab !== tab) { this._transTab = tab; this._transT0 = this._t; }
+        if (this._transTab !== tab) { this._transTab = tab; this._transT0 = this._clockT; }
         // NaN-guard without swallowing the legitimate 0 on the switch frame (a
         // `|| 1` here made frame 1 render at rest, then frame 2 snap dim — a
         // visible flash on every switch).
-        const rawK = (this._t - (this._transT0 ?? 0)) / 0.18;
-        const transK = Number.isFinite(rawK) ? Math.min(1, Math.max(0, rawK)) : 1;
+        const rawK = (this._clockT - (this._transT0 ?? 0)) / 0.18;
+        const transK = this._reducedMotion ? 1
+            : Number.isFinite(rawK) ? Math.min(1, Math.max(0, rawK)) : 1;
         const transE = 1 - Math.pow(1 - transK, 3);
         ctx.save();
         if (transE < 1) { ctx.globalAlpha = transE; ctx.translate((1 - transE) * 26, 0); }
@@ -1339,18 +1509,10 @@ export class MenuRenderer {
             const isNew = !active && !seen.includes(id) && id !== 'play' && id !== 'settings';
             const hasDot = (id === 'battlepass' && bpClaimable) || (id === 'modes' && dailiesLeft);
             if (isNew) {
-                const bw = 42, bh = 20, bx = x + tabW - bw + 6, by = y - 8;
-                ctx.globalAlpha = 0.85 + Math.sin(time * 3 + i) * 0.15;
-                roundRectPath(ctx, bx, by, bw, bh, bh / 2);
-                ctx.fillStyle = '#ffce54'; ctx.fill();
-                ctx.fillStyle = '#221604'; ctx.font = `800 12px ${FONT}`;
-                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText('NEW', bx + bw / 2, by + bh / 2 + 0.5);
-                ctx.globalAlpha = 1;
+                this._drawAttentionBadge(ctx, x + tabW + 6, y - 8, 'NEW', '#ffce54');
             } else if (hasDot) {
-                ctx.beginPath(); ctx.arc(x + tabW - 10, y + 10, 6, 0, TAU);
-                ctx.fillStyle = accent; ctx.fill();
-                ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+                this._drawAttentionBadge(ctx, x + tabW + 6, y - 8,
+                    id === 'battlepass' ? 'CLAIM' : 'GOAL', accent);
             }
         }
         // Sliding accent indicator easing toward the active pill on switch.
@@ -3457,6 +3619,132 @@ export class MenuRenderer {
         return y + 22;
     }
 
+    _phoneSettingsHeader(ctx, column, y, label, fontSize = 32) {
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#b8c7d8'; ctx.font = `800 ${fontSize}px ${HEAD}`;
+        ctx.fillText(label, column.x, y);
+        const lw = ctx.measureText(label).width;
+        ctx.strokeStyle = 'rgba(184,199,216,0.34)'; ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(column.x + lw + 16, y - 10);
+        ctx.lineTo(column.x + column.w, y - 10);
+        ctx.stroke();
+    }
+
+    _drawPhoneToggle(ctx, rect, toggle, value, layout) {
+        roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 18);
+        ctx.fillStyle = value ? 'rgba(40,92,61,0.52)' : 'rgba(20,25,34,0.72)'; ctx.fill();
+        ctx.strokeStyle = value ? 'rgba(112,224,145,0.52)' : 'rgba(184,199,216,0.20)';
+        ctx.lineWidth = 2; ctx.stroke();
+
+        const switchW = layout.switchW, switchH = layout.switchH;
+        const tr = {
+            x: rect.x + rect.w - switchW - 4,
+            y: rect.y + (rect.h - switchH) / 2,
+            w: switchW,
+            h: switchH,
+        };
+        const maxLabelW = tr.x - rect.x - 22;
+        const lines = phoneToggleLabelLines(toggle);
+        ctx.fillStyle = '#fff'; ctx.font = `700 ${layout.coreFontPx}px ${FONT}`;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        const firstLineY = rect.y + rect.h / 2 - (lines.length - 1) * layout.coreLineHeight / 2;
+        lines.forEach((line, i) => ctx.fillText(
+            this._ellip(ctx, line, maxLabelW), rect.x + 14,
+            firstLineY + i * layout.coreLineHeight));
+
+        roundRectPath(ctx, tr.x, tr.y, tr.w, tr.h, tr.h / 2);
+        ctx.fillStyle = value ? '#3ea65b' : '#505660'; ctx.fill();
+        ctx.strokeStyle = value ? 'rgba(180,255,199,0.55)' : 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 2; ctx.stroke();
+        const knobR = switchH / 2 - 12;
+        const knobX = value ? tr.x + tr.w - tr.h / 2 : tr.x + tr.h / 2;
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(knobX, tr.y + tr.h / 2, knobR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.font = `800 ${layout.statusFontPx}px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(value ? 'ON' : 'OFF', value ? tr.x + tr.h / 2 : tr.x + tr.w - tr.h / 2, tr.y + tr.h / 2 + 1);
+        this._hot(rect.x, rect.y, rect.w, rect.h, 'toggleSetting', toggle.key, toggle.label);
+    }
+
+    _drawPhoneSettings(ctx, state, c) {
+        const save = state.saveData;
+        const regular = SETTING_TOGGLES.filter((toggle) => !toggle.dev);
+        const dev = SETTING_TOGGLES.filter((toggle) =>
+            toggle.dev && (DEV_MODE || save.settings[toggle.key] === true));
+        const layout = computePhoneSettingsLayout(c, {
+            devToggleCount: dev.length,
+            showCheats: DEV_MODE,
+            cssScale: (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH,
+        });
+
+        this._phoneSettingsHeader(ctx, layout.columns.gameplay, layout.headerY, 'GAMEPLAY', layout.sectionFontPx);
+        this._phoneSettingsHeader(ctx, layout.columns.audio, layout.headerY, 'AUDIO', layout.sectionFontPx);
+        this._phoneSettingsHeader(ctx, layout.columns.support, layout.headerY, 'ACCESS & SAVE', layout.sectionFontPx);
+
+        regular.forEach((toggle, i) => this._drawPhoneToggle(
+            ctx, layout.gameplayRows[i], toggle, save.settings[toggle.key] === true, layout));
+
+        const volumes = [
+            { key: 'volMusic', label: 'Music Volume' },
+            { key: 'volSfx', label: 'SFX Volume' },
+        ];
+        volumes.forEach((volume, i) => {
+            const block = layout.audioBlocks[i];
+            const controls = layout.volumeControls[i];
+            const value = typeof save.settings[volume.key] === 'number' ? save.settings[volume.key] : 0.7;
+            roundRectPath(ctx, block.x, block.y, block.w, block.h, 18);
+            ctx.fillStyle = 'rgba(20,25,34,0.66)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(184,199,216,0.20)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.font = `700 ${layout.coreFontPx}px ${FONT}`;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(volume.label, block.x + 14, block.y + 28);
+            this._button(ctx, controls.minus, '−', {
+                action: 'volDown', arg: volume.key, fontSize: Math.max(48, layout.coreFontPx),
+                accessibleLabel: `Decrease ${volume.label}`,
+            });
+            roundRectPath(ctx, controls.bar.x, controls.bar.y, controls.bar.w, controls.bar.h, 10);
+            ctx.fillStyle = 'rgba(0,0,0,0.52)'; ctx.fill();
+            roundRectPath(ctx, controls.bar.x, controls.bar.y, controls.bar.w * clamp01(value), controls.bar.h, 10);
+            ctx.fillStyle = '#ffce54'; ctx.fill();
+            this._button(ctx, controls.plus, '+', {
+                action: 'volUp', arg: volume.key, fontSize: Math.max(48, layout.coreFontPx),
+                accessibleLabel: `Increase ${volume.label}`,
+            });
+            ctx.fillStyle = '#fff'; ctx.font = `700 32px ${FONT}`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(`${Math.round(value * 100)}%`,
+                controls.percent.x + controls.percent.w / 2,
+                controls.percent.y + controls.percent.h / 2);
+        });
+
+        const replayRect = layout.supportRows[0];
+        this._button(ctx, replayRect, 'REPLAY TUTORIAL', {
+            accent: 'rgba(46,74,96,0.95)', action: 'replayTutorial', fontSize: layout.coreFontPx,
+        });
+        const resetRect = layout.supportRows[1];
+        this._button(ctx, resetRect,
+            state.resetConfirming ? 'CONFIRM RESET?' : 'RESET SAVE', {
+                accent: state.resetConfirming ? '#7a2230' : 'rgba(80,30,38,0.92)',
+                action: 'resetSave', fontSize: layout.coreFontPx,
+            });
+        dev.forEach((toggle, i) => this._drawPhoneToggle(
+            ctx, layout.supportRows[i + 2], toggle, save.settings[toggle.key] === true, layout));
+
+        if (DEV_MODE) {
+            ctx.fillStyle = '#d4ad6f'; ctx.font = `800 26px ${HEAD}`;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillText('CHEATS (TESTING)', layout.inner.x, layout.cheatHeaderY);
+            const cheats = [
+                { label: '+1,000 ◎', action: 'cheatCoins', arg: 1000 },
+                { label: '+10,000 ◎', action: 'cheatCoins', arg: 10000 },
+                { label: 'UNLOCK ALL ITEMS', action: 'cheatUnlockAll', arg: null },
+            ];
+            cheats.forEach((cheat, i) => this._button(ctx, layout.cheatButtons[i], cheat.label, {
+                accent: '#5a3a22', action: cheat.action, arg: cheat.arg, fontSize: layout.coreFontPx,
+            }));
+        }
+    }
+
     // ── SETTINGS — grouped option columns ────────────────────────────────
     // Two labelled columns (GAMEPLAY toggles | AUDIO + HELP) instead of one
     // undifferentiated stack, with the dev CHEATS strip across the bottom.
@@ -3465,6 +3753,10 @@ export class MenuRenderer {
         const c = this._contentRect();
         const save = state.saveData;
         this._panel(ctx, c.x, c.y, c.w, c.h, null, undefined, { corners: true });
+        if ((this.renderer.cssWidth ?? INTERNAL_WIDTH) < 900) {
+            this._drawPhoneSettings(ctx, state, c);
+            return;
+        }
         const innerX = c.x + 40;
         const innerW = c.w - 80;
         const colGap = 56;
@@ -3505,18 +3797,24 @@ export class MenuRenderer {
             const barX = rightX + colW - 360, barW = 240, barY = ry + 16;
             // minus
             const mr = { x: barX - 56, y: ry + 2, w: 44, h: 44 };
-            this._button(ctx, mr, '−', { action: 'volDown', arg: v.key, fontSize: 30 });
+            this._button(ctx, mr, '−', {
+                action: 'volDown', arg: v.key, fontSize: 30,
+                accessibleLabel: `Decrease ${v.label}`,
+            });
             roundRectPath(ctx, barX, barY, barW, 14, 7); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
             roundRectPath(ctx, barX, barY, barW * clamp01(val), 14, 7); ctx.fillStyle = '#ffce54'; ctx.fill();
             const pr = { x: barX + barW + 12, y: ry + 2, w: 44, h: 44 };
-            this._button(ctx, pr, '+', { action: 'volUp', arg: v.key, fontSize: 30 });
+            this._button(ctx, pr, '+', {
+                action: 'volUp', arg: v.key, fontSize: 30,
+                accessibleLabel: `Increase ${v.label}`,
+            });
             ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `600 20px ${FONT}`;
             ctx.fillText(`${Math.round(val * 100)}%`, barX + barW + 64, ry + 24);
             ry += 60;
         }
-        ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 18px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.68)'; ctx.font = `500 18px ${FONT}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText('Themed music + sound effects. 0% mutes.', rightX, ry + 20);
+        ctx.fillText('Adaptive music + sound effects. 0% mutes.', rightX, ry + 20);
         ry += 56;
 
         // Replay the guided tutorial: re-runs the menu tour right away and
@@ -3524,7 +3822,7 @@ export class MenuRenderer {
         ry = this._settingsHeader(ctx, rightX, colW, ry + 24, 'HELP');
         this._button(ctx, { x: rightX, y: ry, w: 340, h: 52 }, 'REPLAY TUTORIAL',
             { accent: 'rgba(46,74,96,0.9)', action: 'replayTutorial', fontSize: 22 });
-        ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 17px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.68)'; ctx.font = `500 17px ${FONT}`;
         ctx.textBaseline = 'alphabetic';
         this._wrapText(ctx, 'Guided tour of the menu + hint pills on your next run.',
             rightX + 364 + (colW - 364) / 2, ry + 22, colW - 364, 22, 3);
@@ -3535,7 +3833,7 @@ export class MenuRenderer {
         this._button(ctx, { x: rightX, y: ry, w: 340, h: 52 },
             state.resetConfirming ? 'TAP AGAIN TO CONFIRM' : 'RESET SAVE',
             { accent: state.resetConfirming ? '#7a2230' : 'rgba(80,30,38,0.8)', action: 'resetSave', fontSize: 20 });
-        ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = `500 17px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.68)'; ctx.font = `500 17px ${FONT}`;
         ctx.textBaseline = 'alphabetic';
         this._wrapText(ctx, 'Erase everything and start over. Asks twice.',
             rightX + 364 + (colW - 364) / 2, ry + 22, colW - 364, 22, 3);

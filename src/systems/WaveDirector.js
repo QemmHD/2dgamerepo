@@ -41,6 +41,7 @@ export class WaveDirector {
                 age: 0,
                 lifetime: ANNOUNCEMENT_LIFETIME,
             };
+            if (typeof this.onAnnounce === 'function') this.onAnnounce(state.announcement);
             // New tier → reset pressure + per-wave counters.
             this.pressure = 0;
             this.timeInWave = 0;
@@ -89,6 +90,7 @@ export class WaveDirector {
     // events — a boss kill, a weapon evolving — read at a glance.
     announce(text, lifetime = ANNOUNCEMENT_LIFETIME, color = null) {
         this.announcement = { text, age: 0, lifetime, color };
+        if (typeof this.onAnnounce === 'function') this.onAnnounce(text);
     }
 
     getState(gameTime) {

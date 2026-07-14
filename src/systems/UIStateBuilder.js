@@ -55,6 +55,9 @@ export function buildUIState(game) {
         base.stats = game.saveSystem.data.stats;
         // Menu state consumed by MenuRenderer.
         base.menuTab = game.menuTab;
+        base.menuFocusKey = game.menuFocusKey || null;
+        base.menuFocusVisible = game.input?.getModality?.() === 'keyboard';
+        base.inputModality = game.input?.getModality?.() || 'pointer';
         // Guided menu tour: the current step's card content + progress (null
         // when not touring). MenuRenderer draws the overlay from this snapshot.
         base.menuTour = game.menuTour ? {
@@ -116,7 +119,7 @@ export function buildUIState(game) {
     // Touch devices draw the BLINK/KINDLE action discs (TouchButtons), whose
     // rims already ARE the cooldown/ult meters — the HUD hides its duplicate
     // bar + blink pip there and lifts the weapon pips clear of the discs.
-    base.touchMode = !!(game.input && game.input.buttons && game.input.buttons.supported);
+    base.touchMode = !!game.input?.isTouchMode?.();
     base.player = game.player;
     base.camera = game.camera;
     base.kills = game.kills;
