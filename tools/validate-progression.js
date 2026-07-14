@@ -28,6 +28,7 @@ import {
 import { GEAR } from '../src/content/gear.js';
 import { CHARACTER_IDS } from '../src/content/characters.js';
 import { PERMANENT_UPGRADES } from '../src/content/permanentUpgrades.js';
+import { ATTUNABLE, attuneCost } from '../src/content/relics.js';
 import { DAILY_POOL, challengeProgress, pickDailyChallenges } from '../src/content/dailyChallenges.js';
 import { OBJECTIVES } from '../src/content/objectives.js';
 import {
@@ -519,6 +520,39 @@ check(cacheResult.everflameCaches === 1, 'Everflame cache did not cross once');
 check(cacheResult.everflameCoins === BP_EVERFLAME_COINS && save.data.totalCoins === BP_EVERFLAME_COINS, 'Everflame cache payout is wrong');
 const veteran = save._validate({ battlePass: { xp: 2000, claimed: [10, 20, 30, 40, 50] } });
 for (const id of Object.values(PASS_COSMETIC_MILESTONES)) check(veteran.cosmetics.unlocked.includes(id), `veteran did not receive ${id}`);
+
+// Relic discovery is an authority boundary, not merely a tab-visibility hint.
+// A direct locked-id call must leave coins, attunement state, the whole in-memory
+// save, and persisted storage byte-for-byte untouched.
+const lockedAttune = new SaveSystem();
+const lockedRelic = ATTUNABLE[0];
+lockedAttune.data.totalCoins = attuneCost(lockedRelic, 0) + 5000;
+lockedAttune.data.discoveredRelics = [];
+lockedAttune.data.relicAttunement = {};
+lockedAttune.save();
+const lockedBeforeData = JSON.stringify(lockedAttune.data);
+const lockedBeforePersisted = localStorage.getItem('monkey-survivor:save:v1');
+const originalSetItem = localStorage.setItem;
+let lockedPersistWrites = 0;
+localStorage.setItem = (key, value) => {
+    lockedPersistWrites += 1;
+    originalSetItem(key, value);
+};
+const lockedResult = lockedAttune.attuneRelic(lockedRelic.id);
+localStorage.setItem = originalSetItem;
+check(lockedResult === false, 'undiscovered relic attunement succeeded through the direct SaveSystem API');
+check(JSON.stringify(lockedAttune.data) === lockedBeforeData,
+    'undiscovered relic attunement mutated in-memory save data');
+check(lockedAttune.data.totalCoins === attuneCost(lockedRelic, 0) + 5000
+    && Object.keys(lockedAttune.data.relicAttunement).length === 0,
+'undiscovered relic attunement changed coins or the attunement map');
+check(lockedPersistWrites === 0
+    && localStorage.getItem('monkey-survivor:save:v1') === lockedBeforePersisted,
+'undiscovered relic attunement wrote persistence');
+check(lockedAttune.discoverRelic(lockedRelic.id) === true
+    && lockedAttune.attuneRelic(lockedRelic.id) === true
+    && lockedAttune.getRelicAttunement(lockedRelic.id) === 1,
+'a discovered relic could not pass the authoritative attunement gate');
 
 // Living Vigil save fields are additive, old-save safe, and banked exactly
 // once through the same run-summary seam as the other lifetime records.

@@ -504,6 +504,17 @@ export const GameInputActionMethods = {
             // Stage a relic on the ATTUNE altar pane (selection only, no spend).
             case 'attuneSelect': this._pressFeedback(`attuneSel:${arg}`); this.attuneSel = arg; break;
             case 'buyHeroAttune': this._pressFeedback(`heroAttune:${arg}`); this.buyHeroAttune(arg); break;
+            case 'characterPhonePane': {
+                const pane = arg === 'rites' ? 'rites' : 'collection';
+                this.characterPhonePane = pane;
+                this._resetMenuFocus();
+                const label = pane === 'rites'
+                    ? 'Hero Rites and Attunement'
+                    : 'Character Collection';
+                this.accessibility?.setScreen?.('start', `${label}.`);
+                this.accessibility?.announce?.(`${label}.`);
+                break;
+            }
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
             case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
             case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); this.audio.equip(); break;

@@ -87,6 +87,7 @@ import { AccessibilityBridge } from '../systems/AccessibilityBridge.js';
 import { CaptionSystem } from '../systems/CaptionSystem.js';
 import { HapticsSystem } from '../systems/HapticsSystem.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
+import { isPhoneLandscapeViewport } from '../systems/ResponsiveLayout.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { getCardCompositor } from '../systems/CardCompositor.js';
 import { EMBERGLASS, VICTORY_BEAT } from '../config/GameConfig.js';
@@ -205,6 +206,9 @@ export class Game {
         this.collectionView = {
             category: 'fur', ownership: 'all', source: 'all', page: 1,
         };
+        // Character's phone-only HERO RITES drill-in is session UI state, not
+        // progression. Desktop always renders its combined Character surface.
+        this.characterPhonePane = 'collection';
         this.boutiqueView = {
             category: 'fur', page: 1, setPage: 1,
         };
@@ -403,6 +407,20 @@ export class Game {
                     this._resetMenuFocus();
                     this.accessibility?.setScreen?.('start', 'General settings.');
                     this.accessibility?.announce?.('General settings.');
+                    return;
+                }
+
+                // HERO RITES is nested inside phone Character. Escape first
+                // returns to the collection; rotation to desktop cannot leave
+                // an invisible nested pane consuming the normal Home escape.
+                if (e.code === 'Escape' && this.menuTab === 'character'
+                    && this.characterPhonePane === 'rites'
+                    && isPhoneLandscapeViewport(
+                        this.renderer?.cssWidth ?? INTERNAL_WIDTH,
+                        this.renderer?.cssHeight ?? INTERNAL_HEIGHT,
+                    )) {
+                    e.preventDefault();
+                    this._menuAction('characterPhonePane', 'collection');
                     return;
                 }
 
@@ -1211,6 +1229,7 @@ export class Game {
         this.settingsPane = step.tab === 'settings' && step.settingsPane === 'accessibility'
             ? 'accessibility'
             : 'general';
+        this.characterPhonePane = 'collection';
         this.saveSystem.markTabSeen(step.tab);
     }
 
@@ -1219,6 +1238,7 @@ export class Game {
         this.saveSystem.setTourDone(true);
         this.menuTab = 'home';   // land back on the title screen after the tour
         this.settingsPane = 'general';
+        this.characterPhonePane = 'collection';
         this._resetMenuFocus();
         this.accessibility?.announce?.('Menu tour closed. Home.');
     }

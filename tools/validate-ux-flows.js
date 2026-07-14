@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TOUR_STEPS } from '../src/content/tutorialTour.js';
-import { MENU_TABS, completedDailyCount } from '../src/systems/MenuRenderer.js';
+import { MENU_TABS, completedDailyCount, tabUnlocked } from '../src/systems/MenuRenderer.js';
 import {
     GameInputActionMethods,
     PAUSE_EXIT_CONFIRM_MS,
@@ -15,6 +15,7 @@ import {
 import {
     onboardingModalActive,
     pauseExitConfirmSnapshot,
+    buildUIState,
 } from '../src/systems/UIStateBuilder.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -110,6 +111,36 @@ ok(uiSource.includes('Choose your first upgrade — every choice helps'),
 ok(!uiSource.includes('Collecting shards fills a bar;'),
     'level-up overlay must not restore tutorial rows behind card tops');
 
+// Relic ATTUNE remains staged by actual discovery/seen history; Hero Rites do
+// not need to weaken this separate progression lock.
+ok(tabUnlocked('attune', { onboarding: { tabsSeen: [] }, discoveredRelics: [] }) === false,
+    'fresh saves expose relic ATTUNE before discovering a relic');
+ok(tabUnlocked('attune', { onboarding: { tabsSeen: [] }, discoveredRelics: ['emberheart'] }) === true,
+    'relic discovery no longer unlocks ATTUNE');
+ok(tabUnlocked('attune', { onboarding: { tabsSeen: ['attune'] }, discoveredRelics: [] }) === true,
+    'previously seen ATTUNE was re-locked');
+
+const snapshotGame = {
+    screen: 'start', showDebug: false, pressFx: null, feedback: null,
+    resetConfirming: false, resetConfirmTimer: 0, menuTab: 'character',
+    settingsPane: 'general', characterPhonePane: 'rites', menuFocusKey: null,
+    menuTour: null, minigame: { caseAnim: null }, menuToastTimer: 0,
+    selectedModifiers: new Set(), selectedPatron: null, attuneSel: null,
+    tryOn: {}, collectionView: {}, boutiqueView: {}, bpResult: null, runSummary: null,
+    input: { getModality: () => 'touch' },
+    saveSystem: {
+        data: { stats: {}, dailyRoad: null, riteTrial: null, bossRush: null, weeklyEmber: null, streak: null },
+        getEffectiveSelectedMap: () => 'emberwood',
+        getAllMapUnlockStatuses: () => [], getMapBypassActive: () => false,
+        gamblePlaysInfo: () => ({}), getDifficulty: () => 'normal',
+    },
+};
+ok(buildUIState(snapshotGame).characterPhonePane === 'rites',
+    'UI snapshot dropped the live phone Hero Rites pane');
+snapshotGame.characterPhonePane = '__invalid__';
+ok(buildUIState(snapshotGame).characterPhonePane === 'collection',
+    'UI snapshot did not sanitize an invalid Character phone pane');
+
 // Collection Growth I-A: browse controls are session-only, reset dependent
 // pages, announce changes, and reject malformed direct dispatches.
 const browseAnnouncements = [];
@@ -121,6 +152,7 @@ const browseGame = {
     menuTour: null,
     resetConfirming: false,
     menuTab: 'character',
+    characterPhonePane: 'collection',
     tryOn: {},
     collectionView: { category: 'fur', ownership: 'all', source: 'all', page: 3 },
     boutiqueView: { category: 'fur', page: 2, setPage: 1 },
@@ -136,6 +168,21 @@ const browseGame = {
         setScreen(screen, detail) { browseScreens.push({ screen, detail }); },
     },
 };
+const paneFocusBefore = browseFocusResets;
+const seenBeforePhonePane = browseTabsSeen.length;
+GameInputActionMethods._menuAction.call(browseGame, 'characterPhonePane', 'rites');
+ok(browseGame.characterPhonePane === 'rites'
+    && browseFocusResets === paneFocusBefore + 1
+    && /Hero Rites and Attunement/i.test(browseScreens.at(-1)?.detail || '')
+    && /Hero Rites and Attunement/i.test(browseAnnouncements.at(-1) || ''),
+'phone Character routes into Hero Rites with focus and screen-reader updates');
+ok(browseTabsSeen.length === seenBeforePhonePane,
+    'opening Hero Rites falsely acknowledged the locked relic ATTUNE tab');
+GameInputActionMethods._menuAction.call(browseGame, 'characterPhonePane', '__invalid__');
+ok(browseGame.characterPhonePane === 'collection'
+    && /Character Collection/i.test(browseAnnouncements.at(-1) || ''),
+'invalid Character phone pane fails closed to the announced Collection');
+
 GameInputActionMethods._menuAction.call(browseGame, 'collectionCategory', 'hat');
 ok(browseGame.collectionView.category === 'hat' && browseGame.collectionView.page === 1,
     'collection category changes reset to page one');
@@ -184,6 +231,19 @@ ok(browseFocusResets === focusResetsBeforeRoute + 1
     'Character to Boutique shortcut resets focus and updates accessible screen state');
 ok(browseAnnouncements.length >= 7,
     'valid collection and Boutique browse actions are announced');
+
+let directPurchaseAudio = 0;
+let directDenyAudio = 0;
+const lockedBuyGame = {
+    saveSystem: { attuneRelic: () => false },
+    audio: {
+        purchase() { directPurchaseAudio += 1; },
+        deny() { directDenyAudio += 1; },
+    },
+};
+ok(GameInputActionMethods.buyAttune.call(lockedBuyGame, 'emberheart') === false
+    && directPurchaseAudio === 0 && directDenyAudio === 1,
+'Game buyAttune did not preserve SaveSystem rejection for a direct locked-id call');
 
 // Pause confirmation behavior: same-action second press commits exactly once;
 // changing action or waiting past the deadline only re-arms.

@@ -6,7 +6,17 @@
 
 import assert from 'node:assert/strict';
 import * as CosmeticContent from '../src/content/cosmetics.js';
-import { MenuRenderer, boutiquePreviewGuidance } from '../src/systems/MenuRenderer.js';
+import { INTERNAL_HEIGHT, INTERNAL_WIDTH, RENDER } from '../src/config/GameConfig.js';
+import {
+    MenuRenderer,
+    boutiquePreviewGuidance,
+    boutiqueTrailPreviewPoints,
+    computePhoneCharacterCollectionLayout,
+    computePhoneHeroRitesLayout,
+    computePhoneSectionBarLayout,
+    isPhoneLandscapeViewport,
+    tabUnlocked,
+} from '../src/systems/MenuRenderer.js';
 import { buildCaseReel } from '../src/systems/CaseSystem.js';
 import {
     COSMETIC_COLLECTION_CATEGORY_FILTERS,
@@ -393,13 +403,13 @@ renderer._segmentedRow = (_ctx, options, selected, x, y, w, h, action) => {
     check(w > 0 && h > 0 && Number.isFinite(x + y), `${action}: invalid segmented geometry`);
     segmentedActions.push(action);
 };
-renderer._drawCollectionCard = (_ctx, _state, entry, rect) => {
+renderer._drawCollectionCard = (_ctx, _state, entry, rect, _mode, presentation) => {
     check(rect.w > 0 && rect.h > 0, `${entry.id}: non-positive card geometry`);
-    rendered.push({ id: entry.id, rect });
+    rendered.push({ id: entry.id, rect, phone: presentation?.phone === true });
 };
 renderer._button = (_ctx, rect, label, options = {}) => {
     check(rect.w > 0 && rect.h > 0, `${label}: non-positive pager geometry`);
-    pageButtons.push({ label, options });
+    pageButtons.push({ rect, label, options });
 };
 const recordCtx = {
     fillStyle: '', font: '', textAlign: '', textBaseline: '',
@@ -411,6 +421,7 @@ const renderState = {
         cosmetics: {
             unlocked: COSMETIC_LIST.filter((_, index) => index % 3 === 0).map((item) => item.id),
             equipped: { fur: 'fur_natural', cloak: 'cloak_none', hat: 'hat_none', aura: 'aura_ember', trail: 'trail_none' },
+            pursuitSetId: 'stormglass',
         },
     },
     collectionView: { category: 'hat', ownership: 'all', source: 'all', page: 1 },
@@ -452,6 +463,365 @@ for (const page of [1, 2]) {
         }
     }
 }
+
+// Mirror Renderer.resize/_computeSafeArea for a zero-notch viewport, then feed
+// its exact content rect to the responsive layout. This intentionally derives
+// COVER vs CONTAIN from RENDER.maxCoverCrop instead of baking in a screenshot
+// assumption that can drift away from production.
+function rendererPhoneFixture(winW, winH) {
+    const targetRatio = INTERNAL_WIDTH / INTERNAL_HEIGHT;
+    const wide = winW / winH > targetRatio;
+    const containW = wide ? winH * targetRatio : winW;
+    const containH = wide ? winH : winW / targetRatio;
+    const coverW = wide ? winW : winH * targetRatio;
+    const coverH = wide ? winW / targetRatio : winH;
+    const cropFrac = wide
+        ? (coverH - winH) / coverH : (coverW - winW) / coverW;
+    const cover = cropFrac <= RENDER.maxCoverCrop;
+    const cssW = cover ? coverW : containW;
+    const cssH = cover ? coverH : containH;
+    const internalPerCss = INTERNAL_WIDTH / cssW;
+    const safe = {
+        left: Math.max(0, (cssW - winW) / 2) * internalPerCss,
+        right: Math.max(0, (cssW - winW) / 2) * internalPerCss,
+        top: Math.max(0, (cssH - winH) / 2) * internalPerCss,
+        bottom: Math.max(0, (cssH - winH) / 2) * internalPerCss,
+    };
+    const sectionBar = computePhoneSectionBarLayout(safe, cssW / INTERNAL_WIDTH);
+    return {
+        cover, cropFrac, cssW, cssH, cssScale: cssW / INTERNAL_WIDTH, safe, sectionBar,
+        content: {
+            x: safe.left + 56,
+            y: safe.top + 184 + sectionBar.subRowH,
+            w: INTERNAL_WIDTH - safe.left - safe.right - 112,
+            h: INTERNAL_HEIGHT - safe.bottom - 40
+                - (safe.top + 184 + sectionBar.subRowH),
+        },
+    };
+}
+const exactPhone = rendererPhoneFixture(844, 390);
+check(exactPhone.cover === true && exactPhone.cropFrac <= RENDER.maxCoverCrop,
+    '844x390 no longer selects Renderer COVER mode');
+check(Math.abs(exactPhone.cssScale - (844 / 1920)) < 0.000001
+    && Math.abs(exactPhone.safe.top - 96.3981042654) < 0.001,
+'844x390 Renderer scale/safe crop drifted');
+check(exactPhone.sectionBar.touchSafe === true
+    && exactPhone.sectionBar.minTouchCss >= 44,
+'844x390 Character section bar fell below the touch floor');
+check(Math.abs(exactPhone.content.y - 319.3981042654) < 0.001
+    && Math.abs(exactPhone.content.h - 624.2037914692) < 0.001,
+'844x390 exact Character content geometry drifted');
+const phoneCssScale = exactPhone.cssScale;
+const phoneContent = exactPhone.content;
+const phoneLayout = computePhoneCharacterCollectionLayout(phoneContent, {
+    cssScale: phoneCssScale,
+});
+const canonicalPhone = rendererPhoneFixture(667, 375);
+const canonicalLayout = computePhoneCharacterCollectionLayout(canonicalPhone.content, {
+    cssScale: canonicalPhone.cssScale,
+});
+check(canonicalPhone.sectionBar.touchSafe === true && canonicalLayout.touchSafe === true,
+    'canonical 667x375 phone layout fell below the 44 CSS-px target floor');
+check(canonicalLayout.variant === 'rich' && canonicalLayout.compact === false,
+    'canonical 667x375 phone lost the rich live-look rail');
+check(Math.round(canonicalPhone.cssW) === 667 && Math.round(canonicalPhone.cssH) === 375,
+    'canonical 667x375 phone no longer yields an honest 667x375 canvas receipt');
+
+const resolvedPhoneFixtures = [
+    ['932x430', rendererPhoneFixture(932, 430)],
+    ['667x375', canonicalPhone],
+    ['568x320', rendererPhoneFixture(568, 320)],
+    ['480x270', rendererPhoneFixture(480, 270)],
+];
+for (const [label, fixture] of resolvedPhoneFixtures) {
+    const [rawW, rawH] = label.split('x').map(Number);
+    check(isPhoneLandscapeViewport(rawW, rawH), `${label} raw viewport is not classified as phone landscape`);
+    check(isPhoneLandscapeViewport(fixture.cssW, fixture.cssH),
+        `${label} resolved Renderer canvas is not classified as phone landscape`);
+}
+check(Math.abs(resolvedPhoneFixtures[0][1].cssW - 932) < 0.001
+    && Math.abs(resolvedPhoneFixtures[0][1].cssH - 524.25) < 0.001,
+'932x430 COVER fixture no longer resolves to the production 932x524.25 canvas');
+for (const [w, h, label] of [
+    [1024, 576, 'landscape tablet'], [768, 1024, 'portrait tablet'], [1600, 900, 'desktop'],
+]) check(!isPhoneLandscapeViewport(w, h), `${label} was misclassified as a phone`);
+
+check(tabUnlocked('attune', { onboarding: { tabsSeen: [] }, discoveredRelics: [] }) === false,
+    'fresh-save relic ATTUNE route is not locked');
+check(tabUnlocked('attune', { onboarding: { tabsSeen: [] }, discoveredRelics: ['emberheart'] }) === true,
+    'discovered relic does not unlock the separate ATTUNE route');
+
+for (const [label, fixture] of resolvedPhoneFixtures) {
+    const ritesLayout = computePhoneHeroRitesLayout(fixture.content, { cssScale: fixture.cssScale });
+    check(ritesLayout.touchSafe && ritesLayout.minTouchCss >= 44,
+        `${label} Hero Rites layout fell below the 44 CSS-px floor`);
+    same(ritesLayout.riteCards.length, 3, `${label} Hero Rites layout lost a Rite card`);
+    for (const [targetLabel, rect] of [
+        ['back', ritesLayout.backButton], ['purchase', ritesLayout.purchaseButton],
+    ]) check(Math.min(rect.w, rect.h) * fixture.cssScale >= 44,
+        `${label} Hero Rites ${targetLabel} target fell below 44 CSS px`);
+}
+
+for (const [label, fixture] of resolvedPhoneFixtures.slice(2)) {
+    const unsafeRich = computePhoneCharacterCollectionLayout(fixture.content, {
+        cssScale: fixture.cssScale,
+    });
+    const compactLayout = computePhoneCharacterCollectionLayout(fixture.content, {
+        cssScale: fixture.cssScale, compact: true,
+    });
+    check(unsafeRich.touchSafe === false,
+        `${label} rich layout unexpectedly claims it is safe enough to render`);
+    check(compactLayout.compact === true && compactLayout.touchSafe === true
+        && compactLayout.minTouchCss >= 44,
+    `${label} compact fallback is not touch-safe`);
+    same(compactLayout.compactControls.length, 4,
+        `${label} compact fallback lost a filter or Hero Rites control`);
+    same(compactLayout.cards.length, 8,
+        `${label} compact fallback lost an eight-card page slot`);
+    const compactTargets = [
+        ...compactLayout.compactControls, ...compactLayout.cards,
+        compactLayout.previousButton, compactLayout.nextButton,
+    ];
+    for (const rect of compactTargets) {
+        check(Math.min(rect.w, rect.h) * fixture.cssScale >= 44,
+            `${label} compact target fell below 44 CSS px`);
+        check(rect.x >= fixture.content.x && rect.y >= fixture.content.y
+            && rect.x + rect.w <= fixture.content.x + fixture.content.w + 0.001
+            && rect.y + rect.h <= fixture.content.y + fixture.content.h + 0.001,
+        `${label} compact target escaped Character content`);
+    }
+}
+const conservativeLayout = computePhoneCharacterCollectionLayout(
+    { x: 56, y: 340, w: 1808, h: 557 }, { cssScale: phoneCssScale });
+check(conservativeLayout.touchSafe === true,
+    'conservative short-phone fixture fell below the 44 CSS-px target floor');
+for (const [label, layout] of [
+    ['exact', phoneLayout], ['canonical', canonicalLayout], ['conservative', conservativeLayout],
+]) {
+    const slotBaselineGapCss = (layout.previewSlots[0].h + 6) * layout.cssScale;
+    const slotLineBoxCss = layout.previewSlotFontPx * layout.cssScale;
+    check(slotBaselineGapCss >= slotLineBoxCss + 2,
+        `${label} phone equipped-slot line boxes overlap`);
+    check(layout.footerLineClearanceCss >= 4,
+        `${label} phone footer summary/tracking line boxes overlap`);
+    check(layout.footerSummaryY - layout.footer.y >= layout.footerFontPx * 0.5
+        && layout.footer.y + layout.footer.h - layout.footerTrackingY
+            >= layout.trackingFontPx * 0.5,
+    `${label} phone footer text escapes its pager band`);
+    for (let i = 0; i < layout.previewSlots.length; i++) {
+        const slot = layout.previewSlots[i];
+        const swatch = layout.previewSwatches[i];
+        check(swatch.x >= slot.x && swatch.y >= slot.y
+            && swatch.x + swatch.w <= slot.x + slot.w
+            && swatch.y + swatch.h <= slot.y + slot.h,
+        `${label} phone equipped swatch escapes its row`);
+    }
+}
+check(phoneLayout.phone === true, 'phone Character layout lacks its responsive receipt flag');
+check(phoneLayout.touchSafe === true && phoneLayout.minTouchCss >= 44,
+    `phone Character touch floor fell below 44 CSS px (${phoneLayout.minTouchCss})`);
+check(phoneLayout.preview.x === phoneContent.x
+    && phoneLayout.preview.x + phoneLayout.preview.w < phoneLayout.collection.x,
+'phone Character live-look rail overlaps Collection');
+check(phoneLayout.collection.x + phoneLayout.collection.w
+    <= phoneContent.x + phoneContent.w
+    && phoneLayout.collection.y + phoneLayout.collection.h
+    <= phoneContent.y + phoneContent.h,
+'phone Collection escapes the content bounds');
+same(phoneLayout.cards.length, 8, 'phone Collection does not expose exactly eight card slots');
+for (const [label, rects] of [
+    ['category', phoneLayout.categorySegments],
+    ['ownership', phoneLayout.ownershipSegments],
+    ['source', phoneLayout.sourceSegments],
+    ['card', phoneLayout.cards],
+]) {
+    for (const rect of rects) {
+        check(Math.min(rect.w, rect.h) * phoneCssScale >= 44,
+            `phone ${label} target fell below 44 CSS px`);
+        check(rect.x >= phoneLayout.collection.x && rect.y >= phoneLayout.collection.y
+            && rect.x + rect.w <= phoneLayout.collection.x + phoneLayout.collection.w
+            && rect.y + rect.h <= phoneLayout.collection.y + phoneLayout.collection.h,
+        `phone ${label} target escapes Collection`);
+    }
+}
+for (const [label, rect] of [
+    ['previous page', phoneLayout.previousButton],
+    ['next page', phoneLayout.nextButton],
+    ['Rites route', phoneLayout.attuneButton],
+]) {
+    check(Math.min(rect.w, rect.h) * phoneCssScale >= 44,
+        `phone ${label} target fell below 44 CSS px`);
+}
+for (let i = 0; i < phoneLayout.cards.length; i++) {
+    const a = phoneLayout.cards[i];
+    for (let j = i + 1; j < phoneLayout.cards.length; j++) {
+        const b = phoneLayout.cards[j];
+        check(!(a.x < b.x + b.w && a.x + a.w > b.x
+            && a.y < b.y + b.h && a.y + a.h > b.y),
+        `phone cards ${i}/${j} overlap`);
+    }
+}
+
+rendered.length = 0;
+renderedText.length = 0;
+segmentedActions.length = 0;
+pageButtons.length = 0;
+renderState.collectionView.page = 1;
+renderer._lastCollectionNavTouchSafe = exactPhone.sectionBar.touchSafe;
+renderer._lastCollectionNavMinTouchCss = exactPhone.sectionBar.minTouchCss;
+renderer._drawCosmeticCollection(recordCtx, renderState, phoneLayout.collection, phoneLayout);
+const expectedPhone = buildCosmeticCollectionPage({
+    category: 'hat', ownership: 'all', source: 'all', page: 1,
+    ownedIds: renderState.saveData.cosmetics.unlocked,
+});
+same(rendered.map((entry) => entry.id), expectedPhone.itemIds,
+    'phone renderer diverged from collection authority');
+check(rendered.every((entry) => entry.phone), 'phone renderer dropped compact card presentation');
+check(renderer._lastCollectionTouchSafe === true
+    && renderer._lastCollectionMinTouchCss >= 44,
+'phone renderer touch receipt omitted its responsive section bar');
+same(segmentedActions, ['collectionCategory', 'collectionOwnership', 'collectionSource'],
+    'phone renderer omitted a direct filter lane');
+check(pageButtons.length === 2, 'phone renderer omitted pager controls');
+check(renderedText.some((text) => text.includes('MATCHES')
+    && text.includes('OWNED') && text.includes('SETS')),
+'phone renderer lacks its readable completion summary');
+check(renderer._lastCollectionPursuitGuidance === true
+    && renderedText.some((text) => text.includes('TRACKING Stormglass') && text.includes('NEXT')),
+'phone renderer did not draw tracked-set next-source guidance');
+
+// Compact fallback executes the real collection handler paths: three cycle
+// actions, the in-Character Hero Rites route, two pagers, and all eight entries.
+const compact480Fixture = rendererPhoneFixture(480, 270);
+const compact480Layout = computePhoneCharacterCollectionLayout(compact480Fixture.content, {
+    cssScale: compact480Fixture.cssScale, compact: true,
+});
+rendered.length = 0;
+segmentedActions.length = 0;
+pageButtons.length = 0;
+renderer._lastCollectionNavTouchSafe = compact480Fixture.sectionBar.touchSafe;
+renderer._lastCollectionNavMinTouchCss = compact480Fixture.sectionBar.minTouchCss;
+renderer._drawCosmeticCollection(recordCtx, renderState,
+    compact480Layout.collection, compact480Layout);
+same(rendered.length, 8, '480x270 compact renderer did not keep eight reachable entries');
+for (const [action, arg] of [
+    ['collectionCategory', 'aura'],
+    ['collectionOwnership', 'owned'],
+    ['collectionSource', 'starter'],
+    ['characterPhonePane', 'rites'],
+]) check(pageButtons.some((button) => button.options.action === action
+    && button.options.arg === arg),
+`480x270 compact renderer omitted ${action}/${arg}`);
+check(pageButtons.every((button) =>
+    Math.min(button.rect.w, button.rect.h) * compact480Fixture.cssScale >= 44),
+'480x270 compact renderer emitted a sub-44 CSS-px button');
+
+// Confirm actual MenuRenderer hotspot registration, not only helper geometry.
+const hotspotRenderer = new MenuRenderer({
+    cssWidth: compact480Fixture.cssW,
+    cssHeight: compact480Fixture.cssH,
+    dpr: 1,
+    safeArea: compact480Fixture.safe,
+});
+hotspotRenderer._panel = () => {};
+hotspotRenderer._cosmeticSwatch = () => {};
+hotspotRenderer._emberRim = () => {};
+hotspotRenderer._lastCollectionNavTouchSafe = true;
+hotspotRenderer._lastCollectionNavMinTouchCss = compact480Fixture.sectionBar.minTouchCss;
+const hotspotCtx = {
+    fillStyle: '', strokeStyle: '', font: '', textAlign: '', textBaseline: '',
+    lineWidth: 1, globalAlpha: 1, globalCompositeOperation: 'source-over',
+    beginPath() {}, roundRect() {}, fill() {}, stroke() {}, save() {}, restore() {},
+    clip() {}, fillRect() {}, fillText() {}, drawImage() {},
+    measureText(value) { return { width: String(value ?? '').length * 7 }; },
+};
+hotspotRenderer._drawCosmeticCollection(hotspotCtx, renderState,
+    compact480Layout.collection, compact480Layout);
+for (const action of [
+    'collectionCategory', 'collectionOwnership', 'collectionSource', 'characterPhonePane',
+]) check(hotspotRenderer.hotspots.some((hotspot) => hotspot.action === action),
+    `production compact hotspots omitted ${action}`);
+check(hotspotRenderer.hotspots.every((hotspot) =>
+    Math.min(hotspot.w, hotspot.h) * compact480Fixture.cssScale >= 44),
+'production compact renderer registered a sub-44 CSS-px hotspot');
+
+// The top-level Character branch must select compact before drawing at 480,
+// even though the rich helper reports unsafe.
+let selectedPhonePresentation = null;
+hotspotRenderer._drawCosmeticCollection = (_ctx, _state, _rect, presentation) => {
+    selectedPhonePresentation = presentation;
+};
+hotspotRenderer._drawPhoneCharacter(hotspotCtx, {
+    saveData: renderState.saveData,
+    collectionView: renderState.collectionView,
+    characterPhonePane: 'collection',
+}, compact480Fixture.content);
+check(selectedPhonePresentation?.compact === true
+    && selectedPhonePresentation?.touchSafe === true,
+'480x270 Character rendered the unsafe rich layout instead of compact fallback');
+
+// Phone Hero Rites uses the production back/purchase button code and existing
+// buyHeroAttune handler; gated levels suppress only the purchase hotspot.
+const ritesRenderer = new MenuRenderer({
+    cssWidth: compact480Fixture.cssW,
+    cssHeight: compact480Fixture.cssH,
+    dpr: 1,
+    safeArea: compact480Fixture.safe,
+});
+ritesRenderer._panel = () => {};
+ritesRenderer._emberRim = () => {};
+ritesRenderer._lastCollectionNavTouchSafe = true;
+ritesRenderer._lastCollectionNavMinTouchCss = compact480Fixture.sectionBar.minTouchCss;
+const ritesState = {
+    saveData: {
+        selectedCharacter: 'monkey', totalCoins: 99999,
+        rites: {}, heroAttunement: {},
+    },
+};
+ritesRenderer._drawPhoneHeroRites(hotspotCtx, ritesState,
+    compact480Fixture.content, compact480Fixture.cssScale);
+check(ritesRenderer.hotspots.some((hotspot) => hotspot.action === 'characterPhonePane'
+    && hotspot.arg === 'collection'),
+'phone Hero Rites omitted its back-to-Collection hotspot');
+check(ritesRenderer.hotspots.some((hotspot) => hotspot.action === 'buyHeroAttune'
+    && hotspot.arg === 'monkey'),
+'affordable level-one Hero Attunement omitted its purchase hotspot');
+check(ritesRenderer.hotspots.every((hotspot) =>
+    Math.min(hotspot.w, hotspot.h) * compact480Fixture.cssScale >= 44),
+'phone Hero Rites registered a sub-44 CSS-px hotspot');
+ritesRenderer.hotspots = [];
+ritesState.saveData.heroAttunement.monkey = 2;
+ritesRenderer._drawPhoneHeroRites(hotspotCtx, ritesState,
+    compact480Fixture.content, compact480Fixture.cssScale);
+check(!ritesRenderer.hotspots.some((hotspot) => hotspot.action === 'buyHeroAttune'),
+    'rite-gated Hero Attunement exposed a purchase hotspot');
+
+const previewPoints = boutiqueTrailPreviewPoints(400, 300, 100);
+same(previewPoints.length, 4, 'Boutique trail sample changed its bounded point count');
+check(previewPoints.every((point) => Number.isFinite(point.x + point.y + point.b + point.k + point.alpha)
+    && point.b > 0 && point.k > 0 && point.alpha > 0),
+'Boutique trail sample contains invalid geometry');
+check(previewPoints[0].k < previewPoints.at(-1).k
+    && previewPoints[0].x < 400 && previewPoints.at(-1).x > 400,
+'Boutique trail sample no longer reads as a planted movement wake');
+let trailFillRects = 0;
+const trailCtx = {
+    globalAlpha: 1, globalCompositeOperation: 'source-over', fillStyle: '',
+    save() {}, restore() {}, beginPath() {}, rect() {}, clip() {},
+    fillRect() { trailFillRects += 1; },
+};
+renderer._lastBoutiqueTrailPreview = false;
+renderer._reducedMotion = true;
+check(renderer._drawBoutiqueTrailPreview(trailCtx, {
+    trailColor: '#abcdef', trailFx: 'puffs',
+}, 400, 300, 100, 9, { x: 260, y: 180, w: 280, h: 240 }) === true,
+'Boutique fitting room rejected a real trail appearance');
+check(trailFillRects === 16 && renderer._lastBoutiqueTrailPreview === true,
+    'Boutique fitting room did not feed all four samples through the production trail renderer');
+renderer._lastBoutiqueTrailPreview = false;
+check(renderer._drawBoutiqueTrailPreview(trailCtx, {}, 400, 300, 100, 9) === false
+    && renderer._lastBoutiqueTrailPreview === false,
+'Boutique fitting room fabricated a trail for a trail-less look');
 
 same(boutiquePreviewGuidance(['case']),
     'RANDOM DROP · every piece comes from cosmetic cases',
