@@ -6,10 +6,18 @@
 
 import { SaveSystem } from '../src/systems/SaveSystem.js';
 import {
+    CAPTION_DETAIL_PRESETS,
+    DEFAULT_CAPTION_DETAIL,
     DEFAULT_UI_SCALE,
+    DEFAULT_VIBRATION_STRENGTH,
     UI_SCALE_PRESETS,
+    VIBRATION_STRENGTH_PRESETS,
+    normalizeCaptionDetail,
+    normalizeCaptions,
     normalizeHighContrast,
+    normalizeMonoAudio,
     normalizeUiScale,
+    normalizeVibrationStrength,
     uiScaleFactor,
 } from '../src/systems/AccessibilityPreferences.js';
 
@@ -78,6 +86,20 @@ ok(DEFAULT_UI_SCALE === 100, 'UI scale default is exactly 100 percent');
 ok(Object.isFrozen(UI_SCALE_PRESETS)
     && UI_SCALE_PRESETS.join(',') === '100,115,130',
 'UI scale presets are the immutable 100/115/130 contract');
+ok(DEFAULT_CAPTION_DETAIL === 'essential'
+    && CAPTION_DETAIL_PRESETS.join(',') === 'essential,full',
+'caption detail presets are the immutable Essential/Full contract');
+ok(DEFAULT_VIBRATION_STRENGTH === 'low'
+    && VIBRATION_STRENGTH_PRESETS.join(',') === 'off,low,full',
+'vibration presets are the immutable Off/Low/Full contract');
+ok(normalizeMonoAudio(true) === true && normalizeMonoAudio('true') === false,
+'mono audio accepts only literal true');
+ok(normalizeCaptions(true) === true && normalizeCaptions(1) === false,
+'captions accept only literal true');
+ok(normalizeCaptionDetail('full') === 'full' && normalizeCaptionDetail('FULL') === 'essential',
+'caption detail strictly repairs unsupported values');
+ok(normalizeVibrationStrength('off') === 'off' && normalizeVibrationStrength(true) === 'low',
+'vibration strength strictly repairs unsupported values');
 for (const scale of UI_SCALE_PRESETS) {
     ok(normalizeUiScale(scale) === scale, `UI scale normalizer preserves ${scale} percent`);
     ok(uiScaleFactor(scale) === scale / 100,
@@ -207,7 +229,12 @@ try {
     setGlobal('localStorage', legacyStorage);
     const legacy = new SaveSystem();
     ok(legacy.getSetting('uiScale') === 100
-        && legacy.getSetting('highContrast') === false,
+        && legacy.getSetting('highContrast') === false
+        && legacy.getSetting('monoAudio') === false
+        && legacy.getSetting('captions') === true
+        && legacy.getSetting('captionDetail') === 'essential'
+        && legacy.getSetting('vibration') === 'low'
+        && legacy.getSetting('volVoice') === 0.65,
     'old save missing preference keys receives safe additive defaults');
     ok(legacy.data.totalCoins === 321
         && legacy.getSetting('screenShake') === false
@@ -230,6 +257,27 @@ try {
         ok(new SaveSystem().getSetting('highContrast') === false,
             `stored high contrast ${JSON.stringify(value)} validates to false`);
     }
+    for (const value of [null, 0, 1, 'true', {}, []]) {
+        setGlobal('localStorage', new MemoryStorage(existingRaw({ monoAudio: value, captions: value })));
+        const strict = new SaveSystem();
+        ok(strict.getSetting('monoAudio') === false && strict.getSetting('captions') === false,
+            `stored hearing toggles ${JSON.stringify(value)} validate strictly`);
+    }
+    for (const value of [null, 'speech', 'FULL', true, {}, []]) {
+        setGlobal('localStorage', new MemoryStorage(existingRaw({ captionDetail: value })));
+        ok(new SaveSystem().getSetting('captionDetail') === 'essential',
+            `stored caption detail ${JSON.stringify(value)} repairs to Essential`);
+    }
+    for (const value of [null, 'medium', 'LOW', true, {}, []]) {
+        setGlobal('localStorage', new MemoryStorage(existingRaw({ vibration: value })));
+        ok(new SaveSystem().getSetting('vibration') === 'low',
+            `stored vibration ${JSON.stringify(value)} repairs to Low`);
+    }
+    setGlobal('localStorage', new MemoryStorage(existingRaw({ volSfx: 0.25, volVoice: 0.9 })));
+    const independentVoice = new SaveSystem();
+    ok(independentVoice.getSetting('volSfx') === 0.25
+        && independentVoice.getSetting('volVoice') === 0.9,
+    'explicit voice volume validates independently of SFX');
 
     // Live setters use the same strict boundary, so a bad action cannot poison
     // the in-memory profile until the next reload repairs it.
@@ -248,6 +296,18 @@ try {
     ok(setterSave.setSetting('highContrast', 'true') === false
         && setterSave.getSetting('highContrast') === false,
     'high-contrast setter rejects truthy non-booleans immediately');
+    ok(setterSave.setSetting('monoAudio', true) === true
+        && setterSave.setSetting('monoAudio', 1) === false,
+    'mono-audio setter accepts only literal true');
+    ok(setterSave.setSetting('captions', true) === true
+        && setterSave.setSetting('captions', 'true') === false,
+    'caption setter accepts only literal true');
+    ok(setterSave.setSetting('captionDetail', 'full') === 'full'
+        && setterSave.setSetting('captionDetail', 'verbose') === 'essential',
+    'caption-detail setter accepts only documented presets');
+    ok(setterSave.setSetting('vibration', 'off') === 'off'
+        && setterSave.setSetting('vibration', 'max') === 'low',
+    'vibration setter accepts only documented presets');
     const setterReload = new SaveSystem();
     ok(setterReload.getSetting('uiScale') === 100
         && setterReload.getSetting('highContrast') === false,
@@ -293,7 +353,12 @@ try {
     ok(resetSave.getSetting('reducedEffects') === true,
         'reset profile re-samples and inherits enabled OS reduced motion');
     ok(resetSave.getSetting('uiScale') === 100
-        && resetSave.getSetting('highContrast') === false,
+        && resetSave.getSetting('highContrast') === false
+        && resetSave.getSetting('volVoice') === 0.8
+        && resetSave.getSetting('monoAudio') === false
+        && resetSave.getSetting('captions') === true
+        && resetSave.getSetting('captionDetail') === 'essential'
+        && resetSave.getSetting('vibration') === 'low',
     'reset restores safe UI-scale and high-contrast defaults');
     ok(JSON.parse(resetStorage.getItem(SAVE_KEY)).settings.reducedEffects === true,
         'reset persists its inherited reduced-motion setting');

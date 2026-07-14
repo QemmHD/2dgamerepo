@@ -18,9 +18,15 @@ import {
     bpProgress, migrateBattlePassXpV1,
 } from '../content/battlePass.js';
 import {
+    DEFAULT_CAPTION_DETAIL,
     DEFAULT_UI_SCALE,
+    DEFAULT_VIBRATION_STRENGTH,
+    normalizeCaptionDetail,
+    normalizeCaptions,
     normalizeHighContrast,
+    normalizeMonoAudio,
     normalizeUiScale,
+    normalizeVibrationStrength,
 } from './AccessibilityPreferences.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
@@ -111,6 +117,16 @@ function defaultData({ reducedEffects = false } = {}) {
             highContrast: false,
             volMusic: 0.7,
             volSfx: 0.8,
+            volVoice: 0.8,
+            monoAudio: false,
+            // Captions start on so a new player never has to hear a line before
+            // discovering the control. Essential keeps the lane focused on
+            // dialogue, warnings and state changes; Full adds world texture.
+            captions: true,
+            captionDetail: DEFAULT_CAPTION_DETAIL,
+            // Device/browser support is capability-gated at runtime. Low is a
+            // restrained default and Off always cancels active vibration.
+            vibration: DEFAULT_VIBRATION_STRENGTH,
             // Testing: unlock every biome regardless of boss kills.
             unlockMaps: false,
         },
@@ -300,16 +316,35 @@ export class SaveSystem {
         const settings = { ...def.settings };
         if (data.settings && typeof data.settings === 'object') {
             for (const key of Object.keys(def.settings)) {
+                // Missing additive preferences inherit their documented fresh
+                // defaults. Only explicitly stored values enter the strict
+                // normalizers; otherwise a missing `captions` key would be
+                // mistaken for an explicit false choice during migration.
+                if (!Object.prototype.hasOwnProperty.call(data.settings, key)) continue;
                 const v = data.settings[key];
                 if (key === 'uiScale') {
                     settings.uiScale = normalizeUiScale(v);
                 } else if (key === 'highContrast') {
                     settings.highContrast = normalizeHighContrast(v);
+                } else if (key === 'monoAudio') {
+                    settings.monoAudio = normalizeMonoAudio(v);
+                } else if (key === 'captions') {
+                    settings.captions = normalizeCaptions(v);
+                } else if (key === 'captionDetail') {
+                    settings.captionDetail = normalizeCaptionDetail(v);
+                } else if (key === 'vibration') {
+                    settings.vibration = normalizeVibrationStrength(v);
                 } else if (typeof def.settings[key] === 'boolean') {
                     if (typeof v === 'boolean') settings[key] = v;
                 } else if (Number.isFinite(v)) {
                     settings[key] = Math.max(0, Math.min(1, v));
                 }
+            }
+            // Before this preference existed, dialogue followed the SFX bus.
+            // Preserve that exact mix for an upgraded save instead of suddenly
+            // restoring muted/quiet voices to the new-profile 80% default.
+            if (!Object.prototype.hasOwnProperty.call(data.settings, 'volVoice')) {
+                settings.volVoice = settings.volSfx;
             }
         }
 
@@ -785,7 +820,15 @@ export class SaveSystem {
             ? normalizeUiScale(value)
             : key === 'highContrast'
                 ? normalizeHighContrast(value)
-                : value;
+                : key === 'monoAudio'
+                    ? normalizeMonoAudio(value)
+                    : key === 'captions'
+                        ? normalizeCaptions(value)
+                        : key === 'captionDetail'
+                            ? normalizeCaptionDetail(value)
+                            : key === 'vibration'
+                                ? normalizeVibrationStrength(value)
+                                : value;
         this.data.settings[key] = normalized;
         this.save();
         return normalized;

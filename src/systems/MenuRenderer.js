@@ -34,7 +34,14 @@ import { getCaseArt } from '../assets/CaseArt.js';
 import { getCosmeticEmblem } from '../assets/CosmeticEmblems.js';
 import { DISPLAY_FONT, ensureMenuFont } from '../assets/MenuFont.js';
 import { menuHotspotKey, menuHotspotLabel } from './AccessibilityBridge.js';
-import { UI_SCALE_PRESETS, normalizeUiScale } from './AccessibilityPreferences.js';
+import {
+    CAPTION_DETAIL_PRESETS,
+    UI_SCALE_PRESETS,
+    VIBRATION_STRENGTH_PRESETS,
+    normalizeCaptionDetail,
+    normalizeUiScale,
+    normalizeVibrationStrength,
+} from './AccessibilityPreferences.js';
 import { drawPixelCloak, drawPixelHat } from '../assets/PixelArt.js';
 import { getWeaponProp } from '../assets/WeaponProps.js';
 import { drawAuraFx, drawSetBonus, drawRarityFx } from '../assets/CosmeticFx.js';
@@ -237,24 +244,25 @@ export function computePhoneSettingsLayout(content, options = {}) {
         h: rowH,
     }));
 
-    const audioGap = 12;
-    const audioBlockH = (bodyBottom - bodyTop - audioGap) / 2;
-    const audioBlocks = [0, 1].map((i) => ({
+    const audioGap = 2;
+    const audioBlocks = [0, 1, 2].map((i) => ({
         x: columns.audio.x,
-        y: bodyTop + i * (audioBlockH + audioGap),
+        y: bodyTop + i * (rowH + audioGap),
         w: columns.audio.w,
-        h: audioBlockH,
+        h: rowH,
     }));
     const volumeControls = audioBlocks.map((block) => {
         const buttonW = rowH;
         const percentW = 72;
-        const controlY = block.y + 52;
-        const minus = { x: block.x, y: controlY, w: buttonW, h: rowH };
+        const labelW = Math.max(118, Math.round(block.w * 0.20));
+        const controlY = block.y;
+        const minus = { x: block.x + labelW, y: controlY, w: buttonW, h: rowH };
         const plus = { x: block.x + block.w - percentW - buttonW, y: controlY, w: buttonW, h: rowH };
         return {
             minus,
             plus,
-            bar: { x: minus.x + buttonW + 12, y: controlY + 40, w: plus.x - minus.x - buttonW - 24, h: 20 },
+            label: { x: block.x, y: controlY, w: labelW, h: rowH },
+            bar: { x: minus.x + buttonW + 12, y: controlY + rowH / 2 - 10, w: plus.x - minus.x - buttonW - 24, h: 20 },
             percent: { x: plus.x + plus.w, y: controlY, w: percentW, h: rowH },
         };
     });
@@ -291,7 +299,7 @@ export function computePhoneAccessibilityLayout(content, options = {}) {
         ? options.cssScale : 1;
     const pad = 28;
     const colGap = 24;
-    const rowGap = 12;
+    const rowGap = 10;
     const rowH = Math.max(100, Math.ceil(44 / cssScale));
     const inner = {
         x: content.x + pad,
@@ -300,7 +308,7 @@ export function computePhoneAccessibilityLayout(content, options = {}) {
         h: content.h - pad * 2,
     };
     const availableW = inner.w - colGap;
-    const displayW = Math.round(availableW * 0.66);
+    const displayW = Math.round(availableW * 0.58);
     const columns = {
         display: { x: inner.x, y: inner.y, w: displayW, h: inner.h },
         support: {
@@ -311,39 +319,62 @@ export function computePhoneAccessibilityLayout(content, options = {}) {
         },
     };
     const headerY = inner.y + 32;
-    const bodyTop = inner.y + 52;
+    const bodyTop = inner.y + 70;
     const coreFontPx = Math.max(36, Math.ceil(16 / cssScale));
     const sectionFontPx = Math.max(32, Math.ceil(13 / cssScale));
     const statusFontPx = Math.max(26, Math.ceil(12 / cssScale));
     const coreLineHeight = Math.round(coreFontPx * 0.92);
     const switchH = Math.max(84, rowH - 8);
     const switchW = Math.max(150, Math.round(switchH * 1.65));
-    const contrastRow = { x: columns.display.x, y: bodyTop, w: columns.display.w, h: rowH };
-    const scaleHeaderY = contrastRow.y + contrastRow.h + 42;
-    const scaleY = contrastRow.y + contrastRow.h + 54;
-    const scaleGap = 12;
-    const scaleW = (columns.display.w - scaleGap * (UI_SCALE_PRESETS.length - 1))
+    const rowsFor = (column) => Array.from({ length: 4 }, (_, i) => ({
+        x: column.x,
+        y: bodyTop + i * (rowH + rowGap),
+        w: column.w,
+        h: rowH,
+    }));
+    const displayRows = rowsFor(columns.display);
+    const supportRows = rowsFor(columns.support);
+    const captionRow = displayRows[0];
+    const detailGap = 10;
+    const detailW = (displayRows[1].w - detailGap) / 2;
+    const detailButtons = CAPTION_DETAIL_PRESETS.map((value, i) => ({
+        value,
+        x: displayRows[1].x + i * (detailW + detailGap),
+        y: displayRows[1].y,
+        w: detailW,
+        h: rowH,
+    }));
+    const contrastRow = displayRows[2];
+    const scaleGap = 10;
+    const scaleW = (displayRows[3].w - scaleGap * (UI_SCALE_PRESETS.length - 1))
         / UI_SCALE_PRESETS.length;
     const scaleButtons = UI_SCALE_PRESETS.map((value, i) => ({
         value,
-        x: columns.display.x + i * (scaleW + scaleGap),
-        y: scaleY,
+        x: displayRows[3].x + i * (scaleW + scaleGap),
+        y: displayRows[3].y,
         w: scaleW,
         h: rowH,
     }));
-    const replay = { x: columns.support.x, y: bodyTop, w: columns.support.w, h: rowH };
-    const back = {
-        x: columns.support.x,
-        y: bodyTop + rowH + rowGap,
-        w: columns.support.w,
+    const monoRow = supportRows[0];
+    const vibrationGap = 8;
+    const vibrationW = (supportRows[1].w - vibrationGap * 2) / 3;
+    const vibrationButtons = VIBRATION_STRENGTH_PRESETS.map((value, i) => ({
+        value,
+        x: supportRows[1].x + i * (vibrationW + vibrationGap),
+        y: supportRows[1].y,
+        w: vibrationW,
         h: rowH,
-    };
+    }));
+    const replay = supportRows[2];
+    const back = supportRows[3];
 
     return {
         inner, columns, headerY, bodyTop, rowH, rowGap, cssScale,
         coreFontPx, sectionFontPx, statusFontPx, coreLineHeight,
-        switchH, switchW, contrastRow, scaleHeaderY, scaleButtons, replay, back,
+        switchH, switchW, displayRows, supportRows, captionRow, detailButtons,
+        contrastRow, scaleButtons, monoRow, vibrationButtons, replay, back,
         labelWidth: columns.display.w - switchW - 30,
+        supportLabelWidth: columns.support.w - switchW - 30,
     };
 }
 
@@ -3760,7 +3791,7 @@ export class MenuRenderer {
         );
     }
 
-    _drawAccessibilityToggle(ctx, rect, value) {
+    _drawAccessibilityToggle(ctx, rect, key, label, value) {
         roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 16);
         ctx.fillStyle = value ? 'rgba(40,92,61,0.46)' : 'rgba(20,25,34,0.72)';
         ctx.fill();
@@ -3771,7 +3802,7 @@ export class MenuRenderer {
         ctx.font = `700 26px ${FONT}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText('High Contrast Warnings', rect.x + 22, rect.y + rect.h / 2);
+        ctx.fillText(label, rect.x + 22, rect.y + rect.h / 2);
         const tw = 100, th = 46;
         const tx = rect.x + rect.w - tw - 18;
         const ty = rect.y + (rect.h - th) / 2;
@@ -3786,8 +3817,35 @@ export class MenuRenderer {
         ctx.textAlign = 'center';
         ctx.fillText(value ? 'ON' : 'OFF', value ? tx + th / 2 : tx + tw - th / 2, ty + th / 2 + 1);
         this._hot(
-            rect.x, rect.y, rect.w, rect.h, 'toggleSetting', 'highContrast',
-            'High Contrast Warnings',
+            rect.x, rect.y, rect.w, rect.h, 'toggleSetting', key,
+            label,
+        );
+    }
+
+    _drawPreferenceChoice(ctx, rect, label, options = {}) {
+        const selected = options.selected === true;
+        roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+        ctx.fillStyle = selected ? 'rgba(76,101,126,0.88)' : 'rgba(20,25,34,0.78)';
+        ctx.fill();
+        ctx.strokeStyle = selected ? '#fff0c2' : 'rgba(184,199,216,0.32)';
+        ctx.lineWidth = selected ? 4 : 2;
+        ctx.stroke();
+        if (selected) {
+            roundRectPath(ctx, rect.x + 7, rect.y + 7, rect.w - 14, rect.h - 14, 11);
+            ctx.strokeStyle = 'rgba(255,240,194,0.55)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        const visible = `${selected ? '\u2713 ' : ''}${label}`;
+        ctx.fillStyle = '#fff';
+        this._fitFont(ctx, visible, rect.w - 22, 800, options.fontSize || 24);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(visible, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+        this._hot(
+            rect.x, rect.y, rect.w, rect.h,
+            options.action, options.arg,
+            options.accessibleLabel || `${label}${selected ? ', selected' : ''}`,
         );
     }
 
@@ -3797,13 +3855,30 @@ export class MenuRenderer {
             cssScale: (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH,
         });
         const currentScale = normalizeUiScale(settings.uiScale);
+        const captionDetail = normalizeCaptionDetail(settings.captionDetail);
+        const vibration = normalizeVibrationStrength(settings.vibration);
 
         this._phoneSettingsHeader(
-            ctx, layout.columns.display, layout.headerY, 'DISPLAY', layout.sectionFontPx,
+            ctx, layout.columns.display, layout.headerY, 'READING & DISPLAY', layout.sectionFontPx,
         );
         this._phoneSettingsHeader(
-            ctx, layout.columns.support, layout.headerY, 'HELP & BACK', layout.sectionFontPx,
+            ctx, layout.columns.support, layout.headerY, 'AUDIO & FEEDBACK', layout.sectionFontPx,
         );
+        this._drawPhoneToggle(
+            ctx,
+            layout.captionRow,
+            { key: 'captions', label: 'Captions' },
+            settings.captions === true,
+            layout,
+        );
+        for (const choice of layout.detailButtons) {
+            this._drawPreferenceChoice(ctx, choice, `DETAIL: ${choice.value.toUpperCase()}`, {
+                selected: choice.value === captionDetail,
+                action: 'setCaptionDetail', arg: choice.value,
+                fontSize: layout.coreFontPx,
+                accessibleLabel: `Set caption detail to ${choice.value}${choice.value === captionDetail ? ', selected' : ''}`,
+            });
+        }
         this._drawPhoneToggle(
             ctx,
             layout.contrastRow,
@@ -3811,15 +3886,38 @@ export class MenuRenderer {
             settings.highContrast === true,
             layout,
         );
-
-        ctx.fillStyle = '#b8c7d8';
-        ctx.font = `800 ${layout.sectionFontPx}px ${HEAD}`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'alphabetic';
-        ctx.fillText('COMBAT HUD SIZE', layout.columns.display.x, layout.scaleHeaderY);
         for (const choice of layout.scaleButtons) {
-            this._drawScaleChoice(ctx, choice, choice.value, currentScale, layout.coreFontPx);
+            this._drawPreferenceChoice(ctx, choice, `HUD ${choice.value}%`, {
+                selected: choice.value === currentScale,
+                action: 'setUiScale', arg: choice.value,
+                fontSize: layout.coreFontPx,
+                accessibleLabel: `Set combat HUD size to ${choice.value} percent${choice.value === currentScale ? ', selected' : ''}`,
+            });
         }
+
+        this._drawPhoneToggle(
+            ctx,
+            layout.monoRow,
+            { key: 'monoAudio', label: 'Mono Audio' },
+            settings.monoAudio === true,
+            layout,
+        );
+        for (const choice of layout.vibrationButtons) {
+            this._drawPreferenceChoice(ctx, choice, `VIB ${choice.value.toUpperCase()}`, {
+                selected: choice.value === vibration,
+                action: 'setVibration', arg: choice.value,
+                fontSize: layout.coreFontPx,
+                accessibleLabel: `Set vibration to ${choice.value}${choice.value === vibration ? ', selected' : ''}`,
+            });
+        }
+        ctx.fillStyle = state.vibrationSupported ? '#85d9a0' : '#d8b16b';
+        ctx.font = `700 ${layout.statusFontPx}px ${FONT}`;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(
+            state.vibrationSupported ? 'TOUCH VIBRATION AVAILABLE' : 'SAVED CHOICE · UNAVAILABLE HERE',
+            layout.columns.support.x,
+            layout.bodyTop - 8,
+        );
 
         this._button(ctx, layout.replay, 'REPLAY TUTORIAL', {
             accent: 'rgba(46,74,96,0.95)', action: 'replayTutorial', fontSize: layout.coreFontPx,
@@ -3834,25 +3932,44 @@ export class MenuRenderer {
     _drawAccessibilitySettings(ctx, state, c) {
         const settings = state.saveData?.settings || {};
         const currentScale = normalizeUiScale(settings.uiScale);
+        const captionDetail = normalizeCaptionDetail(settings.captionDetail);
+        const vibration = normalizeVibrationStrength(settings.vibration);
         const innerX = c.x + 40;
         const innerW = c.w - 80;
         const colGap = 56;
         const colW = (innerW - colGap) / 2;
         const rightX = innerX + colW + colGap;
 
-        let y = this._settingsHeader(ctx, innerX, colW, c.y + 58, 'ACCESSIBILITY & DISPLAY');
-        const contrast = { x: innerX, y: y + 8, w: colW, h: 74 };
-        this._drawAccessibilityToggle(ctx, contrast, settings.highContrast === true);
+        let y = this._settingsHeader(ctx, innerX, colW, c.y + 58, 'READING & DISPLAY');
+        const captions = { x: innerX, y: y + 8, w: colW, h: 66 };
+        this._drawAccessibilityToggle(ctx, captions, 'captions', 'Captions', settings.captions === true);
 
-        y = this._settingsHeader(ctx, innerX, colW, contrast.y + contrast.h + 64, 'COMBAT HUD SIZE');
+        y = this._settingsHeader(ctx, innerX, colW, captions.y + captions.h + 52, 'CAPTION DETAIL');
+        const detailGap = 14;
+        const detailW = (colW - detailGap) / 2;
+        CAPTION_DETAIL_PRESETS.forEach((value, i) => this._drawPreferenceChoice(ctx, {
+            x: innerX + i * (detailW + detailGap), y: y + 8, w: detailW, h: 66,
+        }, value.toUpperCase(), {
+            selected: value === captionDetail,
+            action: 'setCaptionDetail', arg: value, fontSize: 24,
+            accessibleLabel: `Set caption detail to ${value}${value === captionDetail ? ', selected' : ''}`,
+        }));
         ctx.fillStyle = 'rgba(255,255,255,0.68)';
         ctx.font = `500 18px ${FONT}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
-        ctx.fillText('Choose the size of combat HUD information.', innerX, y + 18);
+        ctx.fillText('Essential covers dialogue and danger; Full adds world sounds.', innerX, y + 98);
+
+        const contrastHeader = this._settingsHeader(ctx, innerX, colW, y + 124, 'VISUAL WARNINGS');
+        const contrast = { x: innerX, y: contrastHeader + 8, w: colW, h: 66 };
+        this._drawAccessibilityToggle(
+            ctx, contrast, 'highContrast', 'High Contrast Warnings', settings.highContrast === true,
+        );
+
+        y = this._settingsHeader(ctx, innerX, colW, contrast.y + contrast.h + 52, 'COMBAT HUD SIZE');
         const gap = 14;
         const choiceW = (colW - gap * (UI_SCALE_PRESETS.length - 1)) / UI_SCALE_PRESETS.length;
-        const choiceY = y + 42;
+        const choiceY = y + 8;
         for (let i = 0; i < UI_SCALE_PRESETS.length; i++) {
             const value = UI_SCALE_PRESETS[i];
             this._drawScaleChoice(ctx, {
@@ -3860,7 +3977,30 @@ export class MenuRenderer {
             }, value, currentScale, 28);
         }
 
-        let ry = this._settingsHeader(ctx, rightX, colW, c.y + 58, 'HELP & NAVIGATION');
+        let ry = this._settingsHeader(ctx, rightX, colW, c.y + 58, 'AUDIO & FEEDBACK');
+        const mono = { x: rightX, y: ry + 8, w: colW, h: 66 };
+        this._drawAccessibilityToggle(ctx, mono, 'monoAudio', 'Mono Audio', settings.monoAudio === true);
+
+        ry = this._settingsHeader(ctx, rightX, colW, mono.y + mono.h + 52, 'VIBRATION');
+        const vibGap = 14;
+        const vibW = (colW - vibGap * 2) / 3;
+        VIBRATION_STRENGTH_PRESETS.forEach((value, i) => this._drawPreferenceChoice(ctx, {
+            x: rightX + i * (vibW + vibGap), y: ry + 8, w: vibW, h: 66,
+        }, value.toUpperCase(), {
+            selected: value === vibration,
+            action: 'setVibration', arg: value, fontSize: 23,
+            accessibleLabel: `Set vibration to ${value}${value === vibration ? ', selected' : ''}`,
+        }));
+        ctx.fillStyle = state.vibrationSupported ? '#85d9a0' : '#d8b16b';
+        ctx.font = `600 18px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(
+            state.vibrationSupported
+                ? 'Touch vibration is available on this device.'
+                : 'Unavailable in this browser. Your choice stays saved.',
+            rightX, ry + 100,
+        );
+
+        ry = this._settingsHeader(ctx, rightX, colW, ry + 132, 'HELP & NAVIGATION');
         this._button(ctx, { x: rightX, y: ry + 8, w: colW, h: 66 }, 'REPLAY TUTORIAL', {
             accent: 'rgba(46,74,96,0.95)', action: 'replayTutorial', fontSize: 24,
         });
@@ -3893,8 +4033,9 @@ export class MenuRenderer {
             ctx, layout.gameplayRows[i], toggle, save.settings[toggle.key] === true, layout));
 
         const volumes = [
-            { key: 'volMusic', label: 'Music Volume' },
-            { key: 'volSfx', label: 'SFX Volume' },
+            { key: 'volMusic', label: 'Music Volume', short: 'MUSIC' },
+            { key: 'volSfx', label: 'SFX Volume', short: 'SFX' },
+            { key: 'volVoice', label: 'Voice Volume', short: 'VOICE' },
         ];
         volumes.forEach((volume, i) => {
             const block = layout.audioBlocks[i];
@@ -3903,9 +4044,10 @@ export class MenuRenderer {
             roundRectPath(ctx, block.x, block.y, block.w, block.h, 18);
             ctx.fillStyle = 'rgba(20,25,34,0.66)'; ctx.fill();
             ctx.strokeStyle = 'rgba(184,199,216,0.20)'; ctx.lineWidth = 2; ctx.stroke();
-            ctx.fillStyle = '#fff'; ctx.font = `700 ${layout.coreFontPx}px ${FONT}`;
+            ctx.fillStyle = '#fff'; ctx.font = `800 ${layout.coreFontPx}px ${HEAD}`;
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.fillText(volume.label, block.x + 14, block.y + 28);
+            ctx.fillText(this._ellip(ctx, volume.short, controls.label.w - 12),
+                controls.label.x + 6, controls.label.y + controls.label.h / 2);
             this._button(ctx, controls.minus, '−', {
                 action: 'volDown', arg: volume.key, fontSize: Math.max(48, layout.coreFontPx),
                 accessibleLabel: `Decrease ${volume.label}`,
@@ -4006,7 +4148,11 @@ export class MenuRenderer {
         // ── Right column: AUDIO sliders, then HELP ──
         let ry = this._settingsHeader(ctx, rightX, colW, c.y + 48, 'AUDIO');
         ctx.textBaseline = 'middle';
-        for (const v of [{ key: 'volMusic', label: 'Music Volume' }, { key: 'volSfx', label: 'SFX Volume' }]) {
+        for (const v of [
+            { key: 'volMusic', label: 'Music Volume' },
+            { key: 'volSfx', label: 'SFX Volume' },
+            { key: 'volVoice', label: 'Voice Volume' },
+        ]) {
             const val = typeof save.settings[v.key] === 'number' ? save.settings[v.key] : 0.7;
             ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = `600 26px ${FONT}`;
             ctx.fillText(v.label, rightX, ry + 26);
@@ -4030,7 +4176,7 @@ export class MenuRenderer {
         }
         ctx.fillStyle = 'rgba(255,255,255,0.68)'; ctx.font = `500 18px ${FONT}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText('Adaptive music + sound effects. 0% mutes.', rightX, ry + 20);
+        ctx.fillText('Music, effects and spoken lines each reach true silence.', rightX, ry + 20);
         ry += 56;
 
         // Accessibility has its own pane so the complete player preference
@@ -4042,7 +4188,7 @@ export class MenuRenderer {
         });
         ctx.fillStyle = 'rgba(255,255,255,0.68)'; ctx.font = `500 17px ${FONT}`;
         ctx.textBaseline = 'alphabetic';
-        this._wrapText(ctx, 'Contrast, HUD size and tutorial replay.',
+        this._wrapText(ctx, 'Captions, mono audio, vibration, contrast and HUD size.',
             rightX + 364 + (colW - 364) / 2, ry + 22, colW - 364, 22, 3);
 
         // ── SAVE — the full reset lives HERE (save management is settings;

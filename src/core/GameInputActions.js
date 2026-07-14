@@ -19,7 +19,11 @@ import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { getMap } from '../content/maps.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { menuHotspotLabel } from '../systems/AccessibilityBridge.js';
-import { normalizeUiScale } from '../systems/AccessibilityPreferences.js';
+import {
+    normalizeCaptionDetail,
+    normalizeUiScale,
+    normalizeVibrationStrength,
+} from '../systems/AccessibilityPreferences.js';
 
 export const PAUSE_EXIT_CONFIRM_MS = 3000;
 
@@ -388,7 +392,17 @@ export const GameInputActionMethods = {
     requestResetSave() {
         if (this.resetConfirming) {
             this.saveSystem.reset();
-            this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
+            this.audio.setVolumes(
+                this.saveSystem.getSetting('volMusic'),
+                this.saveSystem.getSetting('volSfx'),
+                this.saveSystem.getSetting('volVoice'),
+            );
+            this.audio.setMonoAudio(this.saveSystem.getSetting('monoAudio'));
+            this.captionSystem?.setPreferences?.(
+                this.saveSystem.getSetting('captions'),
+                this.saveSystem.getSetting('captionDetail'),
+            );
+            this.haptics?.setStrength?.(this.saveSystem.getSetting('vibration'));
             this.resetConfirming = false;
             this.resetConfirmTimer = 0;
             return true;
@@ -512,6 +526,8 @@ export const GameInputActionMethods = {
             }
             case 'toggleSetting': this._toggleSetting(arg); break;
             case 'setUiScale': this._setUiScale(arg); break;
+            case 'setCaptionDetail': this._setCaptionDetail(arg); break;
+            case 'setVibration': this._setVibration(arg); break;
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
             case 'openCase': this._resetMenuFocus(); this.minigame.openCaseFlow(arg); break;
@@ -548,6 +564,10 @@ export const GameInputActionMethods = {
         const cur = this.saveSystem.getSetting(key) === true;
         this.saveSystem.setSetting(key, !cur);
         if (key === 'debug') { this.showDebug = !cur; this.profiler.enabled = this.showDebug; }
+        if (key === 'monoAudio') this.audio.setMonoAudio(!cur);
+        if (key === 'captions') {
+            this.captionSystem?.setPreferences?.(!cur, this.saveSystem.getSetting('captionDetail'));
+        }
         this.accessibility?.announce?.(`${menuHotspotLabel('toggleSetting', key)}: ${!cur ? 'on' : 'off'}.`);
     },
     _setUiScale(value) {
@@ -556,10 +576,31 @@ export const GameInputActionMethods = {
         this.accessibility?.announce?.(`Combat HUD size: ${scale} percent.`);
         return scale;
     },
+    _setCaptionDetail(value) {
+        const detail = normalizeCaptionDetail(value);
+        this.saveSystem.setSetting('captionDetail', detail);
+        this.captionSystem?.setPreferences?.(this.saveSystem.getSetting('captions'), detail);
+        this.accessibility?.announce?.(`Caption detail: ${detail}.`);
+        return detail;
+    },
+    _setVibration(value) {
+        const strength = normalizeVibrationStrength(value);
+        this.saveSystem.setSetting('vibration', strength);
+        this.haptics?.setStrength?.(strength);
+        const supported = this.haptics?.supported?.() === true;
+        if (strength !== 'off' && supported) this.haptics?.pulse?.('preview');
+        const suffix = strength !== 'off' && !supported ? ' Saved; not available in this browser.' : '';
+        this.accessibility?.announce?.(`Vibration: ${strength}.${suffix}`);
+        return strength;
+    },
     _adjustVolume(key, delta) {
         const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;
         this.saveSystem.setSetting(key, clamp(cur + delta, 0, 1));
-        this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
+        this.audio.setVolumes(
+            this.saveSystem.getSetting('volMusic'),
+            this.saveSystem.getSetting('volSfx'),
+            this.saveSystem.getSetting('volVoice'),
+        );
         const value = Math.round((this.saveSystem.getSetting(key) || 0) * 100);
         this.accessibility?.announce?.(`${menuHotspotLabel(delta > 0 ? 'volUp' : 'volDown', key)}: ${value} percent.`);
     },

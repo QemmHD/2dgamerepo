@@ -71,6 +71,12 @@ jobs:
       - name: Validate reduced-motion save inheritance
         run: node tools/validate-accessibility-save.js
 
+      - name: Validate gameplay captions
+        run: node tools/validate-captions.js
+
+      - name: Validate touch vibration fallbacks
+        run: node tools/validate-haptics.js
+
       - name: Validate accessible minigame motion and focus
         run: node tools/validate-minigame-accessibility.js
 
@@ -184,6 +190,83 @@ jobs:
                 echo "FAIL: matrix scenario '${QUERY}' did not stage Settings pane '${EXPECTED_SETTINGS_PANE}'"; exit 1;
               }
             fi
+            if [[ "$QUERY" =~ captions=([01]) ]]; then
+              EXPECTED_CAPTIONS="false"
+              if [ "${BASH_REMATCH[1]}" = "1" ]; then EXPECTED_CAPTIONS="true"; fi
+              grep -q "data-qa-captions=\"${EXPECTED_CAPTIONS}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not apply captions=${EXPECTED_CAPTIONS}"; exit 1;
+              }
+              grep -q "data-qa-runtime-captions=\"${EXPECTED_CAPTIONS}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not cold-boot runtime captions=${EXPECTED_CAPTIONS}"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ captiondetail=([a-z]+) ]]; then
+              grep -q "data-qa-caption-detail=\"${BASH_REMATCH[1]}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not apply caption detail '${BASH_REMATCH[1]}'"; exit 1;
+              }
+              grep -q "data-qa-runtime-caption-detail=\"${BASH_REMATCH[1]}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not cold-boot runtime caption detail '${BASH_REMATCH[1]}'"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ mono=([01]) ]]; then
+              EXPECTED_MONO="false"
+              if [ "${BASH_REMATCH[1]}" = "1" ]; then EXPECTED_MONO="true"; fi
+              grep -q "data-qa-mono=\"${EXPECTED_MONO}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not apply mono=${EXPECTED_MONO}"; exit 1;
+              }
+              grep -q "data-qa-runtime-mono=\"${EXPECTED_MONO}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not cold-boot runtime mono=${EXPECTED_MONO}"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ voicevol=([0-9]+) ]]; then
+              grep -q "data-qa-voice-volume=\"${BASH_REMATCH[1]}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not apply voice volume ${BASH_REMATCH[1]}"; exit 1;
+              }
+              grep -q "data-qa-runtime-voice-volume=\"${BASH_REMATCH[1]}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not cold-boot runtime voice volume ${BASH_REMATCH[1]}"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ vibration=(off|low|full) ]]; then
+              grep -q "data-qa-vibration=\"${BASH_REMATCH[1]}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not apply vibration '${BASH_REMATCH[1]}'"; exit 1;
+              }
+              grep -q "data-qa-runtime-vibration=\"${BASH_REMATCH[1]}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not cold-boot runtime vibration '${BASH_REMATCH[1]}'"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ vibrationcap=([01]) ]]; then
+              EXPECTED_VIBRATION_CAP="false"
+              if [ "${BASH_REMATCH[1]}" = "1" ]; then EXPECTED_VIBRATION_CAP="true"; fi
+              grep -q "data-qa-vibration-supported=\"${EXPECTED_VIBRATION_CAP}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not stage vibration capability ${EXPECTED_VIBRATION_CAP}"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ caption=(voice|danger) ]]; then
+              EXPECTED_CAPTION="${BASH_REMATCH[1]}"
+              grep -q "data-qa-caption-key=\"qa-${EXPECTED_CAPTION}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not stage caption '${EXPECTED_CAPTION}'"; exit 1;
+              }
+              if [ "$EXPECTED_CAPTION" = "voice" ]; then
+                grep -q 'data-qa-caption-kind="speech"' "$MATRIX_DOM" || { echo 'FAIL: voice fixture lost speech kind'; exit 1; }
+                grep -q 'data-qa-caption-text="Only embers remain\."' "$MATRIX_DOM" || { echo 'FAIL: voice fixture transcript drifted'; exit 1; }
+              else
+                grep -q 'data-qa-caption-kind="sound"' "$MATRIX_DOM" || { echo 'FAIL: danger fixture lost sound kind'; exit 1; }
+                grep -q 'data-qa-caption-text="Apex blast charging nearby"' "$MATRIX_DOM" || { echo 'FAIL: danger fixture text drifted'; exit 1; }
+              fi
+            fi
+            if [[ "$QUERY" == *"bosswarning=1"* ]]; then
+              grep -q 'data-qa-caption-key="boss-warning-stormwingAlpha"' "$MATRIX_DOM" || {
+                echo "FAIL: real boss warning did not reach the caption lane"; exit 1;
+              }
+              grep -q 'data-qa-haptic-events="[^"]*bossWarning' "$MATRIX_DOM" || {
+                echo "FAIL: real boss warning did not request its haptic cue"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"dev=1"* ]]; then
+              grep -q 'data-qa-dev-controls="5"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not retain all five ?dev=1 Settings controls"; exit 1;
+              }
+            fi
             if [[ "$QUERY" == *"statuses=all"* ]]; then
               grep -q 'data-qa-statuses="all"' "$MATRIX_DOM" || {
                 echo "FAIL: matrix scenario '${QUERY}' did not stage every combat status cue"; exit 1;
@@ -220,11 +303,41 @@ jobs:
           emberwood|map=emberwood&touch=1
           emberwood|screen=menu&tab=home&uiscale=100&contrast=0
           emberwood|screen=menu&tab=home&input=keyboard&focus=tab%3Aplay%230&reduced=1
-          emberwood|screen=menu&tab=settings&settingspane=accessibility&uiscale=130&contrast=1&input=keyboard&focus=setUiScale%3A130%230
-          emberwood|uiscale=130&contrast=1&statuses=all
+          emberwood|screen=menu&tab=settings&settingspane=accessibility&uiscale=130&contrast=1&captions=1&captiondetail=full&mono=1&voicevol=40&vibration=full&vibrationcap=0&input=keyboard&focus=setCaptionDetail%3Afull%230
+          emberwood|screen=menu&tab=settings&settingspane=accessibility&captions=0&captiondetail=essential&mono=0&voicevol=0&vibration=off&vibrationcap=1
+          emberwood|screen=menu&tab=settings&settingspane=general&dev=1&input=keyboard&focus=toggleSetting%3Adebug%230
+          emberwood|uiscale=130&contrast=1&statuses=all&captions=1&captiondetail=full&caption=danger
+          emberwood|captions=1&captiondetail=essential&caption=voice
+          emberwood|captions=1&vibration=full&bosswarning=1
           emberwood|screen=menu&tab=battlepass&bpxp=12600&bpclaimthrough=12&bpreceipt=1
           emberwood|screen=menu&tab=shop&mines=250&minessafe=3&input=keyboard&minesFocus=7&reduced=1
           MATRIX
+
+          # Real Chromium/Web Audio graph gate: three independent player buses,
+          # stereo->mono->stereo graph continuity, and muted-voice duck safety.
+          # The probe is deliberately zero-duration: AudioContext clocks do not
+          # advance under Chromium virtual time, so it verifies live nodes and
+          # automation targets without a scheduler/media timing race.
+          AUDIO_GRAPH_DOM="/tmp/audiographprobe.html"
+          AUDIO_GRAPH_PROFILE=$(mktemp -d)
+          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+            --autoplay-policy=no-user-gesture-required \
+            --disable-background-networking --disable-component-update \
+            --force-device-scale-factor=1 --window-size=1280,720 \
+            --user-data-dir="$AUDIO_GRAPH_PROFILE" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/audiographprobe.html" \
+            > "$AUDIO_GRAPH_DOM"
+          AUDIO_GRAPH_TITLE=$(grep -o '<title>[^<]*</title>' "$AUDIO_GRAPH_DOM" | head -1)
+          echo "Audio graph probe: $AUDIO_GRAPH_TITLE"
+          echo "$AUDIO_GRAPH_TITLE" | grep -q 'DONE EXC:0 buses:3 mono:stable voice:mute-safe' || {
+            echo 'FAIL: production Web Audio three-bus/mono/voice graph probe did not pass'; exit 1;
+          }
+          grep -q 'data-qa-ready="1"' "$AUDIO_GRAPH_DOM" \
+            && grep -q 'data-qa-buses="3"' "$AUDIO_GRAPH_DOM" \
+            && grep -q 'data-qa-mono="stable"' "$AUDIO_GRAPH_DOM" \
+            && grep -q 'data-qa-voice="mute-safe"' "$AUDIO_GRAPH_DOM" || {
+              echo 'FAIL: Web Audio graph probe omitted its machine-readable receipt'; exit 1;
+            }
 
           # Strict query allowlists must fail loudly rather than silently
           # coercing a screenshot into a different accessibility state.
@@ -235,14 +348,34 @@ jobs:
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1280,720 \
             --virtual-time-budget=7000 --user-data-dir="$INVALID_PROFILE" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=settings&uiscale=129&contrast=yes&settingspane=display&statuses=none" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=settings&uiscale=129&contrast=yes&settingspane=display&statuses=none&captions=yes&captiondetail=verbose&mono=maybe&voicevol=33&vibration=maximum&vibrationcap=yes&caption=speech" \
             > "$INVALID_DOM"
           INVALID_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_DOM" | head -1)
           echo "Invalid-control receipt: $INVALID_TITLE"
-          echo "$INVALID_TITLE" | grep -q 'DONE EXC:4 ' || {
-            echo 'FAIL: invalid accessibility harness controls did not emit four deterministic ERR receipts'; exit 1;
+          echo "$INVALID_TITLE" | grep -q 'DONE EXC:11 ' || {
+            echo 'FAIL: invalid accessibility harness controls did not emit eleven deterministic ERR receipts'; exit 1;
           }
           grep -q 'data-qa-ready="1"' "$INVALID_DOM" || {
             echo 'FAIL: invalid accessibility harness controls omitted their QA receipt'; exit 1;
           }
+          grep -q 'data-qa-error-keys="caption,captiondetail,captions,contrast,mono,settingspane,statuses,uiscale,vibration,vibrationcap,voicevol"' "$INVALID_DOM" || {
+            echo 'FAIL: invalid accessibility harness controls did not report every expected error key'; exit 1;
+          }
+
+          # Lexical strictness: the old numeric parser silently treated an empty
+          # voicevol value as zero. The allowlist must reject that exact spelling.
+          EMPTY_VOICE_DOM="/tmp/harness-invalid-empty-voice.html"
+          EMPTY_VOICE_PROFILE=$(mktemp -d)
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+            --disable-background-networking --disable-component-update \
+            --force-device-scale-factor=1 --window-size=1280,720 \
+            --virtual-time-budget=7000 --user-data-dir="$EMPTY_VOICE_PROFILE" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=settings&settingspane=accessibility&voicevol=" \
+            > "$EMPTY_VOICE_DOM"
+          EMPTY_VOICE_TITLE=$(grep -o '<title>[^<]*</title>' "$EMPTY_VOICE_DOM" | head -1)
+          echo "Empty voice-volume receipt: $EMPTY_VOICE_TITLE"
+          echo "$EMPTY_VOICE_TITLE" | grep -q 'DONE EXC:1 ' \
+            && grep -q 'data-qa-error-keys="voicevol"' "$EMPTY_VOICE_DOM" || {
+              echo 'FAIL: empty voicevol bypassed the exact lexical allowlist'; exit 1;
+            }
           echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, menus, Mines)"

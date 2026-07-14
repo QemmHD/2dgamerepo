@@ -38,6 +38,14 @@
     uiscale  Combat HUD size: "100", "115", or "130"
     contrast high-contrast combat cues: "1" on or "0" off
     settingspane  Settings sub-pane: "general" or "accessibility" (menu only)
+    dev      "1" keeps the shipped developer Settings controls visible
+    captions "1" on or "0" off; captiondetail "essential" or "full"
+    mono     mono audio output: "1" on or "0" off
+    voicevol independent voice volume: 0..100 in ten-point increments
+    vibration saved touch-vibration strength: "off", "low", or "full"
+    vibrationcap force the QA capability receipt: "1" available or "0" unavailable
+    caption  stage a gameplay caption fixture: "voice" or "danger" (run only)
+    bosswarning "1" stages the real Emberwood boss-warning integration (run only)
     statuses "all" stages all seven combat-status cues on one enemy (run only)
     bpxp / bpclaimthrough / bpreceipt  seed Battle-Pass QA states (menu only)
     mines=<preset> / minessafe=<n>  stage an honest Mines quote (menu only)
@@ -76,6 +84,7 @@ window.webkitAudioContext = undefined;
 import { Renderer } from '../../src/systems/Renderer.js';
 import { GameLoop } from '../../src/core/GameLoop.js';
 import { Game } from '../../src/core/Game.js';
+import { SaveSystem } from '../../src/systems/SaveSystem.js';
 import { Input } from '../../src/core/Input.js';
 import { KeyboardInput } from '../../src/core/KeyboardInput.js';
 import { TouchJoystick } from '../../src/core/TouchJoystick.js';
@@ -111,6 +120,7 @@ const SECONDS = parseFloat(params.get('seconds') || '12');
 const BADGE = params.get('badge') === '1';
 const SCREEN = params.get('screen') || 'run';   // 'run' | 'menu'
 const TAB = params.get('tab') || 'play';
+const QA_DEV = params.get('dev') === '1';
 // showcase="1" (all) or a csv of enemy types → spawn a ring of them around the
 // player and shoot after a short settle, so a verification frame shows the exact
 // sprites regardless of when they'd naturally spawn.
@@ -155,6 +165,41 @@ const SETTINGS_PANE_REQUEST = params.has('settingspane') ? params.get('settingsp
 const QA_SETTINGS_PANE = ['general', 'accessibility'].includes(SETTINGS_PANE_REQUEST)
     ? SETTINGS_PANE_REQUEST
     : null;
+const CAPTIONS_REQUEST = params.has('captions') ? params.get('captions') : null;
+const QA_CAPTIONS = CAPTIONS_REQUEST === '1'
+    ? true
+    : CAPTIONS_REQUEST === '0'
+        ? false
+        : null;
+const CAPTION_DETAIL_REQUEST = params.has('captiondetail') ? params.get('captiondetail') : null;
+const QA_CAPTION_DETAIL = ['essential', 'full'].includes(CAPTION_DETAIL_REQUEST)
+    ? CAPTION_DETAIL_REQUEST
+    : null;
+const MONO_REQUEST = params.has('mono') ? params.get('mono') : null;
+const QA_MONO = MONO_REQUEST === '1'
+    ? true
+    : MONO_REQUEST === '0'
+        ? false
+        : null;
+const VOICE_VOLUME_REQUEST = params.has('voicevol') ? params.get('voicevol') : null;
+const VOICE_VOLUME_PRESETS = Array.from({ length: 11 }, (_, index) => String(index * 10));
+const QA_VOICE_VOLUME = VOICE_VOLUME_PRESETS.includes(VOICE_VOLUME_REQUEST)
+    ? Number(VOICE_VOLUME_REQUEST)
+    : null;
+const VIBRATION_REQUEST = params.has('vibration') ? params.get('vibration') : null;
+const QA_VIBRATION = ['off', 'low', 'full'].includes(VIBRATION_REQUEST)
+    ? VIBRATION_REQUEST
+    : null;
+const VIBRATION_CAP_REQUEST = params.has('vibrationcap') ? params.get('vibrationcap') : null;
+const QA_VIBRATION_CAP = VIBRATION_CAP_REQUEST === '1'
+    ? true
+    : VIBRATION_CAP_REQUEST === '0'
+        ? false
+        : null;
+const CAPTION_REQUEST = params.has('caption') ? params.get('caption') : null;
+const QA_CAPTION = ['voice', 'danger'].includes(CAPTION_REQUEST) ? CAPTION_REQUEST : null;
+const BOSS_WARNING_REQUEST = params.has('bosswarning') ? params.get('bosswarning') : null;
+const QA_BOSS_WARNING = BOSS_WARNING_REQUEST === '1';
 const STATUSES_REQUEST = params.has('statuses') ? params.get('statuses') : null;
 const QA_STATUSES = STATUSES_REQUEST === 'all' ? 'all' : null;
 // Roadmap #6 profiling pass (tooling only). profile=<N> runs N measured frames
@@ -187,6 +232,7 @@ const MINES_FOCUS = Number.isInteger(MINES_FOCUS_PARSED)
 let qaBossSummary = '';
 let qaExpectedMenuFocusKey = null;
 let qaStatusEnemy = null;
+const qaHapticEvents = [];
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
 
@@ -211,17 +257,27 @@ async function boot() {
         loadDecorSprites().then((ok) => { if (ok) clearDecorationCache(); }),
         loadRenderedProps()]);
 
+    // Seed requested preferences through the production SaveSystem BEFORE Game
+    // boots. The receipt therefore exercises the real cold-load wiring instead
+    // of repairing subsystems manually after construction.
+    const preferenceSeed = new SaveSystem();
+    if (REDUCED) preferenceSeed.setSetting('reducedEffects', true);
+    if (QA_UI_SCALE != null) preferenceSeed.setSetting('uiScale', QA_UI_SCALE);
+    if (QA_HIGH_CONTRAST != null) preferenceSeed.setSetting('highContrast', QA_HIGH_CONTRAST);
+    if (QA_CAPTIONS != null) preferenceSeed.setSetting('captions', QA_CAPTIONS);
+    if (QA_CAPTION_DETAIL) preferenceSeed.setSetting('captionDetail', QA_CAPTION_DETAIL);
+    if (QA_MONO != null) preferenceSeed.setSetting('monoAudio', QA_MONO);
+    if (QA_VOICE_VOLUME != null) preferenceSeed.setSetting('volVoice', QA_VOICE_VOLUME / 100);
+    if (QA_VIBRATION) preferenceSeed.setSetting('vibration', QA_VIBRATION);
+
     game = new Game({ renderer, input, loop });
     game.showDebug = false;          // no debug grid/HUD in the art frame
-    // Apply QA preferences after Game registers its modality listener. Every
-    // preference goes through the production SaveSystem so menu and gameplay
-    // consume the same normalized values a returning player would load.
-    if (REDUCED) {
-        game.saveSystem.setSetting('reducedEffects', true);
-        game.reducedEffects = true;
-    }
-    if (QA_UI_SCALE != null) game.saveSystem.setSetting('uiScale', QA_UI_SCALE);
-    if (QA_HIGH_CONTRAST != null) game.saveSystem.setSetting('highContrast', QA_HIGH_CONTRAST);
+    if (QA_VIBRATION_CAP != null) game.haptics.supported = () => QA_VIBRATION_CAP;
+    const liveHapticPulse = game.haptics.pulse.bind(game.haptics);
+    game.haptics.pulse = (kind) => {
+        qaHapticEvents.push(String(kind));
+        return liveHapticPulse(kind);
+    };
     if (QA_SETTINGS_PANE) game.settingsPane = QA_SETTINGS_PANE;
     if (ACTIVE_INPUT_MODE) input.setModality(ACTIVE_INPUT_MODE);
 
@@ -235,6 +291,30 @@ async function boot() {
     if (SETTINGS_PANE_REQUEST != null && QA_SETTINGS_PANE == null) {
         ERR.push(`settingspane: expected 'general' or 'accessibility', got '${SETTINGS_PANE_REQUEST}'`);
     }
+    if (CAPTIONS_REQUEST != null && QA_CAPTIONS == null) {
+        ERR.push(`captions: expected 1 or 0, got '${CAPTIONS_REQUEST}'`);
+    }
+    if (CAPTION_DETAIL_REQUEST != null && QA_CAPTION_DETAIL == null) {
+        ERR.push(`captiondetail: expected 'essential' or 'full', got '${CAPTION_DETAIL_REQUEST}'`);
+    }
+    if (MONO_REQUEST != null && QA_MONO == null) {
+        ERR.push(`mono: expected 1 or 0, got '${MONO_REQUEST}'`);
+    }
+    if (VOICE_VOLUME_REQUEST != null && QA_VOICE_VOLUME == null) {
+        ERR.push(`voicevol: expected 0 through 100 in ten-point increments, got '${VOICE_VOLUME_REQUEST}'`);
+    }
+    if (VIBRATION_REQUEST != null && QA_VIBRATION == null) {
+        ERR.push(`vibration: expected 'off', 'low', or 'full', got '${VIBRATION_REQUEST}'`);
+    }
+    if (VIBRATION_CAP_REQUEST != null && QA_VIBRATION_CAP == null) {
+        ERR.push(`vibrationcap: expected 1 or 0, got '${VIBRATION_CAP_REQUEST}'`);
+    }
+    if (CAPTION_REQUEST != null && QA_CAPTION == null) {
+        ERR.push(`caption: expected 'voice' or 'danger', got '${CAPTION_REQUEST}'`);
+    }
+    if (BOSS_WARNING_REQUEST != null && !QA_BOSS_WARNING) {
+        ERR.push(`bosswarning: expected 1, got '${BOSS_WARNING_REQUEST}'`);
+    }
     if (STATUSES_REQUEST != null && QA_STATUSES == null) {
         ERR.push(`statuses: expected 'all', got '${STATUSES_REQUEST}'`);
     }
@@ -246,6 +326,8 @@ async function boot() {
         ERR.push('settingspane: selection requires screen=menu and tab=settings');
     }
     if (QA_STATUSES && SCREEN === 'menu') ERR.push('statuses: showcase requires a gameplay frame');
+    if (QA_CAPTION && SCREEN === 'menu') ERR.push('caption: fixture requires a gameplay frame');
+    if (QA_BOSS_WARNING && SCREEN === 'menu') ERR.push('bosswarning: fixture requires a gameplay frame');
     if (MINES_FOCUS != null && (SCREEN !== 'menu' || MINESBET == null)) {
         ERR.push('minesFocus: tile selection requires screen=menu and mines=<preset>');
     }
@@ -333,6 +415,7 @@ async function boot() {
         }
         game._startRun();                // default hero (monkey "Pyra"), default map
         game.player.damageTakenMul = 0;  // harness godmode: survive the swarm for the shot
+        if (QA_BOSS_WARNING) game._startBossWarning('stormwingAlpha');
 
         // Showcase: spawn a ring of specific enemy types around the player and only
         // settle briefly, so the frame shows those exact sprites (mid-run spawn
@@ -623,6 +706,23 @@ async function boot() {
         game.render();
     }
 
+    // Caption fixtures are staged after simulation so the final render captures
+    // the production lane at age zero. They intentionally use the public API;
+    // filtered fixtures therefore fail their receipt instead of forcing pixels.
+    if (QA_CAPTION === 'voice') {
+        game.captionSystem.say({
+            key: 'qa-voice', speaker: 'Solnakh', text: 'Only embers remain.', lifetime: 6,
+        });
+        game.captionSystem.update(1);
+        game.render();
+    } else if (QA_CAPTION === 'danger') {
+        game.captionSystem.sound({
+            key: 'qa-danger', text: 'Apex blast charging nearby', detail: 'full', lifetime: 6,
+        });
+        game.captionSystem.update(1);
+        game.render();
+    }
+
     // Verify every requested QA branch against production-owned state before
     // stamping the frame/title. This makes EXC:0 a receipt assertion, not only
     // an exception smoke: a query that silently stops staging its requested
@@ -636,6 +736,17 @@ async function boot() {
         && qaStatusEnemy.freezeTimer > 0
         && qaStatusEnemy.burnTimer > 0
         && qaStatusEnemy.shockTimer > 0;
+    const requiredDevControls = [
+        ['toggleSetting', 'debug'],
+        ['toggleSetting', 'unlockMaps'],
+        ['cheatCoins', 1000],
+        ['cheatCoins', 10000],
+        ['cheatUnlockAll', null],
+    ];
+    const menuHotspots = game.ui?.menu?.hotspots || [];
+    const devControlCount = requiredDevControls.filter(([action, arg]) => menuHotspots.some(
+        (hotspot) => hotspot.action === action && hotspot.arg === arg,
+    )).length;
     const qaState = {
         inputModality: input.getModality(),
         menuFocusKey: game.menuFocusKey || null,
@@ -645,6 +756,23 @@ async function boot() {
         reducedEffects: game.saveSystem.getSetting('reducedEffects') === true,
         uiScale: game.saveSystem.getSetting('uiScale'),
         highContrast: game.saveSystem.getSetting('highContrast') === true,
+        captions: game.saveSystem.getSetting('captions') === true,
+        captionDetail: game.saveSystem.getSetting('captionDetail'),
+        monoAudio: game.saveSystem.getSetting('monoAudio') === true,
+        voiceVolume: Math.round((game.saveSystem.getSetting('volVoice') || 0) * 100),
+        vibration: game.saveSystem.getSetting('vibration'),
+        runtimeCaptions: game.captionSystem.enabled === true,
+        runtimeCaptionDetail: game.captionSystem.detail,
+        runtimeMonoAudio: game.audio.monoAudio === true,
+        runtimeVoiceVolume: Math.round((game.audio.volVoice || 0) * 100),
+        runtimeVibration: game.haptics.strength,
+        outputChannels: game.audio.outputBus?.channelCount ?? null,
+        vibrationSupported: game.haptics.supported(),
+        captionKey: game.captionSystem.snapshot()?.key || '',
+        captionKind: game.captionSystem.snapshot()?.kind || '',
+        captionText: game.captionSystem.snapshot()?.text || '',
+        hapticEvents: qaHapticEvents.join(','),
+        devControls: devControlCount,
         settingsPane: game.settingsPane === 'accessibility' ? 'accessibility' : 'general',
         statuses: allStatusTimersActive ? 'all' : '',
         minesFocusIndex: game.minigame?.mines ? game.minesFocusIndex : null,
@@ -660,6 +788,51 @@ async function boot() {
     }
     if (QA_HIGH_CONTRAST != null && qaState.highContrast !== QA_HIGH_CONTRAST) {
         ERR.push(`receipt: contrast expected ${QA_HIGH_CONTRAST}, got ${qaState.highContrast}`);
+    }
+    if (QA_CAPTIONS != null && qaState.captions !== QA_CAPTIONS) {
+        ERR.push(`receipt: captions expected ${QA_CAPTIONS}, got ${qaState.captions}`);
+    }
+    if (QA_CAPTIONS != null && qaState.runtimeCaptions !== QA_CAPTIONS) {
+        ERR.push(`receipt: runtime captions expected ${QA_CAPTIONS}, got ${qaState.runtimeCaptions}`);
+    }
+    if (QA_CAPTION_DETAIL && qaState.captionDetail !== QA_CAPTION_DETAIL) {
+        ERR.push(`receipt: captiondetail expected '${QA_CAPTION_DETAIL}', got '${qaState.captionDetail}'`);
+    }
+    if (QA_CAPTION_DETAIL && qaState.runtimeCaptionDetail !== QA_CAPTION_DETAIL) {
+        ERR.push(`receipt: runtime captiondetail expected '${QA_CAPTION_DETAIL}', got '${qaState.runtimeCaptionDetail}'`);
+    }
+    if (QA_MONO != null && qaState.monoAudio !== QA_MONO) {
+        ERR.push(`receipt: mono expected ${QA_MONO}, got ${qaState.monoAudio}`);
+    }
+    if (QA_MONO != null && qaState.runtimeMonoAudio !== QA_MONO) {
+        ERR.push(`receipt: runtime mono expected ${QA_MONO}, got ${qaState.runtimeMonoAudio}`);
+    }
+    if (QA_VOICE_VOLUME != null && qaState.voiceVolume !== QA_VOICE_VOLUME) {
+        ERR.push(`receipt: voicevol expected ${QA_VOICE_VOLUME}, got ${qaState.voiceVolume}`);
+    }
+    if (QA_VOICE_VOLUME != null && qaState.runtimeVoiceVolume !== QA_VOICE_VOLUME) {
+        ERR.push(`receipt: runtime voicevol expected ${QA_VOICE_VOLUME}, got ${qaState.runtimeVoiceVolume}`);
+    }
+    if (QA_VIBRATION && qaState.vibration !== QA_VIBRATION) {
+        ERR.push(`receipt: vibration expected '${QA_VIBRATION}', got '${qaState.vibration}'`);
+    }
+    if (QA_VIBRATION && qaState.runtimeVibration !== QA_VIBRATION) {
+        ERR.push(`receipt: runtime vibration expected '${QA_VIBRATION}', got '${qaState.runtimeVibration}'`);
+    }
+    if (QA_VIBRATION_CAP != null && qaState.vibrationSupported !== QA_VIBRATION_CAP) {
+        ERR.push(`receipt: vibrationcap expected ${QA_VIBRATION_CAP}, got ${qaState.vibrationSupported}`);
+    }
+    if (QA_CAPTION && qaState.captionKey !== `qa-${QA_CAPTION}`) {
+        ERR.push(`receipt: caption expected 'qa-${QA_CAPTION}', got '${qaState.captionKey}'`);
+    }
+    if (QA_BOSS_WARNING && qaState.captionKey !== 'boss-warning-stormwingAlpha') {
+        ERR.push(`receipt: bosswarning did not emit the production caption (got '${qaState.captionKey}')`);
+    }
+    if (QA_BOSS_WARNING && !qaHapticEvents.includes('bossWarning')) {
+        ERR.push('receipt: bosswarning did not request its production haptic cue');
+    }
+    if (QA_DEV && qaState.devControls !== requiredDevControls.length) {
+        ERR.push(`receipt: dev=1 expected ${requiredDevControls.length} Settings controls, got ${qaState.devControls}`);
     }
     if (QA_SETTINGS_PANE && qaState.settingsPane !== QA_SETTINGS_PANE) {
         ERR.push(`receipt: settingspane expected '${QA_SETTINGS_PANE}', got '${qaState.settingsPane}'`);
@@ -706,11 +879,33 @@ async function boot() {
     qaRoot.dataset.qaReduced = String(window.__qaState.reducedEffects);
     qaRoot.dataset.qaUiScale = String(window.__qaState.uiScale);
     qaRoot.dataset.qaHighContrast = String(window.__qaState.highContrast);
+    qaRoot.dataset.qaCaptions = String(window.__qaState.captions);
+    qaRoot.dataset.qaCaptionDetail = window.__qaState.captionDetail;
+    qaRoot.dataset.qaMono = String(window.__qaState.monoAudio);
+    qaRoot.dataset.qaVoiceVolume = String(window.__qaState.voiceVolume);
+    qaRoot.dataset.qaVibration = window.__qaState.vibration;
+    qaRoot.dataset.qaRuntimeCaptions = String(window.__qaState.runtimeCaptions);
+    qaRoot.dataset.qaRuntimeCaptionDetail = window.__qaState.runtimeCaptionDetail;
+    qaRoot.dataset.qaRuntimeMono = String(window.__qaState.runtimeMonoAudio);
+    qaRoot.dataset.qaRuntimeVoiceVolume = String(window.__qaState.runtimeVoiceVolume);
+    qaRoot.dataset.qaRuntimeVibration = window.__qaState.runtimeVibration;
+    qaRoot.dataset.qaOutputChannels = window.__qaState.outputChannels == null
+        ? ''
+        : String(window.__qaState.outputChannels);
+    qaRoot.dataset.qaVibrationSupported = String(window.__qaState.vibrationSupported);
+    qaRoot.dataset.qaCaptionKey = window.__qaState.captionKey;
+    qaRoot.dataset.qaCaptionKind = window.__qaState.captionKind;
+    qaRoot.dataset.qaCaptionText = window.__qaState.captionText;
+    qaRoot.dataset.qaHapticEvents = window.__qaState.hapticEvents;
+    qaRoot.dataset.qaDevControls = String(window.__qaState.devControls);
     qaRoot.dataset.qaSettingsPane = window.__qaState.settingsPane;
     qaRoot.dataset.qaStatuses = window.__qaState.statuses;
     qaRoot.dataset.qaMinesFocus = window.__qaState.minesFocusIndex == null
         ? ''
         : String(window.__qaState.minesFocusIndex);
+    qaRoot.dataset.qaErrorKeys = [...new Set(ERR.map((entry) => String(entry).split(':', 1)[0]))]
+        .sort()
+        .join(',');
     qaRoot.dataset.qaReady = '1';
     document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1) +
         ' map:' + (game._obstacleBiome || 'unknown') + qaBossSummary

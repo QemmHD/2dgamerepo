@@ -17,7 +17,10 @@ function check(condition, message) {
     checks++;
 }
 
-const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+// Keep source-contract checks identical on GitHub's LF checkout and Windows
+// worktrees where Git may materialize CRLF line endings.
+const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n');
 const gameSource = source('src/core/Game.js');
 const runStateSource = source('src/core/RunState.js');
 const updateSource = source('src/core/GameUpdate.js');

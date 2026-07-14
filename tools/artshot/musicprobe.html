@@ -21,19 +21,42 @@ const log = document.querySelector('#log');
 const errors = [];
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
+const approx = (actual, expected, message, epsilon = 0.015) => {
+  assert(Number.isFinite(actual) && Math.abs(actual - expected) <= epsilon,
+    `${message}: got ${actual}, expected ${expected}`);
+};
 window.addEventListener('error', (event) => errors.push(String(event.error?.message || event.message)));
 window.addEventListener('unhandledrejection', (event) => errors.push(String(event.reason?.message || event.reason)));
 
 document.querySelector('#start').addEventListener('click', async (event) => {
   event.currentTarget.disabled = true;
   try {
-    const { AudioSystem } = await import('../../src/systems/AudioSystem.js');
+    const { AudioSystem, AUDIO_MIX } = await import('../../src/systems/AudioSystem.js');
     const { MENU_COMPOSITIONS } = await import('../../src/content/music.js');
     const audio = new AudioSystem();
     window.__musicProbe = audio;
-    audio.setVolumes(0.16, 0.18);
+    const mix = { music: 0.16, sfx: 0.18, voice: 0.22 };
+    audio.setVolumes(mix.music, mix.sfx, mix.voice);
     assert(await audio.unlock(), 'AudioContext did not unlock');
     assert(audio.ctx?.state === 'running', `unexpected context state: ${audio.ctx?.state}`);
+    approx(audio.musicBus?.gain.value, mix.music * AUDIO_MIX.musicTrim, 'music bus did not honor its independent volume');
+    approx(audio.sfxBus?.gain.value, mix.sfx * AUDIO_MIX.sfxTrim, 'SFX bus did not honor its independent volume');
+    approx(audio.voiceBus?.gain.value, mix.voice * AUDIO_MIX.voiceTrim, 'voice bus did not honor its independent volume');
+
+    // Moving one explicit bus must not drag either of the other player-facing
+    // sliders. This catches an easy regression to the old two-argument API,
+    // where voice silently followed SFX.
+    audio.setVolumes(mix.music, 0.06, mix.voice);
+    await wait(80);
+    approx(audio.musicBus?.gain.value, mix.music * AUDIO_MIX.musicTrim, 'SFX adjustment moved the music bus');
+    approx(audio.sfxBus?.gain.value, 0.06 * AUDIO_MIX.sfxTrim, 'SFX bus did not reach its new target');
+    approx(audio.voiceBus?.gain.value, mix.voice * AUDIO_MIX.voiceTrim, 'SFX adjustment moved the voice bus');
+    audio.setVolumes(mix.music, mix.sfx, mix.voice);
+    await wait(80);
+
+    assert(audio.outputBus?.channelInterpretation === 'speakers', 'output bus did not use standards speaker mixing');
+    assert(audio.outputBus?.channelCountMode === 'explicit', 'output bus channel count was not explicit');
+    assert(audio.outputBus?.channelCount === 2, 'score did not begin in stereo mode');
 
     audio.playMusic('menu');
     await wait(500);
@@ -46,6 +69,28 @@ document.querySelector('#start').addEventListener('click', async (event) => {
     audio.playMusic('gameplay');
     await wait(180);
     assert(!audio._recorded, 'streamed menu feature did not release on score change');
+
+    // Mono is a live output policy, not a graph rebuild: the same context,
+    // adaptive score, buses and scheduler must continue across both toggles.
+    const continuity = {
+      context: audio.ctx,
+      score: audio._activeScore,
+      scheduler: audio._schedId,
+      musicBus: audio.musicBus,
+      sfxBus: audio.sfxBus,
+      voiceBus: audio.voiceBus,
+      outputBus: audio.outputBus,
+    };
+    assert(audio.setMonoAudio(true) === true, 'mono preference did not enable');
+    assert(audio.outputBus.channelCount === 1, 'mono preference did not collapse the output bus');
+    await wait(120);
+    assert(audio.ctx === continuity.context && audio._activeScore === continuity.score
+      && audio._schedId === continuity.scheduler && audio.musicBus === continuity.musicBus
+      && audio.sfxBus === continuity.sfxBus && audio.voiceBus === continuity.voiceBus
+      && audio.outputBus === continuity.outputBus,
+    'mono toggle rebuilt or interrupted the live adaptive-score graph');
+    assert(audio.setMonoAudio(false) === false, 'stereo preference did not restore');
+    assert(audio.outputBus.channelCount === 2, 'stereo preference did not restore two output channels');
     audio.setCombatState({ intensity: 0.24, scene: 'hunt' });
     await wait(450);
     audio.setCombatState({ intensity: 0.64, scene: 'swarm' });
@@ -54,11 +99,28 @@ document.querySelector('#start').addEventListener('click', async (event) => {
     await wait(450);
 
     audio.playMusic('boss', 'solnakh');
-    await audio.prefetchBoss('solnakh');
-    audio.musicEvent('bossArrival', { bossId: 'solnakh' });
+    assert(await audio.prefetchBoss('solnakh'), 'Solnakh voice assets did not prefetch');
+    let duckCount = 0;
+    const liveDuck = audio._duck.bind(audio);
+    audio._duck = (...args) => { duckCount++; return liveDuck(...args); };
+    const arrivalCaption = audio.musicEvent('bossArrival', { bossId: 'solnakh' });
+    assert(typeof arrivalCaption === 'string' && arrivalCaption.length > 0,
+      'enabled boss voice did not return its accessible transcript');
+    assert(duckCount === 1, `enabled boss voice did not make one music pocket (got ${duckCount})`);
     await wait(250);
+
+    // A muted voice remains captioned but must not punch an unexplained hole in
+    // the score. Check both the live bus and the sidechain call boundary.
+    audio.setVolumes(mix.music, mix.sfx, 0);
+    await wait(80);
+    approx(audio.voiceBus?.gain.value, 0, 'voice mute did not reach the voice bus');
+    const ducksBeforeMutedVoice = duckCount;
     const caption = audio.musicEvent('phase2', { bossId: 'solnakh' });
     assert(caption === 'Only embers remain.', `boss voice/caption mismatch: ${caption}`);
+    assert(duckCount === ducksBeforeMutedVoice, 'muted boss voice still ducked the music bed');
+    audio.setVolumes(mix.music, mix.sfx, mix.voice);
+    await wait(80);
+    approx(audio.voiceBus?.gain.value, mix.voice * AUDIO_MIX.voiceTrim, 'voice bus did not recover after unmute');
     await wait(1300);
     assert(audio._schedId != null, 'look-ahead scheduler did not start');
     assert(audio._activeScore?.kind === 'tracker', 'boss score did not use the tracker engine');
@@ -76,19 +138,39 @@ document.querySelector('#start').addEventListener('click', async (event) => {
       streamedFeature: streamedFeature.id,
       menuScore: audio._activeScore?.id,
       layers: { ...audio._layerTargets },
+      buses: {
+        music: audio.volMusic,
+        sfx: audio.volSfx,
+        voice: audio.volVoice,
+      },
+      monoContinuity: 'stereo -> mono -> stereo / graph stable',
+      voiceDucks: { enabled: ducksBeforeMutedVoice, mutedAdded: duckCount - ducksBeforeMutedVoice },
+      arrivalCaption,
       bossCaption: caption,
       pendingCleanupGraphs: audio._cleanupQueue.length,
     };
     audio.dispose();
     assert(audio._cleanupQueue.length === 0, 'dispose left transient audio graphs queued');
     log.textContent = JSON.stringify(report, null, 2);
-    document.title = `DONE EXC:${errors.length} score:${report.menuScore} voice:exact`;
+    document.documentElement.dataset.qaReady = '1';
+    document.documentElement.dataset.qaBuses = '3';
+    document.documentElement.dataset.qaMono = 'stable';
+    document.documentElement.dataset.qaVoice = 'mute-safe';
+    document.title = `DONE EXC:${errors.length} score:${report.menuScore} buses:3 mono:stable voice:mute-safe`;
   } catch (error) {
     errors.push(String(error?.message || error));
     log.textContent = errors.join('\n');
+    document.documentElement.dataset.qaReady = '1';
+    document.documentElement.dataset.qaBuses = 'failed';
     document.title = `DONE EXC:${errors.length}`;
   }
 }, { once: true });
+
+// CI runs Chromium with autoplay explicitly allowed. The default remains a
+// real visible gesture so local/device probes still exercise the player path.
+if (new URLSearchParams(location.search).get('autorun') === '1') {
+  document.querySelector('#start').click();
+}
 </script>
 </body>
 </html>

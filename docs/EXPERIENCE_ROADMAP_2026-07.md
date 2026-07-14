@@ -46,11 +46,35 @@ The recommended next releases are therefore:
 | **Delivered this release** | Integrated in the tracked runtime and covered by purpose-built validation plus browser scenarios. |
 | **Planned** | No complete player-facing implementation exists yet. |
 
+### Additive expansion decision — planned, not shipped
+
+The latest scope is accepted as a staged expansion of the existing Ten Fires plan.
+Nothing in this section changes the shipped/partial truth elsewhere in this audit.
+Research and grayboxes can run early, but content production follows the dependency
+gates below instead of multiplying detached cosmetics, bland maps, or unbalanced
+weapons.
+
+| Planned capability | 0–90 day foundation | Major-release home | Non-negotiable proof |
+| --- | --- | --- | --- |
+| Cosmetic repair and expansion | Shared animated attachment-pose resolver; all-state contact sheet; Collection paging/filter prototype | Rig in 1.x; first 30 genuinely distinct looks in 2.x; destination/Chronicle sets through 10.0 | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no hat or cloak remains behind while the body animates. Palette swaps do not count as silhouette variety. |
+| Mobile high frame rate | Profile render interpolation, lighting/overdraw, and quality tiers; name the option **High Refresh** | 1.7 foundation, hardened in 3.8/7.8/9.8 | Fixed deterministic simulation and identical gameplay hashes at Standard/High Refresh; interpolated camera/entities; physical 60/90/120 Hz frame-pacing plus battery/thermal tests. Never promise 120 FPS because browser, display, power mode, and heat can limit cadence. |
+| Campaign unlock truth | Unique per-map boss ledger and legacy migration design | 1.3, extended by every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. `?dev=1`/`unlockMaps` remains a non-persistent QA bypass. |
+| Guided run tasks | Seeded, mode-aware Orientation → Tactic → Climax director with deterministic fallback | 1.1–1.3, then every mode/map | One current task shows progress, reward, and next action; impossible tasks cannot be selected; retry/reload cannot duplicate rewards; all supported modes complete or substitute across committed seeds. |
+| House V2 and map composition | One original Emberwood cabin blueprint plus macro-layout plan | 1.4, then packs/Atlas/Chronicle/Worldweave | One blueprint drives render, collision, nav, LOS, doors, spawn exclusion, room zones, roof cutaway, and damage state. The supplied rustic-house image informs room zoning/circulation only; no pixels or unverified art are copied. |
+| Graphics, boss models, wand VFX, and performance | Visual-noise budgets, boss silhouette/pose studies, frame/overdraw probes, one wand spectacle slice | 1.4–1.6, 3.3, 4.x, 6.x, definitive 9.x | Player, hostile tells, pickups, and objectives remain readable in grayscale, muted, reduced-effects, dense-swarm, phone, and minimum-tier captures; every effect stays inside particle/projectile/fill-rate budgets. |
+| Weapon classes, gear, and builds | Define player-facing Wand/Spellblade/Emberbow/Totem/Relic schema separately from runtime behavior kinds; graybox one missing class | Playable class slices in 2.x, 12-weapon expansion in 4.x, creator tools in 5.x, definitive balance in 9.x | Each class earns distinct control/targeting, upgrade path, VFX/SFX/access cues, gear interaction, and counter-build. Fixed-seed matrices and human runs show several viable archetypes and no universal best class. |
+| New maps, bosses, and minigames | Research briefs and one vertical slice at a time | Destination packs in 2.x; Forgeheart/story maps in 3.x; four-map waves in 4.x, 6.x, and 8.x | A map needs a routing verb, macro plan, three screenshot identities, House/POI chain, faction, formations, boss, score, build interaction, and perf/access proof. Minigames are non-wager mastery activities with deterministic scoring and no required power reward. |
+| Deterministic branching story | Versioned graph/spawn/checkpoint/reward schema and one-act graybox after `RunRng` | Three-act Pilgrimage in 3.x; five-act Chronicle in 6.x; callbacks/finale in 9.x | Same content version, seed, and choices reproduce the authored schedule; execution can change outcome. Choices alter routes/allies/houses/bosses/scenes, while special rewards are sidegrades, never permanently missable, and replayable through Memory routes. |
+
+All Settings developer controls remain available when launched with `?dev=1`; new
+test bypasses or debug fixtures may not overwrite legitimate campaign, collection,
+objective, or story progress.
+
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At this snapshot, `src/` contains 293 files, including 126
-JavaScript modules and about 44,449 nonblank lines of JavaScript. Raw file counts are
+planning documents. At this candidate snapshot, `src/` contains 297 files, including
+130 JavaScript modules and about 46,206 nonblank lines of JavaScript. Raw file counts are
 inventory context, not a quality claim.
 
 ### Exact playable/content inventory
@@ -93,8 +117,8 @@ toolbox even when their names and parameters differ.
 - `src/core/GameUpdate.js` has a consolidated enemy scan, while combat, render, input,
   photo mode, and run state have been split out of the formerly monolithic
   `src/core/Game.js`. The split is real but incomplete: `src/core/Game.js` is
-  still about 2,874 nonblank lines, `src/systems/MenuRenderer.js` about 4,138, and
-  `src/systems/UISystem.js` about 3,098.
+  still about 2,945 nonblank lines, `src/systems/MenuRenderer.js` about 4,485, and
+  `src/systems/UISystem.js` about 3,293.
 - Save data is validated into schema/version 9 and stored locally. There is no
   export/import UI, cloud sync, or server dependency.
 - CI now syntax-checks modules, validates credited assets and boss kits, and
@@ -126,7 +150,11 @@ plans describe:
 
 What is still missing is not another currency. It is clearer collection routing,
 per-hero outfit convenience, accessible case presentation, and evidence that the
-current time-to-level-50 and coin economy feel rewarding across real playtests.
+current time-to-level-50 and coin economy feel rewarding across real playtests. The
+65-item count also overstates visual depth: many looks are palette variants, and
+replaceable hats/cloaks currently follow the hero's world position more reliably than
+the animated head/shoulder pose inside each frame. The rig must be fixed across live
+play and every preview before a large cosmetic pack is credible.
 
 ### Audio now
 
@@ -179,13 +207,19 @@ reduced-motion defaults, keyboard Mines foundation, phone Settings, typed attent
 badges, and deterministic input/accessibility receipts. A web-app manifest and icons
 exist.
 
-The four generated boss lines have exact captions, but this is not a general subtitle
-system. Shipped PR #188 adds save-safe 100/115/130 Combat HUD size, high-contrast
-combat tells, and seven source-backed non-color status badges. It does
-not provide global app/menu text scaling. Still missing: gamepad/remapping, general
-subtitles and caption detail, independent voice volume, mono/low-hearing support,
-vibration, complete device/AT/zoom proof, and the offline shell. No essential mechanic
+Shipped PR #188 adds save-safe 100/115/130 Combat HUD size, high-contrast combat tells,
+and seven source-backed non-color status badges. This current branch candidate adds a
+general gameplay-caption lane with Essential/Full detail, independent Voice volume,
+mono output, and capability-safe touch vibration; it is not delivery truth until PR CI,
+main, Pages, and live smoke pass. Global app/menu text scaling, gamepad/remapping,
+complete device/AT/zoom proof, and the offline shell remain open. No essential mechanic
 depends on hearing a cue.
+
+No truthful mobile 120 FPS mode currently ships. Browser animation cadence may exceed
+60 Hz, but meaningful high-refresh presentation needs previous/current render snapshots
+and interpolation for the camera and moving entities, plus fill-rate/lighting work and
+physical device validation. The planned setting is therefore named **High Refresh**,
+defaults off, and must disclose battery/heat and platform-dependent limits.
 
 **2026-07-13 First Light foundation delta:**
 [PR #186](https://github.com/QemmHD/2dgamerepo/pull/186) is merged and deployed at
@@ -198,9 +232,11 @@ work.
 **2026-07-14 A11-10 shipped delta:** [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
 is merged and deployed at `089d646`. Combat HUD scaling, post-veil high-contrast
 warnings, source-backed non-color status badges, and dedicated Accessibility Settings
-passed PR/main CI, Pages, and live 1280×720 smoke. A11-10 remains in flight because
-mono/captions/voice/vibration, device/AT proof, and full First Light convergence are
-still open. The development ledger owns exact counts and delivery truth.
+passed PR/main CI, Pages, and live 1280×720 smoke. The current candidate implements the
+next mono/captions/voice/vibration slice behind fresh validators and visual evidence;
+until it passes the ship gates above it remains a candidate. A11-10 stays in flight for
+device/AT proof and full First Light convergence. The development ledger owns exact
+counts and delivery truth.
 
 ## 2. What changed since the older plans
 
@@ -571,10 +607,22 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
 
 ### P1.4 Collection and battle-pass follow-through
 
+- Repair cosmetics before adding quantity. Introduce one shared hero-pose resolver with
+  head, shoulder-left/right, hand, chest, and back anchors; gameplay, Collection,
+  Boutique, Pass, case reveal, photo, and recap previews consume the same data.
+- Pin hats to the animated head and cloak collars to the shoulders while allowing only
+  the lower cloth to lag. Remove baked replaceable headwear from class bodies where the
+  source art permits, while retaining anatomy such as ears/tusks.
+- Add an automated all-hero/all-direction contact sheet covering idle, walk, cast,
+  Focus/dash, Kindle, hurt, death, and victory plus a live moving capture. No large
+  cosmetic pack begins until detached layers and gameplay/preview disagreement are zero.
 - Add per-hero cosmetic presets while retaining the current global equipped
   values as migration defaults.
 - Add Owned/Missing/Source/Set filters and a "how to obtain" route for every
   gear/cosmetic item.
+- Add paging or virtualized browsing before the collection grows. The first expansion
+  after the rig gate targets 30 genuine silhouette/material looks across coherent sets;
+  palette swaps remain useful variants but are not reported as 30 new designs.
 - Show pass reward preview, claim state, next milestone, and the exact post-run
   XP receipt in one consistent component.
 - Keep levels permanent. If a second chapter is authored, let the player select
@@ -597,12 +645,50 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
   and vibration off/low/full.
 - Guarantee at least 44x44 CSS-pixel touch targets after safe-area scaling.
 - Preserve the shipped 100/115/130 Combat HUD size, post-veil high-contrast
-  telegraphs, and source-backed color-plus-shape status cues. Finish general captions,
-  independent voice volume, and a mono-audio-safe mix as separate verified slices;
+  telegraphs, and source-backed color-plus-shape status cues. Ship and harden the current
+  general-caption, independent-voice, mono-audio, and touch-vibration candidate;
   Combat HUD size does not claim global app/menu text scaling.
 - Reduced effects disables nonessential flashes, camera impulse, case reel
   motion, and dense weather while retaining attack warnings.
+- Add a **High Refresh** preference, off by default. Keep simulation on the existing
+  fixed deterministic step; interpolate previous/current camera, player, enemies,
+  projectiles, enemy projectiles, XP gems, coins, and health orbs on faster displays.
+- Do not label the preference “120 FPS.” Copy states that it uses more battery and may
+  warm the device, while display, browser, power mode, and heat can lower the actual
+  cadence. No standardized browser API is treated as a thermal or panel-Hz guarantee.
+- Profile the current lighting/fill-rate path, cache remaining gradients, avoid
+  unchanged resize work, lower noncritical weather/lighting/HUD cadence, and apply
+  bounded projectile/effect degradation before raising visual density.
 - Test keyboard-only, gamepad-only, touch-only, and mixed-input handoff.
+
+High Refresh exits only when Standard and High produce the same fixed-input gameplay
+hash; frame pacing is measured on physical 60/90/120 Hz devices; interpolation has no
+teleport trail across pause/background/quality changes; and battery/thermal notes are
+recorded. A browser or device that throttles still runs correctly at its delivered
+cadence.
+
+### P1.6 Campaign guidance and map-unlock truth
+
+- Store unique boss ids by campaign map, not one generic boss-defeat total.
+- Unlock a map only after all three authored bosses of its immediate predecessor have
+  been defeated in eligible campaign runs. A repeat, wrong-map boss, Boss Rush, Daily,
+  Weekly, Rite Trial, Practice, or debug-spawned boss grants no campaign credit.
+- Migrate legacy saves by preserving already unlocked maps and seeding the required
+  predecessor trios. Corrupt/unknown boss ids are ignored without wiping valid state.
+- Centralize the lock predicate so map cards, launch validation, save migration, and
+  “why locked” copy cannot disagree. Show progress such as “Clear Emberwood: 2/3
+  Keepers defeated.” Preserve `?dev=1`/`unlockMaps` as a QA-only bypass that does not
+  write boss receipts.
+- Replace all-at-once polling tasks with a seeded `RunObjectiveDirector`: one current
+  Orientation task, one map/mode-valid Tactic, and one Climax. Each card shows progress,
+  reward, and next action; unsupported tasks substitute deterministically.
+- Add explicit Boss Rush/Daily/Weekly fallbacks and idempotent completion receipts so
+  every selected task can finish and reload/abort cannot pay twice.
+
+Exit fixtures cover every boss order, repeat, wrong mode/map, old save, corrupted
+ledger, debug bypass, and lock-card/launch agreement. Objective fixtures cover every
+supported mode/map and committed seed with either a reachable completion or a named
+deterministic substitute.
 
 ## 7. 61-90 days - The Living Road Slice
 
@@ -612,7 +698,16 @@ Extend the shipped `VigilSiteSystem`/formation seams and ship only one deeper po
 Emberwood event: the **Ruin Bell**. Do not recreate the four existing sites, Gloam
 Beacon guardian flow, or twelve formation packs.
 
-1. A generated structure exposes a valid interaction point and safe approach.
+Build the event on the first **House V2** cabin rather than another decorative box.
+One data blueprint owns exterior/interior render pieces, thick perimeter walls,
+doors/windows, collision, navigation openings, line of sight, spawn exclusion, room
+zones, roof cutaway, and intact/damaged/lit/ruined state. The supplied rustic-house
+reference informs spatial principles only—clear kitchen/hearth/dining/sleep/storage
+zones and circulation around focal furniture. EMBERWAKE authors original geometry,
+palette, props, and pixels; no unverified reference art enters the repository.
+
+1. A generated structure exposes a valid interaction point and safe approach; its
+   door opening agrees across render, collision, nav, LOS, and spawn checks.
 2. Ringing the bell shows a clear risk/reward contract and starts a 45-60 second
    authored encounter beat.
 3. Enemy roles converge through valid routes; house walls remain authoritative.
@@ -620,12 +715,17 @@ Beacon guardian flow, or twelve formation packs.
    Onslaught.
 5. Completion grants a choice from existing rewards; failure ends cleanly and
    never traps the run.
-6. The QA trace stores seed, structure style, role package, completion time,
-   stalls, and frame-time percentiles.
+6. The QA trace stores seed, blueprint/state, room transitions, role package,
+   completion time, stalls, and frame-time percentiles.
 
 Only after the Ruin Bell passes its gates should the same seam host waystones,
 rescues, or caravans. This is the safest way to make houses feel alive without
 starting the full Troop, Last Hearth, or Waylight epics simultaneously.
+
+The cabin gate includes same-state reference/final captures, 100 deterministic seeds,
+all body/projectile sizes through each opening, roof transition readability, no spawn
+inside walls/furniture, and the 180-body frame budget. Only then does the kit multiply
+to other houses and biome materials.
 
 ### P2.2 Deterministic simulation foundation
 
@@ -641,6 +741,10 @@ upgrade drafts, chests, cases used inside a run, objectives, and POI setup.
 - Add a deterministic assertion comparing two headless runs' event logs.
 - Generate a short challenge code containing seed, map, road, difficulty, and
   modifiers with checksum/version.
+- Define—not yet content-produce—a finite story manifest with content version, seed,
+  node ids, authored spawn schedules, choices, checkpoints, reward receipts, and
+  terminal states. One act graybox must reproduce from the same version/seed/choices
+  before the 3.x Pilgrimage is scheduled.
 
 This foundation improves regression testing immediately. Ghost racing and the
 full Crucible remain out of scope for the 90-day window.
@@ -657,17 +761,43 @@ full Crucible remain out of scope for the 90-day window.
 
 ### P2.4 Content decision gate
 
-At day 90, pick exactly one next content lane from evidence:
+At day 90, complete research briefs for every lane below, but pick exactly one next
+production lane from evidence. A brief includes player verb, comparable design
+patterns, original EMBERWAKE identity, content dependencies, graybox, art/audio needs,
+accessibility risks, device budget, save surface, and kill criteria:
 
 - expand Waylight if the Ruin Bell materially improves replay/playtest demand;
-- expand boss arenas if boss-specific comprehension and replay are the strongest
-  response;
-- build a fifth biome only if four-biome completion is healthy and current
-  biomes are mechanically distinct;
-- build Familiars/Descent only if retention data shows a new mode/companion is
-  more valuable than polishing existing collection and difficulty tails.
+- expand boss arenas/models if silhouette, tell comprehension, and rematch demand are
+  the strongest response; a model brief includes neutral/telegraph/phase/hurt/defeat
+  poses, arena geometry, grayscale reads, sprite budget, and Blender regeneration;
+- build a fifth biome only if four-biome completion is healthy and current biomes are
+  mechanically distinct; a map brief starts with sanctuary, loops, landmarks, quiet
+  lanes, combat bowls, house lots, POIs, reward pockets, and boss arena before scatter;
+- build the next weapon-class vertical slice only if it creates a distinct decision,
+  not merely a projectile skin; compare Wand/Spellblade/Emberbow/Totem/Relic control,
+  targeting, upgrade, gear, VFX/SFX, accessibility, and performance contracts;
+- build Forge Trial or Waylight Relay only if a five-minute non-wager prototype teaches
+  a useful run verb and remains fun without an exclusive power reward;
+- build Familiars/Descent only if retention evidence shows a new mode/companion is more
+  valuable than polishing existing collection and difficulty tails.
 
 Do not greenlight several large epics just because their old specs exist.
+
+### P2.5 Major-arc allocation after the 90-day gate
+
+This is scheduling intent, not shipped inventory:
+
+| Major arc | Expansion focus |
+| --- | --- |
+| 1.0 → 2.0 | Fix cosmetic attachments; exact three-unique-boss map gates; completable guided objectives; first House V2 cabin and macro-map plan; visual/performance budgets; one weapon-class schema/spectacle slice; truthful High Refresh foundation. |
+| 2.0 → 3.0 | Named deterministic RNG streams; first 30-look silhouette pack; class/gear vertical slices; destination packs; two non-wager mastery minigames; Chronicle prologue data. |
+| 3.0 → 4.0 | Three-act deterministic branching Pilgrimage; choice consequences and sidegrade rewards; Forgeheart map/faction/boss-model family; balanced cross-class builds. |
+| 4.0 → 5.0 | Four new macro-distinct maps, twelve House V2 interiors, Apex Hunt, Nightfall Siege, twelve gap-filling weapons, destination gear/cosmetic families. |
+| 5.0 → 6.0 | Public Map/House/Encounter/Boss/Arsenal/Story tools prove the same schemas, budgets, and validators used by official content. |
+| 6.0 → 7.0 | Five-act Chronicle, four destinations, 30 stateful story interiors, consequences across allies/houses/bosses, special-but-recoverable rewards, four fully rigged heroes. |
+| 7.0 → 8.0 | Cross-device/co-op expansion only after deterministic reward, readability, interpolation, and offline-parity gates. |
+| 8.0 → 9.0 | Finite Worldweave, four more destinations, systemic House V2 states, worldcraft sidegrades, bounded settlement/apex consequences. |
+| 9.0 → 10.0 | Definitive 16-map composition pass, full-roster/boss/cosmetic rig audit, build laboratory and balance closure, story callbacks/finale, score/VFX/access/performance/preservation convergence. |
 
 ## 8. Module seams and dependencies
 
@@ -680,8 +810,15 @@ Do not greenlight several large epics just because their old specs exist.
 | Boss choreography | pure `BossChoreographer` | `Enemy`, boss UI, combat cleanup | Move choice is deterministic/testable; hazards/summons carry duel-owner tags |
 | Progression math | `BattlePassSystem`, content registries | save and menu receipts | UI never duplicates reward/XP math; append-only IDs |
 | Cosmetics/cases | cosmetic/gear registries + `CaseSystem` | boutique/shop/pass | Every item has source metadata; odds/pity use one source of truth |
+| Cosmetic pose rig | shared hero-pose/attachment resolver | player render, Collection, Boutique, Pass, cases, photo, recap | One state/direction/anchor source; previews cannot invent offsets or drift from gameplay |
+| Campaign map gates | unique per-map boss ledger + one unlock predicate | SaveSystem, map cards, launch routing, lock copy | Exactly three unique predecessor bosses; eligible-mode policy and dev bypass cannot diverge |
+| Guided objectives | seeded `RunObjectiveDirector` | HUD, run events, rewards, recap | Mode/map requirement filter, deterministic fallback, one current task, idempotent receipt |
+| House V2 | versioned structure blueprint | render, collision, nav, LOS, spawns, roof, POIs | Doors/rooms/state are authored once; no visual-only opening or independent collision copy |
 | Input | existing composite + hotspot registry | game/menu | Gamepad/touch/keyboard normalize into the same actions |
 | Simulation RNG | future `RunRng` | directors, drafts, rewards | Gameplay RNG injected; visual RNG separate |
+| Render interpolation | previous/current snapshots + render alpha | camera and every high-motion entity | High Refresh never changes simulation; discontinuities reset history; Standard is valid fallback |
+| Weapon class schema | player class identity + runtime behavior adapters | arsenal, drafts, gear, VFX/SFX, Codex, balance harness | Class is not inferred from projectile kind; each slice declares controls, caps, access cues, and counters |
+| Story graph | versioned nodes/spawn manifests/choices/checkpoints/receipts | expedition, houses, bosses, Chronicle, Memory replay | Same version/seed/choices reproduce schedule; branches terminate; rewards pay once and remain recoverable |
 | Save schema | `SaveSystem` | all persistent systems | Defaults + explicit migrations + fixture round trips; no save wipe |
 | Performance | profiler + spatial indexes + caps | every high-count system | Feature cannot add an unbounded per-entity/per-projectile loop |
 
@@ -695,12 +832,27 @@ navigation + boss/audio release baseline
                 -> deterministic challenge code
 
 save fixtures
-    -> per-hero cosmetic presets
+    -> shared cosmetic pose rig
+    -> per-hero cosmetic presets and silhouette expansion
+    -> unique boss ledger and objective receipts
     -> save export/import
 
 input action normalization
     -> gamepad focus/remapping
     -> controller QA for every new screen/event
+
+House V2 cabin contract
+    -> Ruin Bell event
+    -> biome house kits and story interiors
+
+fixed simulation snapshots
+    -> High Refresh interpolation
+    -> physical-device frame-pacing/thermal proof
+
+RunRng and idempotent receipts
+    -> one-act story graybox
+    -> three-act Pilgrimage
+    -> five-act Chronicle
 ```
 
 ## 9. Metrics and release gates
@@ -711,12 +863,19 @@ These are local/QA metrics unless the player explicitly exports a trace.
 | --- | --- |
 | Correctness | `node --check`; asset/progression/navigation/boss/audio validators; headless `EXC:0`; no missing referenced asset |
 | Frame time | 60-fps target on desktop and representative mid-range mobile; p95 update+render <= 18 ms during a 180-enemy stress; no repeated >33 ms spikes caused by the new feature |
+| High Refresh | Standard/High fixed-input gameplay hashes match; all high-motion entities interpolate; physical 60/90/120 Hz frame pacing, backgrounding, battery/thermal notes, and truthful fallback copy pass; no guaranteed-120 claim |
 | Population | Keep the 180-enemy cap. Add a measured live player-projectile budget/adaptive fallback before intentionally increasing projectile density |
 | Navigation | 100 seeded worlds x all 4 structure styles; 99.5% of motile enemies make goal progress within a rolling 3-second window when a route exists; zero wall-contained spawns after correction |
+| House V2 | Blueprint render/collision/nav/LOS/door/spawn/room/roof state agrees; 100 seeds, all body/projectile sizes, roof cutaway, and 180-body stress pass before additional kits |
 | Encounters | No unsupported role exceeds its sub-cap; a cleared peak produces a measurable 3-8 second relief beat; off-screen count alone cannot trigger Onslaught |
 | Music | Quantized transitions with controlled tails; <=2 non-boss scene switches/10 s; no scheduler duplication after pause/tab/audio unlock; no clipped offline stress capture |
 | Bosses | 100 commits/boss with no consecutive same ID/kind; every damaging move telegraphs; every signature has a recovery; owned entities clear on defeat |
+| Map unlocks | Three unique predecessor boss ids required; repeats/wrong map/mode/debug do not count; legacy unlocks survive; card and launch predicate agree; `?dev=1` bypass writes no progress |
+| Objectives | One Orientation/Tactic/Climax task at a time; every mode/map/seed completes or names a deterministic substitute; abort/reload cannot duplicate payout |
 | Progression | 276+ deterministic checks remain green; level-50 pacing target 35-55 ordinary successful runs; every reward resolves and every duplicate has a receipt |
+| Cosmetics | Gameplay and every preview share pose anchors; zero detached layer in all states/directions; first expansion contains 30 reviewed silhouette/material designs plus paging/filter/source proof |
+| Builds | Each promoted class has a complete vertical slice; fixed-seed matrices and human runs retain starter viability, multiple successful archetypes, bounded VFX/entities, and no universal best class |
+| Story | Same version/seed/choices reproduce graph and authored spawn schedule; every branch terminates/resumes; consequences are visible; rewards pay once, remain sidegrades, and are recoverable through Memory replay |
 | Cases | Odds/pity visible; skip available immediately; reduced-motion reveal under 0.5 s; no pass/achievement requires Mines or a case purchase |
 | Save | Fixture migration and export/import round trip preserve currencies, unlocks, presets, BP fraction/overflow, pity, rites, records, and settings |
 | Accessibility | Every menu/game action reachable keyboard-only and gamepad-only; 44x44 CSS-pixel touch targets; critical cues retain non-audio and non-color-only tells |
@@ -753,6 +912,21 @@ Preserve the delivered gates, then add the remaining coverage in this order:
    20-minute/Boss Rush/case/BP/Ruin Bell scenarios.
 8. **Determinism:** same seed/content version produces the same gameplay event
    log; different visual randomness does not alter that log.
+9. **Cosmetic attachment:** every hero × direction × shipped animation × compatible
+   cosmetic category resolves finite anchors; gameplay and preview snapshots match;
+   a moving browser capture shows no world-position freeze or neutral-frame drift.
+10. **Campaign gates:** all six permutations of each predecessor trio, repeats,
+    wrong-map/mode, old/corrupt saves, and `?dev=1` bypass preserve exact unlock truth.
+11. **Guided objectives:** each mode/map requirement set filters correctly; invalid
+    candidates substitute deterministically; completion/abort/reload receipts pay once.
+12. **House V2:** blueprint mutation propagates to render/collision/nav/LOS/spawn/roof
+    fixtures; door sides and room zones cannot disagree; all body/projectile sizes pass.
+13. **High Refresh:** identical input traces match simulation hashes across render
+    cadences; interpolation reset fixtures cover teleport, pause, background, resize,
+    quality change, and dropped frames.
+14. **Story and builds:** same graph seed/choices reproduce schedules and every branch
+    terminates; class simulations enforce caps and expose dominant/dead archetypes
+    before content production.
 
 ## 11. Risk register
 
@@ -767,6 +941,11 @@ Preserve the delivered gates, then add the remaining coverage in this order:
 | Boss clarity becomes easier but longer | HP inflation would punish learning | Keep/reduce HP where recovery adds uptime; tune via phase time and damage-source trace |
 | Unbounded player projectiles | Large builds can outgrow pool and collision assumptions | Introduce live budget/merge/degrade policy before denser weapons/events |
 | Save expansion breaks veterans | Cosmetics, capstones, RNG, and Codex all add state | Append-only IDs, defaults, explicit migrations, backup/export, fixture round trips |
+| Cosmetic quantity hides a broken rig | More items amplify detachment and make browsing unusable | Shared pose resolver and all-state capture gate before a 30-look pack; paging/filtering before registry growth |
+| “120 FPS” becomes a false promise | Browser/device cadence and heat/power policy are not controlled by the game | Call it High Refresh; fixed sim + interpolation; physical 60/90/120 Hz pacing/thermal evidence; graceful fallback |
+| Spectacle hides combat truth | Dense wand/class VFX can mask enemies, tells, pickups, and objectives | Explicit particle/projectile/fill-rate and palette/motion/RGB budgets; muted/grayscale/reduced-effects/phone captures |
+| Branching story creates missable power or dead ends | Consequences become punishment or corrupt resumable runs | Versioned finite graph, reachability/receipt fixtures, sidegrade rewards, checkpoint recovery, post-finale Memory routes |
+| Reference-driven house art copies unverified work | Visual similarity can create provenance and identity risk | Use room zoning/circulation principles only; author original geometry/pixels; record source/rights for every shipped asset |
 | Too many currencies/chores | Retention systems can become work | No new currency; permanent/selectable pass; objectives reward normal play |
 | Gambling presentation narrows audience | Coin-only Mines still models house-edge betting | Prefer skill-based replacement; never gate power/pass/cosmetics behind it |
 | Accessibility arrives after layouts | Retrofitting focus/text scale is expensive | Gamepad/focus/text presets land before Ruin Bell/Codex screens |
@@ -796,6 +975,21 @@ as substitutes for EMBERWAKE playtesting:
   notes that graph search alone does not solve object size, moving crowds,
   smoothing, or formations. At this game's sparse-obstacle 180-body scale, that
   supported measured local swept steering instead of per-enemy global A*.
+- The [WHATWG animation-frame model](https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#animation-frames)
+  makes browser rendering opportunity-driven rather than a game-owned fixed 120 Hz
+  clock. That supports a truthful High Refresh option with a fixed simulation and
+  measured interpolation instead of a guaranteed-FPS label.
+- Android's [frame pacing and refresh-rate guidance](https://developer.android.com/games/optimize/display-refresh-rate-change)
+  reinforces testing supported display modes, smooth pacing, and power cost on real
+  hardware; it informs the device gate but does not imply identical web behavior.
+- Itay Keren's boss framework above also informs boss-model pose briefs: silhouette,
+  telegraph, counter, transformation, and recovery must be designed together rather
+  than adding model detail or health alone.
+- Research on authorial control of branching interactive narrative—
+  [AAAI AIIDE 2018](https://ojs.aaai.org/index.php/AIIDE/article/view/12716) and
+  [AAAI AIIDE 2021](https://ojs.aaai.org/index.php/AIIDE/article/view/18725)—supports
+  explicit finite graphs, validation, and replayable consequence state instead of an
+  unbounded promise that every action creates a unique story.
 
 ## 13. Definition of a better experience at day 90
 
@@ -803,9 +997,17 @@ By day 90, a new player should hear multiple real compositions, understand why
 the score changed, use any supported input to navigate the game, survive a house
 because they read enemy roles rather than an AI failure, recognize each boss's
 signature and opening, understand every point of post-run XP, dress each hero
-without re-equipping a set, and share/replay a deterministic challenge.
+without re-equipping a set or watching its hat/cloak detach, see one reachable guided
+task at a time, understand exactly which of the previous map's three Keepers still
+blocks the next map, and share/replay a deterministic challenge. The House V2 cabin,
+cosmetic rig, and campaign/objective fixtures should be ready foundations; High Refresh
+may be called shipped only if interpolation and physical-device gates are complete.
 
 A veteran should feel that the existing 40 weapons, 20 enemies, 12 bosses, 11
 roads, 50 pass levels, and 65 cosmetics became more coherent and valuable. If
 that is not true, adding a fifth biome or another hundred rewards would only
 make the same problems larger.
+
+The next major-production decision should also be evidence-backed: one researched map,
+boss-model family, weapon-class slice, or non-wager minigame advances, while the other
+briefs remain ready rather than all becoming half-finished content simultaneously.

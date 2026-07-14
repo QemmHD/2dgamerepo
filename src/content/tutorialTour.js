@@ -123,8 +123,9 @@ export const TOUR_STEPS = [
         title: 'Settings — comfort & options',
         highlightAction: 'replayTutorial',
         lines: [
-            'Adjust the music and sound volume, turn screen shake on or off, and',
-            'open Accessibility & Display for contrast and Combat HUD size.',
+            'Set music, effects and spoken-line volume separately in General.',
+            'Here you can turn on captions or mono audio, choose caption detail,',
+            'set touch vibration, raise warning contrast, and resize the combat HUD.',
             'You can replay this whole tutorial any time from the button here.',
             'Back in General, a full reset lets you start over from scratch.',
         ],

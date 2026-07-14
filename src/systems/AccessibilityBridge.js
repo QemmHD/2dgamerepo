@@ -27,6 +27,8 @@ const SETTING_LABELS = Object.freeze({
     reducedEffects: 'Reduce motion and effects',
     uiScale: 'Combat HUD size',
     highContrast: 'High contrast warnings',
+    captions: 'Captions',
+    captionDetail: 'Caption detail',
     monoAudio: 'Mono audio',
     vibration: 'Vibration',
     volMusic: 'Music volume',
@@ -77,6 +79,8 @@ export function menuHotspotLabel(action, arg, explicitLabel = '') {
         case 'selectCharacter': return `Select hero ${words(id)}`;
         case 'selectMap': return `Select map ${words(id)}`;
         case 'setUiScale': return `Set combat HUD size to ${normalizeUiScale(id)} percent`;
+        case 'setCaptionDetail': return `Set caption detail to ${words(id)}`;
+        case 'setVibration': return `Set vibration to ${words(id)}`;
         case 'toggleSetting': return `Toggle ${SETTING_LABELS[id] || words(id)}`;
         case 'volUp': return `Increase ${SETTING_LABELS[id] || words(id)}`;
         case 'volDown': return `Decrease ${SETTING_LABELS[id] || words(id)}`;

@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import { computeHUDLayout, hudRectsOverlap } from '../src/systems/HUDLayout.js';
-import { fitHudLabel } from '../src/systems/UISystem.js';
+import { fitHudLabel, wrapText } from '../src/systems/UISystem.js';
 
 let checks = 0;
 let failures = 0;
@@ -27,6 +27,7 @@ const modes = [
     { name: 'desktop', compact: false, touchMode: false },
     { name: 'compact', compact: true, touchMode: false },
     { name: 'touch', compact: true, touchMode: true },
+    { name: 'phone-667', compact: true, touchMode: true, cssScale: 667 / 1920 },
 ];
 const encounters = [
     { name: 'field', hasBoss: false, hasLieutenant: false, hasBossRush: false },
@@ -71,6 +72,7 @@ for (const safeArea of safeAreas) {
                 abilityCount: 8,
                 hasVigil: true,
                 uiScale,
+                cssScale: mode.cssScale ?? (mode.compact ? 1280 / 1920 : 1),
             };
             const hud = computeHUDLayout(options);
             const baseline = computeHUDLayout({ ...options, uiScale: 100 });
@@ -82,7 +84,7 @@ for (const safeArea of safeAreas) {
             }
             // Combat HUD scale cannot move input/world anchors. Pause, vitals,
             // and Kindle rectangles remain byte-stable while their text grows.
-            for (const key of ['pause', 'vitals', 'kindle']) {
+            for (const key of ['pause', 'vitals', 'kindle', 'caption']) {
                 ok(JSON.stringify(hud[key]) === JSON.stringify(baseline[key]),
                     `${name}: ${key} geometry changed with text scale`);
             }
@@ -139,6 +141,7 @@ for (const safeArea of safeAreas) {
                 'header', 'boss', 'lieutenant', 'bossRush', 'vitals',
                 'loadout', 'pause', 'combo', 'abilities', 'kindle',
                 'vigil',
+                'caption',
             ]) {
                 ok(inside(hud[key], hud), `${name}: ${key} escapes the safe viewport`);
             }
@@ -154,6 +157,16 @@ for (const safeArea of safeAreas) {
             ok(!hudRectsOverlap(hud.boss, hud.loadout, 8), `${name}: boss plate overlaps loadout`);
             ok(!hudRectsOverlap(hud.vitals, hud.loadout, 8), `${name}: vitals overlap loadout`);
             ok(!hudRectsOverlap(hud.abilities, hud.kindle, 4), `${name}: abilities overlap Kindle meter`);
+            ok(!hudRectsOverlap(hud.caption, hud.abilities, 8), `${name}: captions overlap ability controls`);
+            ok(!hudRectsOverlap(hud.caption, hud.vitals, 8), `${name}: captions overlap vitals`);
+            ok(!hudRectsOverlap(hud.caption, hud.kindle, 8), `${name}: captions overlap Kindle meter`);
+            ok(hud.caption.textPx * hud.caption.cssScale >= 15.99,
+                `${name}: caption type falls below 16 CSS pixels`);
+            ok(hud.caption.labelPx * hud.caption.cssScale >= 15.99,
+                `${name}: caption speaker label falls below 16 CSS pixels`);
+            ok(hud.caption.h >= hud.caption.padY * 2 + hud.caption.labelPx
+                + hud.caption.gap + hud.caption.lineHeight * 2,
+            `${name}: caption plate cannot contain its label and two body lines`);
             ok(!hudRectsOverlap(hud.vigil, hud.pause, 8), `${name}: Living Vigil overlaps pause`);
             ok(!hudRectsOverlap(hud.vigil, hud.combo, 8), `${name}: Living Vigil overlaps combo`);
             ok(!hudRectsOverlap(hud.vigil, hud.header, 8), `${name}: Living Vigil overlaps command rail`);
@@ -179,6 +192,19 @@ for (const safeArea of safeAreas) {
 }
 
 ok(!active(computeHUDLayout({ hasVigil: false }).vigil), 'disabled Living Vigil still allocates HUD space');
+
+const wrapped = [];
+const wrapCtx = {
+    measureText: (text) => ({ width: String(text).length * 10 }),
+    fillText: (text) => wrapped.push(text),
+};
+wrapText(wrapCtx, 'one two three', 0, 0, 80, 20, 2);
+ok(wrapped.join('|') === 'one two|three',
+    'an exact two-line caption is not given a false ellipsis');
+wrapped.length = 0;
+wrapText(wrapCtx, 'one two three four', 0, 0, 80, 20, 2);
+ok(wrapped.join('|') === 'one two|three…',
+    'a genuinely truncated two-line caption receives one ellipsis');
 
 // Canvas-measured fitting is tested with a font-aware deterministic context.
 // Character-count truncation cannot satisfy these contracts because font size

@@ -45,6 +45,8 @@ export function buildUIState(game) {
         saveData: game.saveSystem.data,
         pressFx: game.pressFx,
         feedback: game.feedback,
+        vibrationSupported: game.haptics?.supported?.() === true,
+        caption: game.captionSystem?.snapshot?.() || null,
     };
 
     // Start/shop screen: only the shop data is meaningful. Skip every

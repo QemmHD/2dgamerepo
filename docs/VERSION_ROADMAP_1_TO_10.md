@@ -146,9 +146,36 @@ open; the canonical execution truth and exact gaps live in
 **2026-07-14 shipped First Light delta:** [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
 delivered save-safe Combat HUD size 100/115/130, high-contrast combat tells, and
 seven source-backed non-color status badges at main `089d646`; PR/main CI, Pages,
-and live smoke passed. This bounded slice does not complete global text scaling,
-mono audio, caption detail, voice volume, vibration, A11-14 convergence, or full
-1.1. Exact evidence and remaining gates live in the ledger.
+and live smoke passed. This bounded slice does not complete global text scaling or
+A11-14 convergence/full 1.1. The current branch candidate adds mono audio,
+Essential/Full gameplay captions, independent Voice volume, and capability-safe touch
+vibration, but those additions remain candidate work until PR CI, main, Pages, and live
+smoke pass. Exact evidence and remaining gates live in the ledger.
+
+### 2026-07-14 additive scope allocation — planned, not shipped
+
+The following work expands the roadmap without changing any delivery status above.
+It is not evidence that a feature exists, and it does not inflate the existing
+46–60-addition contracts with recolors, refactors, or test fixtures. Wands remain the
+iconic class, while later ember-forged weapon families broaden build expression
+without turning EMBERWAKE into a generic sword game.
+
+| Capability | First complete proof | Expansion arc | Acceptance before the roadmap may call it shipped |
+| --- | --- | --- | --- |
+| Cosmetic attachment rig and genuine collection growth | 1.6 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows idle/walk/cast/hurt/dash/death/victory frames in every direction; no layer remains at an old world position while the body animates. Only after that gate may the first 30-look silhouette pack ship, with paging, filters, source labels, set preview, and no power. |
+| Mobile High Refresh mode | 1.7 | 3.8, 7.8, 9.8 | Settings says **High Refresh**, never promises 120 FPS. Simulation remains fixed and deterministic; interpolated render state is proven for camera and all high-motion entities; Standard and High Refresh produce the same gameplay hash. 90/120 Hz physical-device, battery/heat, backgrounding, reduced-effects, and fallback tests pass before store copy mentions supported high-frame-rate play. |
+| Exact campaign map unlocks | 1.3 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; `?dev=1`/`unlockMaps` remains a QA bypass and never writes false campaign progress. |
+| Guided, completable run objectives | 1.1–1.3 | 2.1, 3.1, 4.5 | One current task moves through Orientation → Tactic → Climax, with progress, reward, and next action. The seeded director filters by map, mode, available systems, and run state; invalid tasks substitute deterministically; reward receipts are idempotent. Every supported mode completes or cleanly substitutes its objective across the committed seed matrix. |
+| House V2 and authored map composition | 1.4 | 2.7, 3.3, 4.4, 6.5, 8.4 | One shared blueprint owns render, collision, navigation, line of sight, door openings, spawn exclusion, room zones, roof cutaway, and intact/damaged/lit/ruined state. The first original Emberwood cabin uses the supplied reference only for spatial principles—recognizable kitchen/hearth/dining/sleep/storage zones, thick perimeter walls, doors/windows, and clear circulation—without copying its pixels or unverified art. Seed, 180-body, projectile, and screenshot gates pass before kit multiplication. |
+| Graphics, map landmarks, boss models, and readable spectacle | 1.4–1.6 | 3.3, 4.x, 6.x, 9.7 | Macro layouts define sanctuary, loops, landmarks, quiet lanes, combat bowls, house lots, POIs, and boss arenas before scatter. Boss silhouettes and telegraph poses survive grayscale/reduced-effects captures. Wand and class VFX can be spectacular, but hostile tells, player position, pickups, and objectives remain legible inside measured particle, overdraw, palette, motion, and RGB budgets. |
+| Weapon classes, gear, and build balance | 1.6 schema; 2.x playable slices | 3.2, 4.6, 5.4, 8.6, 9.6 | Player-facing **Wand, Spellblade, Emberbow, Totem, and Relic** identities are distinct from low-level runtime behavior kinds. One complete vertical slice per missing class ships before bulk quantity: base item, upgrade path, signature VFX, sound, accessibility cues, gear interactions, and counter-build. Fixed-seed simulations plus human runs must show starter viability, multiple successful archetypes, bounded entities/effects, and no universally dominant class. |
+| Deterministic branching story and consequences | 3.1 | 6.1–6.7, 8.1, 9.2 | A versioned story graph stores seed, nodes, choices, spawn manifests, checkpoints, rewards, and terminal states. The same version/seed/choices reproduces the authored encounter schedule; player execution can change the outcome. Choices visibly alter routes, allies, houses, bosses, or scenes, while special rewards are sidegrades, never permanently missable, and replayable through Memory routes after completion. |
+| New maps, bosses, minigames, and gear | 2.4/2.7 | 3.3, 4.x, 6.x, 8.x, 9.x | Every destination earns three screenshot identities, a unique routing verb, complete house/POI chain, six readable enemy roles, authored formations, boss identity, score, gear/build interaction, and accessibility/performance proof. Non-wager minigames teach or test a core verb, have deterministic scoring and no mandatory progression; content quantity cannot substitute for this vertical-slice gate. |
+
+Research and prototypes may happen earlier than the assigned arc, but production
+scope moves only after the preceding gate is green. Every implementation keeps the
+shared save/debug/performance surfaces and preserves all Settings developer controls
+when the game is opened with `?dev=1`.
 
 ## 3. How versions earn their number
 
@@ -196,13 +223,13 @@ acceptance metric is met; an incomplete row ships under its current version numb
 | --- | --- | --- |
 | 1.0.1 | Vigil Health | Ten named fixes; combat/progression/UX validators; fresh-save, pause, level-up, save-reload, 180-body, and `EXC:0` proof. |
 | 1.0.2 | Waylight Calls | 4 site archetypes and 12 biome-authored formations; deterministic replays; additive stats/save round-trip; no pack exceeds live caps. |
-| 1.1 | First Light | Primary loop completable by keyboard, touch, and pointer; five target viewports clip-free; reduced-motion and readable-focus captures. |
+| 1.1 | First Light | Primary loop completable by keyboard, touch, and pointer; five target viewports clip-free; reduced-motion/readable-focus captures; every guided task is reachable or substituted. |
 | 1.2 | Fair Forge | Every reward has source/odds/pity; Mines expected return validates at 0.93 for every cash-out depth; 10/50/200-run economy cohorts keep deterministic upgrades relevant. |
-| 1.3 | Hunters at the Door | All 20 regular enemies have a tested role; all 12 bosses have distinct phase proof; 100 seeded structure routes produce no invalid spawn or unrecovered stuck body. |
-| 1.4 | House of Wicks | 4 biome house kits, 6 complete POI events, and 3 landmark screenshots per biome; 180-body navigation stays within the existing budget. |
+| 1.3 | Hunters at the Door | All 20 regular enemies have a tested role; all 12 bosses have distinct phase proof; exact three-unique-predecessor-boss map gates; 100 seeded structure routes produce no invalid spawn or unrecovered stuck body. |
+| 1.4 | House of Wicks | One proven House V2 cabin, 4 biome house kits, 6 complete POI events, and 3 landmark screenshots per biome; 180-body navigation stays within the existing budget. |
 | 1.5 | Living Score | 3 menu tracks, 2 pieces per biome, boss-family suites, critical-cue voice limits, and a 30-minute pause/focus/audio soak with no silence or node growth. |
-| 1.6 | Reforged Bodies | 6 heroes × the 27-render contract, 12 boss identity sets, modular houses/POIs, deterministic regeneration, provenance, anchor, alpha, and fallback validation. |
-| 1.7 | ForgeGrip | Controller-only primary loop, offline cold boot/update rollback, lifecycle/audio restore, safe-area proof, and one native candidate from the shared web source. |
+| 1.6 | Reforged Bodies | 6 heroes × the 27-render contract, one shared cosmetic attachment resolver, 12 boss identity sets, modular houses/POIs, deterministic regeneration, provenance, anchor, alpha, and fallback validation. |
+| 1.7 | ForgeGrip | Controller-only primary loop, truthful High Refresh interpolation/device proof, offline cold boot/update rollback, lifecycle/audio restore, safe-area proof, and one native candidate from the shared web source. |
 | 2.0 | The Living Vigil | 20 external first sessions; ≥80% start unaided, ≥70% identify death cause, ≥90% find the next goal; zero save-loss or P0 accessibility defects. |
 | 2.1 | Sealed Storm | Two fixed-input simulations of every supported mode produce identical gameplay hashes; unknown/tampered challenge codes fail safely. |
 | 2.2 | Ember Race | Bounded ghost codes reproduce route and split timing within tolerance; spectres never affect simulation; every comparison can remain private/local. |
@@ -211,10 +238,10 @@ acceptance metric is met; an incomplete row ships under its current version numb
 | 2.5 | Two-Keeper | Two-player primary loop and 30-minute swarm/boss soak; independent remaps, drop-in/out, revive, and non-color identity cues pass. |
 | 2.6 | Archive Seasons | A chapter can be started, switched, completed, left for 90 simulated days, and resumed with no expired reward or punitive catch-up curve. |
 | 2.7 | Known-Content Packs | Install/remove/upgrade fixtures for every pack; exact product manifest; base save survives missing or downgraded optional content. |
-| 2.8 | Roster and Mastery | 2 gap-filling heroes, authored Chronicle paths, sidegrade-only mastery, and Blueprint import/export that reports missing content without unlocking it; each hero passes Recruit/Vigil/Nightmare runs. |
+| 2.8 | Roster and Mastery | 2 gap-filling heroes, first 30-look silhouette pack, proven weapon-class/gear slices, authored Chronicle paths, sidegrade-only mastery, and bounded Blueprint import/export. |
 | 2.9 | Common Hearth | Four local profiles, portable Hearth Bundles, private share surfaces, and a no-reward Memory Theatre with caption/audio/motion controls all pass network-blocked completion. |
 | 3.0 | The Shared Flame | 46 additions; determinism, ghost, couch, chapter, camp, and removable-pack gates pass together; at least 8 heroes and 6 mechanically distinct maps. |
-| 3.1 | Ember Pilgrimage | Complete 3-act expedition with suspend/resume at every interlude; Waystation service/state survives route replay; Standard Run remains one-action instant play. |
+| 3.1 | Ember Pilgrimage | Complete deterministic 3-act expedition with consequences, recoverable sidegrade rewards, suspend/resume at every interlude, branch replay, and one-action Standard Run. |
 | 3.2 | Wounds and Oaths | Every scar has counterplay/removal, every Oath previews risk/reward, every reforge is deterministic, and Journey Inscriptions archive/restore without exceeding caps. |
 | 3.3 | Forgeheart | 1 new biome, 1 formation faction, 3 apex bosses, 1 finale, full music/art suite, and stable map navigation at cap. |
 | 3.4 | Enemy Factions | Each faction demonstrates at least 3 cooperative tactics and explicit counterplay; director rejects repeated control chains and impossible compositions. |
@@ -263,13 +290,16 @@ ship by completing a few favorite bullets and leaving the rest as “later.”
 7. **Portable, recoverable progression:** export/import, backup recovery, corrupt and
    historical fixtures, stable ids, and clear local-save ownership.
 8. **Authored tactical encounters:** deterministic biome formations with warnings,
-   spawn budgets, clear states, objectives, achievements, and mastery records.
+   spawn budgets, clear states, and a mode-eligible guided objective sequence with
+   completable tasks, achievements, and mastery records.
 9. **Enemy role and navigation overhaul:** all 20 regular enemies gain jobs,
    structure-aware tactics, bounded stuck recovery, and shared collision truth.
 10. **Twelve rebuilt boss experiences:** unique openers, transformations, desperation
-    moves, valid arenas, wall-aware attacks, readable phase scoring, and exact rewards.
-11. **Living houses and Vigil Sites:** four modular biome kits, interactive interiors,
-    four repeatable site archetypes, six story POIs, and readable compass routing.
+    moves, valid arenas, wall-aware attacks, readable phase scoring, exact rewards,
+    and map gates based on the three unique bosses of the immediate prior map.
+11. **Living houses and Vigil Sites:** a shared House V2 blueprint, four modular biome
+    kits, interactive zoned interiors, four repeatable site archetypes, six story POIs,
+    and readable compass routing.
 12. **Map-density and obstacle pass:** biome-specific landmarks, tactical object lanes,
     quiet space, destructible minor cover, reward pockets, and deterministic seeds.
 13. **Combat HUD and feedback pass:** damage-source clarity, boss/POI/encounter state,
@@ -277,13 +307,16 @@ ship by completing a few favorite bullets and leaving the rest as “later.”
 14. **Adaptive authored score:** multiple menu/biome/boss pieces, phrase-safe state
     changes, quiet returns, captions, voice limits, mix probes, and lifecycle recovery.
 15. **Reforged visual identity:** six animated monkey heroes, twelve bosses, wands,
-    houses, POIs, portraits, effects, and deterministic Blender sprite production.
-16. **Collection expression:** per-hero outfits, five-piece sets, quick equip, source
-    filters, cosmetic previews, achievement looks, titles, and photo/recap framing.
+    ember-forged class prototypes, houses, POIs, portraits, effects, and deterministic
+    Blender sprite production under explicit readability/performance budgets.
+16. **Collection expression:** one shared body/cosmetic attachment rig, per-hero
+    outfits, genuine silhouette sets, quick equip, source filters, previews,
+    achievement looks, titles, and photo/recap framing.
 17. **Offline/PWA and native candidate:** service worker, update rollback, native
-    adapters, Capacitor shell, lifecycle restore, and honest store media.
-18. **Fair return loops:** varied run objectives, Daily Road, Rite Trial, Boss Rush,
-    Weekly Ember, mastery goals, and post-run recommendations with no streak loss.
+    adapters, Capacitor shell, lifecycle restore, truthful optional High Refresh, and
+    honest store media.
+18. **Fair return loops:** guided varied run objectives, Daily Road, Rite Trial, Boss
+    Rush, Weekly Ember, mastery goals, and post-run recommendations with no streak loss.
 
 **Count ledger (46):** onboarding/menu/input/accessibility 8; economy/progression/
 collection 8; encounters/enemies/bosses 10; maps/houses/POIs 7; HUD/audio/art 7;
@@ -373,8 +406,9 @@ shipped the semantic Canvas, menu keyboard focus, active modality, reduced-motio
 inheritance, phone Settings, typed attention badge, keyboard-Mines foundation, and
 deterministic QA gates at `3ed29e0`. [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
 then shipped the bounded Combat HUD size, high-contrast warning, and non-color status
-slice at `089d646`. These are delivered foundations, not the complete release: A11-10's
-remaining preference controls stay in flight, while
+slice at `089d646`. The current candidate implements A11-10's mono, caption-detail,
+independent-Voice, and touch-vibration controls but is not called shipped before its PR,
+main, Pages, and live-smoke gates. These are foundations, not the complete release; the
 playable tutorial/debrief, full Play/Now/Explore hierarchy, lock/source/context routing,
 device/AT/zoom proof, and the exact acceptance matrix below remain open. See A11-01–A11-14 in the
 [development ledger](DEVELOPMENT_LEDGER.md); keyboard Mines is explicitly tracked as
@@ -389,13 +423,16 @@ pulled-forward 1.2 work.
 - Make the menu phone-aware: stacked Settings, minimum readable helper text, safe
   44-point primary targets, and no fixed two-column layout at narrow physical scale.
 - Preserve the shipped Combat HUD size presets (100/115/130%), high-contrast
-  telegraphs, and seven non-color status glyphs; finish A11-10 with mono audio,
-  caption detail, independent voice volume, and vibration controls. Combat HUD size
-  is not a claim of global app/menu text scaling.
+  telegraphs, and seven non-color status glyphs; ship and harden the current A11-10
+  mono, caption-detail, independent-Voice, and touch-vibration candidate. Combat HUD
+  size is not a claim of global app/menu text scaling.
 - “Reduce Motion & Effects” inherits the OS preference for new saves and freezes
   decorative pulse/overshoot while preserving static combat warnings.
 - Stage the tutorial as short playable beats: move, auto-fire, gem, level-up, blink,
   Focus, Kindle, coin, boss. One lesson at a time; no instruction behind a modal.
+- Replace the wall of simultaneously active run tasks with one current guided card:
+  Orientation, then a map/mode-valid Tactic, then a Climax. Show progress, reward,
+  and the next physical action; substitute an impossible task deterministically.
 - Add a concise first-death debrief: cause, one thing learned, coins earned, Battle
   Pass progress, and one recommended next action.
 
@@ -539,18 +576,30 @@ possible without an expiring schedule.
 - Give each boss a three-part identity: signature opener, phase-two transformation,
   and desperation move. Shared attack kinds remain implementation vocabulary, not
   personality.
+- Replace generic boss-count map locks with an exact ordered campaign ledger. The next
+  map requires all three unique bosses from the immediately previous map; repeats and
+  bosses defeated in practice, Daily, Weekly, Rite Trial, or Boss Rush do not count.
+  Preserve maps already unlocked by legacy saves, and keep `?dev=1`/`unlockMaps` as a
+  non-persistent QA bypass.
 
 **Exit gate:** scripted route tests for every structure and body size; every boss
 attack family checked at each difficulty; volatile→splitter/boss rewards exactly once;
-no spawn, arena, or projectile damage occurs through blocked geometry.
+no spawn, arena, or projectile damage occurs through blocked geometry. Unlock fixtures
+cover repeat, wrong-map, wrong-mode, legacy migration, corruption, and dev bypass;
+every guided objective is completable or deterministically substituted in its mode.
 
 ## 1.4 — The House of Wicks
 
 **Player promise:** “The map tells small stories instead of being empty floor.”
 
+- Build **House V2** around one data blueprint shared by render, collision, navigation,
+  line of sight, door openings, spawn exclusion, room zones, roof cutaway, and state.
+- Author one original Emberwood cabin first. Use the supplied rustic-house reference
+  only for spatial logic: recognizable kitchen/hearth/dining/sleep/storage zones,
+  thick perimeter walls, doors/windows, circulation, and restrained focal props. Do
+  not copy pixels or import art whose source/license is unverified.
 - Rebuild the four house silhouettes in Blender as modular roof/wall/door kits with
-  intact, damaged, lit, and ruined states.
-- Add readable interiors with one focal prop, not random clutter carpets.
+  intact, damaged, lit, and ruined states only after the cabin proves the contract.
 - Add six POI events: trapped Keeper, waystone relight, bell killbox, caravan defense,
   abandoned forge choice, and candle vigil.
 - Add map-object lanes: cover, choke, risk circle, reward pocket, traversal landmark.
@@ -562,8 +611,10 @@ no spawn, arena, or projectile damage occurs through blocked geometry.
   collision source; major houses remain stable navigation anchors.
 - Add a minimal compass ping for off-screen POIs and bosses, with distance and type.
 
-**Exit gate:** each biome has three recognizable screenshots without UI; seeded maps
-remain deterministic; POIs never block required paths; 180-body navigation stays
+**Exit gate:** the original cabin regenerates from one blueprint and produces matching
+render/collision/nav/LOS/door/roof state; each biome has three recognizable screenshots
+without UI; seeded maps remain deterministic; POIs never block required paths;
+projectiles and all body sizes respect walls/openings; 180-body navigation stays
 inside the established frame budget.
 
 ## 1.5 — The Living Score
@@ -598,7 +649,14 @@ unbounded nodes, scheduler runaway, clipped master, or scene-transition spam.
   blink, three-step walk, cast, hurt, death, and victory in down/up/side.
 - Add dash/Focus/Kindle overlays without multiplying sheet memory where a runtime
   layer is clearer.
+- Add one shared `resolveHeroPose`-style attachment contract for gameplay, Collection,
+  Boutique, Pass, case reveals, recap, and photo mode. Hats follow the animated head;
+  cloak collars pin to shoulders while lower cloth may lag; hands/chest/back items use
+  authored anchors rather than neutral-frame offsets.
 - Build a parametric wand armory with exact grip anchors and silhouette checks.
+- Define the player-facing Wand/Spellblade/Emberbow/Totem/Relic taxonomy separately
+  from runtime projectile kinds, then prototype one missing class with a complete
+  animation, VFX, SFX, accessibility, gear-interaction, and performance contract.
 - Rebuild the twelve bosses in four shared material families but unique silhouettes,
   telegraph poses, phase shifts, hurt, defeat, and portrait crops.
 - Build modular house/POI kits from 1.4 and render deterministic sprite sheets.
@@ -615,6 +673,10 @@ game assets. See [Higgsfield Canvas](https://higgsfield.ai/canvas-intro).
 
 **Exit gate:** all shipped sprites regenerate from committed parameters; runtime
 fallbacks remain; source/rights are recorded; no new art breaks canonical palettes.
+An all-state/all-direction contact sheet and live capture prove that every equipped
+cosmetic follows the body, and Collection preview uses the same attachment resolver.
+Bulk cosmetic production begins only after that gate and ships genuine silhouettes,
+not a recolor count presented as new variety.
 
 ## 1.7 — ForgeGrip and Native Candidate
 
@@ -625,6 +687,11 @@ fallbacks remain; source/rights are recorded; no new art breaks canonical palett
   hotspot focus ring rather than creating a controller-only focus system.
 - Add PWA service worker, offline shell, update prompt, install education, and cache
   version rollback.
+- Add **Standard** and **High Refresh** render settings on capable mobile/web builds.
+  Keep gameplay simulation fixed and deterministic, interpolate camera/entities from
+  previous/current state, default to Standard, and explain that High Refresh uses more
+  battery and may warm the device. Display, browser, power mode, and heat can limit
+  cadence; the setting is not labeled or marketed as guaranteed 120 FPS.
 - Add native adapter boundaries for storage, haptics, safe areas, share sheet,
   clipboard, lifecycle, audio session, and restore.
 - Package the web-first code in a **Capacitor 8** shell for iOS/Android without
@@ -645,6 +712,12 @@ Xcode, an Apple Developer account, certificates, and App Store Connect access. A
 currently documents Xcode/Transporter upload paths in
 [Upload builds](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/).
 
+**High Refresh gate:** Standard and High Refresh produce the same fixed-input gameplay
+hash; camera, player, enemy, projectile, pickups, and effects interpolate without
+teleport trails at supported cadence; pause/background/quality changes do not create a
+time jump. Physical 60/90/120 Hz devices record frame pacing, battery/thermal behavior,
+and fallback truth before any store-facing high-frame-rate claim.
+
 ## 2.0 — THE LIVING VIGIL
 
 2.0 is not “more stuff.” It is the first cohesive product release:
@@ -655,11 +728,15 @@ currently documents Xcode/Transporter upload paths in
 - enemy roles and twelve boss fights that respect world geometry;
 - fair, legible progression and permanent battle-pass chapters;
 - complete audio mix, accessibility suite, save portability, and offline shell;
-- deterministic Blender art pipeline and a native release candidate.
+- deterministic Blender art pipeline and a native release candidate;
+- attached cosmetics in every gameplay/preview state, exact three-boss map gates,
+  guided completable objectives, one proven House V2 cabin, and truthful High Refresh.
 
 **2.0 ship gate:** 20 external first-session tests; 80% start a guided run without
 help, 70% identify the death cause, 90% find the next goal, zero save-loss defects,
 zero P0 accessibility blockers, and stable 30/60 FPS tiers on the defined device lab.
+The cosmetic attachment, boss-ledger, objective substitution, House V2, and fixed-
+simulation High Refresh gates above must also pass; a 120 FPS promise is not required.
 
 ---
 
@@ -693,10 +770,11 @@ commitment.
    synergies, revives, drop-in/out, independent remaps, and combined recap cards.
 7. **Permanent Archive Chapters:** selectable non-expiring Battle Pass stories with
    weather, clauses, bosses, camp sets, cosmetics, lore, and rested progress.
-8. **Collection and store 2.0:** separate Known/Random/Earned shelves, collection
-   planner fulfillment, exact case pool completion, deterministic duplicate redemption,
-   wishlist receipts, a shareable Blueprint Desk for saved builds, and no random paid
-   content.
+8. **Arsenal, collection, and store 2.0:** separate Known/Random/Earned shelves,
+   collection planner fulfillment, a first 30-look genuine-silhouette expansion on the
+   proven attachment rig, class/gear source routing, exact case pool completion,
+   deterministic duplicate redemption, a shareable Blueprint Desk for saved builds,
+   and no random paid content.
 9. **Static content-pack/DLC platform:** versioned manifests, stable ids, checksums,
    migrations, graceful removal, exact storefront contents, and base-game fallbacks.
 10. **UNDERTOW destination:** flooded-descent map grammar, water-level routes,
@@ -705,8 +783,10 @@ commitment.
     ambush formations, lantern bosses, camp travelers, and the Waylight collection.
 12. **FORGEHEART PRELUDE destination:** slag-work map, anvil trials, siege enemies,
     prototype apex, material crafting, and narrative bridge to the 4.0 finale.
-13. **Expanded hero roster and mastery:** two gap-filling monkey heroes, Chronicle
-    quests, mastery constellations, sidegrades, poses, palettes, titles, and memories.
+13. **Expanded roster, classes, and mastery:** two gap-filling monkey heroes; complete
+    Spellblade, Emberbow, Totem, and Relic vertical slices where the 2.0 gap audit
+    proves value; new sidegrade gear; Chronicle quests; mastery constellations; poses,
+    palettes, titles, and memories.
 14. **Formation factions and boss remixes:** new enemies cooperate in authored packs;
     chapter bosses change rules/tells rather than merely gaining health.
 15. **Houses and POI chains:** multi-stage structures remember local choices across a
@@ -717,14 +797,16 @@ commitment.
     camp cards, controller co-op semantics, ghost visibility controls, a local Memory
     Theatre for replaying unlocked scenes and learned boss tells, and no account.
 18. **Fair horizontal retention:** personal records, discovery routes, permanent
-    chapters, rested progress, build history, and goals generated from missing content
-    rather than hidden behavior scoring or expiring obligation.
+    chapters, rested progress, build history, two non-wager mastery minigames, and goals
+    generated from missing content rather than hidden behavior scoring or expiring
+    obligation.
 
 **Count ledger (46):** deterministic/new/social modes 10; companions/camp/local social
 8; maps/packs/houses/POIs 10; enemies/bosses/audio 7; heroes/progression/store/
-cosmetics 7; accessibility/offline/portability 4. The four additions above the prior
-scope are the Practice Lantern, Hearth Diorama Studio, Blueprint Desk, and Memory
-Theatre. Pack migrations, net-free simulation, and validation work are acceptance
+cosmetics 7; accessibility/offline/portability 4. The six named additions above the
+prior scope—Forge Trial, Waylight Relay, Practice Lantern, Hearth Diorama Studio,
+Blueprint Desk, and Memory Theatre—occupy existing mode/social slots; the major total
+remains 46. Pack migrations, net-free simulation, and validation work are acceptance
 evidence rather than counted player features.
 
 ## 2.1 — The Sealed Storm
@@ -767,6 +849,11 @@ evidence rather than counted player features.
 - Add a **Hearth Diorama Studio** with earned sets, heroes, familiars, trophies, poses,
   lighting presets, safe captions, and exportable still cards; missing assets fall back
   to named silhouettes instead of breaking a saved scene.
+- Add two compact, non-wager mastery activities only after control prototypes pass:
+  **Forge Trial**, a deterministic wand/class timing-and-target exercise, and
+  **Waylight Relay**, a route-reading/evacuation challenge through authored obstacles.
+  Both teach reusable run verbs, support practice and scored variants, and never gate
+  the campaign, a power item, or Battle Pass completion.
 - Camp state is data-only and clamped; missing assets fall back safely.
 
 ## 2.5 — Two-Keeper Couch Play
@@ -830,6 +917,13 @@ its save records degrade to named placeholders rather than deleting unrelated pr
 ## 2.8 — Roster and Mastery
 
 - Add two monkey heroes only after their signatures fill real playstyle gaps.
+- Ship the first 30 genuinely distinct cosmetic looks only after the 1.6 attachment
+  validator is green. Require silhouette/material changes, collection paging, hero/set/
+  source filters, shared gameplay/preview anchors, and complete source metadata; palette
+  swaps alone do not satisfy the pack.
+- Promote each missing player-facing weapon class only through a complete vertical
+  slice: base weapon, upgrade path, class-specific control/auto-target behavior,
+  signature VFX/SFX, non-color cues, new sidegrade gear, and a fixed-seed balance card.
 - Add per-hero Chronicle quests with authored challenges, not damage chores.
 - Add mastery constellations that unlock expressive sidegrades, titles, palettes,
   victory poses, and camp memories.
@@ -876,11 +970,15 @@ all 3.0 modes complete in a network-blocked browser/native test.
 - local profiles, Hearth Bundles, and shareable creations that still work offline;
 - 8 heroes, at least 6 fully distinct maps, and bosses/events added only when they
   meet the authored-identity gate.
+- at least two non-wager mastery minigames and multiple viable weapon-class builds;
+- expanded cosmetics that remain attached in motion and are browseable without a
+  single unpaged grid.
 
 **3.0 ship gate:** same-seed determinism proof; ghost codes remain bounded and
 versioned; two-player 30-minute soak at device-tier budgets; no chapter expiry;
 Practice/Blueprint/Theatre/Diorama imports are bounded and never mint power; content
-packs remove cleanly without corrupting base saves.
+packs remove cleanly without corrupting base saves. Cosmetic rig captures, class
+balance simulations, and both mastery-minigame completion/accessibility gates pass.
 
 ---
 
@@ -943,7 +1041,12 @@ count as player-visible content by themselves.
 
 ## 3.1 — The Ember Pilgrimage
 
-- Add a three-act expedition graph: choose a biome, road oath, risk, and destination.
+- Add a versioned three-act story graph: seed, content version, nodes, spawn manifests,
+  choices, checkpoints, rewards, and terminal states are serializable data rather than
+  renderer state.
+- Choose a biome, road oath, risk, ally, and destination. Choices visibly change later
+  routes, house/POI state, support arrivals, boss rules, or scenes; copy previews the
+  consequence category without spoiling every result.
 - Runs remain 10–20 minute chapters; an expedition is resumed between chapters.
 - Add camp interludes for healing, reforging, companion recovery, and route choice.
 - Restore one **Keeper Waystation** per established biome, then choose its visible
@@ -951,7 +1054,15 @@ count as player-visible content by themselves.
   no construction timer or paid acceleration exists.
 - Defeat ends the expedition but converts discoveries, lore, and a bounded portion of
   resources; no paid continue.
+- Named decision rewards are useful sidegrades or expressive items. They are never
+  case-gated or permanently missable: completion unlocks a Memory route for alternate
+  branches without destroying the canonical save.
 - Standard Run remains the instant-play mode.
+
+**Story determinism gate:** the same content version, seed, and choices reproduce the
+same graph and authored spawn schedule; combat execution may change survival, timing,
+and branch outcomes. Every valid branch reaches a declared terminal state, resumes at
+each checkpoint, pays each reward once, and has a recovery path for missing pack data.
 
 ## 3.2 — Wounds, Oaths, and Reforging
 
@@ -1045,6 +1156,8 @@ count as player-visible content by themselves.
 veteran can enter Cycle III without mandatory repetitive chores; every major story
 beat is captioned; all core menus work at 200% text intent; full expedition saves
 recover after interruption; 60-minute memory and audio soaks remain bounded.
+The three-act graph also passes branch reachability, same-seed/choice reproduction,
+idempotent consequence/reward, and Memory-route replay fixtures.
 
 ---
 
@@ -1070,12 +1183,12 @@ raw cosmetic recolors do not count toward 48.
 | 4 | Skyroot | Multi-lane canopy map; six-role Gale Nest faction; Root-Crowned Roc aerial boss. |
 | 5 | Glass Wastes | Reflection-and-cover desert map; six-role Shardkin faction; Prism Matriarch refraction boss. |
 | 6 | Living weather | Six forecastable weather fronts; biome-specific hazard transformations; weather-reactive builds and POIs. |
-| 7 | Enterable houses | Twelve authored one-room layouts; doorway/roof readability transition; shared player/enemy/projectile interior collision rules. |
+| 7 | Enterable House V2 network | Twelve authored room-zoned layouts; doorway/roof readability transition; blueprint-shared render/collision/nav/LOS/spawn rules for player, enemies, and projectiles. |
 | 8 | Keeper outposts | Claim one refuge per destination; choose functional sidegrade facilities; see rescued NPCs/trophies inhabit it. |
 | 9 | Apex Hunt mode | Track tells across a map; choose one target mutation; extract a deterministic trophy/material reward. |
 | 10 | Nightfall Siege mode | Defend three readable objectives; repair/re-route defenses between waves; choose holdout or early extraction. |
-| 11 | Arsenal II | Twelve gap-filling weapons; six authored evolutions/fusions; a readable interaction board for weather/elements/status. |
-| 12 | Atlas progression | Destination mastery seals; permanent Frontier Vigil Chapter; map-specific five-piece cosmetic families. |
+| 11 | Arsenal II | Twelve gap-filling weapons across proven classes; six authored evolutions/fusions; a readable interaction board for weather/elements/status. |
+| 12 | Atlas progression | Destination mastery seals; permanent Frontier Vigil Chapter; map-specific five-piece silhouette/material cosmetic families on the shared rig. |
 | 13 | Economy and collection | Blueprint wishlist redemption; exact known-expansion shelf; high-stakes Mines table only if inflation simulation proves need. |
 | 14 | World presentation | Atlas-first Home “Now” card; restrained biome color/attention tokens; destination flyover and recap framing. |
 | 15 | Wider score | Exploration arrangements for four maps; faction pressure stems; four boss suites plus jukebox credits. |
@@ -1088,9 +1201,9 @@ raw cosmetic recolors do not count toward 48.
 | 4.1 — Atlas | Atlas navigation, comparison, mastery sources | Every existing mode/map launches in ≤3 actions; controller/touch/200%-text routes have no focus trap or clipping. |
 | 4.2 — Salt and Mire | Cinder Coast + Moonfen vertical slices | Each map has 3 screenshot identities, 5 POI chains, 6 enemy roles, 2 formations, and a boss that cannot be mistaken for an existing fight. |
 | 4.3 — Root and Glass | Skyroot + Glass Wastes vertical slices | Same content gate as 4.2; multi-lane/reflective mechanics pass collision, muted-audio, and reduced-effects tests. |
-| 4.4 — Habitable Wilds | Interiors, weather, outposts | 12 layouts stay deterministic; 180 bodies recover around doors; every weather mechanic has forecast and non-color counterplay. |
+| 4.4 — Habitable Wilds | Interiors, weather, outposts | 12 House V2 layouts regenerate render/collision/nav/LOS state; 180 bodies recover around doors; every weather mechanic has forecast and non-color counterplay. |
 | 4.5 — Hunters’ Night | Apex Hunt + Nightfall Siege | Both modes support all maps/difficulties/input types; objectives never become unreachable; rewards cannot be farmed by abort/reload. |
-| 4.6 — Frontier Forge | Arsenal II, Atlas progression, economy | 100 seeded build simulations retain starter viability and permanent-upgrade relevance; every item has source and cap text. |
+| 4.6 — Frontier Forge | Arsenal II, Atlas progression, economy | Fixed-seed matrices across every class and 100 authored run simulations retain starter viability, at least three successful archetypes, and permanent-upgrade relevance; every item has source and cap text. |
 | 4.7 — The Wider Score | Map/faction/boss music and presentation | 45-minute cross-map soak; no dead music, masked tell, over-budget RGB/motion, or uncited asset. |
 | 4.8 — Dispatch | Static challenge feed and offline bundles | Signed/tampered/old dispatch fixtures; all cached content plays network-blocked; sharing remains opt-in and local by default. |
 | 5.0 — The Wider Dark | Cohesive 48-addition release | 12 distinct destinations, Hunt/Siege/Expedition/quick modes, outposts and interiors pass save/perf/accessibility gates together. |
@@ -1174,7 +1287,7 @@ and bosses—not permanent stat superiority or missable endings.
 
 | # | Epic | Counted, player-visible deliverables |
 | --- | --- | --- |
-| 1 | Five-act Chronicle Campaign | Resumable act map; three meaningful route/ally decisions per act; replayable chapter select after completion. |
+| 1 | Five-act Chronicle Campaign | Versioned deterministic act graph and spawn manifests; three meaningful route/ally decisions per act; replayable chapter select after completion. |
 | 2 | Ashen Capital | Dense district map; six-role Cinder Court faction; Crownless Regent political arena boss. |
 | 3 | Verdant Crown | Vertical overgrown palace map; six-role Bloomguard faction; Rootmother and grafted arena boss. |
 | 4 | Starless Sea | Island-and-vessel route map; six-role Deep Choir faction; Moon-Under-Water multi-stage boss. |
@@ -1182,7 +1295,7 @@ and bosses—not permanent stat superiority or missable endings.
 | 6 | Four new Keepers | Four genuinely new signatures; four personal Chronicle routes; four complete 27-render/voice/cosmetic identity sets. |
 | 7 | Keeper bonds | Paired field banter; gameplay-neutral bond choices; earned duo poses/camp memories. |
 | 8 | Inhabited communities | Twelve named resident arcs; rescued residents change camp/outposts; local schedule shows presence without real-time waiting; one deterministic restoration project per destination visibly changes its public space and service. |
-| 9 | Consequence without lockout | Choice preview; act-state changes to routes/POIs/allies; post-finale Memory replay of alternate branches. |
+| 9 | Consequence without lockout | Choice preview; act-state changes to routes/houses/POIs/allies/bosses; named sidegrade or expression rewards; post-finale Memory replay of alternate branches. |
 | 10 | Chronicle play modes | 20-minute Story Patrol; authored Nemesis duel chain; no-pressure Explorer route with normal discoveries. |
 | 11 | Stateful houses and POIs | Thirty story interiors; resident/occupation/damage states; return visits with changed dialogue and tactical layout. |
 | 12 | Narrative progression | Permanent Chronicle Chapter; twelve hero bond/mastery pages; deterministic story sets and blueprint routes with no case gate. |
@@ -1194,7 +1307,7 @@ and bosses—not permanent stat superiority or missable endings.
 
 | Version | Complete slice | Acceptance metric |
 | --- | --- | --- |
-| 6.1 — Chronicle Spine | Act graph, consequence schema, recap, chapter replay | Every branch checkpoint resumes identically; missing pack/state produces a specific recovery path, never silent branch substitution. |
+| 6.1 — Chronicle Spine | Act graph, spawn manifests, consequence schema, recap, chapter replay | Same version/seed/choices reproduce the authored schedule; every branch checkpoint resumes identically; missing pack/state produces a specific recovery path, never silent substitution. |
 | 6.2 — Crownlands | Ashen Capital + Verdant Crown | Each destination passes the 5.0 map/faction/boss gate; story state changes at least three tactical scenes without blocking completion. |
 | 6.3 — Sea and Bell | Starless Sea + Clockwork Monastery | Moving/rotating layouts remain deterministic and readable; bosses pass muted, reduced-motion, Recruit, and Nightmare QA. |
 | 6.4 — Twelve Keepers | Four heroes, personal routes, bonds | Every hero fills a measured build gap and finishes Standard/Expedition/Campaign; no bond choice grants permanent power. |
@@ -1348,10 +1461,10 @@ accessibility, art, audio, and offline ownership—meets one quality bar.
 | 11 | Last Stand mode | Ten-minute score survival; authored mutator draft every two minutes; local/friends/verified records with full replay receipt. |
 | 12 | Build Laboratory | Spawn/test any discovered item; DPS/status/cap timeline; save/share named build recipes without progression rewards. |
 | 13 | Progression completion | Finite account mastery map; deterministic source for every power-bearing item; post-completion expression goals with no stat treadmill. |
-| 14 | Collection completion | Blueprint exchange for every legacy case pool; duplicate-dust target planner; complete-set scenes and camp museum displays. |
+| 14 | Collection completion | Blueprint exchange for every legacy case pool; duplicate-dust target planner; complete-set scenes and camp museum displays; every cosmetic passes the shared attachment-state validator. |
 | 15 | Honest economy finale | Upgrade/economy rebalance across 1,000-run cohorts; fixed visible high-risk Mines tables with reserve/receipts; no paid or required randomized path. |
 | 16 | Complete known-content shelf | Exact base/free/DLC/supporter manifests; one Complete Edition bundle with no mystery; install/remove/restore ownership and save fallback. |
-| 17 | Definitive visual pass | 16-map landmark/remaster audit; all-hero/boss animation consistency; restrained palette/RGB/motion/telegraph tokens enforced by captures. |
+| 17 | Definitive visual pass | 16-map macro-layout/landmark/remaster audit; all-hero/boss/cosmetic attachment consistency; restrained palette/RGB/motion/telegraph/overdraw tokens enforced by captures. |
 | 18 | Definitive score and sound | Re-recorded/mastered thematic album; seamless motifs across menu/run/campaign/raid; museum jukebox, credits, captions, mono/night mix. |
 | 19 | Access and preservation | Full 200%-text and input audit; historical-save/pack/replay museum; offline installer/exportable ownership bundle and documented recovery. |
 | 20 | Keeper Anthology | Twelve signed creator showcases bundled offline; curated community raid/challenge archive; final photo/ghost/camp/credits gallery with privacy controls. |
@@ -1366,7 +1479,7 @@ accessibility, art, audio, and offline ownership—meets one quality bar.
 | 9.4 — Final Keepers | Four heroes, ensemble synergies, endings | 16-hero roster passes role/build-gap review; every hero has full art/audio/story/source coverage and no paid power path. |
 | 9.5 — Crown Modes | Pantheon, Marathon, Last Stand | Mode duration/reward/abort/resume/cap gates; practice/lab cannot mint progression; records carry deterministic replay receipts. |
 | 9.6 — Everforge Complete | Build lab, mastery, collection, economy | Every power item has deterministic route; every random pool has finite blueprint completion; 1,000-run cohorts avoid bankruptcy traps and dead upgrades. |
-| 9.7 — Definitive Edition | Known-content shelf, visual and score passes | Complete manifest install/remove/restore; 16-map and full-roster capture wall; album lifecycle/mix/provenance soaks pass. |
+| 9.7 — Definitive Edition | Known-content shelf, visual and score passes | Complete manifest install/remove/restore; 16-map and full-roster/all-cosmetic state capture wall; album lifecycle/mix/provenance and device-tier overdraw/frame-pacing soaks pass. |
 | 9.8 — Open to Every Keeper | Accessibility, localization, preservation | Primary loop/modes/editors work across input, 200%-text, reduced-motion/effects, high-contrast, mono/captions, network-blocked, and recovery fixtures. |
 | 9.9 — Anthology RC | Creator archive, community archive, galleries | All bundled projects are signed/versioned/licensed/validated; clean-install-to-finale and 120-minute soak produce zero P0/P1 defect. |
 | 10.0 — The Last Light | Cohesive 60-addition definitive release | 100 fresh/veteran accessibility-diverse playtests meet comprehension/completion goals; every declared ownership, fairness, offline, and preservation claim is verified. |
@@ -1421,9 +1534,10 @@ without an account, payment, wiki, or network.
 6. Runtime screenshot beside reference sheet at the same scale.
 7. Bounds/alpha/anchor/duplicate-frame tests and provenance validation.
 
-Asset batches follow gameplay needs: hero readability → boss choreography → house/POI
-kits → new factions → Forgeheart. No large art batch begins before its collision,
-animation, memory, and screen-size slots are measured.
+Asset batches follow gameplay needs: hero readability and shared cosmetic anchors →
+boss choreography → one House V2 cabin/POI contract → biome kits → new factions →
+Forgeheart. No large art batch begins before its collision, animation, attachment,
+memory, fill-rate, and screen-size slots are measured.
 
 ### Higgsfield — exploration and marketing media
 
@@ -1469,6 +1583,9 @@ Release scorecard:
   than one continuous attention animation per screen;
 - boss tells recognized by sight with audio muted;
 - 95th-percentile frame time < 16.7 ms on high tier, < 33.3 ms on minimum tier;
+- High Refresh changes presentation cadence only: fixed-input simulation hashes match
+  Standard, physical-device pacing/thermal evidence is recorded, and copy never
+  guarantees 120 FPS;
 - zero uncapped persistent entity arrays;
 - zero save regressions across committed historical fixtures;
 - all random reward sources expose odds/pity/source before spend;
@@ -1507,22 +1624,31 @@ Release scorecard:
    reduced-motion gate.
 3. Build 1.2 Fair Forge save/economy/territory-policy fixtures before adding pools,
    rewards, chapter currencies, high-stakes tables, or native storefront surfaces.
-4. Produce one modular house/POI vertical slice while 1.3 enemy roles navigate and fight
-   through it; do not mass-produce art before shared collision truth passes.
-5. Complete audio lifecycle/mix gates and one Blender boss-family production batch.
-6. Add Gamepad/PWA; spike native adapters only after the web primary loop is solid.
-7. Do not begin deterministic ghosts, couch play, or expeditions until their simulation,
+4. Land the unique per-map boss ledger, centralized three-boss unlock predicate, legacy
+   migration, and mode-aware objective director before adding maps or objective pools;
+   retain the non-persistent `?dev=1` QA bypass.
+5. Produce one House V2 Emberwood cabin/Ruin Bell vertical slice while 1.3 enemy roles
+   navigate and fight through it; do not mass-produce house art before shared render,
+   collision, nav, LOS, door, spawn, room, and roof truth passes.
+6. Repair the shared cosmetic attachment resolver and prove every state/direction in
+   gameplay and previews before the first 30-look silhouette pack begins production.
+7. Complete audio lifecycle/mix gates, one Blender boss-family batch, and one bounded
+   wand/weapon-class spectacle slice with grayscale/reduced-effects/performance proof.
+8. Add Gamepad/PWA; profile lighting/fill rate and finish deterministic interpolation
+   before exposing High Refresh; spike native adapters only after the web loop is solid.
+9. Do not begin deterministic ghosts, couch play, or expeditions until their simulation,
    input, save, and performance prerequisites are green.
-8. Do not build Creator UI before one hand-authored EmberPack round-trips, validates,
+10. Do not build Creator UI before one hand-authored EmberPack round-trips, validates,
    migrates, removes, and falls back through public runtime seams.
-9. Do not build the five-act Chronicle before expedition checkpoints, string ids, pack
-   state, and replayable branch fixtures survive one complete act graybox.
-10. Do not build online production content before a loopback/latency prototype, threat
-    model, deterministic reward receipt, privacy budget, and complete offline regression.
-11. Do not build Worldweave content before 10,000 simulated finite worlds terminate with
-    reachable objectives and bounded territory/climate/settlement state.
-12. Scope-lock 10.0 before its release candidate; new ideas move to stable packs unless
-    they close a declared ending, ownership, access, preservation, or quality gap.
+11. Do not build the five-act Chronicle before expedition checkpoints, string ids,
+   deterministic spawn manifests, pack state, and replayable branch fixtures survive
+   one complete act graybox.
+12. Do not build online production content before a loopback/latency prototype, threat
+   model, deterministic reward receipt, privacy budget, and complete offline regression.
+13. Do not build Worldweave content before 10,000 simulated finite worlds terminate with
+   reachable objectives and bounded territory/climate/settlement state.
+14. Scope-lock 10.0 before its release candidate; new ideas move to stable packs unless
+   they close a declared ending, ownership, access, preservation, or quality gap.
 
 The roadmap is intentionally ambitious, but each minor release is independently
 valuable and shippable. A major version is declared only when its player promise is

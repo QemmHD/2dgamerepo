@@ -50,6 +50,9 @@ const menuSource = read('src/systems/MenuRenderer.js');
 const saveSource = read('src/systems/SaveSystem.js');
 const stateSource = read('src/systems/UIStateBuilder.js');
 const renderSource = read('src/core/GameRender.js');
+const preferenceSource = read('src/systems/AccessibilityPreferences.js');
+const captionSource = read('src/systems/CaptionSystem.js');
+const hapticsSource = read('src/systems/HapticsSystem.js');
 
 function tagWithId(source, tagName, id) {
     const tags = source.match(new RegExp(`<${tagName}\\b[^>]*>`, 'gi')) || [];
@@ -142,6 +145,8 @@ ok(menuHotspotKey('tab', 'play', 0) !== menuHotspotKey('tab', 'play', 1),
 for (const [action, arg] of [
     ['tab', 'play'], ['startRun', null], ['toggleSetting', 'reducedEffects'],
     ['toggleSetting', 'highContrast'], ['setUiScale', 115],
+    ['toggleSetting', 'captions'], ['toggleSetting', 'monoAudio'],
+    ['setCaptionDetail', 'full'], ['setVibration', 'low'], ['volUp', 'volVoice'],
     ['openMines', 250], ['claimBP', 12], ['tourNext', null],
 ]) {
     const label = menuHotspotLabel(action, arg);
@@ -153,6 +158,16 @@ ok(menuHotspotLabel('setUiScale', 115) === 'Set combat HUD size to 115 percent',
     'combat HUD size control exposes its exact percentage in the accessible label');
 ok(menuHotspotLabel('toggleSetting', 'highContrast') === 'Toggle High contrast warnings',
     'high-contrast control exposes a useful accessible label');
+ok(menuHotspotLabel('toggleSetting', 'captions') === 'Toggle Captions',
+    'caption toggle exposes a specific accessible label');
+ok(menuHotspotLabel('toggleSetting', 'monoAudio') === 'Toggle Mono audio',
+    'mono-audio toggle exposes a specific accessible label');
+ok(menuHotspotLabel('setCaptionDetail', 'full') === 'Set caption detail to full',
+    'caption-detail choice exposes its exact setting in the accessible label');
+ok(menuHotspotLabel('setVibration', 'off') === 'Set vibration to off',
+    'vibration choice exposes its exact setting in the accessible label');
+ok(menuHotspotLabel('volUp', 'volVoice') === 'Increase Voice volume',
+    'voice-volume control is named independently from sound effects');
 
 const scaleWrites = [];
 const scaleAnnouncements = [];
@@ -183,6 +198,123 @@ const scaleRouteGame = {
 };
 GameInputActionMethods._menuAction.call(scaleRouteGame, 'setUiScale', 130);
 ok(routedScale === 130, 'central menu router dispatches setUiScale without a parallel input path');
+
+// Hearing/feedback preferences use the same central action layer as every
+// other Canvas hotspot. Exercise the behavior directly so persistence, live
+// subsystem synchronization, sanitization, and spoken confirmation cannot
+// drift apart while the menu still looks correct.
+const hearingSettings = new Map([
+    ['captions', true], ['captionDetail', 'full'], ['monoAudio', false],
+    ['vibration', 'low'], ['volMusic', 0.3], ['volSfx', 0.4], ['volVoice', 0.95],
+]);
+const hearingWrites = [];
+const monoChanges = [];
+const volumeMixes = [];
+const captionPreferences = [];
+const hapticStrengths = [];
+const hapticPulses = [];
+const hearingAnnouncements = [];
+let vibrationSupported = true;
+const hearingActionGame = {
+    saveSystem: {
+        getSetting(key) { return hearingSettings.get(key); },
+        setSetting(key, value) {
+            hearingSettings.set(key, value);
+            hearingWrites.push([key, value]);
+            return value;
+        },
+    },
+    audio: {
+        setMonoAudio(value) { monoChanges.push(value); },
+        setVolumes(...values) { volumeMixes.push(values); },
+    },
+    captionSystem: {
+        setPreferences(...values) { captionPreferences.push(values); },
+    },
+    haptics: {
+        setStrength(value) { hapticStrengths.push(value); },
+        supported() { return vibrationSupported; },
+        pulse(kind) { hapticPulses.push(kind); return true; },
+    },
+    accessibility: {
+        announce(message) { hearingAnnouncements.push(message); },
+    },
+};
+
+GameInputActionMethods._toggleSetting.call(hearingActionGame, 'monoAudio');
+ok(hearingWrites.at(-1)?.[0] === 'monoAudio' && hearingWrites.at(-1)?.[1] === true
+    && monoChanges.at(-1) === true,
+'mono-audio toggle persists and synchronizes the live output graph');
+ok(hearingAnnouncements.at(-1) === 'Toggle Mono audio: on.',
+    'mono-audio toggle announces the resulting state');
+
+GameInputActionMethods._toggleSetting.call(hearingActionGame, 'captions');
+ok(hearingWrites.at(-1)?.[0] === 'captions' && hearingWrites.at(-1)?.[1] === false
+    && captionPreferences.at(-1)?.[0] === false && captionPreferences.at(-1)?.[1] === 'full',
+'caption toggle persists and updates the live caption lane without losing detail');
+ok(hearingAnnouncements.at(-1) === 'Toggle Captions: off.',
+    'caption toggle announces the resulting state');
+
+ok(GameInputActionMethods._setCaptionDetail.call(hearingActionGame, 'full') === 'full'
+    && hearingWrites.at(-1)?.[0] === 'captionDetail'
+    && hearingWrites.at(-1)?.[1] === 'full'
+    && captionPreferences.at(-1)?.[0] === false
+    && captionPreferences.at(-1)?.[1] === 'full',
+'caption-detail action persists an allowed preset and synchronizes the live lane');
+ok(hearingAnnouncements.at(-1) === 'Caption detail: full.',
+    'caption-detail action announces the exact resulting preset');
+ok(GameInputActionMethods._setCaptionDetail.call(hearingActionGame, 'verbose') === 'essential'
+    && hearingWrites.at(-1)?.[1] === 'essential'
+    && captionPreferences.at(-1)?.[1] === 'essential'
+    && hearingAnnouncements.at(-1) === 'Caption detail: essential.',
+'unsupported caption detail repairs to Essential across save, runtime, and announcement');
+
+ok(GameInputActionMethods._setVibration.call(hearingActionGame, 'full') === 'full'
+    && hearingWrites.at(-1)?.[0] === 'vibration'
+    && hearingWrites.at(-1)?.[1] === 'full'
+    && hapticStrengths.at(-1) === 'full'
+    && hapticPulses.at(-1) === 'preview',
+'supported Full vibration persists, synchronizes, and plays one preview pulse');
+ok(hearingAnnouncements.at(-1) === 'Vibration: full.',
+    'supported vibration choice announces the exact resulting strength');
+const pulseCountBeforeOff = hapticPulses.length;
+ok(GameInputActionMethods._setVibration.call(hearingActionGame, 'off') === 'off'
+    && hapticStrengths.at(-1) === 'off'
+    && hapticPulses.length === pulseCountBeforeOff,
+'Off vibration synchronizes without emitting a contradictory preview pulse');
+vibrationSupported = false;
+ok(GameInputActionMethods._setVibration.call(hearingActionGame, 'maximum') === 'low'
+    && hearingWrites.at(-1)?.[1] === 'low'
+    && hapticStrengths.at(-1) === 'low'
+    && hapticPulses.length === pulseCountBeforeOff,
+'invalid vibration strength repairs to Low and remains safe when unsupported');
+ok(hearingAnnouncements.at(-1)
+    === 'Vibration: low. Saved; not available in this browser.',
+    'unsupported vibration preserves the saved choice and announces capability truthfully');
+
+GameInputActionMethods._adjustVolume.call(hearingActionGame, 'volVoice', 0.1);
+ok(hearingWrites.at(-1)?.[0] === 'volVoice' && hearingWrites.at(-1)?.[1] === 1,
+    'voice-volume action clamps and persists its independent bus value');
+ok(volumeMixes.at(-1)?.[0] === 0.3
+    && volumeMixes.at(-1)?.[1] === 0.4
+    && volumeMixes.at(-1)?.[2] === 1,
+'voice-volume action updates the three-bus mix without changing music or SFX');
+ok(hearingAnnouncements.at(-1) === 'Increase Voice volume: 100 percent.',
+    'voice-volume action announces its exact resulting percentage');
+
+const routedHearingActions = [];
+const hearingRouteGame = {
+    audio: { resume() {}, click() {} },
+    menuTour: null,
+    resetConfirming: false,
+    _setCaptionDetail(value) { routedHearingActions.push(['caption', value]); },
+    _setVibration(value) { routedHearingActions.push(['vibration', value]); },
+};
+GameInputActionMethods._menuAction.call(hearingRouteGame, 'setCaptionDetail', 'full');
+GameInputActionMethods._menuAction.call(hearingRouteGame, 'setVibration', 'low');
+ok(routedHearingActions[0]?.[0] === 'caption' && routedHearingActions[0]?.[1] === 'full'
+    && routedHearingActions[1]?.[0] === 'vibration' && routedHearingActions[1]?.[1] === 'low',
+'central menu router dispatches caption detail and vibration through their canonical actions');
 
 // Settings panes are session navigation, not a persisted preference. Exercise
 // the real central router so pointer and keyboard hotspot activation share the
@@ -596,6 +728,78 @@ includesAll(gameSource, [
     'this.selectAltar(0)',
     'this.selectUpgrade(0)',
 ], 'edge-triggered overlay/menu action coverage');
+
+// First Light hearing/feedback integration. These are source seams rather
+// than duplicate unit tests for the dedicated caption/audio/haptics gates:
+// this validator owns the promise that all three systems remain discoverable,
+// save-safe, represented in Canvas UI state, and connected to the shared menu.
+includesAll(preferenceSource, [
+    "DEFAULT_CAPTION_DETAIL = 'essential'",
+    "CAPTION_DETAIL_PRESETS = Object.freeze(['essential', 'full'])",
+    "DEFAULT_VIBRATION_STRENGTH = 'low'",
+    "VIBRATION_STRENGTH_PRESETS = Object.freeze(['off', 'low', 'full'])",
+    'export function normalizeMonoAudio(value)',
+    'export function normalizeCaptions(value)',
+    'export function normalizeCaptionDetail(value)',
+    'export function normalizeVibrationStrength(value)',
+], 'strict hearing/feedback preference vocabulary');
+includesAll(saveSource, [
+    'volVoice: 0.8',
+    'monoAudio: false',
+    'captions: true',
+    'captionDetail: DEFAULT_CAPTION_DETAIL',
+    'vibration: DEFAULT_VIBRATION_STRENGTH',
+    "key === 'monoAudio'",
+    "key === 'captions'",
+    "key === 'captionDetail'",
+    "key === 'vibration'",
+    "hasOwnProperty.call(data.settings, 'volVoice')",
+    'settings.volVoice = settings.volSfx',
+], 'hearing/feedback save defaults, repair, and legacy voice migration');
+includesAll(gameSource, [
+    "import { CaptionSystem } from '../systems/CaptionSystem.js'",
+    "import { HapticsSystem } from '../systems/HapticsSystem.js'",
+    'this.captionSystem = new CaptionSystem(',
+    'this.captionSystem.setPreferences(',
+    'this.haptics = new HapticsSystem()',
+    "this.haptics.setStrength(this.saveSystem.getSetting('vibration'))",
+    "this.saveSystem.getSetting('volVoice')",
+    "this.audio.setMonoAudio(this.saveSystem.getSetting('monoAudio'))",
+], 'Game boot hearing/feedback runtime synchronization');
+includesAll(actionSource, [
+    "case 'setCaptionDetail': this._setCaptionDetail(arg); break",
+    "case 'setVibration': this._setVibration(arg); break",
+    "if (key === 'monoAudio') this.audio.setMonoAudio(!cur)",
+    "if (key === 'captions')",
+    'this.captionSystem?.setPreferences?.(',
+    "this.haptics?.setStrength?.(this.saveSystem.getSetting('vibration'))",
+    "this.saveSystem.getSetting('volVoice')",
+], 'central hearing/feedback action and reset synchronization');
+includesAll(menuSource, [
+    "{ key: 'captions', label: 'Captions' }",
+    "action: 'setCaptionDetail'",
+    "{ key: 'monoAudio', label: 'Mono Audio' }",
+    "action: 'setVibration'",
+    "{ key: 'volVoice', label: 'Voice Volume'",
+    'state.vibrationSupported',
+    'SAVED CHOICE · UNAVAILABLE HERE',
+], 'General and Accessibility Canvas controls');
+includesAll(stateSource, [
+    'vibrationSupported: game.haptics?.supported?.() === true',
+    'caption: game.captionSystem?.snapshot?.() || null',
+], 'hearing/feedback UI-state bridge');
+includesAll(captionSource, [
+    'setPreferences(enabled, detail)',
+    "if (raw.detail === 'full' && this.detail !== 'full') return false",
+    'this.queue.length = Math.min(MAX_QUEUE, this.queue.length)',
+    'this.onPresent({ ...item })',
+], 'bounded caption lane and detail filter');
+includesAll(hapticsSource, [
+    "if (this.strength === 'off') this.cancel()",
+    "this.document.visibilityState !== 'visible'",
+    'activation.hasBeenActive === false',
+    'this.navigator.vibrate(scaledPattern(cue.pattern, this.strength))',
+], 'capability-safe vibration runtime');
 
 // Reduced-motion plumbing: only genuinely fresh profiles inherit the OS, old
 // saves normalize against the historical false default, and menu/gameplay both
