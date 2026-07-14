@@ -90,7 +90,7 @@ browser build remains coin-only with no purchase or cash-out path.
 
 The shipped foundation is already broad: 6 heroes, 4 biomes, 20 non-boss enemy
 definitions, 12 bosses, 40 weapons, 11 evolutions, 15 fusions, 20 passives, 11
-roads, 26 relics, 14 pacts, 10 keystones, 18 rites, 21 gear pieces, 60 cosmetics,
+roads, 26 relics, 14 pacts, 10 keystones, 18 rites, 21 gear pieces, 65 cosmetics,
 50 battle-pass levels, Daily Road, Rite Trial, Boss Rush, Weekly Ember, photo mode,
 recap cards, adaptive music, touch controls, and four generated structure styles.
 
@@ -117,6 +117,12 @@ This plan is tied to the code that exists, not to an imagined rewrite:
   menu-to-run lifecycle, simulation order, render order, and per-run state.
 - `MenuRenderer.js`, `UISystem.js`, `HUDLayout.js`, and `GameInputActions.js` are the
   seams for the menu, HUD, overlays, and shared pointer/touch/keyboard actions.
+- At main `5abd6fd`, `objectives.js` and `RunObjectiveDirector.js` own a 26-candidate
+  Guided Run Path catalog and one current task at a time as the path advances
+  Orientation → Tactic → Climax. First-run onboarding owns the guidance lane before the
+  director starts. `Game.js` owns live counters and held coin escrow; `SaveSystem.js`
+  owns bounded atomic coin-settlement receipts; `BattlePassSystem.js` separately derives
+  eligible completed-phase Deeds XP at terminal resolution.
 - `maps.js`, `MapRenderer.js`, `ObstacleSystem.js`, `StructureRenderer.js`, and
   `EnemyNavigation.js` already provide four biome definitions, dressing, house
   collision, and obstacle-aware movement; future maps extend those contracts.
@@ -160,11 +166,18 @@ delivered the save-v10 exact campaign-map gate at main `b1113cf`: three unique a
 predecessor bosses, eligible map-director provenance, conservative legacy migration,
 fail-closed corruption repair, receipt-driven UI/victory/accessibility, and a
 session-only credit-off `?dev=1` map bypass. PR/main CI, Pages, and deployed smoke
-passed. This does not complete guided objectives, 1.3, the wider 1.0 → 2.0 arc, or 2.0.
+passed. [PR #196](https://github.com/QemmHD/2dgamerepo/pull/196) then delivered the
+deterministic Guided Run Path at main `5abd6fd`: 26 mode/capability-filtered candidates,
+one current task at a time as three phases advance, safe fallbacks, current potential
+coin reward, held Run Path coin receipts, separately derived terminal completed-phase
+Deeds XP, save-v10 stale/duplicate protection, active-task `O` recall, onboarding
+precedence, announcements, and responsive desktop/tablet/phone HUD proof. This does
+not complete the remaining tutorial success beats/first-death debrief, 1.1, 1.3, the
+wider 1.0 → 2.0 arc, or 2.0.
 
 ### 2026-07-14 additive scope allocation — staged delivery status
 
-The following work expands the roadmap and records the two shipped foundations above;
+The following work expands the roadmap and records the three shipped foundations above;
 every other capability remains partial or planned until its own acceptance passes. It
 does not inflate the existing
 46–60-addition contracts with recolors, refactors, or test fixtures. Wands remain the
@@ -176,7 +189,7 @@ without turning EMBERWAKE into a generic sword game.
 | Cosmetic attachment rig and genuine collection growth | 1.6 rig shipped in PR #192; collection growth remains open | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows idle/walk/cast/hurt/dash/death/victory frames in every direction; no layer drifts from its pose-local anchor while the body animates. Only after that gate may the first 30-look silhouette pack ship, with paging, filters, source labels, set preview, and no power. |
 | Mobile High Refresh mode | 1.7 | 3.8, 7.8, 9.8 | Settings says **High Refresh**, never promises 120 FPS. Simulation remains fixed and deterministic; interpolated render state is proven for camera and all high-motion entities; Standard and High Refresh produce the same gameplay hash. 90/120 Hz physical-device, battery/heat, backgrounding, reduced-effects, and fallback tests pass before store copy mentions supported high-frame-rate play. |
 | Exact campaign map unlocks | 1.3 foundation shipped in PR #194 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; malformed current ledgers fail closed; `?dev=1`/`unlockMaps` is session-only QA state and never writes false campaign progress. |
-| Guided, completable run objectives | 1.1–1.3 | 2.1, 3.1, 4.5 | One current task moves through Orientation → Tactic → Climax, with progress, reward, and next action. The seeded director filters by map, mode, available systems, and run state; invalid tasks substitute deterministically; reward receipts are idempotent. Every supported mode completes or cleanly substitutes its objective across the committed seed matrix. |
+| Guided, completable run objectives | Bounded 1.1 guidance foundation shipped in PR #196; 1.3 extension open | 2.1, 3.1, 4.5 | One current task moves through Orientation → Tactic → Climax with progress, current potential coin reward, next action, held Run Path coin settlement, and separately derived terminal completed-phase Deeds XP. The seeded director filters by mode, available systems, and finite capacity; invalid tasks substitute deterministically; coin receipts are atomic and idempotent. Supported modes complete or cleanly substitute across the committed mode/capability/seed matrix; later map-specific tasks and modes must add explicit fixtures. |
 | House V2 and authored map composition | 1.4 | 2.7, 3.3, 4.4, 6.5, 8.4 | One shared blueprint owns render, collision, navigation, line of sight, door openings, spawn exclusion, room zones, roof cutaway, and intact/damaged/lit/ruined state. The first original Emberwood cabin uses the supplied reference only for spatial principles—recognizable kitchen/hearth/dining/sleep/storage zones, thick perimeter walls, doors/windows, and clear circulation—without copying its pixels or unverified art. Seed, 180-body, projectile, and screenshot gates pass before kit multiplication. |
 | Graphics, map landmarks, boss models, and readable spectacle | 1.4–1.6 | 3.3, 4.x, 6.x, 9.7 | Macro layouts define sanctuary, loops, landmarks, quiet lanes, combat bowls, house lots, POIs, and boss arenas before scatter. Boss silhouettes and telegraph poses survive grayscale/reduced-effects captures. Wand and class VFX can be spectacular, but hostile tells, player position, pickups, and objectives remain legible inside measured particle, overdraw, palette, motion, and RGB budgets. |
 | Weapon classes, gear, and build balance | 1.6 schema; 2.x playable slices | 3.2, 4.6, 5.4, 8.6, 9.6 | Player-facing **Wand, Spellblade, Emberbow, Totem, and Relic** identities are distinct from low-level runtime behavior kinds. One complete vertical slice per missing class ships before bulk quantity: base item, upgrade path, signature VFX, sound, accessibility cues, gear interactions, and counter-build. Fixed-seed simulations plus human runs must show starter viability, multiple successful archetypes, bounded entities/effects, and no universally dominant class. |
@@ -419,11 +432,15 @@ deterministic QA gates at `3ed29e0`. [PR #188](https://github.com/QemmHD/2dgamer
 then shipped the bounded Combat HUD size, high-contrast warning, and non-color status
 slice at `089d646`. [PR #190](https://github.com/QemmHD/2dgamerepo/pull/190)
 ships A11-10's mono, caption-detail, independent-Voice, and touch-vibration controls at
-`bed6ac5` after PR/main CI, Pages, and deployed live-smoke gates passed. These are
-foundations, not the complete release; the
-playable tutorial/debrief, full Play/Now/Explore hierarchy, lock/source/context routing,
-device/AT/zoom proof, and the exact acceptance matrix below remain open. See A11-01–A11-14 in the
-[development ledger](DEVELOPMENT_LEDGER.md); keyboard Mines is explicitly tracked as
+`bed6ac5` after PR/main CI, Pages, and deployed live-smoke gates passed.
+[PR #196](https://github.com/QemmHD/2dgamerepo/pull/196) ships the bounded Guided Run
+Path, active-objective recall/announcements, current potential coin display, held
+terminal coin receipts, separately derived terminal Deeds XP, onboarding precedence,
+and exact responsive HUD at `5abd6fd`. These are foundations, not the complete release;
+the remaining tutorial success beats/first-death debrief, full Play/Now/Explore
+hierarchy, lock/source/context routing, device/AT/zoom proof, and the exact acceptance
+matrix below remain open. See A11-01–A11-14 in the [development ledger](DEVELOPMENT_LEDGER.md);
+keyboard Mines is explicitly tracked as
 pulled-forward 1.2 work.
 
 - Add roving keyboard focus over the existing hotspot registry: Tab/arrows move,
@@ -440,11 +457,18 @@ pulled-forward 1.2 work.
   size is not a claim of global app/menu text scaling.
 - “Reduce Motion & Effects” inherits the OS preference for new saves and freezes
   decorative pulse/overshoot while preserving static combat warnings.
-- Stage the tutorial as short playable beats: move, auto-fire, gem, level-up, blink,
-  Focus, Kindle, coin, boss. One lesson at a time; no instruction behind a modal.
-- Replace the wall of simultaneously active run tasks with one current guided card:
-  Orientation, then a map/mode-valid Tactic, then a Climax. Show progress, reward,
-  and the next physical action; substitute an impossible task deterministically.
+- Preserve the existing nine-step non-modal gameplay chain—move, auto-fire, shard,
+  first upgrade, coin, combo, shrine, boss, controls send-off—and add explicit successful
+  use of blink, Focus, and Kindle. One lesson at a time; no instruction behind a modal.
+- **Delivered in PR #196:** replace the wall of simultaneously active run tasks with
+  one current guided card: Orientation, then a mode/capability-valid Tactic, then a
+  Climax. Show exact progress, current potential coin reward, and the next physical
+  action; hold completed Run Path coins for terminal settlement and derive eligible phase Deeds
+  XP separately at terminal. Substitute impossible work deterministically. Debug Mode/
+  `showDebug`, map bypass, and live debug actions disable Run Path coin settlement and
+  objective-derived Deeds XP; `?dev=1`/QA alone does not. A non-terminal abort—including
+  restart or pause-menu abandon—and reload forfeits held Run Path coins and never reaches objective
+  XP; a valid terminal resolution settles.
 - Add a concise first-death debrief: cause, one thing learned, coins earned, Battle
   Pass progress, and one recommended next action.
 
@@ -562,7 +586,7 @@ and the fact that a voluntary high stake can genuinely win or break the unreserv
 bankroll.
 
 **Exit gate:** all rewards have source text; every random spend shows odds and pity;
-malformed/current/v7/v8/v9 saves migrate without loss; collection completion is
+malformed/current/v7/v8/v9/v10 saves migrate without loss; collection completion is
 possible without an expiring schedule.
 
 ## 1.3 — Hunters at the Door
@@ -598,6 +622,16 @@ possible without an expiring schedule.
   bosses defeated in practice, Daily, Weekly, Rite Trial, or Boss Rush do not count.
   Legacy saves preserve prior access through conservative seeded predecessor trios;
   `?dev=1`/`unlockMaps` remains a session-only QA bypass with campaign credit off.
+- **Delivered guidance foundation (PR #196/main `5abd6fd`):** preserve one current
+  task at a time as Orientation/Tactic/Climax advances through the shipped 26-candidate
+  catalog, capability-safe gauntlet metrics, elapsed-time fallback, current potential
+  coin display, held Run Path coin settlement, separately derived terminal completed-
+  phase Deeds XP, bounded coin-receipt authority, onboarding precedence, and the
+  responsive/accessible HUD. Later enemy/map tasks require explicit reachable-metric
+  fixtures. Keep Debug Mode/`showDebug`, map bypass, and live debug actions—which disable
+  Run Path coin settlement and objective-derived Deeds XP—distinct from `?dev=1`/QA.
+  A non-terminal abort—including restart or pause-menu abandon—and reload forfeits held
+  coins and never reaches objective XP; a valid terminal resolution settles.
 
 **Exit gate:** scripted route tests for every structure and body size; every boss
 attack family checked at each difficulty; volatile→splitter/boss rewards exactly once;
@@ -758,8 +792,9 @@ and fallback truth before any store-facing high-frame-rate claim.
 **2.0 ship gate:** 20 external first-session tests; 80% start a guided run without
 help, 70% identify the death cause, 90% find the next goal, zero save-loss defects,
 zero P0 accessibility blockers, and stable 30/60 FPS tiers on the defined device lab.
-The cosmetic attachment, boss-ledger, objective substitution, House V2, and fixed-
-simulation High Refresh gates above must also pass; a 120 FPS promise is not required.
+The cosmetic attachment, boss-ledger, and bounded objective-substitution foundations
+are shipped, but their later-content extension gates, House V2, and fixed-simulation
+High Refresh gates above must also pass; a 120 FPS promise is not required.
 
 ---
 
@@ -1641,20 +1676,29 @@ Release scorecard:
    deterministic fixtures, deployed-main proof, and ledger record.
 2. Continue 1.1 from the shipped PR #186 foundation plus the PR #188 and PR #190
    A11-10 scale/contrast/non-color/caption/mono/Voice/touch-vibration slices: preserve
-   those controls and close AT/device/zoom/motion proof; build the playable
-   tutorial/debrief, complete Play/Now/Explore hierarchy, and lock/source/context
+   those controls and close AT/device/zoom/motion proof; finish the existing nine-step
+   tutorial with direct blink/Focus/Kindle success plus a first-death debrief, complete
+   Play/Now/Explore hierarchy, and lock/source/context
    routing; then pass the exact First Light comprehension, timing, pointerless,
    viewport, grayscale/RGB, and reduced-motion gate.
 3. Build 1.2 Fair Forge save/economy/territory-policy fixtures before adding pools,
    rewards, chapter currencies, high-stakes tables, or native storefront surfaces.
-4. Preserve PR #194's shipped unique-per-map ledger, centralized three-boss predicate,
-   provenance, migration, and session-only `?dev=1` bypass. Build the seeded,
-   mode-aware, completable objective director next before adding objective pools or maps.
+4. Preserve PR #194's shipped unique-per-map ledger and PR #196's shipped Guided Run
+   Path: one current task as phases advance, safe mode/system/capacity filtering,
+   current potential coin display, held atomic coin receipts, terminal objective-count
+   Deeds XP, the all-26 static next-action wide-font gate, and seven representative
+   real-Chromium states. Keep `?dev=1`/QA distinct from Debug Mode/`showDebug`, map bypass,
+   and live debug actions, which disable Run Path coin settlement and objective-derived
+   Deeds XP. A non-terminal abort—including restart or pause-menu abandon—and reload
+   forfeits held Run Path coins and never reaches objective XP; a valid terminal resolution
+   settles. Add no objective pool or map-specific task without
+   reachable-metric and settlement fixtures.
 5. Produce one House V2 Emberwood cabin/Ruin Bell vertical slice while 1.3 enemy roles
    navigate and fight through it; do not mass-produce house art before shared render,
    collision, nav, LOS, door, spawn, room, and roof truth passes.
-6. Preserve PR #192's shipped attachment resolver and all-state/all-direction proofs;
-   expand the first 30-look silhouette pack only through that pose/install contract.
+6. Begin Collection Growth I next: preserve PR #192's shipped attachment resolver and
+   all-state/all-direction proofs; expand the first 30-look silhouette pack only through
+   that pose/install contract, with source labels, paging/filter proof, and no power.
 7. Complete audio lifecycle/mix gates, one Blender boss-family batch, and one bounded
    wand/weapon-class spectacle slice with grayscale/reduced-effects/performance proof.
 8. Add Gamepad/PWA; profile lighting/fill rate and finish deterministic interpolation

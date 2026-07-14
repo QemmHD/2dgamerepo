@@ -130,6 +130,19 @@ for all enemy/creature art:
   `'start'` (menu) | gameplay | `'gameOver'`; `g._startRun()` starts a run,
   `g.update(1/60)` steps, `g.render()` draws.
 - Menu: `src/systems/MenuRenderer.js`. In-game HUD: `src/systems/UISystem.js`.
+- Guided Run Path: at main `5abd6fd`, `src/content/objectives.js` owns 26 authored
+  candidates and `RunObjectiveDirector.js` keeps exactly one current task at a time as
+  the path advances Orientation → Tactic → Climax. Never flatten the catalog into
+  simultaneous tasks. First-run onboarding owns the guidance lane before the director
+  starts; `O` recalls only an active Run Path task. `Game.js` owns live counters and
+  held coin escrow, `SaveSystem.js` owns bounded atomic coin receipts, and
+  `BattlePassSystem.js` derives eligible completed-phase Deeds XP separately at terminal
+  resolution. Gauntlets may select only guaranteed metrics and unknown modes fall back
+  to safe elapsed-time work. Debug Mode/`showDebug`, the map bypass, or a live debug
+  action disables Run Path coin settlement and objective-derived Deeds XP; merely
+  opening `?dev=1` or running the QA harness does not. A non-terminal abort—including
+  restart or pause-menu abandon—and reload forfeits held Run Path coins and never
+  reaches objective-derived terminal XP; a valid terminal resolution settles.
 - Player is PROCEDURAL & animated (4-dir × idle/walk/cast/hurt) — never
   replace the hero with a flat AI sprite.
 - Enemy sprites resolve through layered fallbacks in `Enemy.js`
