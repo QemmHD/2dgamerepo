@@ -39,6 +39,9 @@
     contrast high-contrast combat cues: "1" on or "0" off
     settingspane  Settings sub-pane: "general" or "accessibility" (menu only)
     dev      "1" keeps the shipped developer Settings controls visible
+    resetprofile "1" clears the local QA profile before boot
+    campaignbosses comma-separated boss ids, or map:boss ids, to seed the exact
+             campaign ledger before a menu shot; mapbypass "1" enables QA access
     captions "1" on or "0" off; captiondetail "essential" or "full"
     mono     mono audio output: "1" on or "0" off
     voicevol independent voice volume: 0..100 in ten-point increments
@@ -121,6 +124,16 @@ const BADGE = params.get('badge') === '1';
 const SCREEN = params.get('screen') || 'run';   // 'run' | 'menu'
 const TAB = params.get('tab') || 'play';
 const QA_DEV = params.get('dev') === '1';
+const RESET_PROFILE = params.get('resetprofile') === '1';
+const CAMPAIGN_BOSS_REQUEST = params.get('campaignbosses');
+const CAMPAIGN_BOSS_TOKENS = CAMPAIGN_BOSS_REQUEST == null
+    ? []
+    : CAMPAIGN_BOSS_REQUEST.split(',').map((value) => value.trim()).filter(Boolean);
+const MAP_BYPASS_REQUEST = params.has('mapbypass') ? params.get('mapbypass') : null;
+const QA_MAP_BYPASS = MAP_BYPASS_REQUEST === '1';
+const LOCAL_QA_ORIGIN = location.hostname === 'localhost'
+    || location.hostname === '127.0.0.1'
+    || location.hostname === '[::1]';
 const OUT = params.get('out');
 // showcase="1" (all) or a csv of enemy types → spawn a ring of them around the
 // player and shoot after a short settle, so a verification frame shows the exact
@@ -233,6 +246,7 @@ const MINES_FOCUS = Number.isInteger(MINES_FOCUS_PARSED)
 let qaBossSummary = '';
 let qaExpectedMenuFocusKey = null;
 let qaStatusEnemy = null;
+let qaCampaignReceipts = [];
 const qaHapticEvents = [];
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
@@ -261,6 +275,13 @@ async function boot() {
     // Seed requested preferences through the production SaveSystem BEFORE Game
     // boots. The receipt therefore exercises the real cold-load wiring instead
     // of repairing subsystems manually after construction.
+    if ((RESET_PROFILE || CAMPAIGN_BOSS_TOKENS.length || QA_MAP_BYPASS) && !LOCAL_QA_ORIGIN) {
+        ERR.push('campaignqa: resetprofile, campaignbosses, and mapbypass are local-only');
+    }
+    if (RESET_PROFILE && LOCAL_QA_ORIGIN) {
+        try { localStorage.removeItem('monkey-survivor:save:v1'); }
+        catch (error) { ERR.push('resetprofile: ' + String(error)); }
+    }
     const preferenceSeed = new SaveSystem();
     if (REDUCED) preferenceSeed.setSetting('reducedEffects', true);
     if (QA_UI_SCALE != null) preferenceSeed.setSetting('uiScale', QA_UI_SCALE);
@@ -281,6 +302,21 @@ async function boot() {
     };
     if (QA_SETTINGS_PANE) game.settingsPane = QA_SETTINGS_PANE;
     if (ACTIVE_INPUT_MODE) input.setModality(ACTIVE_INPUT_MODE);
+
+    // Campaign QA uses the production policy API, not direct save mutation.
+    // Seed honest defeats before enabling the session-only map bypass, because
+    // SaveSystem correctly rejects every campaign receipt while bypass is on.
+    for (const token of LOCAL_QA_ORIGIN ? CAMPAIGN_BOSS_TOKENS : []) {
+        const split = token.indexOf(':');
+        const mapId = split >= 0 ? token.slice(0, split) : 'emberwood';
+        const bossId = split >= 0 ? token.slice(split + 1) : token;
+        const receipt = game.saveSystem.recordCampaignBossDefeat({ mapId, bossId, eligible: true });
+        qaCampaignReceipts.push(`${mapId}:${bossId}:${receipt.reason}`);
+        if (receipt.reason !== 'recorded' && receipt.reason !== 'repeat') {
+            ERR.push(`campaignbosses: ${mapId}:${bossId} rejected as ${receipt.reason}`);
+        }
+    }
+    if (QA_MAP_BYPASS && LOCAL_QA_ORIGIN) game.saveSystem.setSetting('unlockMaps', true);
 
     if (INPUT_REQUEST && !INPUT_MODE) ERR.push(`input: unsupported mode '${INPUT_REQUEST}'`);
     if (UI_SCALE_REQUEST != null && QA_UI_SCALE == null) {
@@ -309,6 +345,9 @@ async function boot() {
     }
     if (VIBRATION_CAP_REQUEST != null && QA_VIBRATION_CAP == null) {
         ERR.push(`vibrationcap: expected 1 or 0, got '${VIBRATION_CAP_REQUEST}'`);
+    }
+    if (MAP_BYPASS_REQUEST != null && !QA_MAP_BYPASS) {
+        ERR.push(`mapbypass: expected 1, got '${MAP_BYPASS_REQUEST}'`);
     }
     if (CAPTION_REQUEST != null && QA_CAPTION == null) {
         ERR.push(`caption: expected 'voice' or 'danger', got '${CAPTION_REQUEST}'`);
@@ -774,6 +813,11 @@ async function boot() {
         captionText: game.captionSystem.snapshot()?.text || '',
         hapticEvents: qaHapticEvents.join(','),
         devControls: devControlCount,
+        mapBypassActive: game.saveSystem.getMapBypassActive() === true,
+        campaignReceipts: qaCampaignReceipts.join(','),
+        campaignStatus: game.saveSystem.getAllMapUnlockStatuses().map((status) =>
+            `${status.mapId}:${status.defeatedCount}/${status.requiredCount}:${status.campaignUnlocked ? 'open' : 'locked'}`
+        ).join(','),
         settingsPane: game.settingsPane === 'accessibility' ? 'accessibility' : 'general',
         statuses: allStatusTimersActive ? 'all' : '',
         minesFocusIndex: game.minigame?.mines ? game.minesFocusIndex : null,
@@ -834,6 +878,9 @@ async function boot() {
     }
     if (QA_DEV && qaState.devControls !== requiredDevControls.length) {
         ERR.push(`receipt: dev=1 expected ${requiredDevControls.length} Settings controls, got ${qaState.devControls}`);
+    }
+    if (QA_MAP_BYPASS && LOCAL_QA_ORIGIN && !qaState.mapBypassActive) {
+        ERR.push('receipt: mapbypass=1 did not enable session QA access');
     }
     if (QA_SETTINGS_PANE && qaState.settingsPane !== QA_SETTINGS_PANE) {
         ERR.push(`receipt: settingspane expected '${QA_SETTINGS_PANE}', got '${qaState.settingsPane}'`);
@@ -899,6 +946,9 @@ async function boot() {
     qaRoot.dataset.qaCaptionText = window.__qaState.captionText;
     qaRoot.dataset.qaHapticEvents = window.__qaState.hapticEvents;
     qaRoot.dataset.qaDevControls = String(window.__qaState.devControls);
+    qaRoot.dataset.qaMapBypass = String(window.__qaState.mapBypassActive);
+    qaRoot.dataset.qaCampaignReceipts = window.__qaState.campaignReceipts;
+    qaRoot.dataset.qaCampaignStatus = window.__qaState.campaignStatus;
     qaRoot.dataset.qaSettingsPane = window.__qaState.settingsPane;
     qaRoot.dataset.qaStatuses = window.__qaState.statuses;
     qaRoot.dataset.qaMinesFocus = window.__qaState.minesFocusIndex == null

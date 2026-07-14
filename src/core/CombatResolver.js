@@ -20,7 +20,7 @@ import {
     LIEUTENANT,
 } from '../config/GameConfig.js';
 import { TWO_PI } from './MathUtils.js';
-import { Enemy } from '../entities/Enemy.js';
+import { BOSS_SPAWN_PROVENANCE, Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
 import { Chest } from '../entities/Chest.js';
 import { Shrine } from '../entities/Shrine.js';
@@ -96,7 +96,7 @@ export const CombatResolverMethods = {
     },
     // Elite affix on-death effects. Volatile detonates an AoE; Splitting
     // bursts into a few crawlers (non-elite, so no recursive splitting).
-    _applyAffixDeath(e) {
+    _applyAffixDeath(e, enqueueDeath) {
         const def = e.affixDef;
         if (!def) return;
         if (e.affix === 'volatile') {
@@ -112,14 +112,12 @@ export const CombatResolverMethods = {
                 this.damageNumbers.push(new DamageNumber(
                     other.x, other.y - other.radius, def.explodeDamage, '#ffae66'
                 ));
-                // A blast kill must flow through the normal reward path or the
-                // explosion silently eats the XP/kill-count for everything it
-                // wipes. We route gem + burst + tally here (NOT a recursive
-                // affix death, so a clump of volatiles can't chain-detonate).
+                // A blast kill joins the SAME canonical corpse queue as weapon,
+                // hazard, status, and collision kills. The queue dedupes object
+                // identity and marks collateral to suppress its own rolled affix,
+                // so volatile clumps cannot recursively chain-detonate.
                 if (!other.active) {
-                    this.kills += 1;
-                    this.particles.deathBurst(other.x, other.y, deathColor(other));
-                    this._dropGem(other.x, other.y, other.xpValue);
+                    enqueueDeath?.(other, { suppressAffix: true });
                 }
             }
             // AoE ring + ember burst + a light kick so the blast reads.
@@ -188,30 +186,53 @@ export const CombatResolverMethods = {
         // numbers all flow through the same downstream path. (Burn damage
         // numbers are already pushed, tinted, inside _tickStatuses — so only
         // its killed list is merged here.)
-        const allKilled = collisionResult.killed
+        const initialKilled = collisionResult.killed
             .concat(weaponResult.killed, statusResult.killed, this._selfDetonated, this._hazardKilled,
                 kindleResult ? kindleResult.killed : []);
         this._selfDetonated.length = 0;
         this._hazardKilled.length = 0;
         const allHits = collisionResult.hits.concat(weaponResult.hits, kindleResult ? kindleResult.hits : []);
 
-        if (allKilled.length > 0) {
-            this.kills += allKilled.length;
+        // Identity-dedupe every producer before rewards. Volatile collateral
+        // appends to this queue while it drains, so every corpse (including a
+        // boss) reaches this one canonical path exactly once.
+        const deathQueue = [];
+        const queuedDeaths = new Set();
+        const enqueueDeath = (enemy, { suppressAffix = false } = {}) => {
+            if (!enemy || queuedDeaths.has(enemy)) return false;
+            queuedDeaths.add(enemy);
+            deathQueue.push({ enemy, suppressAffix: suppressAffix === true });
+            return true;
+        };
+        for (const enemy of initialKilled) enqueueDeath(enemy);
+
+        let processedDeaths = 0;
+        let killCuePlayed = false;
+        while (processedDeaths < deathQueue.length) {
+            // Tally each newly appended batch before its drops, preserving the
+            // original lifesteal-before-health-orb reward ordering.
+            const batchEnd = deathQueue.length;
+            const batch = deathQueue.slice(processedDeaths, batchEnd).map(({ enemy }) => enemy);
+            this.kills += batch.length;
             // KINDLED charge hook 1: feed the Kindle meter from this frame's
             // kills (reads e.elite/e.boss per corpse — no scan of the live field).
-            this.kindleSystem.onKills(allKilled);
-            this._addCombo(allKilled.length);
-            this.audio.kill();
+            this.kindleSystem.onKills(batch);
+            this._addCombo(batch.length);
+            if (!killCuePlayed) {
+                this.audio.kill();
+                killCuePlayed = true;
+            }
             // Blooddrinker lifesteal-on-kill (capped by the sustained-heal budget).
-            if (this.player.killHeal > 0) this.player.healSustained(this.player.killHeal * allKilled.length);
-            this.waveDirector.notifyKill(allKilled.length);
-            for (const e of allKilled) {
+            if (this.player.killHeal > 0) this.player.healSustained(this.player.killHeal * batch.length);
+            this.waveDirector.notifyKill(batch.length);
+            for (; processedDeaths < batchEnd; processedDeaths++) {
+                const { enemy: e, suppressAffix } = deathQueue[processedDeaths];
                 if (e.encounterMemberId) {
                     this._encounterDefeatedIds.push(e.encounterMemberId);
                     if (e.encounterGuardian) this._encounterRewardPos = { x: e.x, y: e.y };
                 }
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
-                if (e.affix) this._applyAffixDeath(e);
+                if (e.affix && !suppressAffix) this._applyAffixDeath(e, enqueueDeath);
                 // P1.3 splitter: bursts into live slimelets (def-driven,
                 // unlike the rolled elite 'splitting' AFFIX — both can fire
                 // on an elite splitter, which is the fun kind of chaos).
@@ -241,6 +262,26 @@ export const CombatResolverMethods = {
                     // chest OR a Wick Shrine (relic altar), spawned side by side —
                     // claiming one despawns the other.
                     this.bossesDefeated += 1;
+                    // Campaign progress accepts only a normal-run boss whose
+                    // provenance survived map director -> warning -> spawn ->
+                    // Enemy. The map is the launch-time latch, never a mutable
+                    // menu selection. SaveSystem independently rejects an active
+                    // QA bypass as a second fail-closed boundary.
+                    const bypassActive = this.saveSystem.getMapBypassActive?.() === true;
+                    if (bypassActive && this.campaignRun) {
+                        this.campaignRun.eligible = false;
+                        this.campaignRun.taintReason = 'map-bypass';
+                    }
+                    if (this.campaignRun?.eligible === true
+                        && e.bossSpawnProvenance === BOSS_SPAWN_PROVENANCE.MAP_DIRECTOR) {
+                        const receipt = this.saveSystem.recordCampaignBossDefeat({
+                            mapId: this.campaignRun.mapId,
+                            bossId: e.type,
+                            eligible: true,
+                        });
+                        this._latestCampaignBossDefeatReceipt = receipt;
+                        if (receipt?.newlyUnlockedMapId) this._campaignUnlockReceipt = receipt;
+                    }
                     // Progression differs by mode. Boss Rush owns its own sequence:
                     // it advances to the next boss's prep phase (or clears the whole
                     // gauntlet) and uses NONE of the normal-run boss plumbing — no

@@ -58,6 +58,12 @@ export function buildUIState(game) {
         // Menu state consumed by MenuRenderer.
         base.menuTab = game.menuTab;
         base.settingsPane = game.settingsPane === 'accessibility' ? 'accessibility' : 'general';
+        // One campaign snapshot owns Home, Play, accessibility labels, launch
+        // validation, and the session-only QA view. Renderers never infer map
+        // access from lifetime stats or raw persisted selection again.
+        base.selectedMap = game.saveSystem.getEffectiveSelectedMap();
+        base.mapUnlockStatuses = game.saveSystem.getAllMapUnlockStatuses();
+        base.mapBypassActive = game.saveSystem.getMapBypassActive();
         base.menuFocusKey = game.menuFocusKey || null;
         base.menuFocusVisible = game.input?.getModality?.() === 'keyboard';
         base.inputModality = game.input?.getModality?.() || 'pointer';

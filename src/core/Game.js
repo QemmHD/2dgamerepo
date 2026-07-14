@@ -30,7 +30,11 @@ import { Easing } from './Easing.js';
 import { Camera } from './Camera.js';
 import { FrameProfiler } from './FrameProfiler.js';
 import { Player } from '../entities/Player.js';
-import { Enemy } from '../entities/Enemy.js';
+import {
+    BOSS_SPAWN_PROVENANCE,
+    Enemy,
+    normalizeBossSpawnProvenance,
+} from '../entities/Enemy.js';
 import { Shrine } from '../entities/Shrine.js';
 import { Coin } from '../entities/Coin.js';
 import { EnemyProjectile } from '../entities/EnemyProjectile.js';
@@ -222,6 +226,14 @@ export class Game {
         // Boss Rush, but the boss order is a deterministic per-UTC-week shuffle
         // (same for everyone all week). Mutually exclusive with every other mode.
         this.weeklyEmberMode = false;
+        // Campaign boss credit is deny-by-default. Only the explicit normal-run
+        // launch routes opt in; `_startRun()` calls from QA tools, future modes,
+        // and direct integrations remain ineligible unless they deliberately
+        // adopt the campaign contract. The effective map is latched at launch so
+        // a later menu/save mutation cannot move a boss receipt between maps.
+        this.campaignRun = { eligible: false, mapId: null, taintReason: 'not-started' };
+        this._latestCampaignBossDefeatReceipt = null;
+        this._campaignUnlockReceipt = null;
         // Pre-run Patron choice (id or null) — biases the level-up draft toward
         // that Patron's weapons/passives. Session-local (not persisted), chosen
         // on the Play tab; folded into committedPatrons at run start.
@@ -275,6 +287,7 @@ export class Game {
             if (DEV_MODE && (e.code === 'Backquote' || e.code === 'F2')) {
                 this.showDebug = !this.showDebug;
                 this.profiler.enabled = this.showDebug;
+                if (this.showDebug) this._taintCampaignRun('debug-mode');
                 return;
             }
             // EMBERGLASS: the Keeper's Lens. While open, its own keys drive the
@@ -303,7 +316,7 @@ export class Game {
                 // (skips finding the CTA), gated by DEV_MODE like the other cheats.
                 if (DEV_MODE && e.code === 'KeyG' && !this.minigame.mines && !this.minigame.caseAnim && !this.menuTour) {
                     e.preventDefault();
-                    this.bossRushMode = true; this.dailyMode = false; this.riteTrialMode = false;
+                    this.bossRushMode = true; this.dailyMode = false; this.riteTrialMode = false; this.weeklyEmberMode = false;
                     this._startRun();
                     return;
                 }
@@ -441,7 +454,12 @@ export class Game {
                 if (e.code === 'Digit0' || e.code === 'Numpad0') { e.preventDefault(); this._debugJumpToMinute(30); return; }
                 // KINDLED: grant +50 Kindle so the meter / (PR3) ult path can be
                 // tested without grinding kills.
-                if (e.code === 'KeyK') { e.preventDefault(); this.kindleSystem.debugGrant(50); return; }
+                if (e.code === 'KeyK') {
+                    e.preventDefault();
+                    this._taintCampaignRun('debug-kindle');
+                    this.kindleSystem.debugGrant(50);
+                    return;
+                }
                 // BOSSFORGE — Boss Rush test shortcuts (only in a Boss Rush run):
                 // N = skip to the next boss (drop the active boss to 1 HP so the
                 // next auto-shot kills it → advances; in prep, skip the countdown);
@@ -526,6 +544,7 @@ export class Game {
                 this._pressFeedback('dbg');
                 this.showDebug = !this.showDebug;
                 this.profiler.enabled = this.showDebug;
+                if (this.showDebug) this._taintCampaignRun('debug-mode');
                 // The DBG toggle doesn't run _updateJoystickEnabled (unlike pause),
                 // so drop any touch-button tap this same press latched — otherwise
                 // TouchButtons' right-half claim would leak a Focus lock/clear
@@ -814,7 +833,10 @@ export class Game {
     _effectiveMapId() {
         if (this.dailyMode && this._dailyMapOverride) return this._dailyMapOverride;
         if (this.riteTrialMode && this._riteTrialMapOverride) return this._riteTrialMapOverride;
-        return this.saveSystem.getSelectedMap();
+        // QA map access is session-only. SaveSystem owns that transient choice;
+        // gameplay consumes it without mutating the honestly persisted map.
+        return this.saveSystem.getEffectiveSelectedMap?.()
+            ?? this.saveSystem.getSelectedMap();
     }
 
     // KINDLED PR5 — the run's effective HERO id: the Rite-Trial daily override
@@ -829,7 +851,7 @@ export class Game {
     // _startRun resets the run and applies permanent upgrades from save —
     // the canonical "begin a fresh game" entry point. Used by the START RUN
     // shop button AND the RESTART game-over button.
-    _startRun() {
+    _startRun({ campaignEligible = false } = {}) {
         // A confirmed pause exit can never bleed into the new run it creates.
         this.pauseExitConfirm = null;
         // Daily Road: resolve the day's curated setup BEFORE _initRunState reads the
@@ -864,6 +886,28 @@ export class Game {
         this._bossRushConfig = this.weeklyEmberMode ? getWeeklyEmberConfig(currentDayNumber())
             : this.bossRushMode ? BOSS_RUSH_CONFIG
             : null;
+        // Eligibility is latched before `_initRunState` constructs this map's
+        // BossDirector. Daily/Rite/Rush/Weekly and QA-bypass launches are always
+        // excluded; difficulty, Trials, and Pacts are ordinary campaign runs.
+        const bypassActive = this.saveSystem.getMapBypassActive?.() === true;
+        const normalMode = !this.dailyMode && !this.riteTrialMode && !this._bossRushConfig;
+        const debugActive = DEV_MODE && (this.showDebug === true
+            || this.saveSystem.getSetting('debug') === true);
+        const eligible = campaignEligible === true && normalMode && !bypassActive && !debugActive;
+        const mapId = this._effectiveMapId();
+        const taintReason = eligible
+            ? null
+            : bypassActive
+                ? 'map-bypass'
+                : debugActive
+                    ? 'debug-mode'
+                : !normalMode
+                    ? (this.weeklyEmberMode ? 'weekly' : this.bossRushMode ? 'boss-rush'
+                        : this.dailyMode ? 'daily' : 'rite-trial')
+                    : 'direct-start';
+        this.campaignRun = { eligible, mapId, taintReason };
+        this._latestCampaignBossDefeatReceipt = null;
+        this._campaignUnlockReceipt = null;
         this._initRunState();
         if (this._bossRushConfig) {
             this.bossRush = new BossRushController(getBossRushSequence(this._bossRushConfig), this._bossRushConfig);
@@ -1086,7 +1130,7 @@ export class Game {
         this._bankRunCoins();
         // A RESTART is a fresh NORMAL run — never silently re-launch a Daily/Trial.
         this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false;
-        this._startRun();
+        this._startRun({ campaignEligible: true });
     }
 
     returnToShop() {
@@ -1365,6 +1409,16 @@ export class Game {
 
     _showVictory() {
         this.victory = { age: 0 };
+        const presentation = this._victoryPresentation?.();
+        if (presentation) {
+            this.accessibility?.setScreen?.(
+                'victory',
+                `${presentation.title}. ${presentation.subtitle}`,
+            );
+            this.accessibility?.announce?.(
+                `${presentation.title}. ${presentation.subtitle} ${presentation.choices}`,
+            );
+        }
         // EMBERGLASS: queue the victory recap card from LIVE fields (runSummary
         // doesn't exist yet — it's built later in victoryToMenu). Composed on the
         // next render() before the overlay dims the world.
@@ -1419,12 +1473,15 @@ export class Game {
         this._gauntletActive = true;
         this.audio.click();
         this.audio.playMusic('gameplay');   // back to the driving theme (biome latched)
+        const biome = getMap(this.campaignRun?.mapId ?? this._effectiveMapId());
+        this.accessibility?.setScreen?.('gameplay', `${biome.name} endless gauntlet.`);
+        this.accessibility?.announce?.('Gauntlet continued.');
         this._updateJoystickEnabled();
     }
 
-    // Bank + RECORD the run once (so the 3 boss kills count toward lifetime
-    // unlocks — including the new biome), then return to the menu. Optionally
-    // pre-select the new map so the player lands ready to play it.
+    // Bank + record the run once (including lifetime statistics), then return
+    // to the menu. Exact map access is already written per eligible boss; only
+    // this run's accepted unlock receipt may pre-select a new destination.
     victoryToMenu(selectNewMap = false) {
         if (!this._runRecorded) {
             // Mirror the game-over bookkeeping so leaving on a VICTORY grants the
@@ -1471,18 +1528,26 @@ export class Game {
             this._awardBattlePass();
             this._runRecorded = true;
         }
-        // Clearing this map's three bosses advances the campaign — select the
-        // NEXT map in order if it's now unlocked (each map's trio feeds lifetime
-        // boss kills, which gate the next biome at 3/6/9).
-        if (selectNewMap) {
-            const cur = this.saveSystem.getSelectedMap();
-            const curIdx = MAP_ORDER.indexOf(cur);
-            for (let i = curIdx + 1; i < MAP_ORDER.length; i++) {
-                if (this.saveSystem.setSelectedMap(MAP_ORDER[i])) break; // first unlocked next map
-            }
+        // Route only to the destination this run's accepted third unique-boss
+        // receipt actually unlocked. Repeats/ineligible modes have no receipt,
+        // and a mutable menu selection can never redirect victory routing.
+        const newlyUnlockedMapId = this._campaignUnlockReceipt?.newlyUnlockedMapId ?? null;
+        if (selectNewMap && newlyUnlockedMapId) {
+            this.saveSystem.setSelectedMap(newlyUnlockedMapId);
         }
+        const openMapPicker = selectNewMap && !newlyUnlockedMapId;
         this.victory = null;
         this.returnToShop();
+        // SELECT <new map> commits the receipt's destination and returns Home so
+        // the player can launch it. Generic CHOOSE MAP (repeat/final/ineligible/
+        // gauntlet clears) must actually open run setup instead of duplicating
+        // Main Menu while promising a map review.
+        if (openMapPicker) {
+            this.menuTab = 'play';
+            this._resetMenuFocus();
+            this.accessibility?.setScreen?.('start', 'Play. Choose a campaign map.');
+            this.accessibility?.announce?.('Campaign map selection opened.');
+        }
     }
 
     // Bank coins earned this run into the save total, exactly once (guarded
@@ -1908,7 +1973,18 @@ export class Game {
 
     // Debug-only: advance the run clock so wave/enemy/boss time-scaling jumps
     // ahead for balance testing. Refreshes the cached wave state immediately.
+    _taintCampaignRun(reason = 'debug-action') {
+        this.campaignRun = {
+            ...(this.campaignRun ?? { mapId: this._effectiveMapId() }),
+            eligible: false,
+            taintReason: reason,
+        };
+    }
+
     _debugSkipTime(seconds) {
+        // Moving the clock can manufacture a scheduled apex immediately. Taint
+        // before the jump so any warning it causes is never campaign-eligible.
+        this._taintCampaignRun('debug-time-jump');
         this.time += seconds;
         this.waveState = this._applyRunScale(this.waveDirector.getState(this.time));
         if (this.waveDirector.announce) this.waveDirector.announce(`⏩ +${seconds}s → ${(this.time / 60).toFixed(1)} min`, 1.5);
@@ -2295,9 +2371,13 @@ export class Game {
         }
     }
 
-    _spawnBoss(id) {
+    _spawnBoss(id, provenance = BOSS_SPAWN_PROVENANCE.DIRECT) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
+        const bossSpawnProvenance = normalizeBossSpawnProvenance(
+            provenance,
+            BOSS_SPAWN_PROVENANCE.DIRECT,
+        );
         // Branching Roads: a new boss ends the prior segment's road bias (mix +
         // difficulty multipliers + re-tint revert). The road's permanent boon stays.
         this._clearSegmentRoad();
@@ -2363,6 +2443,7 @@ export class Game {
             healthMul: bossHpMul,
             speedMul: this.waveState.speedMul * (1 + encounter * 0.04),
             contactDamageMul: bossDmgMul,
+            bossSpawnProvenance,
         });
         boss.resist = Math.min(minutes * BOSS.resistPerMinute, BOSS.maxResist);
         // Stash the stable output channels the apex-boss AI writes into
@@ -2395,9 +2476,13 @@ export class Game {
 
     // Open the "BOSS INCOMING" warning window. The boss spawns when it expires
     // (handled in update). Stashes the boss's display name for the overlay.
-    _startBossWarning(id) {
+    _startBossWarning(id, provenance = BOSS_SPAWN_PROVENANCE.DIRECT) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
+        const bossSpawnProvenance = normalizeBossSpawnProvenance(
+            provenance,
+            BOSS_SPAWN_PROVENANCE.DIRECT,
+        );
         // Apex choreography owns the field. Cancel any authored pack before
         // the warning so the later trash banish never pays an unearned clear.
         const canceledEncounter = this.encounterDirector?.cancel?.('boss-warning');
@@ -2405,7 +2490,15 @@ export class Game {
             retireEncounterEnemyTags(this.enemies, canceledEncounter.packId);
             this.vigilTracker?.ingest?.(canceledEncounter);
         }
-        this.bossWarning = { id, name: def.bossName ?? id, epithet: def.epithet ?? null, tier: def.tier ?? null, timer: BOSS.warningDuration, total: BOSS.warningDuration };
+        this.bossWarning = {
+            id,
+            name: def.bossName ?? id,
+            epithet: def.epithet ?? null,
+            tier: def.tier ?? null,
+            provenance: bossSpawnProvenance,
+            timer: BOSS.warningDuration,
+            total: BOSS.warningDuration,
+        };
         // Select the encounter suite and decode its short voice cues during the
         // warning window, not on the first vulnerable frame of the fight.
         this.audio.setBossProfile(id);
@@ -2964,18 +3057,27 @@ export class Game {
         if (this.riteTrialMode) { this._queueRiteCard('victory'); return; }   // KINDLED PR5
         const cid = this.saveSystem.getSelectedCharacter();
         const kills = this.kills ?? 0;
+        const clearedMapId = this.campaignRun?.mapId ?? this._effectiveMapId();
+        const newlyUnlockedMapId = this._campaignUnlockReceipt?.newlyUnlockedMapId ?? null;
+        const clearedMapName = this._cardMapName(clearedMapId);
+        const unlockedMapName = newlyUnlockedMapId
+            ? this._cardMapName(newlyUnlockedMapId)
+            : null;
         this._pendingCardMint = {
             template: 'victory',
             data: {
                 name: this._cardHeroName(cid), characterId: cid,
                 time: this.time,
-                sub: 'Three apex Hollow have fallen',
+                sub: unlockedMapName
+                    ? `${clearedMapName} cleared · ${unlockedMapName} unlocked`
+                    : `${clearedMapName} vigil cleared`,
                 chips: [
                     `LV ${this.player?.level ?? 1}`,
                     `${kills.toLocaleString()} KILLS`,
                     `${this.bossesDefeated ?? 0} BOSSES`,
                 ],
-                mapName: this._cardMapName(this._effectiveMapId()),
+                mapName: clearedMapName,
+                newlyUnlockedMapId,
                 difficulty: this._cardDifficulty(),
             },
         };

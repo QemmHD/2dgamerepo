@@ -33,6 +33,7 @@ import { Easing } from './Easing.js';
 import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
 import { signatureFor } from '../content/signatures.js';
+import { MAPS } from '../content/maps.js';
 import { getBorderStrip, getBorderPattern } from '../assets/ObstacleSprites.js';
 import { HazardSystem } from '../systems/HazardSystem.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
@@ -634,6 +635,48 @@ export const GameRenderMethods = {
         };
     },
 
+    // One receipt-driven presentation contract feeds both Canvas and the
+    // accessibility live announcement. Keeping this out of `_drawVictory`
+    // prevents screen-reader copy from drifting away from visible map truth.
+    _victoryPresentation() {
+        const isBossRush = !!this.bossRush;
+        const unlockedMapId = this._campaignUnlockReceipt?.newlyUnlockedMapId || null;
+        const unlockedMap = unlockedMapId ? MAPS[unlockedMapId] : null;
+        const runMapId = this.campaignRun?.mapId || this._effectiveMapId?.();
+        const runMap = MAPS[runMapId] || null;
+        const ineligibleReason = this.campaignRun?.taintReason || null;
+        let subtitle = '';
+        if (isBossRush) {
+            const brTotal = this.bossRush?.total || 12;
+            const gauntletName = this.weeklyEmberMode ? 'Weekly Ember' : 'Boss Rush';
+            subtitle = `All ${brTotal} apex bosses have fallen — ${gauntletName} cleared!`;
+        } else if (unlockedMap) {
+            subtitle = `${runMap?.name || 'This vigil'} mastered. ${unlockedMap.name} is now open.`;
+        } else if (ineligibleReason === 'map-bypass') {
+            subtitle = 'QA run cleared. Campaign map progress was intentionally not recorded.';
+        } else if (this.dailyMode || ineligibleReason === 'daily') {
+            subtitle = 'Daily Road cleared. Standard runs earn campaign map progress.';
+        } else if (this.riteTrialMode || ineligibleReason === 'rite-trial') {
+            subtitle = 'Rite Trial cleared. Standard runs earn campaign map progress.';
+        } else if (this.campaignRun?.eligible === false) {
+            const runKind = String(ineligibleReason || '').startsWith('debug') ? 'Debug run' : 'Test run';
+            subtitle = `${runKind} cleared. Campaign map progress was not recorded.`;
+        } else {
+            subtitle = `${runMap?.name || 'Vigil'} cleared. Choose your next campaign map.`;
+        }
+        return {
+            isBossRush,
+            unlockedMap,
+            title: isBossRush ? 'GAUNTLET BROKEN' : 'VIGIL TRIUMPHANT',
+            subtitle,
+            mapActionLabel: unlockedMap ? `SELECT ${unlockedMap.name.toUpperCase()}` : 'CHOOSE MAP',
+            mapActionSub: unlockedMap ? unlockedMap.subtitle : 'review maps and campaign progress',
+            choices: isBossRush
+                ? 'Return, choose a map, or open the main menu.'
+                : `${unlockedMap ? `Select ${unlockedMap.name}` : 'Choose a map'}, continue the gauntlet, or open the main menu.`,
+        };
+    },
+
     _drawVictory(ctx) {
         const W = INTERNAL_WIDTH, H = INTERNAL_HEIGHT;
         // Hold the victory beat: the hero cheers in the lit world before the
@@ -645,21 +688,16 @@ export const GameRenderMethods = {
         ctx.fillRect(0, 0, W, H);
         ctx.globalAlpha = t;
         ctx.textAlign = 'center';
-        // Title + subtitle. Boss Rush gets its own gauntlet copy (a full clear is
-        // all N apex bosses, on the player's own biome — not the 3-boss "new biome
-        // opens" milestone).
-        const isBossRush = !!this.bossRushMode;
+        // Boss Rush and Weekly Ember share the live gauntlet controller; only
+        // an accepted campaign receipt may promise a newly opened map.
+        const presentation = this._victoryPresentation();
+        const { isBossRush, unlockedMap } = presentation;
         ctx.fillStyle = '#ffd98a';
         ctx.font = 'bold 86px sans-serif';
-        ctx.fillText(isBossRush ? 'GAUNTLET BROKEN' : 'VIGIL TRIUMPHANT', W / 2, H / 2 - 150);
+        ctx.fillText(presentation.title, W / 2, H / 2 - 150);
         ctx.fillStyle = '#cde4ff';
         ctx.font = '34px sans-serif';
-        const brTotal = this.bossRush ? this.bossRush.total : 12;
-        ctx.fillText(
-            isBossRush
-                ? `All ${brTotal} apex Hollow have fallen — Boss Rush cleared!`
-                : 'Three apex Hollow have fallen. A new biome opens.',
-            W / 2, H / 2 - 96);
+        ctx.fillText(presentation.subtitle, W / 2, H / 2 - 96);
 
         const r = this._victoryRects();
         const btn = (rect, label, sub, fill, border) => {
@@ -681,11 +719,17 @@ export const GameRenderMethods = {
             // A cleared Boss Rush has no endless continue; every top button banks
             // the result and returns to the menu (Continue is routed there too).
             btn(r.cont, 'RETURN', 'bank your gauntlet result', '#5a3a1a', '#ffb24a');
-            btn(r.biome, 'NEW MAP', 'swap biome for your next run', '#1d4a7a', '#7fd0ff');
+            btn(r.biome, 'CHOOSE MAP', 'review maps for your next run', '#1d4a7a', '#7fd0ff');
             btn(r.menu, 'MAIN MENU', 'bank coins • upgrade • pick a map', '#5a3a1a', '#ffb24a');
         } else {
             btn(r.cont, 'CONTINUE', 'keep going — the gauntlet cycles harder', '#1d6b3a', '#7be08a');
-            btn(r.biome, 'PLAY NEW BIOME', 'Hollow Reach — the frozen vigil', '#1d4a7a', '#7fd0ff');
+            btn(
+                r.biome,
+                presentation.mapActionLabel,
+                presentation.mapActionSub,
+                '#1d4a7a',
+                '#7fd0ff',
+            );
             btn(r.menu, 'MAIN MENU', 'bank coins • upgrade • pick a map', '#5a3a1a', '#ffb24a');
         }
         // EMBERGLASS: share the auto-minted victory card (S / tap).

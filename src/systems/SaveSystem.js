@@ -8,7 +8,7 @@
 import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR, GEAR_LIST } from '../content/gear.js';
 import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST } from '../content/cosmetics.js';
 import { CHARACTER_IDS, DEFAULT_CHARACTER } from '../content/characters.js';
-import { MAPS, DEFAULT_MAP, isMapUnlocked } from '../content/maps.js';
+import { MAPS, DEFAULT_MAP } from '../content/maps.js';
 import { PERMANENT_UPGRADES } from '../content/permanentUpgrades.js';
 import { getAttunable, attuneCost } from '../content/relics.js';
 import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
@@ -28,6 +28,15 @@ import {
     normalizeUiScale,
     normalizeVibrationStrength,
 } from './AccessibilityPreferences.js';
+import {
+    CAMPAIGN_MAP_ORDER,
+    CAMPAIGN_SAVE_VERSION,
+    campaignMapUnlocked as campaignMapUnlockedByProgress,
+    createCampaignProgress,
+    getCampaignMapUnlockStatus,
+    normalizeCampaignProgress,
+    recordCampaignBossDefeat as applyCampaignBossDefeat,
+} from './CampaignProgression.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 export const MAX_COIN_BALANCE = Number.MAX_SAFE_INTEGER;
@@ -127,8 +136,6 @@ function defaultData({ reducedEffects = false } = {}) {
             // Device/browser support is capability-gated at runtime. Low is a
             // restrained default and Off always cancels active vibration.
             vibration: DEFAULT_VIBRATION_STRENGTH,
-            // Testing: unlock every biome regardless of boss kills.
-            unlockMaps: false,
         },
         // Character cosmetics (visual only). unlocked = owned ids; equipped =
         // one id per slot.
@@ -158,6 +165,9 @@ function defaultData({ reducedEffects = false } = {}) {
         gamble: { windowStart: 0, count: 0 },
         // Selected biome/map id (see content/maps.js); unlock-gated by bosses.
         selectedMap: DEFAULT_MAP,
+        // Exact authored-boss ledger. Map access is derived from the three
+        // unique predecessor bosses, never from the lifetime boss counter.
+        campaignProgress: createCampaignProgress(),
         // Chosen difficulty tier (validated string — deliberately NOT in
         // settings{}, whose loop clamps every value to 0..1 / booleans).
         difficulty: 'normal',
@@ -207,7 +217,7 @@ function defaultData({ reducedEffects = false } = {}) {
         // analogue of riteTrial's best-of-day (auto-resets when the week rolls;
         // prevBest keeps LAST week's best across the roll). Additive, no wipe.
         weeklyEmber: { week: 0, best: 0, prevBest: 0 },
-        version: 9,
+        version: CAMPAIGN_SAVE_VERSION,
     };
 }
 
@@ -242,6 +252,9 @@ function validateEquipped(raw, defaults) {
 
 export class SaveSystem {
     constructor() {
+        // QA map access is intentionally session-only. It must never contaminate
+        // campaign progression, selection, or serialized settings.
+        this._session = { unlockMaps: false, selectedMap: null };
         this.available = this._probe();
         this.data = this._loadOrDefault();
     }
@@ -313,6 +326,11 @@ export class SaveSystem {
         // This field is a best-in-one-run cardinality, not a lifetime counter.
         // Clamp tampered/future saves before achievements and menu copy read it.
         stats.vigilSiteKindsMastered = Math.min(4, stats.vigilSiteKindsMastered);
+        const campaignProgress = normalizeCampaignProgress({
+            version: data.version,
+            campaignProgress: data.campaignProgress,
+            totalBosses: stats.totalBosses,
+        });
         const settings = { ...def.settings };
         if (data.settings && typeof data.settings === 'object') {
             for (const key of Object.keys(def.settings)) {
@@ -418,7 +436,10 @@ export class SaveSystem {
             count: Number.isFinite(dgam.count) && dgam.count >= 0 ? Math.floor(dgam.count) : 0,
         };
 
-        const selectedMap = MAPS[data.selectedMap] ? data.selectedMap : DEFAULT_MAP;
+        const storedMap = MAPS[data.selectedMap] ? data.selectedMap : DEFAULT_MAP;
+        const selectedMap = campaignMapUnlockedByProgress(campaignProgress, storedMap)
+            ? storedMap
+            : DEFAULT_MAP;
 
         // Difficulty: validated string (falls back to 'normal' for old saves /
         // stale values). Must live OUTSIDE settings{} (that loop is numeric).
@@ -565,7 +586,7 @@ export class SaveSystem {
             prevBest: Number.isFinite(wed.prevBest) && wed.prevBest > 0 ? Math.floor(wed.prevBest) : 0,
         };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, weeklyEmber, version: 9 };
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, campaignProgress, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, weeklyEmber, version: CAMPAIGN_SAVE_VERSION };
     }
 
     save() {
@@ -811,10 +832,17 @@ export class SaveSystem {
     }
 
     getSetting(key) {
+        if (key === 'unlockMaps') return this.getMapBypassActive();
         return this.data.settings ? this.data.settings[key] : undefined;
     }
 
     setSetting(key, value) {
+        if (key === 'unlockMaps') {
+            const enabled = value === true;
+            this._session.unlockMaps = enabled;
+            if (!enabled) this._session.selectedMap = null;
+            return enabled;
+        }
         if (!this.data.settings) this.data.settings = {};
         const normalized = key === 'uiScale'
             ? normalizeUiScale(value)
@@ -902,25 +930,78 @@ export class SaveSystem {
         return true;
     }
 
-    // ── Map selection (unlock-gated by lifetime boss kills) ──────────────
-    // A map counts as unlocked if its boss-kill threshold is met OR the testing
-    // "unlockMaps" setting is on (free unlock for trying the new biome).
+    // ── Map selection (unlock-gated by exact predecessor bosses) ────────
+    // Exact unique-boss gates own honest access. The dev unlock is a transient
+    // session view, so it cannot leak into progression or serialized settings.
+    getMapBypassActive() {
+        return this._session?.unlockMaps === true;
+    }
+
+    campaignMapUnlocked(id) {
+        return campaignMapUnlockedByProgress(this.data.campaignProgress, id);
+    }
+
+    getMapUnlockStatus(id) {
+        const status = getCampaignMapUnlockStatus(this.data.campaignProgress, id);
+        const qaBypass = this.getMapBypassActive();
+        return {
+            ...status,
+            campaignUnlocked: status.unlocked,
+            unlocked: status.known && (status.unlocked || qaBypass),
+            qaBypass,
+        };
+    }
+
+    getAllMapUnlockStatuses() {
+        return CAMPAIGN_MAP_ORDER.map((id) => this.getMapUnlockStatus(id));
+    }
+
+    // Compatibility seam for existing renderers. This includes the current
+    // session's QA bypass; campaignMapUnlocked remains the honest answer.
     mapUnlocked(id) {
-        return isMapUnlocked(id, this.data.stats?.totalBosses) || this.getSetting('unlockMaps') === true;
+        return this.getMapUnlockStatus(id).unlocked;
+    }
+
+    getEffectiveSelectedMap() {
+        if (this.getMapBypassActive()) {
+            const sessionMap = this._session.selectedMap;
+            if (MAPS[sessionMap]) return sessionMap;
+        }
+        const honestMap = this.data.selectedMap ?? DEFAULT_MAP;
+        return this.campaignMapUnlocked(honestMap) ? honestMap : DEFAULT_MAP;
     }
 
     getSelectedMap() {
-        const id = this.data.selectedMap ?? DEFAULT_MAP;
-        // Defensively fall back if a saved map isn't unlocked (e.g. after a reset).
-        return this.mapUnlocked(id) ? id : DEFAULT_MAP;
+        return this.getEffectiveSelectedMap();
     }
 
     setSelectedMap(id) {
         if (!MAPS[id]) return false;
-        if (!this.mapUnlocked(id)) return false;
+        if (this.getMapBypassActive()) {
+            this._session.selectedMap = id;
+            return true;
+        }
+        if (!this.campaignMapUnlocked(id)) return false;
         this.data.selectedMap = id;
         this.save();
         return true;
+    }
+
+    recordCampaignBossDefeat(inputOrMapId, bossIdArg, eligibleArg = false) {
+        const input = inputOrMapId && typeof inputOrMapId === 'object'
+            ? inputOrMapId
+            : { mapId: inputOrMapId, bossId: bossIdArg, eligible: eligibleArg };
+        const receipt = applyCampaignBossDefeat(this.data.campaignProgress, {
+            mapId: input.mapId,
+            bossId: input.bossId,
+            // QA-selected runs may exercise content but never advance it.
+            eligible: input.eligible === true && !this.getMapBypassActive(),
+        });
+        if (receipt.changed) {
+            this.data.campaignProgress = receipt.progress;
+            this.save();
+        }
+        return receipt;
     }
 
     // ── Battle pass ──────────────────────────────────────────────────────
@@ -1173,6 +1254,7 @@ export class SaveSystem {
     }
 
     reset() {
+        this._session = { unlockMaps: false, selectedMap: null };
         this.data = freshDefaultData();
         this.save();
     }

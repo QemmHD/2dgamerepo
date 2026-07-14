@@ -27,7 +27,7 @@ import {
 } from '../config/GameConfig.js';
 import { clamp, compactInPlace } from './MathUtils.js';
 import { Player } from '../entities/Player.js';
-import { Enemy } from '../entities/Enemy.js';
+import { BOSS_SPAWN_PROVENANCE, Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
 import { Chest } from '../entities/Chest.js';
 import { Shrine } from '../entities/Shrine.js';
@@ -270,18 +270,30 @@ export const GameUpdateMethods = {
             // the Lieutenant, and the trash spawner are all bypassed for the mode.
             if (!bossAlive && !this.bossWarning) {
                 const act = this.bossRush.update(dt);
-                if (act && act.spawn) this._startBossWarning(act.spawn);
+                if (act && act.spawn) {
+                    const provenance = this.weeklyEmberMode
+                        ? BOSS_SPAWN_PROVENANCE.WEEKLY
+                        : BOSS_SPAWN_PROVENANCE.BOSS_RUSH;
+                    this._startBossWarning(act.spawn, provenance);
+                }
             }
         } else if (!bossAlive && !this.bossWarning && !siteChallengeActive && !pendingEncounterLifecycle) {
             const bossId = this.bossDirector.update(this.time, bossAlive);
-            if (bossId) this._startBossWarning(bossId);
+            if (bossId) {
+                const provenance = this.campaignRun?.taintReason === 'debug-time-jump'
+                    ? BOSS_SPAWN_PROVENANCE.DEBUG
+                    : BOSS_SPAWN_PROVENANCE.MAP_DIRECTOR;
+                this._startBossWarning(bossId, provenance);
+            }
         }
         if (this.bossWarning) {
             this.bossWarning.timer -= dt;
             if (this.bossWarning.timer <= 0) {
                 const id = this.bossWarning.id;
+                const provenance = this.bossWarning.provenance
+                    ?? BOSS_SPAWN_PROVENANCE.UNKNOWN;
                 this.bossWarning = null;
-                this._spawnBoss(id);
+                this._spawnBoss(id, provenance);
             }
         }
         const bossActiveForLieutenant = !!this.bossWarning || !!this.arena

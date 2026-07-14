@@ -61,7 +61,7 @@ Shared chrome: 8px ember frame (2px `#ff9a4a` outer, 6px `#5a2a12` inner) with n
 - Stat chips row: `WAVE 14 · LV 23 · 1,204 KILLS · 2 BOSSES · 348 COINS` from `runSummary` fields minted at `src/core/Game.js:2507-2522` (time/level/kills/bossesDefeated/coinsEarned/finalWave/finalWaveName verified present).
 - `★ NEW BEST` gold ribbon when `game.newBest` (set at `Game.js:2531`) flags any of time/wave/level/kills — same fields the overlay ribbon reads at `src/systems/UISystem.js:1866-1880`.
 
-**Victory card** (`'victory'`): gold accent frame; headline `PYRA HELD THE LIGHT — 16:40`; sub `Three apex Hollow have fallen` (echoing `Game.js:3679`); same chip row. **Important seam:** `runSummary` does NOT exist when the victory overlay shows — `_showVictory` (`Game.js:1150-1160`) sets only `{age: 0}`; the summary is assembled later in `victoryToMenu` (`Game.js:1206-1213`). So the victory mint builds its own snapshot `{time, level, kills, bossesDefeated, characterId, mapId, difficulty}` from live Game fields inside `_showVictory`.
+**Victory card** (`'victory'`): gold accent frame; headline `PYRA HELD THE LIGHT — 16:40`; receipt-driven sub such as `Emberwood cleared · Hollow Reach unlocked`, or `Emberwood vigil cleared` on a repeat/ineligible clear; same chip row. **Important seam:** `runSummary` does NOT exist when the victory overlay shows, so the mint builds its snapshot from live fields plus the latched run map and accepted campaign unlock receipt. It must never hardcode a destination or infer one from lifetime boss totals.
 
 **Photo card** (`'photo'`): the snap full-bleed, thin 6px frame, wordmark bottom-right at 0.85 alpha (28px), active filter name in small caps bottom-left.
 

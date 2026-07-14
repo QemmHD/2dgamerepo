@@ -129,6 +129,8 @@ export class AccessibilityBridge {
         const suffix = cleanText(detail, '');
         const base = screen === 'gameplay'
             ? 'EMBERWAKE gameplay'
+            : screen === 'victory'
+                ? 'EMBERWAKE victory'
             : screen === 'gameOver'
                 ? 'EMBERWAKE run summary'
                 : 'EMBERWAKE main menu';

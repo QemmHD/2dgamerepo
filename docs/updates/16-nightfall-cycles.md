@@ -20,7 +20,7 @@ Today a run has exactly two post-victory fates. `victoryContinue()` (src/core/Ga
 
 The 3rd-boss victory overlay (`_showVictory` Game.js:1150, opened by the `isFinalBoss` latch at Game.js:3054-3078) grows a FOURTH, hero-position button:
 
-- Layout: `_victoryRects()` (Game.js:3653-3662) returns 4 rects; to keep touch targets ≥96px on a 1080 canvas, `top` moves from `H/2 - 40` to `H/2 - 96`, gap 26→20, and `rekindle` sits first: REKINDLE / CONTINUE / PLAY NEW BIOME / MAIN MENU.
+- Layout: `_victoryRects()` returns 4 rects; to keep touch targets ≥96px on a 1080 canvas, `top` moves from `H/2 - 40` to `H/2 - 96`, gap 26→20, and `rekindle` sits first: REKINDLE / CONTINUE / receipt-driven `SELECT <MAP>` or `CHOOSE MAP` / MAIN MENU.
 - Draw: `_drawVictory` (Game.js:3664-3701) renders the new button in ember-gold (`#5a2a10` fill / `#ff9a3c` border): label `REKINDLE — CYCLE II`, sub `carry your build • the Hollow return stronger • earn Ingots`. Subtitle line (Game.js:3679) becomes cycle-aware: on cycle ≥ 2 victories it reads `Cycle II survived. The wick asks for more.`
 - Input: keyboard `KeyR` added beside the existing bindings (Game.js:258-261); pointer + touch already route through `tryVictoryAt` (Game.js:404-411, 490-491, 514-515) — the new rect joins the same hit test. Gamepad comes free later via #18's hotspot walking.
 - First-time discovery: the button is ALWAYS present (no unlock) — the endgame advertises itself at the moment of triumph, per the punch-list note "endgame walls surfaced in HUD/fiction".
@@ -58,7 +58,7 @@ Folded as `cycleScale` in `_applyRunScale`; boss HP inherits it automatically be
 
 New pure function in NEW `src/content/cycles.js`: `remixRoster(cycle, { mapId, unlockedMapIds, foughtThisRun, prevRoster }, rng = Math.random)` → `[tier1Id, tier2Id, tier3Id]`.
 
-- **Pools by tier**: all 12 bosses exist today in GameConfig ENEMY (:379-663) each with a `tier` 1/2/3 field (e.g. :388, :430, :475) matching BOSS_TIERS (:671-675); per-map trios live in maps.js (:39/:59/:79/:99). Pool k = every unlocked map's tier-k boss. Lock-respect: only maps passing `isMapUnlocked` contribute (no spoiler-spawning Solnakh at a player who never opened the Dunes); if only one map is unlocked, remix degenerates to the home trio (correct behavior for a brand-new save that somehow rekindles).
+- **Pools by tier**: all 12 bosses exist today in GameConfig ENEMY (:379-663) each with a `tier` 1/2/3 field matching BOSS_TIERS; per-map trios live in maps.js. Pool k = every honestly campaign-unlocked map's tier-k boss. Lock-respect comes from `SaveSystem.campaignMapUnlocked(id)`, never QA-bypassed status or a lifetime total (no spoiler-spawning Solnakh before the Dunes are honestly open); if only one map is unlocked, remix degenerates to the home trio.
 - **Slot pattern is sacred**: every cycle runs SKIRMISHER → WARLORD → APEX, preserving the tier-ladder escalation and the banner/pip reads.
 - **No immediate repeats**: exclude `prevRoster` ids; prefer least-recently-fought this run (sort by last-fought cycle, rng tiebreak). With 4 maps unlocked each pool has 4 candidates, so cycles II-V never repeat a slot boss back-to-back and a 5-cycle run sees ~10 distinct bosses.
 - **rng is injectable** but defaults to Math.random — #17 (Sealed Storm) later threads its mulberry32 through this parameter; the signature is designed for it now so #17 touches one call site.

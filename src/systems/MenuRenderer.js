@@ -21,7 +21,7 @@ import {
     COSMETIC_SETS,
 } from '../content/cosmetics.js';
 import { CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining, CASE_PITY, WAGER_BETS } from './CaseSystem.js';
-import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
+import { MAPS, MAP_ORDER } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, BP_EVERFLAME_COINS, bpProgress, bpThreshold } from '../content/battlePass.js';
 import { battlePassRunReceipt, rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
@@ -1327,7 +1327,9 @@ export class MenuRenderer {
         ctx.fillText('CUSTOMIZE HERO  ›', hx, fittedCustomY + customH / 2 + 1);
         this._hot(hx - customW / 2, fittedCustomY, customW, customH, 'tab', 'character');
 
-        const map = MAPS[save.selectedMap] || MAPS[MAP_ORDER[0]];
+        // Home mirrors the same effective selection used by launch validation.
+        // A QA-only map lives in session state, never in the serialized save.
+        const map = MAPS[state.selectedMap] || MAPS[MAP_ORDER[0]];
         const diff = DIFFICULTY[save.difficulty] || DIFFICULTY.normal;
         const weapon = GEAR[save.gear?.equipped?.weapon] || GEAR.w_cinderbolt;
         const difficultyValue = `${diff.id === 'easy' ? 'Easy' : diff.id === 'hard' ? 'Hard' : 'Normal'} · ${diff.label}`;
@@ -1829,11 +1831,23 @@ export class MenuRenderer {
         ctx.fillText('Biome', innerX, y + lbl * 0.72);
         y += lbl;
         const bw = (innerW - 14 * (MAP_ORDER.length - 1)) / MAP_ORDER.length;
-        const totalBosses = save.stats?.totalBosses ?? 0;
-        const selMap = save.selectedMap ?? MAP_ORDER[0];
+        const statusByMap = new Map((state.mapUnlockStatuses || []).map((status) => [status.mapId, status]));
+        const selMap = state.selectedMap ?? MAP_ORDER[0];
         for (let i = 0; i < MAP_ORDER.length; i++) {
             const m = MAPS[MAP_ORDER[i]];
-            const unlocked = isMapUnlocked(m.id, totalBosses);
+            const status = statusByMap.get(m.id) || {
+                unlocked: i === 0,
+                campaignUnlocked: i === 0,
+                qaBypass: false,
+                requiredMapId: i > 0 ? MAP_ORDER[i - 1] : null,
+                defeatedCount: 0,
+                requiredCount: i > 0 ? 3 : 0,
+            };
+            const unlocked = status.unlocked === true;
+            const campaignUnlocked = status.campaignUnlocked === true;
+            const qaActive = status.qaBypass === true;
+            const qaOnly = qaActive && !campaignUnlocked;
+            const requiredMap = status.requiredMapId ? MAPS[status.requiredMapId] : null;
             const sel = m.id === selMap;
             const bx = innerX + i * (bw + 14);
             roundRectPath(ctx, bx, y, bw, biomeRow, 10);
@@ -1845,10 +1859,21 @@ export class MenuRenderer {
             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
             ctx.fillStyle = '#fff'; ctx.font = `700 ${fs(18)}px ${FONT}`;
             ctx.fillText(m.name, bx + 14, y + biomeRow * 0.42);
-            ctx.fillStyle = unlocked ? m.accent : 'rgba(255,255,255,0.6)'; ctx.font = `500 ${fs(13)}px ${FONT}`;
-            ctx.fillText(unlocked ? m.subtitle : `🔒 ${m.unlockBosses} bosses`, bx + 14, y + biomeRow * 0.76);
+            ctx.fillStyle = unlocked ? m.accent : 'rgba(255,255,255,0.6)'; ctx.font = `600 ${fs(12)}px ${FONT}`;
+            const progress = `${status.defeatedCount || 0}/${status.requiredCount || 3}`;
+            const subline = qaActive
+                ? 'QA MODE · credit off'
+                : campaignUnlocked
+                    ? m.subtitle
+                    : `LOCKED · ${requiredMap?.name || 'prior map'} ${progress}`;
+            ctx.fillText(subline, bx + 14, y + biomeRow * 0.76);
             ctx.globalAlpha = 1;
-            this._hot(bx, y, bw, biomeRow, 'selectMap', { id: m.id });
+            const accessLabel = status.qaBypass === true
+                ? `Select ${m.name}. QA access; campaign credit disabled.${qaOnly && requiredMap ? ` Honest progress: ${status.defeatedCount || 0} of ${status.requiredCount || 3} ${requiredMap.name} bosses defeated.` : ''}`
+                : campaignUnlocked
+                    ? `Select ${m.name}. Campaign map available.`
+                    : `Select ${m.name}. Locked. Defeat all three ${requiredMap?.name || 'previous map'} bosses; ${status.defeatedCount || 0} of ${status.requiredCount || 3} defeated.`;
+            this._hot(bx, y, bw, biomeRow, 'selectMap', { id: m.id }, accessLabel);
         }
         y += biomeRow + sec;
 
@@ -4037,8 +4062,10 @@ export class MenuRenderer {
     _drawPhoneSettings(ctx, state, c) {
         const save = state.saveData;
         const regular = SETTING_TOGGLES.filter((toggle) => !toggle.dev);
-        const dev = SETTING_TOGGLES.filter((toggle) =>
-            toggle.dev && (DEV_MODE || save.settings[toggle.key] === true));
+        const dev = SETTING_TOGGLES.filter((toggle) => toggle.dev && DEV_MODE);
+        const toggleValue = (toggle) => toggle.key === 'unlockMaps'
+            ? state.mapBypassActive === true
+            : save.settings[toggle.key] === true;
         const layout = computePhoneSettingsLayout(c, {
             devToggleCount: dev.length,
             showCheats: DEV_MODE,
@@ -4100,7 +4127,7 @@ export class MenuRenderer {
                 action: 'resetSave', fontSize: layout.coreFontPx,
             });
         dev.forEach((toggle, i) => this._drawPhoneToggle(
-            ctx, layout.supportRows[i + 2], toggle, save.settings[toggle.key] === true, layout));
+            ctx, layout.supportRows[i + 2], toggle, toggleValue(toggle), layout));
 
         if (DEV_MODE) {
             ctx.fillStyle = '#d4ad6f'; ctx.font = `800 26px ${HEAD}`;
@@ -4145,11 +4172,12 @@ export class MenuRenderer {
         let y = this._settingsHeader(ctx, innerX, colW, c.y + 48, 'GAMEPLAY');
         ctx.textBaseline = 'middle';
         for (const t of SETTING_TOGGLES) {
-            // Dev-only toggles hide from players — unless one is already ON
-            // (a save flipped it before the ?dev=1 gate existed), so a stranded
-            // save always has a visible off switch; once off it disappears.
-            if (t.dev && !DEV_MODE && save.settings[t.key] !== true) continue;
-            const val = save.settings[t.key] === true;
+            // Testing controls are a strict `?dev=1` surface. Unlock All Maps
+            // reads the transient QA session, never serialized settings.
+            if (t.dev && !DEV_MODE) continue;
+            const val = t.key === 'unlockMaps'
+                ? state.mapBypassActive === true
+                : save.settings[t.key] === true;
             ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = `600 26px ${FONT}`;
             ctx.fillText(t.label, innerX, y + 26);
             const tw = 92, th = 44;

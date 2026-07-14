@@ -53,6 +53,9 @@ jobs:
       - name: Validate progression economy
         run: node tools/validate-progression.js
 
+      - name: Validate exact campaign map progression
+        run: node tools/validate-campaign-progression.js
+
       - name: Validate fair gambling economy and disclosures
         run: node tools/validate-gambling-economy.js
 

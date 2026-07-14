@@ -2,11 +2,13 @@
 
 *Era III — The World Alight*
 
-**Value verdict (ADDS):** The only new biome/tier rung, and it is the destination the existing 0/3/6/9 unlock ladder visibly dangles — shipping it converts an open promise into content. Slag searing enemies is verifiably the first enemy-affecting terrain (HazardSystem's four kinds all target the player), and the Anvil's burst-window state machine is a new boss grammar. Also the sanctioned home for environmental fire styling per the canon rules. No weak slice; PR5 balance pass is earned, not padding.
+**Value verdict (ADDS):** The only new biome/tier rung, and the first extension of the exact predecessor-boss campaign chain — shipping it converts an open promise into content. Slag searing enemies is verifiably the first enemy-affecting terrain (HazardSystem's four kinds all target the player), and the Anvil's burst-window state machine is a new boss grammar. Also the sanctioned home for environmental fire styling per the canon rules. No weak slice; PR5 balance pass is earned, not padding.
 
 ## What it adds
 
-Biome 5 / tier 5: the world-forge itself — the endgame destination the unlock ladder (0/3/6/9 → 12) has been climbing toward. It is the ONE place environmental fire styling is canon: slag rivers that crust and re-melt on a telegraphed cycle (and sear enemies — the game's first enemy-affecting terrain), ashfall weather, and three new bosses (the Bellows, the Smith, the Anvil) completing the roster to 15, capped by the Anvil's heat-cycle burst-window mechanic that no other boss has.
+Biome 5 / tier 5: the world-forge itself — the endgame destination opened by recording all three unique Dunes bosses in eligible standard campaign runs. It is the ONE place environmental fire styling is canon: slag rivers that crust and re-melt on a telegraphed cycle (and sear enemies — the game's first enemy-affecting terrain), ashfall weather, and three new bosses (the Bellows, the Smith, the Anvil) completing the roster to 15, capped by the Anvil's heat-cycle burst-window mechanic that no other boss has.
+
+> **Superseding progression ruling (2026-07-14):** Save v10 removed lifetime-count map gates. Forgeheart must extend `CampaignProgression` with an authored boss trio and migration; it unlocks only after `cindermaw`, `dunescourge`, and `solnakh` are recorded for the Dunes in eligible normal campaign runs. Repeats, Daily, Rite Trial, Boss Rush, Weekly Ember, direct/debug spawns, and the session-only `?dev=1` map bypass do not grant credit.
 
 ## Design spec
 
@@ -18,7 +20,7 @@ Expands the roadmap synopsis (docs/ROADMAP.md:88-92): biome 5 / tier 5, slag riv
 
 ## 1. The biome — `forgeheart` map definition
 
-**Integration point (verified):** the MAPS data contract at `src/content/maps.js:24-105` — every lever this biome needs already exists (`groundFill`, `grade`, `darkness`, `weather`, `unlockBosses`, `accent`, `tier`, `bosses`, `enemyMix`, `hazard`). `MAP_ORDER` at maps.js:107; `getMapBosses` maps.js:116-119; `getMapTier` maps.js:123-126; `isMapUnlocked` maps.js:129-133. The menu biome selector auto-flows from `MAP_ORDER` (`src/systems/MenuRenderer.js:1001-1022`, button width `(innerW - 14*(N-1))/N`), so a 5th card needs zero UI code — only a width/legibility check at N=5.
+**Integration point (verified):** the MAPS data contract supplies presentation/gameplay levers (`groundFill`, `grade`, `darkness`, `weather`, `accent`, `tier`, `bosses`, `enemyMix`, `hazard`). Exact access lives separately in `src/systems/CampaignProgression.js`, while `SaveSystem.getMapUnlockStatus()` supplies one status to Home, Play, launch validation, accessibility labels, and victory routing. A fifth destination must extend both authored orders and the responsive card fixture; it is not a data-only `MAP_ORDER` append.
 
 New entry (all values tunable):
 
@@ -32,7 +34,7 @@ forgeheart: {
     gradeAlpha: 0.14,
     darkness: 0.85,         // forge-dark: between hollowreach 0.72 and crypts 1.0 —
                             // dark enough that slag rivers become the light source
-    unlockBosses: 12,       // continues the 0/3/6/9 ladder (maps.js:35/56/76/92)
+    // Campaign gate lives in CampaignProgression: exact Dunes trio, no count.
     accent: '#ff9a3c',
     weather: 'ashfall',     // NEW weather kind (see §3)
     tier: 5,
@@ -48,7 +50,7 @@ forgeheart: {
 
 `MAP_ORDER` becomes `['emberwood','hollowreach','crypts','dunes','forgeheart']`. The roadmap hook's "180 husks" is delivered by the enemyMix (emberskeleton — a pre-existing type at GameConfig.js:265 — plus skeleton/zombie: the Hollow's husks) — deliberately NOT a new creature family (update #6 owns the drowned family; #12 owns new sheets).
 
-**Save compatibility is free by construction (verified):** `SaveSystem` clamps `selectedMap` to known MAPS with a DEFAULT_MAP fallback at `src/systems/SaveSystem.js:270`, `getSelectedMap` re-validates unlock at :552-556, and `getMap` falls back for unknown ids (maps.js:110-112). An old build reading a save with `selectedMap:'forgeheart'` silently falls back; a new build reading an old save needs nothing. The unlock rides the existing lifetime `stats.totalBosses` counter (SaveSystem.js:43, incremented at :466) so veterans get retroactive credit the moment they update. Dev escape hatch `unlockMaps` setting already exists (SaveSystem.js:549).
+**Save compatibility requires an explicit ledger migration:** extend the fixed campaign map order, add Forgeheart's exact trio, and migrate older v10 profiles without fabricating identities. `selectedMap` still repairs to an honestly available destination, but lifetime `stats.totalBosses` is statistics only and must never grant access. The `unlockMaps` dev escape hatch is session-only QA state; it performs zero storage writes and disables campaign credit for that run.
 
 **World theming:** new `BIOME_THEME.forgeheart` row (`src/content/mapObjects.js:117-138` pattern): `tint: { color: '#ff8a4a', amt: 0.28 }`, `structures: ['foundry', 'ruin']`, `props: { anvilBlock: 12, slagCauldron: 8, chimneyStack: 7, pillar: 10, stoneBlock: 8, crate: 6, ruinedWall: 7 }`. NEW `MAP_STRUCTURES.foundry` blueprint (mapObjects.js:90-107 pattern): `interiorW 280, interiorH 210, wall 32, wallH 170, door 148, palette { base:'#4a3128', top:'#6b4534', edge:'#241410' }`. Three NEW procedural prop archetypes in `MAP_OBJECTS` (anvilBlock, slagCauldron, chimneyStack — flat-palette painted like every existing prop; no AI art). `slagCauldron` hooks the existing candle light idiom (`src/systems/MapRenderer.js:210-212`) to cast a warm `LIGHT_COLORS.fire` glow (radius 180, alpha 0.8, priority 0 — cauldrons are sparse). `ObstacleSystem.generate(w,h,biomeId)` (`src/systems/ObstacleSystem.js:89-110`, called from `src/core/Game.js:857-860`) picks all of this up with zero engine change — the seed is already perturbed per biome id (ObstacleSystem.js:110).
 
@@ -141,14 +143,14 @@ Both tier folds are open-form and extend to tier 5 with **zero code change** (ve
 - **Trash** (Game.js:805-810): `hp ×(1+(t-1)·0.12)`, `dmg ×(1+(t-1)·0.08)`, `speed ×(1+(t-1)·0.03)` → tier 5 = **×1.48 hp / ×1.32 dmg / ×1.12 speed**.
 - **Boss extras** (Game.js:2017-2019): `mapHpMul ×(1+(t-1)·0.07)`, `mapDmgMul ×(1+(t-1)·0.04)` → tier 5 = **×1.28 hp / ×1.16 dmg** on top of the trash fold, encounter tierMul (:2009), time curve + `baseHpMul` 1.5 (GameConfig.js:700-706).
 - Net Anvil check: 3600 base × 1.5 × time-cap-min × 2.6 encounter × 1.28 map ≈ the intended "hardest fight in the game" without touching any curve.
-- **Unlock:** `unlockBosses: 12` — all four earlier trios once, or any 12 lifetime kills (isMapUnlocked, maps.js:129-133). Locked card reads "🔒 12 bosses" automatically (MenuRenderer.js:1019).
+- **Unlock:** record the exact Dunes trio — `cindermaw`, `dunescourge`, and `solnakh` — in eligible campaign runs. The locked card reads `LOCKED · The Dunes N/3`; repeats and other-map/mode bosses do not count.
 - **XP:** boss xpValue 58/70/96 (vs solnakh 90); trash XP untouched — tier 5 pays through boss kills and pace, not inflation.
 
 ## 6. UX, achievements, save keys (all additive)
 
-- One-time "THE FORGE OPENS" menu toast when `totalBosses` first crosses 12: additive save key `seenForgeheartUnlock: false`, clamped `!!` at load (the SaveSystem.js:266-270 clamp-block pattern). No version bump — the loader defaults absent keys.
+- One-time "THE FORGE OPENS" beat comes directly from the third unique-Dunes-boss unlock receipt; no parallel threshold or `seen` predicate may decide access.
 - Additive stat `stats.forgeheartBosses: 0` (incremented alongside totalBosses, SaveSystem.js:466 path, when the run map is forgeheart).
-- Two append-only achievements (`src/content/achievements.js:8-12` pattern): `forge_unlocked` ("The Forge Opens", totalBosses ≥ 12, 300 coins) and `forge_tempered` ("Tempered", forgeheartBosses ≥ 3, 400 coins).
+- Two append-only achievements (`src/content/achievements.js:8-12` pattern): `forge_unlocked` ("The Forge Opens", Forgeheart honestly unlocked, 300 coins) and `forge_tempered` ("Tempered", forgeheartBosses ≥ 3, 400 coins).
 
 ## 7. Art plan (procedural ships first — nothing blocks)
 
@@ -171,13 +173,15 @@ Both tier folds are open-form and extend to tier 5 with **zero code change** (ve
 
 **Files:**
 - `src/content/maps.js`
+- `src/systems/CampaignProgression.js`
+- `src/systems/SaveSystem.js`
 - `src/content/mapObjects.js (BIOME_THEME row, foundry blueprint, 3 new prop archetypes)`
 - `src/systems/MapRenderer.js (ashfall branch)`
 - `src/systems/AudioSystem.js (BIOME_TUNE.forgeheart row)`
 - `src/content/achievements.js (forge_unlocked)`
 
 **Work:**
-- Add MAPS.forgeheart (tier 5, unlockBosses 12, weather 'ashfall', hazard 'slagflow' — inert until PR2 since BIOME_HAZARD has no slagflow entry yet; guard: Game.js:875 arms it but HazardSystem.updateBiome:204 already no-ops on unknown cfg) and append to MAP_ORDER
+- Add MAPS.forgeheart (tier 5, weather 'ashfall', hazard 'slagflow' — inert until PR2 since BIOME_HAZARD has no slagflow entry yet), append both authored map orders, and extend the versioned exact-boss ledger/migration.
 - Temporarily set bosses: ['cindermaw','dunescourge','solnakh'] with a TODO(PR3)
 - BIOME_THEME.forgeheart + MAP_STRUCTURES.foundry + procedural anvilBlock/slagCauldron/chimneyStack props; slagCauldron light via the candle idiom (MapRenderer.js:210-212)
 - drawWeather 'ashfall' branch inside the N=56 budget; verify reducedEffects skip
@@ -187,8 +191,8 @@ Both tier folds are open-form and extend to tier 5 with **zero code change** (ve
 **Verify:**
 - node --check on every touched file
 - node tools/validate-assets.js exit 0
-- harness.html?badge=1&screen=menu — 5 biome cards, forgeheart locked at '🔒 12 bosses', EXC:0
-- harness with settings.unlockMaps=true booting a forgeheart run for 35s — ashfall visible, foundry/props themed, EXC:0, FPS badge healthy
+- local harness menu matrix — Forgeheart shows exact Dunes 0/3, 2/3, third-boss unlock, and session-only QA credit-off states at `EXC:0`.
+- local harness with the session-only map bypass booting a Forgeheart run for 35s — ashfall visible, foundry/props themed, campaign receipt rejected, `EXC:0`, FPS badge healthy.
 
 ### PR2 — PR2 — Slagflow rivers: ribbon hazard, crust/melt cycle, enemy searing
 
@@ -282,13 +286,13 @@ Both tier folds are open-form and extend to tier 5 with **zero code change** (ve
 
 ## Data & save changes
 
-**Content files (append-only edits, no new modules):** `src/content/maps.js` — MAPS.forgeheart + MAP_ORDER 5th entry; `src/content/mapObjects.js` — BIOME_THEME.forgeheart, MAP_STRUCTURES.foundry, MAP_OBJECTS anvilBlock/slagCauldron/chimneyStack (procedural palettes); `src/config/GameConfig.js` — BIOME_HAZARD.slagflow + slagMaxLinks, three ENEMY boss defs (forgeBellows/forgeSmith/forgeAnvil) with full attack tables + heatCycle block + Thresholds declaration fields; `src/content/achievements.js` — forge_unlocked, forge_tempered; `src/systems/AudioSystem.js` — BIOME_TUNE.forgeheart + 3 boss theme rows. **Save schema (additive only, no version bump — loader defaults absent keys and the clamp block at SaveSystem.js:266-360 sanitizes):** `seenForgeheartUnlock: boolean` (default false, clamped `!!`), `stats.forgeheartBosses: number` (default 0, clamped finite ≥ 0). `selectedMap:'forgeheart'` needs zero migration: SaveSystem.js:270 already falls back to DEFAULT_MAP for unknown ids on older builds, and getSelectedMap re-validates the unlock (SaveSystem.js:552-556). **Config blocks:** slagflow `{ r:110, linksMin:4, linksMax:6, step:150, meander:0.55, warn:1.2, duration:18, cycleMolten:5.5, cycleCrusted:3.5, remeltWarn:0.8, tickDamage:9, enemyTick:8, enemyTickInterval:0.5, crustSlow:0.9, color:'#3a1710', rim:'#ff8a3c', molten:'#ff6a22' }`, `slagMaxLinks:14`.
+**Content files:** `src/content/maps.js` — MAPS.forgeheart + MAP_ORDER fifth entry; `src/systems/CampaignProgression.js` — fifth authored id, exact Forgeheart trio, and conservative migration; `src/content/mapObjects.js` — BIOME_THEME.forgeheart, MAP_STRUCTURES.foundry, MAP_OBJECTS anvilBlock/slagCauldron/chimneyStack; `src/config/GameConfig.js` — BIOME_HAZARD.slagflow, three ENEMY boss defs, and Thresholds declarations; `src/content/achievements.js`; `src/systems/AudioSystem.js`. **Save schema:** bump the campaign schema deliberately; retain only proven prefix/trio evidence, never lifetime-total inference. `stats.forgeheartBosses` remains an additive statistic. **Config blocks:** slagflow `{ r:110, linksMin:4, linksMax:6, step:150, meander:0.55, warn:1.2, duration:18, cycleMolten:5.5, cycleCrusted:3.5, remeltWarn:0.8, tickDamage:9, enemyTick:8, enemyTickInterval:0.5, crustSlow:0.9, color:'#3a1710', rim:'#ff8a3c', molten:'#ff6a22' }`, `slagMaxLinks:14`.
 
 ## Balance numbers (all tunable)
 
 | Number | Start value | Rationale (all tunable) |
 |---|---|---|
-| unlockBosses | 12 | Continues the verified 0/3/6/9 ladder (maps.js:35/56/76/92); one full clear of all four maps, retroactive via lifetime totalBosses |
+| campaign gate | Exact Dunes trio | Three unique authored Dunes bosses in eligible standard runs; no repeats, mode credit, threshold, or retroactive lifetime inference |
 | tier | 5 | Trash ×1.48 hp / ×1.32 dmg / ×1.12 speed (Game.js:806-809 open-form); boss extras ×1.28 hp / ×1.16 dmg (Game.js:2018-2019) — zero code change |
 | darkness | 0.85 | Between hollowreach 0.72 and crypts 1.0 — dark enough that molten slag is the light source, readable on mobile |
 | slag link r / links / step | 110 / 4-6 / 150 | ~600-950px ribbons: crossable in ~0.7s of sprint, real routing obstacle at 180 enemies |
@@ -321,13 +325,13 @@ Both tier folds are open-form and extend to tier 5 with **zero code change** (ve
 
 ## Uniqueness & boundaries
 
-FORGEHEART is the only update in the 20 that grows the WORLD itself: the only new biome/tier rung (5th map, tier 5, unlock 12), the only place environmental fire styling becomes canon, the only enemy-affecting terrain in the game (slag sears the horde — every other hazard, biome or boss, touches only the player), the only boss with a burst-window state machine (the Anvil's heatCycle), the only boss that weaponizes its biome's hazard (the Bellows' Stoke), and the completion of the boss roster from 12 to 15. Sharpest neighbor boundaries: #4 BOSSFORGE owns the projectile-collision grid + pooling perf refactor and the Blender boss re-modeling pipeline — Forgeheart consumes both, builds neither, and ships procedural boss art first; #6 UNDERTOW owns 'new enemy family + new run mode' — Forgeheart adds ZERO new trash creatures (its 'husks' are an enemyMix lean on existing emberskeleton/skeleton/zombie) and no mode; #7 THRESHOLDS owns the arena-raise/boss-weather/boss-theme MACHINERY — Forgeheart only declares per-boss data in #7's contract (isolated in PR4, inert if absent); #12 owns creature sheet coherence; #15/#16 own difficulty ladders and NG+ remixes — Forgeheart's tier-5 numbers ride the existing open-form tier folds untouched.
+FORGEHEART is the only update in the 20 that grows the WORLD itself: the only new biome/tier rung (5th map, tier 5, exact Dunes-trio gate), the only place environmental fire styling becomes canon, the only enemy-affecting terrain in the game (slag sears the horde — every other hazard, biome or boss, touches only the player), the only boss with a burst-window state machine (the Anvil's heatCycle), the only boss that weaponizes its biome's hazard (the Bellows' Stoke), and the completion of the boss roster from 12 to 15. Sharpest neighbor boundaries: #4 BOSSFORGE owns the projectile-collision grid + pooling perf refactor and the Blender boss re-modeling pipeline — Forgeheart consumes both, builds neither, and ships procedural boss art first; #6 UNDERTOW owns 'new enemy family + new run mode' — Forgeheart adds ZERO new trash creatures (its 'husks' are an enemyMix lean on existing emberskeleton/skeleton/zombie) and no mode; #7 THRESHOLDS owns the arena-raise/boss-weather/boss-theme MACHINERY — Forgeheart only declares per-boss data in #7's contract (isolated in PR4, inert if absent); #12 owns creature sheet coherence; #15/#16 own difficulty ladders and NG+ remixes — Forgeheart's tier-5 numbers ride the existing open-form tier folds untouched.
 
 ## Roadmap corrections found while grounding
 
 - Roadmap constraint text calls tools/blender/ a pipeline for 'character/creature/prop art' — verified it is currently HERO-ONLY (monkey_rig.py parametric monkey + render_sheets.py + the pixelate install path, per tools/blender/README.md). Boss/creature generality is #4 BOSSFORGE's deliverable; this spec therefore ships procedural PixelBosses art first and treats Blender boss sheets as a non-blocking follow-up.
 - The hook 'kiting 180 husks across a glowing slag river' implies the river threatens the horde — but today's hazard pool is strictly player-only (HazardSystem.update reads only game.player, src/systems/HazardSystem.js:39-74; enemies never intersect hazards anywhere). Enemy searing is specced explicitly as NEW mechanic code, not an existing seam.
-- 'Thresholds arenas' (deps line) — no arena-raise / runtime-ObstacleSystem-insertion or per-boss weather/theme code exists in main today (only the standard circular BOSS.arenaRadius confinement, Game.js:1989 / GameConfig.js:741); #7 ships it first. The spec isolates all #7-contract declarations in PR4 and keeps them inert-if-absent. All other synopsis-named seams verified real: BIOME_HAZARD (GameConfig.js:915), the maps.js contract + unlockBosses ladder + getMapTier (maps.js:24-133), the apexBoss framework with all 14 attack kinds (Enemy.js:1137-1456), the BIOME_TUNE pattern (AudioSystem.js:87-92) and the musicDuck sidechain (AudioSystem.js:124, 191-193).
+- 'Thresholds arenas' (deps line) — no arena-raise / runtime-ObstacleSystem-insertion or per-boss weather/theme code exists in main today (only the standard circular BOSS.arenaRadius confinement, Game.js:1989 / GameConfig.js:741); #7 ships it first. The spec isolates all #7-contract declarations in PR4 and keeps them inert-if-absent. Other verified seams are BIOME_HAZARD, the MAPS presentation contract plus versioned CampaignProgression gate, getMapTier, the apexBoss framework, BIOME_TUNE, and the musicDuck sidechain.
 
 ## Binding cross-spec rulings affecting this update
 

@@ -10,13 +10,13 @@
 // selectUpgrade), shrine pick (selectAltar), settings toggles (togglePause,
 // toggleScreenShake, _toggleSetting, _adjustVolume), and the save-reset confirm.
 
-import { SCREEN_SHAKE } from '../config/GameConfig.js';
+import { DEV_MODE, SCREEN_SHAKE } from '../config/GameConfig.js';
 import { clamp } from './MathUtils.js';
 import { claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
 import { openCase, MINES } from '../systems/CaseSystem.js';
 import { COSMETICS, COSMETIC_SETS, cosmeticCoinCost } from '../content/cosmetics.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
-import { getMap } from '../content/maps.js';
+import { MAPS } from '../content/maps.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { menuHotspotLabel } from '../systems/AccessibilityBridge.js';
 import {
@@ -167,7 +167,7 @@ export const GameInputActionMethods = {
         this.riteTrialMode = false;
         this.bossRushMode = false;
         this.weeklyEmberMode = false;
-        this._startRun();
+        this._startRun({ campaignEligible: true });
         return 'start';
     },
 
@@ -446,7 +446,7 @@ export const GameInputActionMethods = {
                     this.accessibility?.announce?.(`${tabLabel} opened.`);
                 }
                 break;
-            case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false; this._startRun(); break;
+            case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false; this._startRun({ campaignEligible: true }); break;
             case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false; this._startRun(); break;
             // KINDLED PR5 — launch the daily hero-locked Rite Trial (mutually
             // exclusive with the Daily Road; the trial hero is a session-local override).
@@ -507,9 +507,19 @@ export const GameInputActionMethods = {
             case 'selectCharacter': this._pressFeedback(`char:${arg.id}`); this.saveSystem.setSelectedCharacter(arg.id); break;
             case 'selectMap': {
                 this._pressFeedback(`map:${arg.id}`);
-                if (!this.saveSystem.setSelectedMap(arg.id)) {
-                    const need = getMap(arg.id)?.unlockBosses ?? 3;
-                    this._setToast(`Defeat ${need} bosses to unlock`);
+                const status = this.saveSystem.getMapUnlockStatus(arg.id);
+                const selected = this.saveSystem.setSelectedMap(arg.id);
+                if (!selected) {
+                    if (status?.known && status.requiredMapId) {
+                        const priorMap = MAPS[status.requiredMapId]?.name ?? 'the previous map';
+                        this._setToast(
+                            `Defeat all ${status.requiredCount} ${priorMap} bosses · ${status.defeatedCount}/${status.requiredCount} complete`,
+                        );
+                    } else {
+                        this._setToast('Map unavailable');
+                    }
+                } else if (status?.qaBypass) {
+                    this._setToast('QA map open · campaign credit off');
                 }
                 break;
             }
@@ -551,8 +561,13 @@ export const GameInputActionMethods = {
                 this._forceRunHints = true;      // next run re-teaches the loop
                 this._armMenuTour();
                 break;
-            case 'cheatCoins': this.saveSystem.addCoins(arg); this._setToast(`+${arg} coins`); break;
+            case 'cheatCoins':
+                if (!DEV_MODE) break;
+                this.saveSystem.addCoins(arg);
+                this._setToast(`+${arg} coins`);
+                break;
             case 'cheatUnlockAll': {
+                if (!DEV_MODE) break;
                 const n = this.saveSystem.cheatUnlockAll();
                 this._setToast(n > 0 ? `Unlocked ${n} item${n > 1 ? 's' : ''}` : 'Everything already unlocked');
                 break;
@@ -561,14 +576,22 @@ export const GameInputActionMethods = {
         }
     },
     _toggleSetting(key) {
+        // The map bypass is a ?dev=1 QA capability, not a persisted preference.
+        // Guard the action itself so direct dispatch cannot bypass hidden UI.
+        if ((key === 'unlockMaps' || key === 'debug') && !DEV_MODE) return false;
         const cur = this.saveSystem.getSetting(key) === true;
         this.saveSystem.setSetting(key, !cur);
-        if (key === 'debug') { this.showDebug = !cur; this.profiler.enabled = this.showDebug; }
+        if (key === 'debug') {
+            this.showDebug = !cur;
+            this.profiler.enabled = this.showDebug;
+            if (this.showDebug) this._taintCampaignRun?.('debug-mode');
+        }
         if (key === 'monoAudio') this.audio.setMonoAudio(!cur);
         if (key === 'captions') {
             this.captionSystem?.setPreferences?.(!cur, this.saveSystem.getSetting('captionDetail'));
         }
         this.accessibility?.announce?.(`${menuHotspotLabel('toggleSetting', key)}: ${!cur ? 'on' : 'off'}.`);
+        return true;
     },
     _setUiScale(value) {
         const scale = normalizeUiScale(value);

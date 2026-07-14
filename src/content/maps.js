@@ -9,7 +9,8 @@
 //   darkness     a per-map multiplier on the Emberlight veil strength — the
 //                big DAY↔NIGHT lever (day ≈ 0.5 = bright, night = 1.0 = darkest).
 //   weather      'embers' | 'snow' | 'cryptDust' | 'sandGust'.
-// `unlockBosses` gates a biome behind lifetime boss kills.
+// Campaign access is owned by CampaignProgression's exact predecessor-boss
+// ledger. Map content deliberately carries no competing lifetime threshold.
 //
 // P1.2 "Living Biomes" — two more per-map levers, both data-only here:
 //   enemyMix     enemy-id → MULTIPLIER on the wave's native typeWeights
@@ -32,7 +33,6 @@ export const MAPS = {
         grade: '#ffd27a',       // soft golden daylight wash
         gradeAlpha: 0.10,
         darkness: 0.52,         // DAY — bright, the veil barely closes in
-        unlockBosses: 0,
         accent: '#ffd27a',
         weather: 'embers',      // warm drifting pollen/embers
         // Deterministic world dressing consumed by MapRenderer. Each biome
@@ -61,7 +61,6 @@ export const MAPS = {
         grade: '#7aa0d0',       // cold overcast
         gradeAlpha: 0.12,
         darkness: 0.72,         // SNOW — bright overcast, mid veil
-        unlockBosses: 3,
         accent: '#bfe3ff',
         weather: 'snow',        // falling flecks
         dressing: {
@@ -87,7 +86,6 @@ export const MAPS = {
         grade: '#2e2a4a',       // cold sepulchral violet
         gradeAlpha: 0.30,
         darkness: 1.0,          // NIGHT — darkest; the veil presses in fully
-        unlockBosses: 6,
         accent: '#b9a8e0',
         weather: 'cryptDust',   // slow ash + violet dust in the lantern dark
         dressing: {
@@ -113,7 +111,6 @@ export const MAPS = {
         grade: '#d8a648',       // ochre heat haze
         gradeAlpha: 0.12,
         darkness: 0.46,         // SANDY — bright scorching daylight
-        unlockBosses: 9,
         accent: '#ffdf9a',
         weather: 'sandGust',    // low wind-streaks + heat shimmer
         dressing: {
@@ -150,11 +147,4 @@ export function getMapBosses(id) {
 export function getMapTier(id) {
     const m = MAPS[id] || MAPS[DEFAULT_MAP];
     return m.tier || 1;
-}
-
-// A map is unlocked when lifetime boss kills meet its threshold.
-export function isMapUnlocked(id, totalBosses) {
-    const m = MAPS[id];
-    if (!m) return false;
-    return (totalBosses || 0) >= (m.unlockBosses || 0);
 }
