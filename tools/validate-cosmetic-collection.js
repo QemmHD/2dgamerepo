@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import * as CosmeticContent from '../src/content/cosmetics.js';
-import { MenuRenderer } from '../src/systems/MenuRenderer.js';
+import { MenuRenderer, boutiquePreviewGuidance } from '../src/systems/MenuRenderer.js';
 import { buildCaseReel } from '../src/systems/CaseSystem.js';
 import {
     COSMETIC_COLLECTION_CATEGORY_FILTERS,
@@ -383,6 +383,7 @@ check(noMatches.page === 0 && noMatches.pageCount === 0, 'valid empty result exp
 // geometry, filters, page controls, and item dispatch loop all execute.
 const renderer = new MenuRenderer({ safeArea: { top: 0, right: 0, bottom: 0, left: 0 } });
 const rendered = [];
+const renderedText = [];
 const segmentedActions = [];
 const pageButtons = [];
 renderer._panel = () => {};
@@ -402,7 +403,7 @@ renderer._button = (_ctx, rect, label, options = {}) => {
 };
 const recordCtx = {
     fillStyle: '', font: '', textAlign: '', textBaseline: '',
-    fillText() {},
+    fillText(value) { renderedText.push(String(value)); },
     measureText(value) { return { width: String(value ?? '').length * 7 }; },
 };
 const renderState = {
@@ -418,6 +419,7 @@ const renderState = {
 const collectionRect = { x: 540, y: 250, w: 980, h: 390 };
 for (const page of [1, 2]) {
     rendered.length = 0;
+    renderedText.length = 0;
     segmentedActions.length = 0;
     pageButtons.length = 0;
     renderState.collectionView.page = page;
@@ -428,6 +430,11 @@ for (const page of [1, 2]) {
     });
     same(rendered.map((entry) => entry.id), expected.itemIds,
         `renderer hat page ${page} diverged from collection authority`);
+    check(renderedText.some((text) => text.includes(`${expected.totalItems} MATCHES`)
+        && text.includes('OWNED') && text.includes('SETS')),
+    `renderer hat page ${page} lacks clear matches/owned/set summary copy`);
+    check(renderedText.every((text) => !text.includes(' SHOWN')),
+        `renderer hat page ${page} retained ambiguous SHOWN copy`);
     same(segmentedActions, ['collectionCategory', 'collectionOwnership', 'collectionSource'],
         `renderer hat page ${page} omitted a filter lane`);
     check(pageButtons.length === 2, `renderer hat page ${page} omitted pager controls`);
@@ -445,6 +452,22 @@ for (const page of [1, 2]) {
         }
     }
 }
+
+same(boutiquePreviewGuidance(['case']),
+    'RANDOM DROP · every piece comes from cosmetic cases',
+    'case-only Boutique preview does not disclose its random-only path');
+same(boutiquePreviewGuidance(['achievement']),
+    'Every piece unlocks through achievements',
+    'achievement-only Boutique preview has vague acquisition copy');
+same(boutiquePreviewGuidance(['vigil']),
+    'Every piece unlocks on the Vigil Path',
+    'Vigil-only Boutique preview has vague acquisition copy');
+same(boutiquePreviewGuidance(['case', 'achievement']),
+    'Earn locked pieces through random cases or achievements',
+    'mixed-source Boutique preview lost its exact acquisition paths');
+same(boutiquePreviewGuidance(['__unknown__']),
+    'Earn this look outside the Boutique',
+    'unknown Boutique preview route did not fail closed');
 
 // Case reels carry stable ids, and the production item-face path resolves the
 // actual cosmetic catalog entry rather than falling back to category art.

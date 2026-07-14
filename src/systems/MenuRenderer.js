@@ -72,6 +72,34 @@ const TAU = Math.PI * 2;
 const HERO_CANONICAL_SIZE = 182;
 const HERO_CANONICAL_HALF = HERO_CANONICAL_SIZE / 2;
 
+// Preview-only Boutique looks must name their real acquisition path. Keeping
+// this pure makes the promise independently testable instead of burying source
+// truth inside a draw branch.
+export function boutiquePreviewGuidance(routes) {
+    const known = new Set();
+    if (routes && typeof routes[Symbol.iterator] === 'function') {
+        for (const route of routes) {
+            if (['case', 'achievement', 'vigil', 'boutique'].includes(route)) known.add(route);
+        }
+    }
+    if (known.size === 1 && known.has('case')) {
+        return 'RANDOM DROP · every piece comes from cosmetic cases';
+    }
+    if (known.size === 1 && known.has('achievement')) {
+        return 'Every piece unlocks through achievements';
+    }
+    if (known.size === 1 && known.has('vigil')) {
+        return 'Every piece unlocks on the Vigil Path';
+    }
+    if (known.size > 0) {
+        const labels = [...known].map((route) => route === 'case'
+            ? 'random cases' : route === 'achievement'
+                ? 'achievements' : route === 'vigil' ? 'Vigil Path' : 'the Boutique');
+        return `Earn locked pieces through ${labels.join(' or ')}`;
+    }
+    return 'Earn this look outside the Boutique';
+}
+
 // Each tab carries an accent color so the menu reads as color-coded sections
 // at a glance (the active tab tints to its own hue; inactive tabs show a thin
 // accent underline). Cool→warm grouping: play/progress greens & golds, economy
@@ -2944,7 +2972,7 @@ export class MenuRenderer {
             }, null);
         }
         ctx.fillStyle = 'rgba(220,228,238,0.72)'; ctx.font = `800 12px ${FONT}`;
-        ctx.fillText(`PAGE ${page}/${pageCount} · ${total} SHOWN  |  OWNED ${ownedIds.size}/${COSMETIC_LIST.length} · SETS ${completedSets}/${COSMETIC_SETS.length}`,
+        ctx.fillText(`PAGE ${page}/${pageCount} · ${total} MATCHES  |  OWNED ${ownedIds.size}/${COSMETIC_LIST.length} · SETS ${completedSets}/${COSMETIC_SETS.length}`,
             rect.x + rect.w / 2, fy + 12);
         if (focusSet) {
             const progress = COSMETIC_CATEGORIES.filter((category) => ownedIds.has(focusSet.pieces[category])).length;
@@ -3586,6 +3614,7 @@ export class MenuRenderer {
 
         // Tried-on pieces, listed with their path (price / owned / drop-only).
         let total = 0, equippableN = 0;
+        const previewRoutes = new Set();
         let ly = capY + 54;
         ctx.textAlign = 'left';
         for (const cat of COSMETIC_CATEGORIES) {
@@ -3600,6 +3629,7 @@ export class MenuRenderer {
                 path = `◎ ${price.toLocaleString()}${routes.includes('case') ? ' · Case' : ''}`;
                 pcol = '#ffd86b'; total += price; equippableN++;
             } else {
+                for (const route of getCosmeticAcquisitionRoutes(item)) previewRoutes.add(route);
                 path = getCosmeticSourceLabel(item) || 'Case';
                 pcol = item.passLevel ? '#ff9a4a'
                     : item.achievement ? 'rgba(168,213,247,0.9)'
@@ -3628,7 +3658,8 @@ export class MenuRenderer {
               action: trying && !previewOnly ? 'buyTryOn' : null, fontSize: 24 });
         if (previewOnly) {
             ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 14px ${FONT}`;
-            ctx.fillText('Earn these through the Vigil Path, cases, or achievements', mcx, by2 - 10);
+            const guidance = boutiquePreviewGuidance(previewRoutes);
+            ctx.fillText(this._ellip(ctx, guidance, bw2 - 12), mcx, by2 - 10);
         }
         if (total > 0 && !afford) {
             ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `500 14px ${FONT}`;
