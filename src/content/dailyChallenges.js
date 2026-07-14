@@ -8,7 +8,9 @@
 // same day with no server. Completion + claim state lives in save.daily
 // ({ day, completed: [ids] }); SaveSystem auto-resets it when the day rolls.
 
-// metric maps to a field on the run summary built at game-over:
+// metric maps to a field on the run summary built at game-over. Living Vigil
+// adds sites, siteKinds, encounters, and guardians alongside the original
+// kills/bosses/time/level/wave families:
 //   kills → summary.kills, bosses → summary.bossesDefeated,
 //   timeSec → summary.time, level → summary.level, wave → summary.finalWave
 export const DAILY_POOL = [
@@ -22,6 +24,12 @@ export const DAILY_POOL = [
     { id: 'd_level_25',   name: 'Ascendant',      desc: 'Reach level 25 in a run',     metric: 'level',  target: 25,  coins: 170, vigilXp: 120 },
     { id: 'd_wave_4',     name: 'Pressing On',    desc: 'Reach wave 4 in a run',       metric: 'wave',   target: 4,   coins: 90,  vigilXp: 70 },
     { id: 'd_wave_6',     name: 'Wavebreaker',    desc: 'Reach wave 6 in a run',       metric: 'wave',   target: 6,   coins: 170, vigilXp: 120 },
+    { id: 'd_sites_2',    name: 'Waylighter',      desc: 'Activate 2 Vigil sites',      metric: 'sites',  target: 2,   coins: 80,  vigilXp: 75 },
+    { id: 'd_sites_4',    name: 'Lantern Circuit', desc: 'Activate 4 Vigil sites',      metric: 'sites',  target: 4,   coins: 150, vigilXp: 125 },
+    { id: 'd_site_kinds', name: 'Fourfold Pilgrim', desc: 'Use all 4 Vigil site kinds', metric: 'siteKinds', target: 4, coins: 180, vigilXp: 140 },
+    { id: 'd_packs_2',    name: 'Formation Breaker', desc: 'Clear 2 tactical encounters', metric: 'encounters', target: 2, coins: 90, vigilXp: 80 },
+    { id: 'd_packs_4',    name: 'Battle Reader',  desc: 'Clear 4 tactical encounters', metric: 'encounters', target: 4, coins: 170, vigilXp: 130 },
+    { id: 'd_guardian_1', name: 'Guardianbreaker', desc: 'Defeat a guardian pack',     metric: 'guardians', target: 1, coins: 140, vigilXp: 110 },
 ];
 
 const BY_ID = Object.fromEntries(DAILY_POOL.map((c) => [c.id, c]));
@@ -84,6 +92,10 @@ function metricValue(summary, metric) {
         case 'timeSec': return summary.time || 0;
         case 'level':  return summary.level || 0;
         case 'wave':   return summary.finalWave || 0;
+        case 'sites':  return summary.vigilSitesActivated || 0;
+        case 'siteKinds': return summary.vigilSiteKindsMastered || 0;
+        case 'encounters': return summary.encountersCleared || 0;
+        case 'guardians': return summary.guardianPacksDefeated || 0;
         default:       return 0;
     }
 }

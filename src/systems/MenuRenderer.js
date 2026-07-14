@@ -23,7 +23,7 @@ import {
 import { CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining, CASE_PITY, WAGER_BETS } from './CaseSystem.js';
 import { MAPS, MAP_ORDER, isMapUnlocked } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, BP_EVERFLAME_COINS, bpProgress, bpThreshold } from '../content/battlePass.js';
-import { rewardLabel } from './BattlePassSystem.js';
+import { battlePassRunReceipt, rewardLabel } from './BattlePassSystem.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { ATTUNABLE, getRelic, attuneCost } from '../content/relics.js';
 import { CHARACTERS, CHARACTER_IDS, getCharacter, resolveCharacterHold } from '../content/characters.js';
@@ -138,6 +138,15 @@ export function tabUnlocked(id, save) {
         case 'stats': return (s.runs ?? 0) >= 1;                          // first run finished
         default: return true;
     }
+}
+
+// Count only ids that belong to today's deterministic selection. A deployment
+// can change the selector while a player still has same-day completions from
+// the prior build; stale ids must not make the new set appear complete.
+export function completedDailyCount(daily, day, picked = pickDailyChallenges(day)) {
+    if (!daily || daily.day !== day || !Array.isArray(daily.completed)) return 0;
+    return [...new Set(daily.completed)].reduce((count, id) =>
+        count + (picked.some((challenge) => challenge.id === id) ? 1 : 0), 0);
 }
 
 // Dev tooling gate: the Debug/Unlock-Maps toggles and the CHEATS panel are
@@ -762,8 +771,8 @@ export class MenuRenderer {
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ffd28f'; ctx.font = `700 14px ${FONT}`;
         ctx.fillText('HOLD THE LAST LIGHT', visibleMid, titleY - 10);
-        ctx.fillStyle = 'rgba(255,230,195,0.72)'; ctx.font = `500 18px ${FONT}`;
-        ctx.fillText('Survive the vigil. Kindle the flame.', visibleMid, titleY + titleH + 38);
+        ctx.fillStyle = 'rgba(255,230,195,0.78)'; ctx.font = `500 18px ${FONT}`;
+        ctx.fillText('Survive the night. Keep the last light burning.', visibleMid, titleY + titleH + 38);
 
         // ── Forged command deck (left) ──
         const groups = this._visibleGroups(save);
@@ -772,7 +781,7 @@ export class MenuRenderer {
         const rows = [];
         for (const gDef of groups) {
             if (gDef.id === 'gPlay') continue;
-            rows.push({ label: gDef.label, accent: gDef.accent, target: gDef.kids[0], kids: gDef.kids });
+            rows.push({ id: gDef.id, label: gDef.label, accent: gDef.accent, target: gDef.kids[0], kids: gDef.kids });
         }
         const statusH = 54;
         const statusY = H - sa.bottom - statusH - 18;
@@ -789,16 +798,18 @@ export class MenuRenderer {
         this._panel(ctx, navX - 24, mainTop, navW + 48, mainH, 'rgba(10,8,9,0.70)', 'rgba(255,158,80,0.22)', { corners: true });
 
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        const deckKicker = isFirst ? 'YOUR FIRST LIGHT' : 'THE FORGE IS CALLING';
-        const deckTitle = isFirst ? 'BEGIN YOUR FIRST VIGIL' : 'BEGIN YOUR NEXT VIGIL';
+        const deckKicker = isFirst ? 'NEW PLAYER START' : 'READY FOR ANOTHER ATTEMPT';
+        const deckTitle = isFirst ? 'START YOUR FIRST RUN' : 'CHOOSE YOUR NEXT RUN';
         ctx.fillStyle = '#ffbd68'; ctx.font = `800 14px ${FONT}`;
         ctx.fillText(deckKicker, navX, mainTop + 34);
         ctx.fillStyle = '#fff4df'; this._fitFont(ctx, deckTitle, navW, 700, 30);
         ctx.fillText(deckTitle, navX, mainTop + 70);
-        ctx.fillStyle = 'rgba(236,224,210,0.62)'; ctx.font = `500 16px ${FONT}`;
-        ctx.fillText(isFirst
-            ? 'Choose your keeper, then learn the vigil as you play.'
-            : 'Choose a path, sharpen your keeper, then step into the dark.', navX, mainTop + 96);
+        ctx.fillStyle = 'rgba(236,224,210,0.70)';
+        const deckCopy = isFirst
+            ? 'A Vigil is a survival run: choose your hero, map, and difficulty.'
+            : 'Choose your hero, map, and difficulty, then survive the night.';
+        this._fitFont(ctx, deckCopy, navW, 500, 16, FONT, 13);
+        ctx.fillText(deckCopy, navX, mainTop + 96);
 
         // PLAY — the singular warm focal point. It opens run setup; the existing
         // Space/Enter shortcut still starts immediately for returning players.
@@ -828,14 +839,14 @@ export class MenuRenderer {
             ctx.globalAlpha = 1;
             this._emberRim(ctx, playR.x + 10, playR.y, playR.w - 20, playR.h, t, 1.7);
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            const playTitle = isFirst ? 'FIRST VIGIL · GUIDED' : 'BEGIN VIGIL';
+            const playTitle = isFirst ? 'START FIRST RUN' : 'START RUN';
             ctx.fillStyle = '#ffffff'; this._fitFont(ctx, playTitle, playR.w - 150, 800, 38);
             ctx.fillText(playTitle, playR.x + 32, playR.y + 45);
             ctx.font = `600 16px ${FONT}`; ctx.fillStyle = 'rgba(255,247,231,0.88)';
-            ctx.fillText(isFirst ? 'Setup first · lessons begin when you launch' : 'Choose hero, biome & pact',
+            ctx.fillText(isFirst ? 'Guided setup · tips appear during play' : 'Choose Hero, Map & Difficulty',
                 playR.x + 32, playR.y + 78);
             ctx.fillStyle = 'rgba(255,240,208,0.58)'; ctx.font = `700 13px ${FONT}`;
-            ctx.fillText(isFirst ? 'OPEN GUIDED SETUP' : 'SPACE / ENTER  •  QUICK START', playR.x + 32, playR.y + 99);
+            ctx.fillText(isFirst ? 'OPEN RUN SETUP' : 'SPACE / ENTER  •  QUICK START', playR.x + 32, playR.y + 99);
             const pcx = playR.x + playR.w - 58, pcy = playR.y + playR.h / 2;
             ctx.beginPath(); ctx.arc(pcx, pcy, 31, 0, TAU);
             ctx.fillStyle = 'rgba(24,10,6,0.48)'; ctx.fill();
@@ -847,8 +858,9 @@ export class MenuRenderer {
             // Undone-dailies nudge rides the primary play action.
             const dDay = currentDayNumber();
             const dDd = save.daily || { day: 0, completed: [] };
-            const dDone = dDd.day === dDay && Array.isArray(dDd.completed) ? dDd.completed.length : 0;
-            if (((save.stats?.runs ?? 0) >= 1) && dDone < pickDailyChallenges(dDay).length) {
+            const dPicked = pickDailyChallenges(dDay);
+            const dDone = completedDailyCount(dDd, dDay, dPicked);
+            if (((save.stats?.runs ?? 0) >= 1) && dDone < dPicked.length) {
                 ctx.beginPath(); ctx.arc(playR.x + playR.w - 10, playR.y + 10, 8, 0, TAU);
                 ctx.fillStyle = '#ff6a4a'; ctx.fill();
                 ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -857,9 +869,13 @@ export class MenuRenderer {
 
         // Section cards: two columns keep every destination visible without
         // turning HOME into a tall settings list. Each card states its purpose.
+        const sectionLabels = {
+            gHero: 'HERO', gArmory: 'UPGRADES', gShop: 'SHOP',
+            gProgress: 'REWARDS', gSettings: 'SETTINGS',
+        };
         const sectionCopy = {
-            gHero: 'keepers & rites', gArmory: 'skills & gear', gShop: 'cases & styles',
-            gProgress: 'pass & records', gSettings: 'options & access',
+            gHero: 'heroes & appearance', gArmory: 'skills, upgrades & gear', gShop: 'cases & cosmetic styles',
+            gProgress: 'goals, rewards & records', gSettings: 'options & accessibility',
         };
         const cols = 2, cardGap = 12;
         const sectionTop = playR.y + playR.h + 20;
@@ -876,6 +892,16 @@ export class MenuRenderer {
             const bg = ctx.createLinearGradient(0, y, 0, y + cardH);
             bg.addColorStop(0, 'rgba(30,24,21,0.92)'); bg.addColorStop(1, 'rgba(18,14,13,0.92)');
             ctx.fillStyle = bg; ctx.fill();
+            // Each destination keeps its own restrained color wash. The tint is
+            // strongest near the icon/label and fades before it can compete with
+            // the warm START RUN action above.
+            ctx.save(); roundRectPath(ctx, x, y, cardW, cardH, 14); ctx.clip();
+            const accentWash = ctx.createLinearGradient(x, 0, x + cardW, 0);
+            accentWash.addColorStop(0, `${r.accent}26`);
+            accentWash.addColorStop(0.48, `${r.accent}0c`);
+            accentWash.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = accentWash; ctx.fillRect(x, y, cardW, cardH);
+            ctx.restore();
             if (plate) {
                 ctx.save(); roundRectPath(ctx, x, y, cardW, cardH, 14); ctx.clip();
                 ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.14;
@@ -883,20 +909,25 @@ export class MenuRenderer {
             }
             roundRectPath(ctx, x, y, cardW, cardH, 14);
             ctx.strokeStyle = 'rgba(255,255,255,0.13)'; ctx.lineWidth = 1.5; ctx.stroke();
-            ctx.fillStyle = r.accent; ctx.globalAlpha = 0.9;
-            ctx.fillRect(x, y + 10, 4, cardH - 20); ctx.globalAlpha = 1;
+            const accentRail = ctx.createLinearGradient(0, y + 8, 0, y + cardH - 8);
+            accentRail.addColorStop(0, `${r.accent}66`);
+            accentRail.addColorStop(0.5, r.accent);
+            accentRail.addColorStop(1, `${r.accent}66`);
+            ctx.fillStyle = accentRail;
+            ctx.fillRect(x, y + 8, 4, cardH - 16);
             const iconX = x + 35, iconY = y + cardH / 2;
             ctx.beginPath(); ctx.arc(iconX, iconY, 20, 0, TAU);
-            ctx.fillStyle = 'rgba(255,255,255,0.035)'; ctx.fill();
+            ctx.fillStyle = `${r.accent}18`; ctx.fill();
             ctx.strokeStyle = `${r.accent}88`; ctx.lineWidth = 1.5; ctx.stroke();
-            const groupId = MENU_GROUPS.find((g) => g.label === r.label)?.id;
+            const groupId = r.id;
             this._drawHomeGroupGlyph(ctx, groupId, iconX, iconY, 11, r.accent);
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = 'rgba(248,241,232,0.96)'; this._fitFont(ctx, r.label, cardW - 95, 700, 20);
-            ctx.fillText(r.label, x + 64, y + cardH / 2 - 10);
-            ctx.fillStyle = 'rgba(220,216,210,0.52)'; ctx.font = `600 12px ${FONT}`;
+            const sectionLabel = sectionLabels[groupId] || r.label;
+            ctx.fillStyle = 'rgba(248,241,232,0.98)'; this._fitFont(ctx, sectionLabel, cardW - 95, 700, 20);
+            ctx.fillText(sectionLabel, x + 64, y + cardH / 2 - 10);
+            ctx.fillStyle = 'rgba(230,226,220,0.68)'; ctx.font = `600 12px ${FONT}`;
             ctx.fillText(sectionCopy[groupId] || 'open section', x + 64, y + cardH / 2 + 13);
-            ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.textAlign = 'right'; ctx.fillStyle = `${r.accent}cc`;
             ctx.font = `700 20px ${FONT}`; ctx.fillText('›', x + cardW - 16, y + cardH / 2 + 1);
             const isNew = r.kids.some((k) => !seen.includes(k) && k !== 'play' && k !== 'settings');
             if (isNew) {
@@ -930,24 +961,25 @@ export class MenuRenderer {
 
             const day = currentDayNumber();
             const daily = save.daily || { day: 0, completed: [] };
-            const done = daily.day === day && Array.isArray(daily.completed) ? daily.completed.length : 0;
-            const dailyTotal = pickDailyChallenges(day).length;
+            const dailyPicked = pickDailyChallenges(day);
+            const done = completedDailyCount(daily, day, dailyPicked);
+            const dailyTotal = dailyPicked.length;
             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
             ctx.fillStyle = '#ffad55'; ctx.font = `800 12px ${FONT}`;
-            ctx.fillText(isFirst ? 'FIRST VIGIL' : `TODAY'S TRIALS  ${done}/${dailyTotal}`, navX + 22, hookY + 30);
+            ctx.fillText(isFirst ? 'HOW A RUN WORKS' : `TODAY'S CHALLENGES  ${done}/${dailyTotal}`, navX + 22, hookY + 30);
             ctx.fillStyle = '#fff0d7';
-            const hookTitle = isFirst ? '15 MINUTES. ONE LAST LIGHT.' : 'THE DARK RETURNS.';
+            const hookTitle = isFirst ? 'SURVIVE ABOUT 15 MINUTES.' : 'BUILD. SURVIVE. RETURN.';
             this._fitFont(ctx, hookTitle, navW - 44, 700, 24);
             ctx.fillText(hookTitle, navX + 22, hookY + 62);
             ctx.fillStyle = 'rgba(244,230,210,0.62)'; ctx.font = `500 14px ${FONT}`;
             const hookCopy = isFirst
-                ? 'Move, grow stronger, and hold Emberwood until dawn.'
-                : 'Complete the daily rites, deepen your build, hold the light again.';
+                ? 'Move, collect XP, choose powers, and survive Emberwood until dawn.'
+                : 'Finish daily challenges, improve your build, and start another run.';
             this._fitFont(ctx, hookCopy, navW - 44, 500, 14, FONT, 11);
             ctx.fillText(hookCopy, navX + 22, hookY + 88);
 
             if (hookH >= 132) {
-                const beats = isFirst ? ['MOVE', 'GROW', 'ENDURE'] : ['ENTER', 'KINDLE', 'ASCEND'];
+                const beats = isFirst ? ['MOVE', 'LEVEL UP', 'SURVIVE'] : ['START', 'BUILD', 'SURVIVE'];
                 const beatY = hookY + hookH - 30;
                 const beatW = (navW - 44) / beats.length;
                 for (let i = 0; i < beats.length; i++) {
@@ -984,9 +1016,9 @@ export class MenuRenderer {
         ctx.fillRect(heroX + 32, mainTop + 28, 42, 2); ctx.globalAlpha = 1;
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillStyle = 'rgba(255,232,202,0.70)'; ctx.font = `800 13px ${FONT}`;
-        ctx.fillText('CURRENT WICK-KEEPER', heroX + 84, mainTop + 29);
+        ctx.fillText('SELECTED HERO', heroX + 84, mainTop + 29);
         ctx.textAlign = 'right'; ctx.fillStyle = `${heroAccent}`; ctx.font = `700 12px ${FONT}`;
-        ctx.fillText('READY FOR THE VIGIL', heroX + heroW - 30, mainTop + 29);
+        ctx.fillText('READY TO START', heroX + heroW - 30, mainTop + 29);
 
         const heroScale = Math.max(0.76, Math.min(1, (mainH - 470) / 220));
         const factY = mainTop + mainH - 92;
@@ -1018,28 +1050,34 @@ export class MenuRenderer {
         ctx.fillStyle = 'rgba(18,14,15,0.86)'; ctx.fill();
         ctx.strokeStyle = `${heroAccent}88`; ctx.lineWidth = 1.5; ctx.stroke();
         ctx.fillStyle = '#f8e8d2'; ctx.font = `800 12px ${FONT}`; ctx.textBaseline = 'middle';
-        ctx.fillText('CUSTOMISE HERO  ›', hx, fittedCustomY + customH / 2 + 1);
+        ctx.fillText('CUSTOMIZE HERO  ›', hx, fittedCustomY + customH / 2 + 1);
         this._hot(hx - customW / 2, fittedCustomY, customW, customH, 'tab', 'character');
 
         const map = MAPS[save.selectedMap] || MAPS[MAP_ORDER[0]];
         const diff = DIFFICULTY[save.difficulty] || DIFFICULTY.normal;
         const weapon = GEAR[save.gear?.equipped?.weapon] || GEAR.w_cinderbolt;
+        const difficultyValue = `${diff.id === 'easy' ? 'Easy' : diff.id === 'hard' ? 'Hard' : 'Normal'} · ${diff.label}`;
         const facts = [
-            { label: 'BIOME', value: map.name, color: map.accent || '#ffd27a' },
-            { label: 'WAND', value: weapon.name, color: rarityColor(weapon.rarity || 'common') },
-            { label: 'THREAT', value: diff.label, color: diff.color || '#cdd6e2' },
+            { label: 'MAP', value: map.name, color: map.accent || '#ffd27a' },
+            { label: 'WEAPON', value: weapon.name, color: rarityColor(weapon.rarity || 'common') },
+            { label: 'DIFFICULTY', value: difficultyValue, color: diff.color || '#cdd6e2' },
         ];
         const factGap = 10, factX = heroX + 24;
         const factW = (heroW - 48 - factGap * 2) / 3;
         for (let i = 0; i < facts.length; i++) {
             const f = facts[i], x = factX + i * (factW + factGap);
             roundRectPath(ctx, x, factY, factW, 62, 11);
-            ctx.fillStyle = 'rgba(18,15,16,0.88)'; ctx.fill();
+            const factBg = ctx.createLinearGradient(x, factY, x + factW, factY + 62);
+            factBg.addColorStop(0, `${f.color}1d`);
+            factBg.addColorStop(0.62, 'rgba(18,15,16,0.90)');
+            factBg.addColorStop(1, 'rgba(10,9,11,0.94)');
+            ctx.fillStyle = factBg; ctx.fill();
             ctx.strokeStyle = `${f.color}66`; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.fillStyle = f.color; ctx.fillRect(x + 10, factY + 8, 22, 2);
             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = f.color; ctx.font = `800 10px ${FONT}`; ctx.fillText(f.label, x + 12, factY + 20);
+            ctx.fillStyle = f.color; ctx.font = `800 10px ${FONT}`; ctx.fillText(f.label, x + 12, factY + 24);
             ctx.fillStyle = '#fff4e3'; this._fitFont(ctx, f.value, factW - 24, 700, 15, FONT, 11);
-            ctx.fillText(f.value, x + 12, factY + 45);
+            ctx.fillText(f.value, x + 12, factY + 47);
         }
         this._hot(factX, factY, heroW - 48, 62, 'tab', 'play');
 
@@ -1055,7 +1093,7 @@ export class MenuRenderer {
         ctx.fillStyle = '#ff8a3a'; ctx.fill();
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#ffd49a'; ctx.font = `800 12px ${FONT}`;
-        ctx.fillText((st.runs ?? 0) > 0 ? 'THE LAST LIGHT ENDURES' : 'YOUR FIRST VIGIL AWAITS', left + 48, statusY + statusH / 2 + 1);
+        ctx.fillText((st.runs ?? 0) > 0 ? 'READY FOR ANOTHER RUN' : 'READY FOR YOUR FIRST RUN', left + 48, statusY + statusH / 2 + 1);
         const stats = [
             ['RUNS', st.runs ?? 0],
             ['BEST', `${mm}:${String(ss).padStart(2, '0')}`],
@@ -1220,8 +1258,9 @@ export class MenuRenderer {
         // (the Today's-Trials strip lives on MODES). Cheap per-frame reads.
         const day = currentDayNumber();
         const dd = save.daily || { day: 0, completed: [] };
-        const doneN = dd.day === day && Array.isArray(dd.completed) ? dd.completed.length : 0;
-        const dailiesLeft = ((save.stats?.runs ?? 0) >= 1) && doneN < pickDailyChallenges(day).length;
+        const dailyPicked = pickDailyChallenges(day);
+        const doneN = completedDailyCount(dd, day, dailyPicked);
+        const dailiesLeft = ((save.stats?.runs ?? 0) >= 1) && doneN < dailyPicked.length;
         const bpClaimed = (save.battlePass && save.battlePass.claimed) || [];
         const bpLevel = bpProgress(save.battlePass?.xp ?? 0).level;
         let bpClaimable = false;
@@ -1828,6 +1867,8 @@ export class MenuRenderer {
             ['Best level', s.bestLevel || 0], ['Best kills (run)', s.bestKills || 0],
             ['Best Gauntlet score', s.bestGauntletScore || 0], ['Gauntlet runs', s.gauntletRuns || 0],
             ['Nightmare wins', s.hardWins || 0], ['Nightmare bosses', s.eliteBossesDefeated || 0],
+            ['Vigil sites', s.vigilSitesActivated || 0], ['Tactical packs', s.encountersCleared || 0],
+            ['Beacon packs', s.guardianPacksDefeated || 0],
         ];
         // Pact Mastery summary (per-character highest cleared tier).
         const pmObj = (state.saveData && state.saveData.pactMastery) || {};
@@ -2824,14 +2865,14 @@ export class MenuRenderer {
             // cards. Each element is dropped before it would overlap — the same
             // graceful-compression behaviour the odds table used to have. ──
             const mTop = y + 58, mBot = br.y - 8, band = mBot - mTop;
-            // Bad-luck pity meter (the addictive hook): live "Rare+ guaranteed in
+            // Transparent bad-luck safety net: live "Rare+ guaranteed in
             // N" readout nearest the button. Full text+bar when there's room, a
             // compact text-only line when cramped, dropped entirely when tiny.
             const cap = CASE_PITY[def.id] || 12;
             const remain = casePityRemaining(save, def.id);
             const frac = clamp01((cap - remain) / cap);
             const soon = remain === 1;
-            // The pity meter is the priority element (the hook), so it claims the
+            // The pity meter is the priority disclosure, so it claims the
             // band bottom first; the odds bar only fills whatever is left above.
             let pityTop = mBot;   // lower bound for the odds bar above
             if (band >= 12) {
@@ -2942,8 +2983,7 @@ export class MenuRenderer {
             this._hot(fx, fcTop, fcW, fcH, 'tab', item.passLevel ? 'battlepass' : item.coinCost ? 'boutique' : 'character');
         }
 
-        // ── Cinder Wager strip: a skill coin-gamble. Pick a stake, then STOP
-        // the sweeping spark on the multiplier bar (center = jackpot). ──
+        // ── Cinder Wager strip: coin-only Mines with fixed, bounded stakes. ──
         const fy = featY + featH + 24;
         this._panel(ctx, c.x, fy, c.w, forgeH, 'rgba(30,20,14,0.92)', '#ff8a4a');
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -2956,11 +2996,11 @@ export class MenuRenderer {
         ctx.font = `700 22px ${FONT}`;
         const resetTxt = plays.remaining < plays.max && plays.resetInMs > 0 ? ` · resets in ${Math.ceil(plays.resetInMs / 60000)}m` : '';
         ctx.fillText(`Plays: ${plays.remaining}/${plays.max}${resetTxt}`, c.x + 220, fy + 46);
-        ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 20px ${FONT}`;
-        ctx.fillText('Stake coins, dig safe tiles to climb the multiplier — cash out before you hit a mine. 5 plays per hour.', c.x + 32, fy + 78);
-        // Three stake buttons (greyed when no plays remain).
+        ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = `500 18px ${FONT}`;
+        ctx.fillText('Coin-only · exact next-pick odds · about 7% house edge · max loss is the chosen stake · 5 plays/hour.', c.x + 32, fy + 78);
+        // Four fixed stake presets (greyed when unaffordable/no plays remain).
         const bets = WAGER_BETS;
-        const bw = 200, bgap = 18;
+        const bw = 170, bgap = 14;
         const totalW = bets.length * bw + (bets.length - 1) * bgap;
         let bx = c.x + c.w - totalW - 32;
         for (const bet of bets) {
@@ -2968,7 +3008,7 @@ export class MenuRenderer {
             // Bottom-aligned INSIDE the 144px strip (96+56 overhung it by 8px).
             const r = { x: bx, y: fy + 84, w: bw, h: 52 };
             this._button(ctx, r, `BET  ◎ ${bet}`,
-                { primary: aff, enabled: true, accent: aff ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openMines', arg: bet, fontSize: 24 });
+                { primary: aff, enabled: true, accent: aff ? '#7a3a18' : 'rgba(60,66,78,0.9)', action: 'openMines', arg: bet, fontSize: 21 });
             bx += bw + bgap;
         }
     }
@@ -3216,10 +3256,15 @@ export class MenuRenderer {
         ctx.strokeStyle = 'rgba(255,154,74,0.3)'; ctx.lineWidth = 1.5; ctx.stroke();
         let text = 'FINISH A RUN  ·  XP comes from Kindling, Endurance, Hunt and Deeds  ·  Trials and Threat add visible bonuses';
         if (last && last.gained > 0 && last.breakdown) {
-            const b = last.breakdown;
-            text = `LAST RUN  +${last.gained} XP  ·  Kindling ${b.kindling}  ·  Endurance ${b.endurance}  ·  Hunt ${b.hunt}  ·  Deeds ${b.deeds}`;
-            if (b.trials > 0) text += `  ·  Trials +${b.trials}`;
-            if (b.threat > 0) text += `  ·  Threat +${b.threat}`;
+            const receipt = battlePassRunReceipt(last);
+            text = `LAST RUN  +${receipt.gained} XP`;
+            if (receipt.reconciles) {
+                const waylight = receipt.waylightWithinDeeds > 0
+                    ? ` (Waylight ${receipt.waylightWithinDeeds} included)` : '';
+                text += `  ·  Kindling ${receipt.kindling}  ·  Endurance ${receipt.endurance}  ·  Hunt ${receipt.hunt}  ·  Deeds ${receipt.deeds}${waylight}`;
+                if (receipt.trials > 0) text += `  ·  Trials +${receipt.trials}`;
+                if (receipt.threat > 0) text += `  ·  Threat +${receipt.threat}`;
+            }
             if (last.everflameCaches > 0) text += `  ·  Everflame +${last.everflameCoins} coins`;
         }
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -3531,7 +3576,7 @@ export class MenuRenderer {
         const caseDef = CASES[anim.caseType];
         const vaultCol = rarityColor(caseTopRarity(anim.caseType));
         const settling = t >= spinEnd && t < reveal;
-        // Overshoot ease (lands on 1 but drifts past first) — the near-miss.
+        // Overshoot ease gives the reel physical settling weight; final x is 1.
         const backOut = (x, s = 0.9) => 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2);
 
         // Deep vault curtain: the shop remains faintly visible, but a central
@@ -3561,12 +3606,9 @@ export class MenuRenderer {
             // ── SPIN: a framed reel tray of real item cards ──
             const cellW = 184, cellH = 190, gap = 14, stride = cellW + gap;
             const p = clamp01(t / spinEnd);   // p=1 through the settle hold
-            // NEAR-MISS landing: the reel rests up to ±0.35 cells off-centre
-            // (rolled per open), so the winner "almost" was its neighbour — the
-            // classic case-opening tension beat. Eased in so the early spin is
-            // unaffected; the reveal then names the true prize.
-            const offset = backOut(p) * anim.landingIndex * stride
-                + easeOutCubic(p) * (anim.landOff || 0) * stride;
+            // The awarded cell settles exactly under the marker. Anticipation
+            // comes from honest deceleration, never a manufactured near miss.
+            const offset = backOut(p) * anim.landingIndex * stride;
             const bandY = cy - cellH / 2 + 18;
             // Tray frame (vault label, glass band, hot floor and progress rail).
             const trayX = 40, trayW = W - 80;

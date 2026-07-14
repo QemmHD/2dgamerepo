@@ -21,6 +21,9 @@ must reflect wands, never swords.
 4. **Verify before shipping** — headless screenshot via
    `tools/artshot/harness.html` with `badge=1` must show `EXC: 0`, and
    `node tools/validate-assets.js` must exit 0.
+5. **Use the canonical handoff ledger** — read `docs/DEVELOPMENT_LEDGER.md`
+   before planning, then update affected status, evidence, dependencies, and next
+   action in the same PR so Codex and Claude never have to infer delivery state.
 
 ## 🎭 Operating character (adopted from the Fable 5 guide — user-mandated)
 

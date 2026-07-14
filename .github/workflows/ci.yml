@@ -4,8 +4,8 @@
 #   2b. node tools/validate-bosses.js (apex phase-2 pools resolve + keep their
 #       signature; every attack telegraphs) — guards the silent revert-to-full-
 #       kit failure where a typo'd phase2Attacks id passes every smoke test
-#   2c. progression, world/HUD cohesion, house navigation, and adaptive-audio
-#       data/policy gates
+#   2c. progression, fair-gambling, combat-integrity, UX-flow, Living Vigil,
+#       world/HUD, house-navigation, and adaptive-audio data/policy gates
 #   3. headless-Chromium harness smoke: boot the REAL game for 20 sim-seconds
 #      via tools/artshot/harness.html and assert zero exceptions (EXC: 0)
 #      and a live swarm (enemies > 0), read from the harness's document.title
@@ -39,7 +39,7 @@ jobs:
       - name: Syntax-check all src modules
         run: |
           set -e
-          find src tools -name '*.js' -o -name '*.mjs' | while read -r f; do
+          find src tools \( -name '*.js' -o -name '*.mjs' \) | while read -r f; do
             node --check "$f"
           done
           echo "node --check: all modules OK"
@@ -52,6 +52,27 @@ jobs:
 
       - name: Validate progression economy
         run: node tools/validate-progression.js
+
+      - name: Validate fair gambling economy and disclosures
+        run: node tools/validate-gambling-economy.js
+
+      - name: Validate combat integrity
+        run: node tools/validate-combat-integrity.js
+
+      - name: Validate UX flows
+        run: node tools/validate-ux-flows.js
+
+      - name: Validate Living Vigil sites
+        run: node tools/validate-vigil-sites.js
+
+      - name: Validate Living Vigil tactical encounters
+        run: node tools/validate-encounters.js
+
+      - name: Validate Living Vigil tracker
+        run: node tools/validate-vigil-tracker.js
+
+      - name: Validate Living Vigil integration
+        run: node tools/validate-living-vigil-integration.js
 
       - name: Validate biome dressing and structure cohesion
         run: node tools/validate-world.js
@@ -93,10 +114,9 @@ jobs:
           [ "${ENEMIES:-0}" -gt 0 ] || { echo "FAIL: no live enemies after 20s (enemies=$ENEMIES)"; exit 1; }
           echo "Harness smoke OK ($TITLE)"
 
-          # Fast render-branch matrix: every biome must boot as the requested
-          # map, and the two house camera branches must remain exception-free.
-          # Combining those branches into the first two biome rows keeps this
-          # to four short browser starts rather than six full simulations.
+          # Fast render-branch matrix: every biome, both house camera branches,
+          # Living Vigil rewards, touch HUD, progression receipt and Mines must
+          # render exception-free in the same real-game harness used locally.
           MATRIX_INDEX=0
           while IFS='|' read -r EXPECTED_MAP QUERY; do
             MATRIX_INDEX=$((MATRIX_INDEX + 1))
@@ -122,5 +142,11 @@ jobs:
           hollowreach|map=hollowreach&tp=buildingExterior
           crypts|map=crypts
           dunes|map=dunes
+          emberwood|map=emberwood&tp=vigilSite
+          emberwood|map=emberwood&tp=vigilBeaconCleared
+          emberwood|map=emberwood&touch=1
+          emberwood|screen=menu&tab=home
+          emberwood|screen=menu&tab=battlepass&bpxp=12600&bpclaimthrough=12&bpreceipt=1
+          emberwood|screen=menu&tab=shop&mines=250&minessafe=3
           MATRIX
-          echo "Harness render matrix OK (4 biomes, interior + exterior house branches)"
+          echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, menus, Mines)"

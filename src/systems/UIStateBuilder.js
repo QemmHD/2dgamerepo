@@ -126,6 +126,7 @@ export function buildUIState(game) {
     base.objectivesDone = game._objDone ? game._objDone.size : 0;
     base.objectivesTotal = OBJECTIVE_COUNT;
     base.objectivesCompleted = game._objCompleted || [];
+    base.vigilTracker = game.vigilTracker?.getSnapshot?.() ?? null;
     base.enemyCount = game.enemies.length;
     base.projectileCount = game.projectiles.length;
     base.gemCount = game.gems.length;

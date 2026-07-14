@@ -24,6 +24,10 @@ function rect(x, y, w, h) {
     return { x, y, w: Math.max(0, w), h: Math.max(0, h) };
 }
 
+function activeBottom(value, fallback = 0) {
+    return value && value.w > 0 && value.h > 0 ? value.y + value.h + 12 : fallback;
+}
+
 export function hudRectsOverlap(a, b, gap = 0) {
     if (!a || !b || a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0) return false;
     return a.x < b.x + b.w + gap && a.x + a.w + gap > b.x
@@ -42,6 +46,7 @@ export function computeHUDLayout(options = {}) {
     const loadoutCount = Math.max(0, Math.floor(finiteOr(options.loadoutCount)));
     const relicCount = Math.max(0, Math.floor(finiteOr(options.relicCount)));
     const abilityCount = Math.max(0, Math.floor(finiteOr(options.abilityCount)));
+    const hasVigil = !!options.hasVigil;
 
     const left = safe.left;
     const right = width - safe.right;
@@ -125,6 +130,15 @@ export function computeHUDLayout(options = {}) {
     const controlSize = 96;
     const pause = rect(right - 228, top + 20, controlSize, controlSize);
     const combo = rect(right - 260, top + 140, 220, 68);
+    const vigilTop = Math.max(
+        combo.y + combo.h + 16,
+        activeBottom(boss, top),
+        activeBottom(lieutenant, top),
+        activeBottom(bossRush, top),
+    );
+    const vigil = hasVigil
+        ? rect(right - 388, vigilTop, 350, compact ? 118 : 126)
+        : rect(0, 0, 0, 0);
 
     const filteredAbilityCount = touchMode ? Math.max(0, abilityCount - 1) : abilityCount;
     const pipPitch = 82;
@@ -152,6 +166,7 @@ export function computeHUDLayout(options = {}) {
         loadout,
         pause,
         combo,
+        vigil,
         abilities,
         kindle,
         playerLocator,

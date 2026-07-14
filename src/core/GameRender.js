@@ -187,6 +187,9 @@ export const GameRenderMethods = {
         // Hazard ground decals (boss telegraphs, delayed zones, lingering
         // pools) — below entities so the boss paints over them.
         this.hazardSystem.drawGround(ctx, this, L);
+        // House-bound Waylights are low standing props. Actors remain above
+        // their plinths while house rear/front planes keep normal occlusion.
+        this.vigilSiteSystem?.draw?.(ctx, this.camera, viewW, viewH, null);
 
         // Player light first (always kept, exempt from caps). The light TINT
         // follows the weapon aura so the glow radiating from the player changes
@@ -300,6 +303,7 @@ export const GameRenderMethods = {
                 case STAND_ENEMY:
                     value.draw(ctx);
                     value.drawHpBar(ctx);
+                    if (value.encounterGuardian) this._drawEncounterGuardianMark(ctx, value);
                     if (L) {
                         if (value.boss) L.addLight(value.x, value.y, Lc.bossRadius, LIGHT_COLORS.boss, 0.95, 0);
                         else L.addLight(value.x, value.y - value.radius * 0.3,
@@ -349,6 +353,9 @@ export const GameRenderMethods = {
             // eyes/burns or any always-on projectile, boss, hazard, or effect.
             this.obstacleSystem.forVisibleStructures(this.camera, viewW, viewH, (structure) => {
                 structureRenderer.registerLights(L, structure);
+            });
+            this.vigilSiteSystem?.forVisible?.(this.camera, viewW, viewH, (site) => {
+                if (site.state !== 'spent') L.addLight(site.x, site.y - 18, 104, site.def.accent, 0.48, 2);
             });
         }
 
@@ -442,7 +449,14 @@ export const GameRenderMethods = {
         // annotated shot.
         if (this.photoMode) {
             this._drawPhotoFilter(ctx);   // grades the world; part of a SNAP
-            if (this.photoMode.hudShown) this.ui.draw(ctx, buildUIState(this));
+            if (this.photoMode.hudShown) {
+                const photoUIState = buildUIState(this);
+                if (this.screen === 'gameplay' && this.vigilTracker) {
+                    const vigilRect = this.ui.getHUDLayout(photoUIState).vigil;
+                    this.vigilTracker.drawHUD(ctx, vigilRect, { compact: !!this.input.buttons?.supported });
+                }
+                this.ui.draw(ctx, photoUIState);
+            }
             if (!this._suppressToolbar) {
                 if (this.photoMode.gridOn) this._drawPhotoGrid(ctx);
                 this.ui.drawPhotoToolbar(ctx, this.photoMode, this.camera.zoom, this.shareToast, this._photoFilterName());
@@ -450,8 +464,23 @@ export const GameRenderMethods = {
             return;
         }
 
+        // Site interaction copy stays above the darkness veil so RESTORE,
+        // READ, OPEN, and KINDLE remain readable in the darkest interiors.
+        if (this.vigilSiteSystem) {
+            ctx.save();
+            this.camera.apply(ctx);
+            this.vigilSiteSystem.drawAbove(ctx, this.camera, viewW, viewH);
+            ctx.restore();
+        }
+
+        const gameplayUIState = buildUIState(this);
+        if (this.screen === 'gameplay' && this.vigilTracker) {
+            const vigilRect = this.ui.getHUDLayout(gameplayUIState).vigil;
+            this.vigilTracker.drawHUD(ctx, vigilRect, { compact: !!this.input.buttons?.supported });
+        }
+
         this.profiler.begin('ui');
-        this.ui.draw(ctx, buildUIState(this));
+        this.ui.draw(ctx, gameplayUIState);
         this.profiler.end('ui');
 
         if (this.victory) this._drawVictory(ctx);
@@ -477,6 +506,28 @@ export const GameRenderMethods = {
     // Expanding shockwave rings — additive stroked circles that grow via an
     // ease and thin + fade as they reach their max radius. World-space (called
     // inside the camera transform).
+    _drawEncounterGuardianMark(ctx, enemy) {
+        const pulse = this.reducedEffects ? 0.72 : 0.62 + 0.18 * Math.sin(this.time * 5 + enemy.radius);
+        const radius = enemy.radius + 12;
+        ctx.save();
+        ctx.globalAlpha = pulse;
+        ctx.strokeStyle = enemy.vigilGuardian ? '#ffcf78' : '#9fe7ff';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([12, 8]);
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, radius, 0, TWO_PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = enemy.vigilGuardian ? '#ffcf78' : '#9fe7ff';
+        ctx.beginPath();
+        ctx.moveTo(enemy.x, enemy.y - radius - 15);
+        ctx.lineTo(enemy.x - 8, enemy.y - radius - 3);
+        ctx.lineTo(enemy.x + 8, enemy.y - radius - 3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    },
+
     _drawRings(ctx) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';

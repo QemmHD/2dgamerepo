@@ -32,12 +32,15 @@
     badge    "1" stamps an EXC:<n> exception-count badge top-left (self-check)
     screen   "menu" to shoot the main menu instead of a run; with tab=<name>
     bpxp / bpclaimthrough / bpreceipt  seed Battle-Pass QA states (menu only)
+    mines=<preset> / minessafe=<n>  stage an honest Mines quote (menu only)
     boss=1 / bossid=<id> / bosshp=<0..1> / bossattack=<move id> / bosskill=1
              spawn a live apex directly and stage its choreography state
     tp       teleport before the shot: "building" (just south of the first
              placed building), "buildingInside" (inside its cutaway),
-             "buildingExterior" (offset view of the first intact house), or
-             "x,y" world coords
+             "buildingExterior" (offset view of the first intact house),
+             "vigilSite" (stage a non-combat Living Vigil discovery),
+             "vigilBeacon" (kindle a guardian challenge),
+             "vigilBeaconCleared" (stage its earned receipt), or "x,y" coords
     skipOnboarding  forced to "1" here (deterministic frames); pass "=0"
              explicitly to shoot the guided-first-run hint pill itself
 -->
@@ -138,6 +141,8 @@ const TOUCH = params.get('touch') === '1';
 const BPXP = params.has('bpxp') ? Math.max(0, parseInt(params.get('bpxp'), 10) || 0) : null;
 const BPCLAIMTHROUGH = Math.max(0, parseInt(params.get('bpclaimthrough') || '0', 10) || 0);
 const BPRECEIPT = params.get('bpreceipt') === '1';
+const MINESBET = params.has('mines') ? Number(params.get('mines')) : null;
+const MINESSAFE = Math.max(0, Math.min(18, parseInt(params.get('minessafe') || '2', 10) || 0));
 let qaBossSummary = '';
 const DT = 1 / 60;
 const TOTAL_FRAMES = Math.round(SECONDS / DT);
@@ -180,7 +185,9 @@ async function boot() {
                 game.bpResult = {
                     gained: 932, levelAfter: bpProgress(BPXP).level, leveledUp: true,
                     everflameCaches: 0, everflameCoins: 0,
-                    breakdown: { kindling: 60, endurance: 210, hunt: 230, deeds: 282, trials: 75, threat: 75 },
+                    // Living Vigil is an attributed slice of Deeds, not extra
+                    // XP; stage it so the receipt row stays visually covered.
+                    breakdown: { kindling: 60, endurance: 210, hunt: 230, deeds: 282, livingVigil: 84, trials: 75, threat: 75 },
                 };
             }
         }
@@ -197,6 +204,19 @@ async function boot() {
         }
         // Tick a few frames so menu intro animations settle.
         for (let i = 0; i < 90; i++) { try { game.update(DT); } catch (e) { ERR.push('menu ' + i + ': ' + String(e && e.stack || e)); break; } }
+        if (MINESBET != null) {
+            try {
+                game.saveSystem.data.totalCoins = Math.max(game.saveSystem.data.totalCoins, 10000);
+                game.minigame.openMines(MINESBET);
+                if (!game.minigame.mines) throw new Error(`could not stage preset ${MINESBET}`);
+                // QA-only known mine positions make the requested number of
+                // safe reveals deterministic while all displayed math still
+                // comes from the production quote/cashout path.
+                game.minigame.mines.mineSet = [19, 20, 21, 22, 23, 24];
+                for (let i = 0; i < MINESSAFE; i++) game.minigame.minesReveal(i);
+                for (let i = 0; i < 42; i++) game.update(DT);
+            } catch (e) { ERR.push('mines: ' + String(e && e.stack || e)); }
+        }
         game.render();
         // The menu's tab-switch fade runs on WALL-CLOCK time (MenuRenderer._t),
         // so the first render is frame 0 of the 180ms transition — near-fully
@@ -271,6 +291,34 @@ async function boot() {
                             game.player.x = b.x;
                             game.player.y = TP === 'buildingInside' ? b.y : b.y + 240;
                         }
+                    }
+                } else if (TP === 'vigilSite' || TP === 'vigilBeacon' || TP === 'vigilBeaconCleared') {
+                    const sites = game.vigilSiteSystem?.sites || [];
+                    const beaconShot = TP === 'vigilBeacon' || TP === 'vigilBeaconCleared';
+                    const wanted = beaconShot ? 'beacon' : 'archive';
+                    const site = sites.find((candidate) => candidate.archetype === wanted)
+                        || sites.find((candidate) => beaconShot
+                            ? candidate.archetype === 'beacon'
+                            : candidate.archetype !== 'hearth' && candidate.archetype !== 'beacon')
+                        || sites[0];
+                    if (!site) throw new Error('requested Living Vigil site was not placed');
+                    game.player.x = site.x;
+                    game.player.y = site.y;
+                    // Keep the staged challenge legible while its activation
+                    // and world/HUD announcements settle into the final frame.
+                    if (beaconShot) {
+                        game.player.damageMul = 0;
+                        game.player.hp = Math.max(game.player.hp, game.player.maxHp);
+                    }
+                    const dwellFrames = Math.ceil(((site.def?.dwellSeconds || 0.8) + 0.22) / DT);
+                    for (let i = 0; i < dwellFrames; i++) {
+                        game.update(DT);
+                        if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);
+                    }
+                    if (TP === 'vigilBeaconCleared') {
+                        for (const guardian of site.guardianRefs || []) guardian.active = false;
+                        game.update(DT);
+                        if (game.upgradeChoices && game.selectUpgrade) game.selectUpgrade(0);
                     }
                 } else {
                     const [tx, ty] = TP.split(',').map(Number);
@@ -468,7 +516,8 @@ async function boot() {
     // step/inspect the sim after boot.
     window.__game = game;
     document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1) +
-        ' map:' + (game._obstacleBiome || 'unknown') + qaBossSummary;
+        ' map:' + (game._obstacleBiome || 'unknown') + qaBossSummary
+        + (ERR.length ? ' error:' + ERR[0].slice(0, 320).replace(/\s+/g, ' ') : '');
     window.__done = true;
 }
 

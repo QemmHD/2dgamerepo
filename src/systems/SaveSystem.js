@@ -19,6 +19,7 @@ import {
 } from '../content/battlePass.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
+export const MAX_COIN_BALANCE = Number.MAX_SAFE_INTEGER;
 const UPGRADE_MAX_BY_ID = Object.freeze(Object.fromEntries(
     PERMANENT_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxLevel]),
 ));
@@ -70,6 +71,12 @@ function defaultData() {
             blinks: 0,               // lifetime aimed blinks
             riteTrialBest: 0,        // lifetime best Rite-Trial score
             weeklyEmberBest: 0,      // lifetime best Weekly Ember score
+            // LIVING VIGIL: permanent exploration + tactical-mastery records.
+            // Numeric defaults keep old saves compatible through _validate.
+            vigilSitesActivated: 0,      // total landmark sites kindled
+            vigilSiteKindsMastered: 0,  // best distinct site kinds in one run (0..4)
+            encountersCleared: 0,       // total authored tactical packs defeated
+            guardianPacksDefeated: 0,   // total guardian-class packs defeated
         },
         settings: {
             screenShake: true,
@@ -229,7 +236,7 @@ export class SaveSystem {
         const def = defaultData();
         if (typeof data !== 'object' || !data) return def;
         const totalCoins = Number.isFinite(data.totalCoins) && data.totalCoins >= 0
-            ? Math.floor(data.totalCoins)
+            ? Math.min(MAX_COIN_BALANCE, Math.floor(data.totalCoins))
             : 0;
         // Migration is implicit: any key missing from an older save (e.g. a
         // v1 save with no `rerolls`, `stats`, or `settings`) keeps its
@@ -252,6 +259,9 @@ export class SaveSystem {
                 if (Number.isFinite(v) && v >= 0) stats[key] = Math.floor(v);
             }
         }
+        // This field is a best-in-one-run cardinality, not a lifetime counter.
+        // Clamp tampered/future saves before achievements and menu copy read it.
+        stats.vigilSiteKindsMastered = Math.min(4, stats.vigilSiteKindsMastered);
         const settings = { ...def.settings };
         if (data.settings && typeof data.settings === 'object') {
             for (const key of Object.keys(def.settings)) {
@@ -495,14 +505,26 @@ export class SaveSystem {
 
     addCoins(amount) {
         if (!Number.isFinite(amount) || amount <= 0) return;
-        this.data.totalCoins += Math.floor(amount);
+        const credit = Math.min(MAX_COIN_BALANCE, Math.floor(amount));
+        if (credit <= 0) return;
+        const raw = this.data.totalCoins;
+        const balance = raw === Infinity ? MAX_COIN_BALANCE
+            : Number.isFinite(raw) && raw > 0 ? Math.min(MAX_COIN_BALANCE, Math.floor(raw)) : 0;
+        this.data.totalCoins = credit > MAX_COIN_BALANCE - balance
+            ? MAX_COIN_BALANCE
+            : balance + credit;
         this.save();
     }
 
     spendCoins(amount) {
         if (!Number.isFinite(amount) || amount <= 0) return false;
-        if (this.data.totalCoins < amount) return false;
-        this.data.totalCoins -= Math.floor(amount);
+        const debit = Math.floor(amount);
+        if (debit <= 0 || debit > MAX_COIN_BALANCE) return false;
+        const raw = this.data.totalCoins;
+        const balance = raw === Infinity ? MAX_COIN_BALANCE
+            : Number.isFinite(raw) && raw > 0 ? Math.min(MAX_COIN_BALANCE, Math.floor(raw)) : 0;
+        if (balance < debit) return false;
+        this.data.totalCoins = balance - debit;
         this.save();
         return true;
     }
@@ -699,6 +721,16 @@ export class SaveSystem {
         s.totalKills += kills;
         s.totalBosses += bosses;
         s.totalCoinsEarned += Math.max(0, coins);
+        s.vigilSitesActivated = (s.vigilSitesActivated || 0)
+            + Math.max(0, Math.floor(summary.vigilSitesActivated ?? 0));
+        s.vigilSiteKindsMastered = Math.min(4, Math.max(
+            s.vigilSiteKindsMastered || 0,
+            Math.max(0, Math.floor(summary.vigilSiteKindsMastered ?? 0)),
+        ));
+        s.encountersCleared = (s.encountersCleared || 0)
+            + Math.max(0, Math.floor(summary.encountersCleared ?? 0));
+        s.guardianPacksDefeated = (s.guardianPacksDefeated || 0)
+            + Math.max(0, Math.floor(summary.guardianPacksDefeated ?? 0));
 
         this.save();
         return beat;

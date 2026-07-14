@@ -30,9 +30,10 @@
 //   achievement       auto-unlocked when that achievement id is earned
 //   passLevel          deterministic Last Light Vigil milestone
 //   (none of the above) → earned only as a random case drop
-// Coin/achievement cosmetics remain eligible for cases as an alternate path.
-// Vigil Path pieces are intentionally caseExcluded: reaching their milestone
-// is the only unlock path, so the completed set remains readable prestige.
+// Coin/achievement cosmetics remain eligible for cases as an alternate path
+// unless they are explicitly marked caseExcluded. Vigil Path and authored
+// mastery-set pieces use that flag so their completed sets remain readable
+// prestige earned through their named progression route.
 
 export const COSMETICS = {
     // ── Fur tint ────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ export const COSMETICS = {
     fur_gold:    { id: 'fur_gold',    category: 'fur', name: 'Gilded',   rarity: 'legendary', color: '#ffd35a', achievement: 'coins_10k', description: 'Burnished to gold.' },
     fur_galaxy:  { id: 'fur_galaxy',  category: 'fur', name: 'Galactic', rarity: 'mythic',    color: '#6a4fb0', coinCost: 4500, description: 'Star-stuff, worn as a coat.' },
     fur_vigil:   { id: 'fur_vigil',   category: 'fur', name: 'Vigilforged', rarity: 'epic', color: '#d8643d', passLevel: 10, caseExcluded: true, description: 'Cinder-dark fur lit along every edge.' },
+    fur_waylight:{ id: 'fur_waylight',category: 'fur', name: 'Lanternmarked', rarity: 'rare', color: '#c9a76a', achievement: 'waylight_pathfinder', caseExcluded: true, description: 'Warm roadlight caught in every strand.' },
 
     // ── Cloak ───────────────────────────────────────────────────────────
     cloak_none:    { id: 'cloak_none',    category: 'cloak', name: 'No Cloak', rarity: 'common', color: null, description: 'Travel light.', defaultUnlocked: true },
@@ -60,6 +62,7 @@ export const COSMETICS = {
     cloak_gold:    { id: 'cloak_gold',    category: 'cloak', name: 'Gilded Cloak', rarity: 'legendary', color: '#d8a93a', achievement: 'gauntlet_8k', description: 'Threadwork of pure gold.' },
     cloak_prism:   { id: 'cloak_prism',   category: 'cloak', name: 'Prismatic Cloak', rarity: 'mythic', color: '#b15cff', coinCost: 4000, description: 'It shifts through every hue.' },
     cloak_vigil:   { id: 'cloak_vigil',   category: 'cloak', name: 'Last-Watch Mantle', rarity: 'epic', color: '#8f2f3f', passLevel: 20, caseExcluded: true, description: 'A mantle cut for the final watch.' },
+    cloak_waylight:{ id: 'cloak_waylight', category: 'cloak', name: 'Crossroads Mantle', rarity: 'epic', color: '#315b5d', achievement: 'waylight_encounters', caseExcluded: true, description: 'A deep-teal mantle for roads made safe.' },
 
     // ── Hat / accessory ─────────────────────────────────────────────────
     hat_none:   { id: 'hat_none',   category: 'hat', name: 'Bare',       rarity: 'common', color: null, shape: 'none', description: 'No accessory.', defaultUnlocked: true },
@@ -75,6 +78,7 @@ export const COSMETICS = {
     hat_party:  { id: 'hat_party',  category: 'hat', name: 'Party Hat',   rarity: 'uncommon', color: '#ff5e8a', shape: 'party',  coinCost: 600, description: 'Every vigil is a celebration.' },
     hat_banana: { id: 'hat_banana', category: 'hat', name: 'Top Banana',  rarity: 'rare',     color: '#ffd35a', shape: 'banana', coinCost: 1500, description: 'Peak monkey fashion.' },
     hat_vigil:  { id: 'hat_vigil', category: 'hat', name: 'Crown of Cinders', rarity: 'legendary', color: '#ffb24a', shape: 'crown', passLevel: 30, caseExcluded: true, description: 'Five embers for five sworn milestones.' },
+    hat_waylight:{ id: 'hat_waylight', category: 'hat', name: 'Wayfinder Halo', rarity: 'epic', color: '#ffe0a0', shape: 'halo', achievement: 'waylight_cartographer', caseExcluded: true, description: 'Four roads resolved into one steady ring.' },
 
     // ── Aura (glow + light) — the prestige layer carries animated `fx` ───
     aura_ember:   { id: 'aura_ember',   category: 'aura', name: 'Ember Aura',  rarity: 'common', color: '#ff9a3c', description: 'A warm halo.', defaultUnlocked: true },
@@ -88,6 +92,7 @@ export const COSMETICS = {
     aura_astral:  { id: 'aura_astral',  category: 'aura', name: 'Astral Aura', rarity: 'legendary', color: '#9fd0ff', fx: 'starfield', coinCost: 3000, description: 'Stars orbit the chosen.' },
     aura_inferno: { id: 'aura_inferno', category: 'aura', name: 'Inferno Aura', rarity: 'mythic',   color: '#ff5a2a', fx: 'flame', achievement: 'nightmare_10', description: 'It never stops burning.' },
     aura_mythic:  { id: 'aura_mythic',  category: 'aura', name: 'Last Light Aura', rarity: 'mythic', color: '#ff4d6d', fx: 'spin', passLevel: 50, caseExcluded: true, description: 'The final ember answers only to you.' },
+    aura_waylight:{ id: 'aura_waylight', category: 'aura', name: 'Beacon Orbit', rarity: 'legendary', color: '#ffd27a', fx: 'spin', achievement: 'waylight_warden', caseExcluded: true, description: 'Every rekindled beacon turns in its glow.' },
     aura_prism:   { id: 'aura_prism',   category: 'aura', name: 'Prismatic Aura', rarity: 'mythic', color: '#ffffff', fx: 'rainbow', coinCost: 5000, description: 'Every colour at once — proof you ground for it.' },
 
     // ── Trail ───────────────────────────────────────────────────────────
@@ -104,6 +109,7 @@ export const COSMETICS = {
     trail_flame:  { id: 'trail_flame',  category: 'trail', name: 'Inferno Trail', rarity: 'legendary', color: '#ff7a2a', fx: 'flame', coinCost: 2500, description: 'A blazing wake.' },
     trail_rainbow:{ id: 'trail_rainbow',category: 'trail', name: 'Prism Trail', rarity: 'mythic',   color: '#ffffff', fx: 'rainbow', coinCost: 4000, description: 'A rainbow road, hard-earned.' },
     trail_vigil:  { id: 'trail_vigil', category: 'trail', name: 'Oathspark Trail', rarity: 'legendary', color: '#ff9a3c', fx: 'stars', passLevel: 40, caseExcluded: true, description: 'Each footfall writes a tiny ember oath.' },
+    trail_waylight:{ id: 'trail_waylight', category: 'trail', name: 'Starpath Trail', rarity: 'legendary', color: '#ffcf78', fx: 'stars', achievement: 'waylight_guardian', caseExcluded: true, description: 'Safe crossings shine behind the pathkeeper.' },
 };
 
 export const COSMETIC_LIST = Object.values(COSMETICS);
@@ -143,6 +149,8 @@ export function cosmeticsForAchievement(achievementId) {
 export const COSMETIC_SETS = [
     { id: 'lastlight', name: 'Last Light Regalia', color: '#ff8a3a',
       pieces: { fur: 'fur_vigil', cloak: 'cloak_vigil', hat: 'hat_vigil', aura: 'aura_mythic', trail: 'trail_vigil' } },
+    { id: 'waylight', name: 'Waylight Regalia', color: '#ffcf78',
+      pieces: { fur: 'fur_waylight', cloak: 'cloak_waylight', hat: 'hat_waylight', aura: 'aura_waylight', trail: 'trail_waylight' } },
     { id: 'inferno',  name: 'Inferno Regalia',  color: '#ff5a2a',
       pieces: { fur: 'fur_ember', cloak: 'cloak_crimson', hat: 'hat_candle', aura: 'aura_inferno', trail: 'trail_flame' } },
     { id: 'astral',   name: 'Astral Vigil',     color: '#9fd0ff',

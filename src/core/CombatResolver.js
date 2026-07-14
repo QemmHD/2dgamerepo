@@ -206,6 +206,10 @@ export const CombatResolverMethods = {
             if (this.player.killHeal > 0) this.player.healSustained(this.player.killHeal * allKilled.length);
             this.waveDirector.notifyKill(allKilled.length);
             for (const e of allKilled) {
+                if (e.encounterMemberId) {
+                    this._encounterDefeatedIds.push(e.encounterMemberId);
+                    if (e.encounterGuardian) this._encounterRewardPos = { x: e.x, y: e.y };
+                }
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
                 if (e.affix) this._applyAffixDeath(e);
                 // P1.3 splitter: bursts into live slimelets (def-driven,

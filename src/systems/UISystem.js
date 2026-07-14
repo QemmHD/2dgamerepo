@@ -23,6 +23,7 @@ import { getRarityIcon } from '../assets/CustomIcons.js';
 import { MenuRenderer } from './MenuRenderer.js';
 import { computeHUDLayout } from './HUDLayout.js';
 import { DISPLAY_FONT } from '../assets/MenuFont.js';
+import { battlePassRunReceipt } from './BattlePassSystem.js';
 
 const DEBUG_BUTTON_SIZE = 96;
 const DEBUG_BUTTON_MARGIN = 20;
@@ -105,7 +106,12 @@ export class UISystem {
             loadoutCount: (state.ownedWeapons?.length ?? 0) + (state.ownedPassives?.length ?? 0),
             relicCount: state.runRelics?.length ?? 0,
             abilityCount: state.abilityCooldowns?.length ?? 0,
+            hasVigil: !!state.vigilTracker,
         });
+    }
+
+    getHUDLayout(state) {
+        return this._layoutFor(state);
     }
 
     // ── HUD "ember forge" primitives (local — do NOT reuse MenuRenderer's, which
@@ -2788,6 +2794,9 @@ export class UISystem {
             ['Kills', summary.kills],
             ['Bosses', summary.bossesDefeated],
             ['Objectives', `${state.objectivesDone ?? 0}/${state.objectivesTotal ?? 0}`],
+            ['Vigil sites', `${summary.vigilSitesActivated ?? 0}  •  ${summary.vigilSiteKindsMastered ?? 0}/4 kinds`],
+            ['Tactical packs', summary.encountersCleared ?? 0],
+            ['Beacon packs', summary.guardianPacksDefeated ?? 0],
             ['Coins earned', summary.coinsEarned],
         ];
         const statsStartY = 240 + sa.top;
@@ -2835,9 +2844,11 @@ export class UISystem {
         // Game._enterGameOver). A pass level-up gets an extra shout.
         const bp = state.bpResult;
         if (bp && bp.gained > 0) {
+            const receipt = battlePassRunReceipt(bp);
             const extras = [];
-            if (bp.breakdown?.trials > 0) extras.push(`Trials +${bp.breakdown.trials}`);
-            if (bp.breakdown?.threat > 0) extras.push(`Threat +${bp.breakdown.threat}`);
+            if (receipt?.trials > 0) extras.push(`Trials +${receipt.trials}`);
+            if (receipt?.threat > 0) extras.push(`Threat +${receipt.threat}`);
+            if (receipt?.waylightWithinDeeds > 0) extras.push(`Waylight ${receipt.waylightWithinDeeds} of Deeds`);
             if (bp.everflameCaches > 0) extras.push(`Everflame +${bp.everflameCoins} coins`);
             const suffix = extras.length ? `  ·  ${extras.join('  ·  ')}` : '';
             rewardLines.push({
