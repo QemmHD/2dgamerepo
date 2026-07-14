@@ -1,5 +1,17 @@
 # First Light bounded web evidence
 
+## Collection Growth I-A
+
+- [Delivery and visual smoke](collection-growth-ia-deployed-smoke.md) records the
+  exact PR/main/Pages identity, deployed source smoke, hardened Canvas capture gate,
+  and bounded claim for PR #198/main `454e944`.
+- [Character Collection, 1600×900](collection-growth-ia-character-1600x900.png)
+  records eight-card paging, source labels, page routing, live preview, and keyboard
+  focus through the production harness.
+- [Lanternward Boutique, 1600×900](collection-growth-ia-boutique-1600x900.png)
+  records set page 3/3, the live attached set preview, honest 12,400-coin total,
+  source-honest stock, affordability state, and keyboard focus.
+
 ## Guided Run Path
 
 - [Post-deploy Guided Run Path smoke](guided-run-path-deployed-smoke.md) records the
