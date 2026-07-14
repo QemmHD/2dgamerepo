@@ -24,17 +24,17 @@ import { getDecorSprite } from './DecorSprites.js';
 
 const cache = new Map();
 
-// LPC bodies currently ship one idle frame and reuse it for cast/hurt. Their
-// attachment arrays must mirror that exact body contract; pairing the aliased
-// idle art with monkey cast anchors would move a hat/hand while the body stayed
-// still, and the two-frame canonical idle array would fail strict resolution.
+// LPC sheets do not ship authored attachment measurements. Keep every slot on
+// the one neutral seat instead of pretending Blender-monkey limb motion matches
+// a different 64px LPC skeleton. This preserves the historical stable overlay;
+// exact LPC motion can opt in later only with per-model measured anchors.
 const LPC_HERO_POSE_ATTACHMENTS = Object.fromEntries(
     ['down', 'up', 'side'].map((dir) => {
         const source = HERO_POSE_ATTACHMENTS[dir];
         const neutral = source.idle[0];
         return [dir, {
             idle: [neutral],
-            walk: source.walk,
+            walk: [neutral, neutral, neutral],
             cast: [neutral],
             hurt: [neutral],
         }];

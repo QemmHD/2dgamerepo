@@ -52,9 +52,9 @@ export class Player {
         // attachment frames share one direction/state/index contract.
         const ch = getCharacter(characterId);
         this.heroFrames = getHeroFrames(characterId, ch);
-        // LPC-bodied heroes get the imported cape sprite for their cloak (it
-        // aligns to the LPC body); the chibi cast keeps the procedural drape.
-        this.isLpcBody = !!ch.lpc;
+        // Render-tier truth, not character metadata: an unavailable LPC sheet
+        // can legitimately fall back to the pixel body and must use its cape.
+        this.isLpcBody = this.heroFrames?.kind === 'lpc';
         this.spriteHalf = SPRITE_SIZE / 2;
         this.bobTimer = 0;
         // Attack(cast) pose timer. Set by a melee swing now (triggerSwing); the
@@ -350,6 +350,7 @@ export class Player {
     refreshHeroFrames() {
         const ch = getCharacter(this.characterId);
         this.heroFrames = getHeroFrames(this.characterId, ch, (this.appearance && this.appearance.furColor) || null);
+        this.isLpcBody = this.heroFrames?.kind === 'lpc';
     }
 
     // Hold the cast (attack) pose briefly; called when the primary weapon fires.
@@ -461,6 +462,7 @@ export class Player {
         dir = pose.dir;
         flip = pose.flip;
         this._pose = pose;
+        this.isLpcBody = pose.kind === 'lpc';
         // A corrupt or partially deployed frame contract must not throw from
         // drawImage and take down the whole render loop. CI rejects this state;
         // at runtime we simply omit the body for this frame and recover next tick.
@@ -489,10 +491,6 @@ export class Player {
             ctx.restore();
         }
 
-        // Held weapon BEHIND the body for the back view (the hero holds it in
-        // front of them, away from the camera, so the torso occludes it).
-        if (this.loadout && this.loadout.length) this._drawHeldWeapons(ctx, bobY, alpha, 'behind');
-
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.translate(this.x, this.y + bobY);
@@ -517,6 +515,11 @@ export class Player {
             const k = this.castTimer / CAST_DUR;
             ctx.translate(-Math.cos(this.aimAngle) * 3 * k, -Math.sin(this.aimAngle) * 3 * k);
         }
+
+        // The held prop lives inside the exact same local body transform. Dash
+        // stretch, hit squash, idle breath, cast recoil and bob can no longer
+        // move the hero away from the paw/weapon layer.
+        if (this.loadout && this.loadout.length) this._drawHeldWeapons(ctx, alpha, 'behind');
 
         // Cloak: drawn BEHIND the body for the front/side views (only the collar
         // + hem wings peek out). For the back view ('up') the per-direction PIXEL
@@ -566,12 +569,9 @@ export class Player {
                 ctx.restore();
             }
         }
+        if (this.loadout && this.loadout.length) this._drawHeldWeapons(ctx, alpha, 'front');
         if (this.debugAttachmentAnchors) this._drawAttachmentAnchors(ctx, pose);
         ctx.restore();
-
-        // Held weapon OVER the body (front pass): the signature weapon in its
-        // articulated arm (unless facing away — then it was drawn behind, above).
-        if (this.loadout && this.loadout.length) this._drawHeldWeapons(ctx, bobY, alpha, 'front');
 
         // Melee swing arc (world-space, additive) on top of everything.
         if (this.swing) this._drawSwing(ctx);
@@ -586,7 +586,7 @@ export class Player {
     // pivots in that fist to the aim with a thrust + tip muzzle flash. The
     // other owned weapons draw NOTHING here — their projectiles/rings ARE
     // their visual — so the hero always wields exactly one wand: yours.
-    _drawHeldWeapons(ctx, bobY, alpha, layer = 'front') {
+    _drawHeldWeapons(ctx, alpha, layer = 'front') {
         // On the run-end poses the hero drops/raises empty paws — a wand pinned
         // to the hand would fight the collapse/cheer, so skip the held prop.
         if (this._pose && (this._pose.requestedState === 'death' || this._pose.requestedState === 'victory')) return;
@@ -603,15 +603,15 @@ export class Player {
         if (!P) return;
         // Back view: the hero holds the wand in front of the body (away from
         // the camera), so it draws in the behind pass and the torso occludes.
-        if (layer !== (this.facing === 'up' ? 'behind' : 'front')) return;
+        if (layer !== (P.dir === 'up' ? 'behind' : 'front')) return;
 
         // Paw anchor from the same exact frame contract as the body/cosmetics.
         const H = this.hold;                 // per-character scale/tilt flavor
         const k = this.spriteHalf / 91;      // world px per authored anchor px
         const hand = heroPosePoint(P, 'handR');
         if (!hand) return;
-        const hx = this.x + hand[0] * k;
-        const hy = this.y + bobY + hand[1] * k;
+        const hx = hand[0] * k;
+        const hy = hand[1] * k;
 
         const firing = P.state === 'cast';
         const kick = Easing.outQuad(primary.fireFlash || 0);
