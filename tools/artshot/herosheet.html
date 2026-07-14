@@ -8,7 +8,9 @@
 <canvas id="sheet"></canvas>
 <script type="module">
 // Renders the hero in 4 facings × N sim-states into a contact sheet and PUTs
-// it back to serve.py. Optionally force-equips a cosmetic set via ?hat=..&cloak=..
+// it back to serve.py. Default remains idle/walk; ?states=all captures all nine
+// authored frames and ?anchors=1 exposes Player's attachment-anchor overlay.
+// Optionally force-equips a cosmetic set via ?hat=..&cloak=..
 window.AudioContext = undefined; window.webkitAudioContext = undefined;
 
 import { Renderer } from '/src/systems/Renderer.js';
@@ -24,6 +26,8 @@ const ERR = [];
 window.addEventListener('error', (e) => ERR.push(String(e.message || e.error || e)));
 const P = new URLSearchParams(location.search);
 const OUT = P.get('out') || 'hero_sheet.png';
+const ALL_STATES = P.get('states') === 'all';
+const SHOW_ANCHORS = P.get('anchors') === '1';
 const CELL = 220;
 
 async function boot() {
@@ -46,14 +50,33 @@ async function boot() {
     // Optional forced cosmetics (?fur=..&cloak=..&hat=..&aura=..)
     const eq = {};
     for (const k of ['fur', 'cloak', 'hat', 'aura', 'trail']) if (P.get(k)) eq[k] = P.get(k);
-    if (Object.keys(eq).length) game.player.appearance = resolveAppearance(eq);
+    if (Object.keys(eq).length) {
+        game.player.appearance = resolveAppearance(eq);
+        // Fur is baked into the directional body frames. Rebuild after the
+        // fixture override so ?fur= captures the requested colour instead of
+        // the run-start appearance that was cached by _startRun().
+        game.player.refreshHeroFrames();
+    }
+    game.player.debugAttachmentAnchors = SHOW_ANCHORS;
 
     // settle a few frames
     for (let i = 0; i < 30; i++) { game.update(1 / 60); if (game.upgradeChoices) game.selectUpgrade(0); }
 
     const sheet = document.getElementById('sheet');
     const COLS = ['down', 'left', 'up', 'right'];
-    const ROWS = ['idle', 'walk'];
+    const DEFAULT_ROWS = ['idle', 'walk'];
+    const ALL_ROWS = [
+        { label: 'idle0', state: 'idle', frame: 0 },
+        { label: 'idle1', state: 'idle', frame: 1 },
+        { label: 'walk0', state: 'walk', frame: 0 },
+        { label: 'walk1', state: 'walk', frame: 1 },
+        { label: 'walk2', state: 'walk', frame: 2 },
+        { label: 'cast', state: 'cast', frame: 0 },
+        { label: 'hurt', state: 'hurt', frame: 0 },
+        { label: 'death', state: 'death', frame: 0 },
+        { label: 'victory', state: 'victory', frame: 0 },
+    ];
+    const ROWS = ALL_STATES ? ALL_ROWS : DEFAULT_ROWS;
     sheet.width = CELL * COLS.length; sheet.height = CELL * ROWS.length;
     const sctx = sheet.getContext('2d');
     sctx.fillStyle = '#4a4c36'; sctx.fillRect(0, 0, sheet.width, sheet.height);
@@ -64,33 +87,101 @@ async function boot() {
     const px = 960 * s, py = 540 * s;
     const crop = CELL;                    // device px box around the player
 
+    const homeX = game.player.x;
+    const homeY = game.player.y;
+    const aim = { down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2, right: 0 };
+    const forceAllState = (row, facing, dirV) => {
+        const p = game.player;
+        // Restore both actor and camera before EVERY capture. No simulation
+        // step runs after this fixture is applied, so every state/frame is
+        // exact and the contact-sheet crop never drifts off centre.
+        p.x = homeX;
+        p.y = homeY;
+        game.camera.x = homeX;
+        game.camera.y = homeY;
+        game.camera.trauma = 0;
+        game.camera.shakeOffsetX = 0;
+        game.camera.shakeOffsetY = 0;
+        game.camera.shakeAngle = 0;
+
+        p.facing = facing;
+        p.facingX = facing === 'left' ? -1 : 1;
+        p.poseOverride = null;
+        p.hitFlashTimer = 0;
+        p.castTimer = 0;
+        p.invincibleTimer = 0;
+        p.moving = false;
+        p.vx = 0;
+        p.vy = 0;
+        p.bobTimer = 0;
+        p.aliveTimer = 0;
+        p.auraPhase = 0;
+        p.aimAngle = aim[facing];
+
+        if (row.state === 'idle') {
+            // Player.draw resolves idle1 only during the blink window.
+            p.auraPhase = row.frame === 1 ? 2.4 : 0;
+        } else if (row.state === 'walk') {
+            p.moving = true;
+            p.vx = dirV[0] * 220;
+            p.vy = dirV[1] * 220;
+            // Player.draw uses floor(bobTimer * 6) % 3. The epsilon keeps
+            // floating-point rounding on the intended side of each boundary.
+            p.bobTimer = row.frame / 6 + (row.frame ? 1e-6 : 0);
+        } else if (row.state === 'cast') {
+            p.castTimer = 0.15; // representative in-range cast hold
+        } else if (row.state === 'hurt') {
+            p.hitFlashTimer = 0.09; // midpoint of the real 0.18s hit pose
+        } else {
+            p.poseOverride = row.state; // death / victory
+        }
+    };
+
     for (let r = 0; r < ROWS.length; r++) {
         for (let c = 0; c < COLS.length; c++) {
             const dirV = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] }[COLS[c]];
-            // WALK: give the player velocity so the walk anim + facing engage.
-            // IDLE: zero velocity, then force facing (update won't override when still).
-            if (ROWS[r] === 'walk') {
-                for (let i = 0; i < 14; i++) {
-                    game.player.vx = dirV[0] * 220; game.player.vy = dirV[1] * 220;
-                    game.player.x -= dirV[0] * 220 / 60;   // cancel drift: stay centered
-                    game.player.y -= dirV[1] * 220 / 60;
+            if (ALL_STATES) {
+                forceAllState(ROWS[r], COLS[c], dirV);
+            } else {
+                // Preserve the original two-row fixture exactly when
+                // ?states=all is absent.
+                // WALK: give the player velocity so the walk anim + facing engage.
+                // IDLE: zero velocity, then force facing (update won't override when still).
+                if (ROWS[r] === 'walk') {
+                    for (let i = 0; i < 14; i++) {
+                        game.player.vx = dirV[0] * 220; game.player.vy = dirV[1] * 220;
+                        game.player.x -= dirV[0] * 220 / 60;   // cancel drift: stay centered
+                        game.player.y -= dirV[1] * 220 / 60;
+                        game.update(1 / 60);
+                        if (game.upgradeChoices) game.selectUpgrade(0);
+                    }
+                } else {
+                    game.player.vx = 0; game.player.vy = 0;
                     game.update(1 / 60);
                     if (game.upgradeChoices) game.selectUpgrade(0);
                 }
-            } else {
-                game.player.vx = 0; game.player.vy = 0;
-                game.update(1 / 60);
-                if (game.upgradeChoices) game.selectUpgrade(0);
+                game.player.facing = COLS[c];
+                game.player.facingX = COLS[c] === 'left' ? -1 : 1;
             }
-            game.player.facing = COLS[c];
-            game.player.facingX = COLS[c] === 'left' ? -1 : 1;
             game.render();
             sctx.drawImage(canvas, px - crop / 2, py - crop / 2, crop, crop, c * CELL, r * CELL, CELL, CELL);
         }
     }
     sheet.toBlob((blob) => {
         fetch('/__save/' + OUT, { method: 'PUT', body: blob })
-            .then(() => { document.title = 'DONE EXC:' + ERR.length; })
+            .then(() => {
+                const receipt = {
+                    done: true,
+                    exceptions: ERR.length,
+                    rows: ROWS.length,
+                    anchors: SHOW_ANCHORS ? 1 : 0,
+                };
+                window.__heroSheetReceipt = receipt;
+                // Keep the legacy DONE EXC:<n> prefix intact for callers while
+                // exposing the selected matrix size and anchor-fixture state.
+                document.title = 'DONE EXC:' + ERR.length
+                    + ' rows:' + receipt.rows + ' anchors:' + receipt.anchors;
+            })
             .catch((e) => { document.title = 'SAVEFAIL'; });
     }, 'image/png');
 }
