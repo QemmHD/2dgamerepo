@@ -745,10 +745,10 @@ jobs:
             'screen=menu&tab=character&collectioncat=fur&collectionpage=2&pursuit=stormglass&input=touch' \
             collection-touch
           capture_collection_ib boutique-stormglass 1600,900 \
-            'screen=menu&tab=boutique&tryset=stormglass&input=keyboard&focus=boutiqueCategory%3Acloak%230' \
+            'screen=menu&tab=boutique&tryset=stormglass&input=keyboard&focus=boutiqueCategory%3Aaura%230' \
             stormglass
           capture_collection_ib boutique-gravebell 1600,900 \
-            'screen=menu&tab=boutique&tryset=gravebell&input=keyboard&focus=boutiqueCategory%3Acloak%230' \
+            'screen=menu&tab=boutique&tryset=gravebell&input=keyboard&focus=boutiqueCategory%3Aaura%230' \
             gravebell
 
           [ "$(sha256sum "$COLLECTION_IB_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 4 ] || {
