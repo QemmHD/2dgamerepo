@@ -4,10 +4,10 @@
 evidence, and next action in the same PR as the work.
 
 **Last grounded:** 2026-07-14
-**Main baseline:** [`bed6ac5`](https://github.com/QemmHD/2dgamerepo/commit/bed6ac5443e651a61ec90449673db4a967e9abef) — merged [PR #190](https://github.com/QemmHD/2dgamerepo/pull/190), the delivered A11-10 audio-accessibility slice
-**Active branch at grounding:** `agent/first-light-audio-delivery-ledger` from `origin/main` at `bed6ac5`; this branch reconciles delivery truth and makes the shipped caption validator newline-neutral on Windows
-**Latest shipped feature commit:** [`bed6ac5`](https://github.com/QemmHD/2dgamerepo/commit/bed6ac5443e651a61ec90449673db4a967e9abef)
-**Shipped ledger baseline before this tranche:** [`2183059`](https://github.com/QemmHD/2dgamerepo/commit/2183059370110629444da68fae65167ad9ff95bd); when this file is on `main`, its containing commit is the newer ledger truth
+**Main baseline:** [`b1113cf`](https://github.com/QemmHD/2dgamerepo/commit/b1113cf5b354d189d328dc310520efd455b88f5b) — merged [PR #194](https://github.com/QemmHD/2dgamerepo/pull/194), the delivered exact campaign-map gate
+**Active branch at grounding:** `agent/campaign-ledger-delivery` from `origin/main` at `b1113cf`; this branch reconciles the shipped save-v10 campaign ledger without promoting the full 1.0 → 2.0 arc
+**Latest shipped feature commit:** [`b1113cf`](https://github.com/QemmHD/2dgamerepo/commit/b1113cf5b354d189d328dc310520efd455b88f5b)
+**Shipped ledger baseline before this tranche:** [`c2b5bec`](https://github.com/QemmHD/2dgamerepo/commit/c2b5bec7ab7baa6ad6beca9dc036ffd8703fd388), the [PR #193](https://github.com/QemmHD/2dgamerepo/pull/193) cosmetic-rig reconciliation; when this file is on `main`, its containing commit is the newer ledger truth
 **1.1 foundation feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / merged [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
 **Product roadmap:** [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md)
 
@@ -71,10 +71,25 @@ Fair Forge gate. Durable same-state Settings and gameplay-caption evidence lives
 [`docs/evidence/v1.1`](evidence/v1.1/README.md); it proves the captured web states, not
 the remaining physical-device or assistive-technology gates.
 
+**Exact campaign-map gate shipped boundary:** [PR #194](https://github.com/QemmHD/2dgamerepo/pull/194)
+shipped save v10 at main [`b1113cf`](https://github.com/QemmHD/2dgamerepo/commit/b1113cf5b354d189d328dc310520efd455b88f5b).
+Each next map now requires all three unique authored bosses from its immediate predecessor
+in an eligible standard campaign run. Repeats, wrong-map bosses, Daily, Rite Trial,
+Boss Rush, Weekly Ember, debug/direct spawns, and QA-bypass runs do not count. Legacy
+v0–v9 access migrates conservatively; malformed current ledgers fail closed without
+consulting lifetime totals. PR CI
+[`29342507445`](https://github.com/QemmHD/2dgamerepo/actions/runs/29342507445), main CI
+[`29342595438`](https://github.com/QemmHD/2dgamerepo/actions/runs/29342595438), and Pages
+[`29342595535`](https://github.com/QemmHD/2dgamerepo/actions/runs/29342595535) passed.
+Deployed Play and `?dev=1` Settings receipts were `EXC:0` with zero browser errors.
+This closes only the exact unlock foundation; guided objectives, further progression,
+new destinations, and the full 2.0 convergence remain open.
+
 **Developer Settings preservation:** `?dev=1` intentionally retains **Debug Mode**,
 **Unlock All Maps (testing)**, and the coin/item **CHEATS (TESTING)** controls inside
-Settings on desktop and phone while normal player URLs keep them gated. The phone
-Settings validator exercises player/developer General layouts and Accessibility
+Settings on desktop and phone while normal player URLs keep them gated. Unlock All Maps
+is now session-only, performs zero save writes, and disables campaign credit for the run.
+The phone Settings validator exercises player/developer General layouts and Accessibility
 layouts at three fixtures, plus real desktop/phone developer actions; future Settings
 work must preserve this testing surface.
 
@@ -118,6 +133,7 @@ link back to its acceptance metrics before shipping.
 | V1-INPUT | Input/platform | `[~] IN FLIGHT` | V1-UX focus semantics; A11 keyboard/modality foundation and capability-safe touch vibration shipped | Complete deployed hybrid-device, guided-tour, Mines-flow, and physical vibration proof. Full gamepad support, remapping, glyph switching, disconnect recovery, safe-area tuning, and controller haptics remain separate planned work. | A11-02; A11-03; A11-05; A11-09; PR #186; PR #190 |
 | V1-ECO | Cases/Mines/upgrades | `[~] IN FLIGHT` | LV-04 fair-risk foundation shipped | Preserve the 644-check quote/receipt/economy contract; implement Forge Reserve and the collection planner as the next economy slice. | LV-04 |
 | V1-PROG | Chapters/cosmetics/save | `[~] IN FLIGHT` | LV-03 Waylight/progression foundation shipped | Preserve the Waylight Regalia unlock/receipt path; finish collection stats, then build the permanent chapter shelf and export/recovery flow. | LV-03 |
+| V1-CAMPAIGN | Exact map unlocks | `[x] SHIPPED` | Save-v10 ledger records the three unique authored bosses per map; only eligible map-director deaths count; every menu, launch, victory, share-card, accessibility, migration, and QA path consumes the same receipt/predicate. | Preserve the **319** exact-gate checks, **40,960** corruption/idempotence probe, provenance/canonical-death fixtures, all-six-permutation coverage, and session-only `?dev=1` bypass; build guided completable objectives as a separate slice. | PR #194; main `b1113cf`; PR CI `29342507445`; main CI `29342595438`; Pages `29342595535` |
 | V1-TACTICS | Encounters/enemies/navigation | `[~] IN FLIGHT` | LV-02 formations shipped | Preserve the twelve formation and navigation fixtures; implement role budgets, door tactics, and bounded stuck recovery next. | LV-02 |
 | V1-BOSS | Boss choreography | `[ ] PLANNED` | V1-TACTICS collision truth | Rebuild one boss-family vertical slice: opener/phase/desperation/arena/scaling. | — |
 | V1-WORLD | Houses/maps/POIs | `[~] IN FLIGHT` | LV-01 four-site foundation shipped | Preserve the four Vigil-site fixtures; implement one modular house plus a six-event POI vertical slice next. | LV-01 |
@@ -315,7 +331,8 @@ Update this block’s facts in the affected rows; do not merely append prose.
    PR #185/main `da88450`; A11-08/A11-09 shipped through PR #186/main `3ed29e0`.
    A11-10's bounded scale/contrast/status and audio-accessibility slices shipped through
    PR #188/main `089d646` and PR #190/main `bed6ac5`. Preserve their validators and
-   fixtures as regression coverage.
+   fixtures as regression coverage. The six-hero cosmetic pose contract shipped through
+   PR #192/main `e8ec79f`; the exact campaign gate shipped through PR #194/main `b1113cf`.
 2. **Continue the complete named First Light scope.** A11-01–A11-04, A11-06, and
    A11-07 own AT/modal, cross-tab/tour, hybrid, loading/global-motion, phone/device,
    and effective pinch/200% proof. Preserve all shipped A11-10 preferences and finish
@@ -327,11 +344,12 @@ Update this block’s facts in the affected rows; do not merely append prose.
    `?dev=1`, main CI, Pages, and deployed smoke. Exact counts and durable captures are
    recorded above and under [`evidence/v1.1`](evidence/v1.1/README.md).
 4. **Start the next bounded gameplay slice without conflating it with 1.1 closure.**
-   Preserve PR #192's shipped animated cosmetic pose/install/browser contracts and build
-   the unique-per-map three-boss ledger next. Preserve legacy unlocked maps, but convert
-   the currently persisted `?dev=1` map bypass into session-only QA state that cannot
-   write campaign progress. A11 device/AT proof, A11-11–A11-14, gamepad/remapping, and
-   full Fair Forge acceptance remain separate rows.
+   Preserve PR #192's animated cosmetic pose/install/browser contracts and PR #194's
+   exact unlock/provenance/migration contracts. Build the seeded, mode-aware,
+   completable Orientation → Tactic → Climax objective director next; keep its rewards
+   idempotent and substitute unsupported tasks deterministically. A11 device/AT proof,
+   A11-11–A11-14, gamepad/remapping, expanded cosmetics, House V2, and full Fair Forge
+   acceptance remain separate rows.
 
 ## Handoff history
 
@@ -345,5 +363,6 @@ Update this block’s facts in the affected rows; do not merely append prose.
 | 2026-07-13 | 1.1 draft publication / `agent/first-light-accessibility` | Committed and pushed the First Light foundation; opened draft PR #186 without promoting incomplete A11 rows | Feature `b06915e`; draft PR [#186](https://github.com/QemmHD/2dgamerepo/pull/186); local Node 22 gates and hosted PR CI run `29299835745` passed | Mark ready, merge, deploy Pages, live-smoke, then reconcile delivery truth. |
 | 2026-07-14 | 1.1 foundation delivery reconciliation / `agent/first-light-delivery-ledger` | Marked A11-08 and A11-09 shipped; preserved A11-01–A11-07 proof gaps; added A11-10–A11-14 so the remaining canonical 1.1 contract cannot disappear; identified A11-05 as pulled-forward 1.2 work; added desktop/phone `?dev=1` Settings retention proof | PR #186; feature `b06915e`; squash main `3ed29e0`; PR CI `29299835745`/`29299893474`; main CI `29299938429`; Pages `29299938437`; live 667×375/1280×720 semantic/focus/Run setup/back smoke; zero logs; current phone Settings **860** | Preserve the shipped foundation and dev tools; execute the named proof and feature rows; close 1.1 only through A11-14. |
 | 2026-07-14 | A11-10 preference/accessibility delivery / `agent/first-light-preferences` | Kept A11-10 `[~] IN FLIGHT` while shipping its save-safe Combat HUD size 100/115/130, high-contrast post-veil tells, seven source-backed non-color status badges, scaled Living Vigil/HUD lanes, desktop/phone Accessibility settings, semantic actions, guided-tour pane routing, deterministic gates, and truthful `?dev=1` profiler diagnostics. Mono audio, caption detail, independent voice volume, vibration, device/AT, and convergence remain open. | Feature `1cddd9b`; merged PR [#188](https://github.com/QemmHD/2dgamerepo/pull/188); squash main `089d646`; final PR CI `29324773427`; main CI `29324842151`; Pages `29324842057`. Local **19/19** validators and syntax **152/152** passed. Live 1280×720 Accessibility/130%/contrast/keyboard, gameplay all-status, and `?dev=1` General/115%/contrast-off receipts are `EXC:0` with zero logs; all five dev controls remain visible. | Preserve the delivered slice; implement remaining A11-10 controls and device/AT proof separately; keep A11-14/1.1 open. |
-| 2026-07-14 | A11-10 audio-accessibility delivery / `agent/first-light-audio-accessibility` | Kept A11-10 `[~] IN FLIGHT` while shipping captions with Essential/Full detail, independent Voice volume, standards-defined mono output, capability-safe touch vibration, hidden-surface voice/caption lifecycle, 667 px caption containment, strict cold-boot receipts, and a real routed Web Audio graph gate. Preserved all five `?dev=1` controls and kept physical-device/AT/A11-14 proof open. | Feature `8fef031`; evidence `5328770`; merged PR [#190](https://github.com/QemmHD/2dgamerepo/pull/190); squash main [`bed6ac5`](https://github.com/QemmHD/2dgamerepo/commit/bed6ac5443e651a61ec90449673db4a967e9abef); PR CI `29330155481`; main CI `29330244561`; Pages `29330244572`. Local **21/21** validators and syntax **157/157** passed. Deployed Accessibility, exact caption, and `?dev=1` receipts are `EXC:0`; durable evidence is indexed at [`evidence/v1.1`](evidence/v1.1/README.md). | Preserve the shipped slice; finish physical-device/AT/zoom and A11-14 convergence separately; start the cosmetic pose rig and exact three-boss ledger as the next bounded gameplay foundations. |
-| 2026-07-14 | Six-hero cosmetic pose rig delivery / `agent/cosmetic-pose-rig-delivery` | Kept V1-ART `[~] IN FLIGHT` while shipping exact per-hero head/shoulder/hand transforms across gameplay and four menu surfaces; unified all 18 body sheets; made native features, replaceable headwear, and held props pose-safe; added deterministic Blender, install-manifest, PNG-style, contact-sheet, and browser contracts. More cosmetics, boss identities, houses, and device acceptance remain open. | Feature head `20961e8`; merged PR [#192](https://github.com/QemmHD/2dgamerepo/pull/192); squash main [`e8ec79f`](https://github.com/QemmHD/2dgamerepo/commit/e8ec79fe983f108ee5e13963e3565390183c5a82); PR CI `29338059974`; main CI `29338179983`; Pages `29338179872`. Local syntax **162/162**, validators **22/22**, cosmetic contract **4,387**; deployed hero matrix `DONE EXC:0 heroes:6 variants:12 frames:324 replaceable:3` and deployed `?dev=1` Settings `DONE EXC:0` have zero error logs. | Preserve the shipped contracts; build the exact unique-per-map three-boss ledger and its canonical collateral-death/provenance fixes next. |
+| 2026-07-14 | A11-10 audio-accessibility delivery / `agent/first-light-audio-accessibility` | Kept A11-10 `[~] IN FLIGHT` while shipping captions with Essential/Full detail, independent Voice volume, standards-defined mono output, capability-safe touch vibration, hidden-surface voice/caption lifecycle, 667 px caption containment, strict cold-boot receipts, and a real routed Web Audio graph gate. Preserved all five `?dev=1` controls and kept physical-device/AT/A11-14 proof open. | Feature `8fef031`; evidence `5328770`; merged PR [#190](https://github.com/QemmHD/2dgamerepo/pull/190); squash main [`bed6ac5`](https://github.com/QemmHD/2dgamerepo/commit/bed6ac5443e651a61ec90449673db4a967e9abef); PR CI `29330155481`; main CI `29330244561`; Pages `29330244572`. Local **21/21** validators and syntax **157/157** passed. Deployed Accessibility, exact caption, and `?dev=1` receipts are `EXC:0`; durable evidence is indexed at [`evidence/v1.1`](evidence/v1.1/README.md). | Superseded for gameplay sequencing by the completed PR #192 rig and PR #194 exact gate; preserve this audio slice and finish physical-device/AT/zoom plus A11-14 separately. |
+| 2026-07-14 | Six-hero cosmetic pose rig delivery / `agent/cosmetic-pose-rig-delivery` | Kept V1-ART `[~] IN FLIGHT` while shipping exact per-hero head/shoulder/hand transforms across gameplay and four menu surfaces; unified all 18 body sheets; made native features, replaceable headwear, and held props pose-safe; added deterministic Blender, install-manifest, PNG-style, contact-sheet, and browser contracts. More cosmetics, boss identities, houses, and device acceptance remain open. | Feature head `20961e8`; merged PR [#192](https://github.com/QemmHD/2dgamerepo/pull/192); squash main [`e8ec79f`](https://github.com/QemmHD/2dgamerepo/commit/e8ec79fe983f108ee5e13963e3565390183c5a82); PR CI `29338059974`; main CI `29338179983`; Pages `29338179872`. Local syntax **162/162**, validators **22/22**, cosmetic contract **4,387**; deployed hero matrix `DONE EXC:0 heroes:6 variants:12 frames:324 replaceable:3` and deployed `?dev=1` Settings `DONE EXC:0` have zero error logs. | Its exact-ledger next action was completed by PR #194/main `b1113cf`; preserve both shipped contracts and begin guided completable objectives or genuine collection growth as separate slices. |
+| 2026-07-14 | Exact campaign-map gate delivery / `agent/unique-boss-ledger` | Added V1-CAMPAIGN `[x] SHIPPED` without promoting V1-PROG or the 2.0 arc. Shipped save-v10 per-map unique-boss evidence, conservative legacy migration, fail-closed corruption repair, closed boss provenance, canonical once-only collateral deaths, receipt-driven Play/victory/accessibility/share truth, and a session-only credit-off `?dev=1` map bypass. Guided objectives and new maps remain open. | Feature head `4bff911`; merged PR [#194](https://github.com/QemmHD/2dgamerepo/pull/194); squash main [`b1113cf`](https://github.com/QemmHD/2dgamerepo/commit/b1113cf5b354d189d328dc310520efd455b88f5b); PR CI [`29342507445`](https://github.com/QemmHD/2dgamerepo/actions/runs/29342507445); main CI [`29342595438`](https://github.com/QemmHD/2dgamerepo/actions/runs/29342595438); Pages [`29342595535`](https://github.com/QemmHD/2dgamerepo/actions/runs/29342595535). Local syntax **159/159**, validators **23/23**, campaign **319**, integration **161**, combat **65**, sanitizer adversarial **40,960**; partial/third-unlock/QA/reload/direct-boss/gameplay browser receipts and deployed Play/`?dev=1` receipts were `DONE EXC:0` with zero error logs. | Preserve the shipped contract and build the guided, completable objective director as the next independent progression slice; do not call V1 or 2.0 complete. |

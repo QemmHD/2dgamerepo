@@ -46,19 +46,21 @@ The recommended next releases are therefore:
 | **Delivered this release** | Integrated in the tracked runtime and covered by purpose-built validation plus browser scenarios. |
 | **Planned** | No complete player-facing implementation exists yet. |
 
-### Additive expansion decision — planned, not shipped
+### Additive expansion decision — staged delivery status
 
 The latest scope is accepted as a staged expansion of the existing Ten Fires plan.
-Nothing in this section changes the shipped/partial truth elsewhere in this audit.
-Research and grayboxes can run early, but content production follows the dependency
-gates below instead of multiplying detached cosmetics, bland maps, or unbalanced
-weapons.
+Two bounded foundations are now shipped: PR #192's six-hero animated cosmetic pose
+contract and PR #194's exact per-map campaign ledger. Cosmetic inventory growth,
+High Refresh, guided tasks, House V2, new weapon classes, destinations, minigames,
+boss art, and story remain partial or planned exactly as described below. Research and
+grayboxes can run early, but content production follows the dependency gates instead
+of multiplying detached cosmetics, bland maps, or unbalanced weapons.
 
 | Planned capability | 0–90 day foundation | Major-release home | Non-negotiable proof |
 | --- | --- | --- | --- |
-| Cosmetic repair and expansion | Shared animated attachment-pose resolver; all-state contact sheet; Collection paging/filter prototype | Rig in 1.x; first 30 genuinely distinct looks in 2.x; destination/Chronicle sets through 10.0 | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no hat or cloak remains behind while the body animates. Palette swaps do not count as silhouette variety. |
+| Cosmetic repair and expansion | **Rig shipped in PR #192:** six heroes, 18 body sheets, pose-local head/shoulder/hand contracts, deterministic Blender/install/browser fixtures. Collection growth and paging/filter remain open. | Rig in 1.x; first 30 genuinely distinct looks in 2.x; destination/Chronicle sets through 10.0 | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no hat or cloak remains behind while the body animates. Palette swaps do not count as silhouette variety. |
 | Mobile high frame rate | Profile render interpolation, lighting/overdraw, and quality tiers; name the option **High Refresh** | 1.7 foundation, hardened in 3.8/7.8/9.8 | Fixed deterministic simulation and identical gameplay hashes at Standard/High Refresh; interpolated camera/entities; physical 60/90/120 Hz frame-pacing plus battery/thermal tests. Never promise 120 FPS because browser, display, power mode, and heat can limit cadence. |
-| Campaign unlock truth | Unique per-map boss ledger and legacy migration design | 1.3, extended by every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. The currently persisted `?dev=1`/`unlockMaps` toggle must become a session-only QA bypass. |
+| Campaign unlock truth | **Shipped in PR #194:** save-v10 unique-per-map ledger, conservative legacy migration, centralized receipt/status UI, closed provenance, and a session-only credit-off `?dev=1` bypass. | 1.3 foundation shipped; extend through every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. Malformed current saves never regain lifetime-total access; QA bypass performs zero storage writes. |
 | Guided run tasks | Seeded, mode-aware Orientation → Tactic → Climax director with deterministic fallback | 1.1–1.3, then every mode/map | One current task shows progress, reward, and next action; impossible tasks cannot be selected; retry/reload cannot duplicate rewards; all supported modes complete or substitute across committed seeds. |
 | House V2 and map composition | One original Emberwood cabin blueprint plus macro-layout plan | 1.4, then packs/Atlas/Chronicle/Worldweave | One blueprint drives render, collision, nav, LOS, doors, spawn exclusion, room zones, roof cutaway, and damage state. The supplied rustic-house image informs room zoning/circulation only; no pixels or unverified art are copied. |
 | Graphics, boss models, wand VFX, and performance | Visual-noise budgets, boss silhouette/pose studies, frame/overdraw probes, one wand spectacle slice | 1.4–1.6, 3.3, 4.x, 6.x, definitive 9.x | Player, hostile tells, pickups, and objectives remain readable in grayscale, muted, reduced-effects, dense-swarm, phone, and minimum-tier captures; every effect stays inside particle/projectile/fill-rate budgets. |
@@ -609,15 +611,14 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
 
 ### P1.4 Collection and battle-pass follow-through
 
-- Repair cosmetics before adding quantity. Introduce one shared hero-pose resolver with
-  head, shoulder-left/right, hand, chest, and back anchors; gameplay, Collection,
-  Boutique, Pass, case reveal, photo, and recap previews consume the same data.
-- Pin hats to the animated head and cloak collars to the shoulders while allowing only
-  the lower cloth to lag. Remove baked replaceable headwear from class bodies where the
-  source art permits, while retaining anatomy such as ears/tusks.
-- Add an automated all-hero/all-direction contact sheet covering idle, walk, cast,
-  Focus/dash, Kindle, hurt, death, and victory plus a live moving capture. No large
-  cosmetic pack begins until detached layers and gameplay/preview disagreement are zero.
+- Preserve PR #192's shipped hero-pose resolver: six hero bodies, pose-local
+  head/shoulder/hand anchors, and the same attachment data across gameplay, Collection,
+  Boutique, Pass, case reveal, photo, and recap previews.
+- Preserve animated headwear, shoulder-pinned cloak collars, pose-safe held props, and
+  replaceable-vs-anatomical head-feature truth across all 18 installed direction sheets.
+- Keep the shipped all-hero/all-direction contact-sheet, install-manifest, PNG-style,
+  Blender, and live browser contracts green. No large cosmetic pack begins until the
+  **4,387-check** gate and gameplay/preview matrix remain clean.
 - Add per-hero cosmetic presets while retaining the current global equipped
   values as migration defaults.
 - Add Owned/Missing/Source/Set filters and a "how to obtain" route for every
@@ -672,6 +673,9 @@ cadence.
 
 ### P1.6 Campaign guidance and map-unlock truth
 
+**Exact unlock foundation shipped through [PR #194](https://github.com/QemmHD/2dgamerepo/pull/194),
+main `b1113cf`:**
+
 - Store unique boss ids by campaign map, not one generic boss-defeat total.
 - Unlock a map only after all three authored bosses of its immediate predecessor have
   been defeated in eligible campaign runs. A repeat, wrong-map boss, Boss Rush, Daily,
@@ -679,9 +683,12 @@ cadence.
 - Migrate legacy saves by preserving already unlocked maps and seeding the required
   predecessor trios. Corrupt/unknown boss ids are ignored without wiping valid state.
 - Centralize the lock predicate so map cards, launch validation, save migration, and
-  “why locked” copy cannot disagree. Show progress such as “Clear Emberwood: 2/3
-  Keepers defeated.” Retain the visible `?dev=1`/`unlockMaps` control while moving its
-  effect to session-only QA state that cannot write boss receipts or campaign progress.
+  “why locked” copy cannot disagree. Play now shows exact prior-map progress such as
+  `LOCKED · Emberwood 2/3`. The visible `?dev=1`/`unlockMaps` control now operates as
+  session-only QA state, performs zero storage writes, and disables campaign credit.
+
+**Still planned as the next independent progression slice:**
+
 - Replace all-at-once polling tasks with a seeded `RunObjectiveDirector`: one current
   Orientation task, one map/mode-valid Tactic, and one Climax. Each card shows progress,
   reward, and next action; unsupported tasks substitute deterministically.
@@ -921,6 +928,9 @@ Preserve the delivered gates, then add the remaining coverage in this order:
    a moving browser capture shows no world-position freeze or neutral-frame drift.
 10. **Campaign gates:** all six permutations of each predecessor trio, repeats,
     wrong-map/mode, old/corrupt saves, and `?dev=1` bypass preserve exact unlock truth.
+    **Passed in PR #194:** campaign **319**, integration **161**, combat **65**, and a
+    **40,960-case** sanitizer corruption/idempotence probe; PR/main CI, Pages, local and
+    deployed browser receipts all passed.
 11. **Guided objectives:** each mode/map requirement set filters correctly; invalid
     candidates substitute deterministically; completion/abort/reload receipts pay once.
 12. **House V2:** blueprint mutation propagates to render/collision/nav/LOS/spawn/roof
@@ -1003,9 +1013,10 @@ because they read enemy roles rather than an AI failure, recognize each boss's
 signature and opening, understand every point of post-run XP, dress each hero
 without re-equipping a set or watching its hat/cloak detach, see one reachable guided
 task at a time, understand exactly which of the previous map's three Keepers still
-blocks the next map, and share/replay a deterministic challenge. The House V2 cabin,
-cosmetic rig, and campaign/objective fixtures should be ready foundations; High Refresh
-may be called shipped only if interpolation and physical-device gates are complete.
+blocks the next map, and share/replay a deterministic challenge. The cosmetic rig and
+campaign gate are shipped foundations; the House V2 cabin and guided-objective fixtures
+remain required. High Refresh may be called shipped only if interpolation and
+physical-device gates are complete.
 
 A veteran should feel that the existing 40 weapons, 20 enemies, 12 bosses, 11
 roads, 50 pass levels, and 65 cosmetics became more coherent and valuable. If

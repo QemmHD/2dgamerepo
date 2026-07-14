@@ -153,19 +153,29 @@ capability-safe touch vibration at main `bed6ac5`; PR CI `29330155481`, main CI
 These bounded slices do not complete global text scaling, device/AT proof, A11-14
 convergence, or full 1.1. Exact evidence and remaining gates live in the ledger.
 
-### 2026-07-14 additive scope allocation — planned, not shipped
+**2026-07-14 shipped gameplay foundations:** [PR #192](https://github.com/QemmHD/2dgamerepo/pull/192)
+delivered the deterministic six-hero body/pose/attachment foundation at main `e8ec79f`;
+the first 30-look collection, boss identities, and house kit remain open. [PR #194](https://github.com/QemmHD/2dgamerepo/pull/194)
+delivered the save-v10 exact campaign-map gate at main `b1113cf`: three unique authored
+predecessor bosses, eligible map-director provenance, conservative legacy migration,
+fail-closed corruption repair, receipt-driven UI/victory/accessibility, and a
+session-only credit-off `?dev=1` map bypass. PR/main CI, Pages, and deployed smoke
+passed. This does not complete guided objectives, 1.3, the wider 1.0 → 2.0 arc, or 2.0.
 
-The following work expands the roadmap without changing any delivery status above.
-It is not evidence that a feature exists, and it does not inflate the existing
+### 2026-07-14 additive scope allocation — staged delivery status
+
+The following work expands the roadmap and records the two shipped foundations above;
+every other capability remains partial or planned until its own acceptance passes. It
+does not inflate the existing
 46–60-addition contracts with recolors, refactors, or test fixtures. Wands remain the
 iconic class, while later ember-forged weapon families broaden build expression
 without turning EMBERWAKE into a generic sword game.
 
 | Capability | First complete proof | Expansion arc | Acceptance before the roadmap may call it shipped |
 | --- | --- | --- | --- |
-| Cosmetic attachment rig and genuine collection growth | 1.6 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows idle/walk/cast/hurt/dash/death/victory frames in every direction; no layer drifts from its pose-local anchor while the body animates. Only after that gate may the first 30-look silhouette pack ship, with paging, filters, source labels, set preview, and no power. |
+| Cosmetic attachment rig and genuine collection growth | 1.6 rig shipped in PR #192; collection growth remains open | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows idle/walk/cast/hurt/dash/death/victory frames in every direction; no layer drifts from its pose-local anchor while the body animates. Only after that gate may the first 30-look silhouette pack ship, with paging, filters, source labels, set preview, and no power. |
 | Mobile High Refresh mode | 1.7 | 3.8, 7.8, 9.8 | Settings says **High Refresh**, never promises 120 FPS. Simulation remains fixed and deterministic; interpolated render state is proven for camera and all high-motion entities; Standard and High Refresh produce the same gameplay hash. 90/120 Hz physical-device, battery/heat, backgrounding, reduced-effects, and fallback tests pass before store copy mentions supported high-frame-rate play. |
-| Exact campaign map unlocks | 1.3 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; the currently persisted `?dev=1`/`unlockMaps` toggle becomes a session-only QA bypass and never writes false campaign progress. |
+| Exact campaign map unlocks | 1.3 foundation shipped in PR #194 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; malformed current ledgers fail closed; `?dev=1`/`unlockMaps` is session-only QA state and never writes false campaign progress. |
 | Guided, completable run objectives | 1.1–1.3 | 2.1, 3.1, 4.5 | One current task moves through Orientation → Tactic → Climax, with progress, reward, and next action. The seeded director filters by map, mode, available systems, and run state; invalid tasks substitute deterministically; reward receipts are idempotent. Every supported mode completes or cleanly substitutes its objective across the committed seed matrix. |
 | House V2 and authored map composition | 1.4 | 2.7, 3.3, 4.4, 6.5, 8.4 | One shared blueprint owns render, collision, navigation, line of sight, door openings, spawn exclusion, room zones, roof cutaway, and intact/damaged/lit/ruined state. The first original Emberwood cabin uses the supplied reference only for spatial principles—recognizable kitchen/hearth/dining/sleep/storage zones, thick perimeter walls, doors/windows, and clear circulation—without copying its pixels or unverified art. Seed, 180-body, projectile, and screenshot gates pass before kit multiplication. |
 | Graphics, map landmarks, boss models, and readable spectacle | 1.4–1.6 | 3.3, 4.x, 6.x, 9.7 | Macro layouts define sanctuary, loops, landmarks, quiet lanes, combat bowls, house lots, POIs, and boss arenas before scatter. Boss silhouettes and telegraph poses survive grayscale/reduced-effects captures. Wand and class VFX can be spectacular, but hostile tells, player position, pickups, and objectives remain legible inside measured particle, overdraw, palette, motion, and RGB budgets. |
@@ -578,11 +588,16 @@ possible without an expiring schedule.
 - Give each boss a three-part identity: signature opener, phase-two transformation,
   and desperation move. Shared attack kinds remain implementation vocabulary, not
   personality.
-- Replace generic boss-count map locks with an exact ordered campaign ledger. The next
+- **Delivered exact-gate foundation (PR #194/main `b1113cf`):** the save-v10 ledger,
+  closed scheduler-to-corpse provenance, canonical once-only collateral death path,
+  centralized Play/launch/victory/accessibility receipts, legacy migration, corrupt-save
+  repair, and session-only QA bypass passed **319** campaign checks, **161** integration
+  checks, **65** combat checks, and a **40,960-case** sanitizer probe.
+- Preserve the shipped exact ordered campaign ledger. The next
   map requires all three unique bosses from the immediately previous map; repeats and
   bosses defeated in practice, Daily, Weekly, Rite Trial, or Boss Rush do not count.
-  Preserve maps already unlocked by legacy saves, and convert `?dev=1`/`unlockMaps`
-  from persisted save state into a session-only QA bypass.
+  Legacy saves preserve prior access through conservative seeded predecessor trios;
+  `?dev=1`/`unlockMaps` remains a session-only QA bypass with campaign credit off.
 
 **Exit gate:** scripted route tests for every structure and body size; every boss
 attack family checked at each difficulty; volatile→splitter/boss rewards exactly once;
@@ -647,11 +662,17 @@ unbounded nodes, scheduler runaway, clipped master, or scene-transition spam.
 
 **Player promise:** “Every hero and boss is recognizable in motion.”
 
-- Finish six distinct Blender hero bodies on the shared 27-frame contract: idle,
+**Delivered bounded hero-rig foundation (PR #192/main `e8ec79f`):** all six heroes and
+18 direction sheets now share deterministic pose-local head/shoulder/hand attachment
+contracts across gameplay and four menu surfaces. The **4,387-check** cosmetic gate and
+deployed 324-frame hero matrix passed. Expanded cosmetic inventory, boss rebuilds,
+weapon taxonomy, and house kits remain open, so 1.6 is not complete.
+
+- Preserve the six distinct Blender hero bodies on the shared 27-frame contract: idle,
   blink, three-step walk, cast, hurt, death, and victory in down/up/side.
 - Add dash/Focus/Kindle overlays without multiplying sheet memory where a runtime
   layer is clearer.
-- Add one shared `resolveHeroPose`-style attachment contract for gameplay, Collection,
+- Preserve the shared `resolveHeroPose` attachment contract across gameplay, Collection,
   Boutique, Pass, case reveals, recap, and photo mode. Hats follow the animated head;
   cloak collars pin to shoulders while lower cloth may lag; hands/chest/back items use
   authored anchors rather than neutral-frame offsets.
@@ -1626,14 +1647,14 @@ Release scorecard:
    viewport, grayscale/RGB, and reduced-motion gate.
 3. Build 1.2 Fair Forge save/economy/territory-policy fixtures before adding pools,
    rewards, chapter currencies, high-stakes tables, or native storefront surfaces.
-4. Land the unique per-map boss ledger, centralized three-boss unlock predicate, legacy
-   migration, and mode-aware objective director before adding maps or objective pools;
-   retain the visible `?dev=1` control but make its map bypass session-only.
+4. Preserve PR #194's shipped unique-per-map ledger, centralized three-boss predicate,
+   provenance, migration, and session-only `?dev=1` bypass. Build the seeded,
+   mode-aware, completable objective director next before adding objective pools or maps.
 5. Produce one House V2 Emberwood cabin/Ruin Bell vertical slice while 1.3 enemy roles
    navigate and fight through it; do not mass-produce house art before shared render,
    collision, nav, LOS, door, spawn, room, and roof truth passes.
-6. Repair the shared cosmetic attachment resolver and prove every state/direction in
-   gameplay and previews before the first 30-look silhouette pack begins production.
+6. Preserve PR #192's shipped attachment resolver and all-state/all-direction proofs;
+   expand the first 30-look silhouette pack only through that pose/install contract.
 7. Complete audio lifecycle/mix gates, one Blender boss-family batch, and one bounded
    wand/weapon-class spectacle slice with grayscale/reduced-effects/performance proof.
 8. Add Gamepad/PWA; profile lighting/fill rate and finish deterministic interpolation
