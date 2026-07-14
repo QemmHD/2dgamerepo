@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -25,8 +25,21 @@
 </head>
 <body>
     <div id="stage">
-        <canvas id="game"></canvas>
+        <canvas
+            id="game"
+            tabindex="0"
+            role="application"
+            aria-roledescription="survival action game"
+            aria-label="EMBERWAKE main menu"
+            aria-describedby="game-instructions"
+        ></canvas>
     </div>
+    <p id="game-instructions" class="sr-only">
+        Use Tab or the arrow keys to move between menu choices, Enter or Space
+        to activate a choice, and Escape to go back. During a run, use WASD or
+        the arrow keys to move, Space to blink, Q to Kindle, and P to pause.
+    </p>
+    <div id="game-status" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <div id="rotate-hint" aria-hidden="true">
         <span>📱↻ Rotate your device to landscape</span>
     </div>

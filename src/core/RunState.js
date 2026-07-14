@@ -124,6 +124,7 @@ export const RunStateMethods = {
         this.upgradeSystem = new UpgradeSystem();
         this.passiveSystem = new PassiveSystem();
         this.waveDirector = new WaveDirector();
+        this.waveDirector.onAnnounce = (text) => this.accessibility?.announce?.(text);
         // Per-map boss trio: cycle THIS map's three bosses (all must fall to
         // clear the map). Later maps carry their own tougher rosters.
         this.bossDirector = new BossDirector(getMapBosses(this._effectiveMapId()));

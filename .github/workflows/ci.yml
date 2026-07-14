@@ -62,6 +62,18 @@ jobs:
       - name: Validate UX flows
         run: node tools/validate-ux-flows.js
 
+      - name: Validate accessibility and input contracts
+        run: node tools/validate-accessibility.js
+
+      - name: Validate reduced-motion save inheritance
+        run: node tools/validate-accessibility-save.js
+
+      - name: Validate accessible minigame motion and focus
+        run: node tools/validate-minigame-accessibility.js
+
+      - name: Validate phone Settings geometry
+        run: node tools/validate-phone-settings.js
+
       - name: Validate Living Vigil sites
         run: node tools/validate-vigil-sites.js
 
@@ -137,6 +149,32 @@ jobs:
             echo "$MATRIX_TITLE" | grep -q "map:${EXPECTED_MAP}" || {
               echo "FAIL: matrix scenario '${QUERY}' did not render requested map '${EXPECTED_MAP}'"; exit 1;
             }
+            grep -q 'data-qa-ready="1"' "$MATRIX_DOM" || {
+              echo "FAIL: matrix scenario '${QUERY}' omitted its QA receipt"; exit 1;
+            }
+            if [[ "$QUERY" == *"input=keyboard"* ]]; then
+              grep -q 'data-qa-input="keyboard"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not stage keyboard modality"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"reduced=1"* ]]; then
+              grep -q 'data-qa-reduced="true"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not persist Reduced Effects"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"focus=tab%3Aplay%230"* ]]; then
+              grep -q 'data-qa-focus="tab:play#0"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not retain the requested menu focus"; exit 1;
+              }
+              grep -q 'data-qa-focus-visible="true"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not expose visible keyboard focus"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"minesFocus=7"* ]]; then
+              grep -q 'data-qa-mines-focus="7"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not retain the requested Mines focus"; exit 1;
+              }
+            fi
           done <<'MATRIX'
           emberwood|map=emberwood&tp=buildingInside
           hollowreach|map=hollowreach&tp=buildingExterior
@@ -146,7 +184,8 @@ jobs:
           emberwood|map=emberwood&tp=vigilBeaconCleared
           emberwood|map=emberwood&touch=1
           emberwood|screen=menu&tab=home
+          emberwood|screen=menu&tab=home&input=keyboard&focus=tab%3Aplay%230&reduced=1
           emberwood|screen=menu&tab=battlepass&bpxp=12600&bpclaimthrough=12&bpreceipt=1
-          emberwood|screen=menu&tab=shop&mines=250&minessafe=3
+          emberwood|screen=menu&tab=shop&mines=250&minessafe=3&input=keyboard&minesFocus=7&reduced=1
           MATRIX
-          echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, menus, Mines)"
+          echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, reduced motion, menus, Mines)"

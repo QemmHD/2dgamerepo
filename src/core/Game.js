@@ -75,6 +75,7 @@ import { MinigameOverlay } from '../systems/MinigameOverlay.js';
 import { VigilSiteSystem, livingVigilRunSeed } from '../systems/VigilSiteSystem.js';
 import { EncounterDirector, retireEncounterEnemyTags } from '../systems/EncounterDirector.js';
 import { VigilTracker } from '../systems/VigilTracker.js';
+import { AccessibilityBridge } from '../systems/AccessibilityBridge.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { getCardCompositor } from '../systems/CardCompositor.js';
@@ -84,7 +85,7 @@ import { RunStateMethods } from './RunState.js';           // run-state creation
 import { GameUpdateMethods, gemLightColor } from './GameUpdate.js';   // gameplay update pipeline split out; spliced onto the prototype below (gemLightColor still used by render() here)
 import { GameRenderMethods } from './GameRender.js';       // render pipeline split out; spliced onto the prototype below
 import { CombatResolverMethods } from './CombatResolver.js';   // combat resolution + kill/drop flow split out; spliced onto the prototype below
-import { GameInputActionMethods } from './GameInputActions.js';   // pointer/key/menu action routing split out; spliced onto the prototype below
+import { consumeRepeatedDiscreteKey, GameInputActionMethods } from './GameInputActions.js';   // pointer/key/menu action routing split out; spliced onto the prototype below
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
@@ -93,6 +94,14 @@ export class Game {
         this.renderer = renderer;
         this.input = input;
         this.loop = loop;
+        this.accessibility = new AccessibilityBridge(renderer?.canvas);
+        this.menuFocusKey = null;
+        this.menuFocusNeedsRefresh = false;
+        this.minesFocusIndex = 0;
+        this.input?.onModalityChange?.((modality) => {
+            if (modality === 'keyboard') this.accessibility.focusCanvas();
+            else if (this.screen === 'start') this._resetMenuFocus();
+        });
         this.camera = new Camera();
         this.ui = new UISystem({ renderer, loop });
         this.saveSystem = new SaveSystem();
@@ -231,6 +240,11 @@ export class Game {
         this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
 
         window.addEventListener('keydown', (e) => {
+            // All commands handled below are one-press actions. Keep browser
+            // repeat from double-confirming resets, crossing modal boundaries,
+            // or toggling pause twice; Tab/arrows and state-driven movement are
+            // deliberately repeat-friendly and pass through this guard.
+            if (consumeRepeatedDiscreteKey(e)) return;
             if (DEV_MODE && (e.code === 'Backquote' || e.code === 'F2')) {
                 this.showDebug = !this.showDebug;
                 this.profiler.enabled = this.showDebug;
@@ -266,40 +280,86 @@ export class Game {
                     this._startRun();
                     return;
                 }
-                // Esc from any section returns to the HOME title screen (the ⌂
-                // chip's keyboard twin). Not while a minigame/tour owns input.
-                if (e.code === 'Escape' && !this.minigame.mines && !this.minigame.caseAnim && !this.menuTour
-                    && this.menuTab !== 'home') {
-                    e.preventDefault();
-                    this.menuTab = 'home';
-                    return;
-                }
                 if (this.minigame.mines) {
-                    if (e.code === 'Space' || e.code === 'Enter') {
+                    if (this._trapCanvasTab(e)) return;
+                    if (e.code === 'Escape' && this.minigame.mines.stopped) {
                         e.preventDefault();
-                        if (this.minigame.mines.stopped) this.minigame.dismissMines();
-                        else this.minigame.minesCashOut();
+                        this.minigame.dismissMines();
+                        this._resetMenuFocus();
+                        this.accessibility?.announce?.('Mines closed.');
+                    } else if (e.code === 'ArrowLeft') {
+                        e.preventDefault(); this._moveMinesFocus(-1, 0);
+                    } else if (e.code === 'ArrowRight') {
+                        e.preventDefault(); this._moveMinesFocus(1, 0);
+                    } else if (e.code === 'ArrowUp') {
+                        e.preventDefault(); this._moveMinesFocus(0, -1);
+                    } else if (e.code === 'ArrowDown') {
+                        e.preventDefault(); this._moveMinesFocus(0, 1);
+                    } else if (e.code === 'Enter') {
+                        e.preventDefault();
+                        if (this.minigame.mines.stopped) {
+                            this.minigame.dismissMines();
+                            this._resetMenuFocus();
+                            this.accessibility?.announce?.('Mines closed.');
+                        } else this._activateMinesFocus();
+                    } else if (e.code === 'Space') {
+                        e.preventDefault();
+                        if (this.minigame.mines.stopped) {
+                            this.minigame.dismissMines();
+                            this._resetMenuFocus();
+                            this.accessibility?.announce?.('Mines closed.');
+                        } else {
+                            const before = this.minigame.mines.safeRevealed;
+                            this.minigame.minesCashOut();
+                            if (before <= 0) this.accessibility?.announce?.('Reveal one safe tile before cashing out.');
+                            else if (this.minigame.mines?.result) {
+                                this.accessibility?.announce?.(
+                                    `Cashed out ${this.minigame.mines.result.payout} coins. `
+                                    + `Net ${this.minigame.mines.result.net >= 0 ? 'plus ' : 'minus '}`
+                                    + `${Math.abs(this.minigame.mines.result.net)}.`);
+                            }
+                        }
                     }
                     return;
                 }
                 if (this.minigame.caseAnim) {
+                    if (this._trapCanvasTab(e)) return;
                     if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this.minigame.caseInput(); }
                     return;
                 }
+
+                // The guided tour is a real keyboard focus scope: Tab/arrows
+                // move only between SKIP and NEXT, while Escape is its back path.
+                if (e.code === 'Escape' && this.menuTour) {
+                    e.preventDefault();
+                    this._menuAction('tourSkip', null);
+                    this._resetMenuFocus();
+                    return;
+                }
+
+                // Esc from any section returns to the HOME title screen (the ⌂
+                // chip's keyboard twin). A fresh focus traversal starts there.
+                if (e.code === 'Escape' && this.menuTab !== 'home') {
+                    e.preventDefault();
+                    this.menuTab = 'home';
+                    this._resetMenuFocus();
+                    this.accessibility?.setScreen?.('start', 'Home.');
+                    this.accessibility?.announce?.('Home.');
+                    return;
+                }
+
+                if (e.code === 'Tab' || e.code === 'ArrowRight' || e.code === 'ArrowDown'
+                    || e.code === 'ArrowLeft' || e.code === 'ArrowUp') {
+                    e.preventDefault();
+                    const backwards = (e.code === 'Tab' && e.shiftKey)
+                        || e.code === 'ArrowLeft' || e.code === 'ArrowUp';
+                    this._menuMoveFocus(backwards ? -1 : 1);
+                    return;
+                }
+
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault();
-                    // While the guided tour is up, Space/Enter advances it
-                    // (matching the NEXT button) instead of launching a run.
-                    if (this.menuTour) { this._menuAction('tourNext', null); return; }
-                    // HOME promises an explicit setup before the first guided
-                    // vigil. Match the pointer CTA: the first activation opens
-                    // PLAY; a second activation there launches the run.
-                    if ((this.saveSystem.data.stats?.runs ?? 0) === 0 && this.menuTab === 'home') {
-                        this.menuTab = 'play';
-                        return;
-                    }
-                    this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false;   // keyboard start is always a NORMAL run
-                    this._startRun();
+                    this._menuKeyboardActivate();
                 }
                 return;
             }
@@ -958,6 +1018,9 @@ export class Game {
             if (n > 0) this.pendingLevelUps += this.player.grantLevels(n);
         }
         this.screen = 'gameplay';
+        this._resetMenuFocus();
+        this.accessibility?.setScreen?.('gameplay', `${biome.name || 'Vigil'} run.`);
+        this.accessibility?.announce?.(`${biome.name || 'Vigil'} run started.`);
         // Kick the driving gameplay theme (resume covers the keyboard-start path
         // where no menu tap fired yet).
         this.audio.resume();
@@ -988,6 +1051,9 @@ export class Game {
         this.audio.playMusic('menu');
         this.screen = 'start';
         this.menuTab = 'home';   // back to the lobby (the title screen)
+        this._resetMenuFocus();
+        this.accessibility?.setScreen?.('start', 'Home.');
+        this.accessibility?.announce?.('Returned to Home.');
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
         this.paused = false;
@@ -1010,6 +1076,7 @@ export class Game {
     // unlocks the staged menu). While active, only Next/Skip are honored.
     _armMenuTour() {
         this.menuTour = { idx: 0 };
+        this._resetMenuFocus();
         this._applyTourStep();
     }
 
@@ -1024,6 +1091,8 @@ export class Game {
         this.menuTour = null;
         this.saveSystem.setTourDone(true);
         this.menuTab = 'home';   // land back on the title screen after the tour
+        this._resetMenuFocus();
+        this.accessibility?.announce?.('Menu tour closed. Home.');
     }
 
     // ── First-run onboarding (guided first run) ──────────────────────────
@@ -1559,7 +1628,11 @@ export class Game {
         });
     }
 
-    _setToast(msg) { this.menuToast = msg; this.menuToastTimer = 2.5; }
+    _setToast(msg) {
+        this.menuToast = msg;
+        this.menuToastTimer = 2.5;
+        this.accessibility?.announce?.(msg);
+    }
 
     setUpgradeChoices(choices) {
         this.upgradeChoices = choices;
@@ -2676,6 +2749,12 @@ export class Game {
         this.runSummary.killedBy = this.lastHitBy || null;
         this._queueDeathCard();
 
+        this.accessibility?.setScreen?.('gameOver',
+            `Level ${this.runSummary.level}. ${this.runSummary.kills} enemies defeated.`);
+        this.accessibility?.announce?.(
+            `Run over. Level ${this.runSummary.level}. ${this.runSummary.kills} enemies defeated. `
+            + `${this.runSummary.coinsEarned} coins earned.`);
+
         this._updateJoystickEnabled();
     }
 
@@ -2903,3 +2982,13 @@ Object.assign(Game.prototype, CombatResolverMethods);
 // lives in GameInputActions.js; splice it onto the prototype so the constructor's
 // input listeners and the UI resolve every action unchanged.
 Object.assign(Game.prototype, GameInputActionMethods);
+
+// Menu hotspots are regenerated by the Canvas renderer, so reconcile keyboard
+// focus immediately after each completed frame. This keeps a claimed/equipped/
+// maxed-out control from leaving an invisible orphan key for the next input.
+const renderWithMenuFocusReconciliation = Game.prototype.render;
+Game.prototype.render = function renderWithAccessibleMenuFocus(...args) {
+    const result = renderWithMenuFocusReconciliation.apply(this, args);
+    this._refreshMenuFocusAfterRender();
+    return result;
+};

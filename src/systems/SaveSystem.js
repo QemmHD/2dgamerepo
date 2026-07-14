@@ -24,7 +24,25 @@ const UPGRADE_MAX_BY_ID = Object.freeze(Object.fromEntries(
     PERMANENT_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxLevel]),
 ));
 
-function defaultData() {
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+// OS motion preference is consulted only when creating a genuinely fresh
+// profile (including an in-memory/corrupt/reset profile). Existing saves keep
+// the historical validation default below, so an older save that predates the
+// setting does not silently change behavior after an OS preference change.
+function prefersReducedMotion() {
+    try {
+        return typeof window !== 'undefined'
+            && typeof window.matchMedia === 'function'
+            && window.matchMedia(REDUCED_MOTION_QUERY)?.matches === true;
+    } catch (e) {
+        // matchMedia can be absent in tests/workers or throw in restricted web
+        // views. A safe false fallback preserves the pre-1.1 behavior.
+        return false;
+    }
+}
+
+function defaultData({ reducedEffects = false } = {}) {
     return {
         // New forges start with a 2,000-coin welcome stake so the tutorial can
         // walk the player through actually SPENDING (skills / cases) instead of
@@ -83,7 +101,7 @@ function defaultData() {
             debug: false,
             damageNumbers: true,
             particles: true,
-            reducedEffects: false,
+            reducedEffects: reducedEffects === true,
             volMusic: 0.7,
             volSfx: 0.8,
             // Testing: unlock every biome regardless of boss kills.
@@ -170,6 +188,10 @@ function defaultData() {
     };
 }
 
+function freshDefaultData() {
+    return defaultData({ reducedEffects: prefersReducedMotion() });
+}
+
 // Valid difficulty tiers (kept here so _validate + accessors agree).
 const DIFFICULTIES = ['easy', 'normal', 'hard'];
 
@@ -214,21 +236,27 @@ export class SaveSystem {
     }
 
     _loadOrDefault() {
-        if (!this.available) return defaultData();
+        if (!this.available) return freshDefaultData();
         let raw = null;
         try {
             raw = localStorage.getItem(SAVE_KEY);
         } catch (e) {
             console.warn('[SaveSystem] read failed', e);
-            return defaultData();
+            return freshDefaultData();
         }
-        if (!raw) return defaultData();
+        if (!raw) return freshDefaultData();
         try {
             const parsed = JSON.parse(raw);
+            // Valid JSON can still be a corrupt save (null, scalar, or array).
+            // Treat those exactly like malformed JSON: reset to fresh defaults
+            // and inherit the current OS preference.
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                return freshDefaultData();
+            }
             return this._validate(parsed);
         } catch (e) {
             console.warn('[SaveSystem] corrupted save, resetting', e);
-            return defaultData();
+            return freshDefaultData();
         }
     }
 
@@ -1085,7 +1113,7 @@ export class SaveSystem {
     }
 
     reset() {
-        this.data = defaultData();
+        this.data = freshDefaultData();
         this.save();
     }
 }

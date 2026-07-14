@@ -198,21 +198,22 @@ export class TouchButtons {
         if (!this.supported || !this.enabled) return;
         const L = this.layout();
         const i = info || {};
+        const reducedMotion = i.reducedMotion === true;
         // BLINK — a cyan disc whose rim SWEEPS UP as the cooldown recharges
         // (blinkFrac is the fraction REMAINING, so 1 − it is the recharge).
         const bFrac = i.blinkFrac ?? 0;
-        this._drawButton(ctx, L.blink, '#8fd0ff', 1 - bFrac, 'BLINK', bFrac <= 0.001, false);
+        this._drawButton(ctx, L.blink, '#8fd0ff', 1 - bFrac, 'BLINK', bFrac <= 0.001, false, reducedMotion);
         // KINDLE — the ult disc; rim = meter, pulses when ready. While aiming the
         // charge is already spent (rim empty), so show a full pulsing "AIM" ring.
         const aiming = !!i.aiming;
         const col = i.ultColor || '#ff8c4a';
         this._drawButton(ctx, L.kindle, col, aiming ? 1 : (i.fill ?? 0),
-            aiming ? 'AIM' : 'ULT', aiming || !!i.ready, aiming);
+            aiming ? 'AIM' : 'ULT', aiming || !!i.ready, aiming, reducedMotion);
     }
 
-    _drawButton(ctx, c, color, frac, label, ready, active) {
+    _drawButton(ctx, c, color, frac, label, ready, active, reducedMotion = false) {
         const f = Math.max(0, Math.min(1, frac));
-        const pulse = 0.5 + 0.5 * Math.sin(nowMs() * 0.007);
+        const pulse = reducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(nowMs() * 0.007);
         ctx.save();
 
         // Cached aura + dark forged bezel: visually matches the HUD's smoked

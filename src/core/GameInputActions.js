@@ -13,15 +13,199 @@
 import { SCREEN_SHAKE } from '../config/GameConfig.js';
 import { clamp } from './MathUtils.js';
 import { claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
-import { openCase } from '../systems/CaseSystem.js';
+import { openCase, MINES } from '../systems/CaseSystem.js';
 import { COSMETICS, COSMETIC_SETS, cosmeticCoinCost } from '../content/cosmetics.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { getMap } from '../content/maps.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
+import { menuHotspotLabel } from '../systems/AccessibilityBridge.js';
 
 export const PAUSE_EXIT_CONFIRM_MS = 3000;
 
+// Commands routed by Game's keydown listener are edge-triggered. Browser
+// key-repeat must not turn one held press into two destructive confirmations,
+// cross an overlay boundary, or toggle pause straight back off. Tab/arrows and
+// photo zoom (Q/E) are intentionally absent. A/S remain listed because overlays
+// also bind them to Share/Alter; held movement is tracked independently by
+// KeyboardInput and this guard only exits Game's command-routing callback.
+export const DISCRETE_KEY_CODES = Object.freeze([
+    'Backquote', 'F2',
+    'Enter', 'Space', 'Escape',
+    'KeyC', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyM', 'KeyN', 'KeyP',
+    'KeyR', 'KeyB', 'KeyS', 'KeyA',
+    'BracketRight', 'Backslash',
+    'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Digit7', 'Digit8', 'Digit9',
+    'Numpad0', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad7', 'Numpad8', 'Numpad9',
+]);
+const DISCRETE_KEYS = new Set(DISCRETE_KEY_CODES);
+
+export function consumeRepeatedDiscreteKey(event) {
+    if (!event?.repeat || !DISCRETE_KEYS.has(event.code)) return false;
+    event.preventDefault?.();
+    return true;
+}
+
 export const GameInputActionMethods = {
+    _menuFocusableHotspots() {
+        const hotspots = this.ui?.menu?.hotspots;
+        return Array.isArray(hotspots)
+            ? hotspots.filter((entry) => entry && entry.w > 0 && entry.h > 0 && entry.action)
+            : [];
+    },
+
+    _menuMoveFocus(delta = 1) {
+        const hotspots = this._menuFocusableHotspots();
+        if (!hotspots.length) return false;
+        let index = hotspots.findIndex((entry) => entry.key === this.menuFocusKey);
+        const step = delta < 0 ? -1 : 1;
+        index = index < 0
+            ? (step < 0 ? hotspots.length - 1 : 0)
+            : (index + step + hotspots.length) % hotspots.length;
+        const next = hotspots[index];
+        this.menuFocusKey = next.key;
+        this.menuFocusNeedsRefresh = false;
+        this.accessibility?.focusCanvas?.();
+        this.accessibility?.announce?.(`Focused: ${next.label}`);
+        this.audio?.hover?.();
+        return true;
+    },
+
+    _menuActivateFocus() {
+        const hotspots = this._menuFocusableHotspots();
+        if (!hotspots.length) return false;
+        const current = hotspots.find((entry) => entry.key === this.menuFocusKey);
+        if (!current) return this._menuMoveFocus(1);
+        // The action may claim/equip/max a control away or jump sections. Ask
+        // the post-render reconciler to retain this key only if it still exists.
+        this.menuFocusNeedsRefresh = true;
+        this._menuAction(current.action, current.arg);
+        return true;
+    },
+
+    _trapCanvasTab(event) {
+        if (event?.code !== 'Tab') return false;
+        event.preventDefault?.();
+        this.accessibility?.focusCanvas?.();
+        return true;
+    },
+
+    _refreshMenuFocusAfterRender() {
+        if (this.screen !== 'start') return 'inactive';
+        const overlayOwnsInput = !!(this.minigame?.mines || this.minigame?.caseAnim);
+        const requested = !!this.menuFocusKey || this.menuFocusNeedsRefresh === true;
+
+        // Case/Mines are Canvas focus scopes of their own. Never leave a focus
+        // ring on the obscured menu; remember whether keyboard focus should be
+        // restored after the overlay closes.
+        if (overlayOwnsInput) {
+            this.menuFocusKey = null;
+            this.menuFocusNeedsRefresh = requested;
+            return requested ? 'deferred' : 'none';
+        }
+
+        const hotspots = this._menuFocusableHotspots();
+        const current = hotspots.find((entry) => entry.key === this.menuFocusKey);
+        if (current) {
+            this.menuFocusNeedsRefresh = false;
+            return 'retained';
+        }
+
+        this.menuFocusKey = null;
+        if (!requested) {
+            this.menuFocusNeedsRefresh = false;
+            return 'none';
+        }
+        if (this.input?.getModality?.() !== 'keyboard') {
+            this.menuFocusNeedsRefresh = false;
+            return 'cleared';
+        }
+        if (!hotspots.length) {
+            this.menuFocusNeedsRefresh = true;
+            return 'deferred';
+        }
+
+        // _menuMoveFocus owns the common visible/audio/assistive feedback and
+        // clears menuFocusNeedsRefresh after selecting the first valid control.
+        this.menuFocusNeedsRefresh = true;
+        this._menuMoveFocus(1);
+        return 'recovered';
+    },
+
+    _menuKeyboardActivate() {
+        // A named Canvas control always owns activation once focus is visible.
+        if (this.menuFocusKey && this._menuActivateFocus()) return 'focused';
+        if (this.menuTour) {
+            this._menuAction('tourNext', null);
+            return 'tour';
+        }
+
+        // Quick-start is deliberately scoped to HOME and PLAY. A section switch
+        // clears its old focus key; Enter on SETTINGS/SHOP/etc. must establish a
+        // new local focus target, never leak through to starting a run.
+        const tab = this.menuTab || 'home';
+        if (tab !== 'home' && tab !== 'play') {
+            this._menuMoveFocus(1);
+            return 'focus';
+        }
+
+        // A fresh profile gets the same setup step as the pointer HOME CTA.
+        if ((this.saveSystem.data.stats?.runs ?? 0) === 0 && tab === 'home') {
+            this._menuAction('tab', 'play');
+            // This route began with intentionally empty focus, so do not let the
+            // tab action's generic reset look like an orphan needing recovery.
+            // The next distinct Enter on PLAY remains the scoped quick-start.
+            this.menuFocusNeedsRefresh = false;
+            return 'play';
+        }
+
+        this.dailyMode = false;
+        this.riteTrialMode = false;
+        this.bossRushMode = false;
+        this.weeklyEmberMode = false;
+        this._startRun();
+        return 'start';
+    },
+
+    _resetMenuFocus() {
+        this.menuFocusKey = null;
+        this.menuFocusNeedsRefresh = true;
+    },
+
+    _moveMinesFocus(dx = 0, dy = 0) {
+        const mines = this.minigame?.mines;
+        if (!mines || mines.stopped) return false;
+        const cols = MINES.cols;
+        const total = MINES.tiles;
+        const current = Math.max(0, Math.min(total - 1, this.minesFocusIndex || 0));
+        let col = current % cols;
+        let row = Math.floor(current / cols);
+        col = (col + Math.sign(dx) + cols) % cols;
+        row = (row + Math.sign(dy) + Math.ceil(total / cols)) % Math.ceil(total / cols);
+        let next = row * cols + col;
+        if (next >= total) next = total - 1;
+        this.minesFocusIndex = next;
+        this.accessibility?.announce?.(`Mines tile, row ${Math.floor(next / cols) + 1}, column ${(next % cols) + 1}.`);
+        this.audio?.hover?.();
+        return true;
+    },
+
+    _activateMinesFocus() {
+        const mines = this.minigame?.mines;
+        if (!mines || mines.stopped) return false;
+        const index = Math.max(0, Math.min(MINES.tiles - 1, this.minesFocusIndex || 0));
+        const alreadyRevealed = mines.revealed.includes(index);
+        if (alreadyRevealed) {
+            this.accessibility?.announce?.('That tile is already revealed.');
+            this.audio?.deny?.();
+            return false;
+        }
+        this.minigame.minesReveal(index);
+        if (mines.busted) this.accessibility?.announce?.(`Mine. Stake lost: ${mines.bet} coins.`);
+        else if (mines.cashed) this.accessibility?.announce?.(`Board cleared. Cashed out ${mines.result?.payout || 0} coins.`);
+        else this.accessibility?.announce?.(`Safe tile. Multiplier ${mines.mul.toFixed(2)} times.`);
+        return true;
+    },
+
     // Pause is only meaningful during live gameplay (overlays already
     // freeze the world). Toggling re-enables/disables the joystick.
     togglePause() {
@@ -236,7 +420,17 @@ export const GameInputActionMethods = {
         switch (action) {
             // Opening a tab acknowledges its one-time "NEW" badge (staged
             // unlock — see MenuRenderer tabUnlocked + SaveSystem.markTabSeen).
-            case 'tab': this.menuTab = arg; this.saveSystem.markTabSeen(arg); this.resetConfirming = false; break;
+            case 'tab':
+                this.menuTab = arg;
+                this.saveSystem.markTabSeen(arg);
+                this.resetConfirming = false;
+                this._resetMenuFocus();
+                {
+                    const tabLabel = menuHotspotLabel('tab', arg).replace(/^Open\s+/i, '');
+                    this.accessibility?.setScreen?.('start', `${tabLabel}.`);
+                    this.accessibility?.announce?.(`${tabLabel} opened.`);
+                }
+                break;
             case 'startRun': this._pressFeedback('start'); this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false; this._startRun(); break;
             case 'startDaily': this._pressFeedback('start'); this.dailyMode = true; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false; this._startRun(); break;
             // KINDLED PR5 — launch the daily hero-locked Rite Trial (mutually
@@ -307,8 +501,8 @@ export const GameInputActionMethods = {
             case 'toggleSetting': this._toggleSetting(arg); break;
             case 'volUp': this._adjustVolume(arg, 0.1); break;
             case 'volDown': this._adjustVolume(arg, -0.1); break;
-            case 'openCase': this.minigame.openCaseFlow(arg); break;
-            case 'openMines': this.minigame.openMines(arg); break;
+            case 'openCase': this._resetMenuFocus(); this.minigame.openCaseFlow(arg); break;
+            case 'openMines': this._resetMenuFocus(); this.minesFocusIndex = 0; this.minigame.openMines(arg); break;
             case 'claimBP': {
                 const r = claimBattlePass(this.saveSystem, arg);
                 this._setToast(r.ok ? `Claimed: ${r.label}` : 'Cannot claim');
@@ -322,7 +516,7 @@ export const GameInputActionMethods = {
                     : 'Nothing to claim');
                 break;
             }
-            case 'caseContinue': this.minigame.dismissCase(); break;
+            case 'caseContinue': this.minigame.dismissCase(); this._resetMenuFocus(); break;
             case 'replayTutorial':
                 this.saveSystem.setTourDone(false);
                 this._forceRunHints = true;      // next run re-teaches the loop
@@ -341,11 +535,14 @@ export const GameInputActionMethods = {
         const cur = this.saveSystem.getSetting(key) === true;
         this.saveSystem.setSetting(key, !cur);
         if (key === 'debug') { this.showDebug = !cur; this.profiler.enabled = this.showDebug; }
+        this.accessibility?.announce?.(`${menuHotspotLabel('toggleSetting', key)}: ${!cur ? 'on' : 'off'}.`);
     },
     _adjustVolume(key, delta) {
         const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;
         this.saveSystem.setSetting(key, clamp(cur + delta, 0, 1));
         this.audio.setVolumes(this.saveSystem.getSetting('volMusic'), this.saveSystem.getSetting('volSfx'));
+        const value = Math.round((this.saveSystem.getSetting(key) || 0) * 100);
+        this.accessibility?.announce?.(`${menuHotspotLabel(delta > 0 ? 'volUp' : 'volDown', key)}: ${value} percent.`);
     },
     selectUpgrade(idx) {
         if (!this.upgradeChoices) return;
