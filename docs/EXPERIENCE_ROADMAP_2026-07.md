@@ -58,7 +58,7 @@ weapons.
 | --- | --- | --- | --- |
 | Cosmetic repair and expansion | Shared animated attachment-pose resolver; all-state contact sheet; Collection paging/filter prototype | Rig in 1.x; first 30 genuinely distinct looks in 2.x; destination/Chronicle sets through 10.0 | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no hat or cloak remains behind while the body animates. Palette swaps do not count as silhouette variety. |
 | Mobile high frame rate | Profile render interpolation, lighting/overdraw, and quality tiers; name the option **High Refresh** | 1.7 foundation, hardened in 3.8/7.8/9.8 | Fixed deterministic simulation and identical gameplay hashes at Standard/High Refresh; interpolated camera/entities; physical 60/90/120 Hz frame-pacing plus battery/thermal tests. Never promise 120 FPS because browser, display, power mode, and heat can limit cadence. |
-| Campaign unlock truth | Unique per-map boss ledger and legacy migration design | 1.3, extended by every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. `?dev=1`/`unlockMaps` remains a non-persistent QA bypass. |
+| Campaign unlock truth | Unique per-map boss ledger and legacy migration design | 1.3, extended by every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. The currently persisted `?dev=1`/`unlockMaps` toggle must become a session-only QA bypass. |
 | Guided run tasks | Seeded, mode-aware Orientation → Tactic → Climax director with deterministic fallback | 1.1–1.3, then every mode/map | One current task shows progress, reward, and next action; impossible tasks cannot be selected; retry/reload cannot duplicate rewards; all supported modes complete or substitute across committed seeds. |
 | House V2 and map composition | One original Emberwood cabin blueprint plus macro-layout plan | 1.4, then packs/Atlas/Chronicle/Worldweave | One blueprint drives render, collision, nav, LOS, doors, spawn exclusion, room zones, roof cutaway, and damage state. The supplied rustic-house image informs room zoning/circulation only; no pixels or unverified art are copied. |
 | Graphics, boss models, wand VFX, and performance | Visual-noise budgets, boss silhouette/pose studies, frame/overdraw probes, one wand spectacle slice | 1.4–1.6, 3.3, 4.x, 6.x, definitive 9.x | Player, hostile tells, pickups, and objectives remain readable in grayscale, muted, reduced-effects, dense-swarm, phone, and minimum-tier captures; every effect stays inside particle/projectile/fill-rate budgets. |
@@ -73,7 +73,7 @@ objective, or story progress.
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At this candidate snapshot, `src/` contains 297 files, including
+planning documents. At the current shipped-main snapshot, `src/` contains 297 files, including
 130 JavaScript modules and about 46,206 nonblank lines of JavaScript. Raw file counts are
 inventory context, not a quality claim.
 
@@ -208,12 +208,12 @@ badges, and deterministic input/accessibility receipts. A web-app manifest and i
 exist.
 
 Shipped PR #188 adds save-safe 100/115/130 Combat HUD size, high-contrast combat tells,
-and seven source-backed non-color status badges. This current branch candidate adds a
-general gameplay-caption lane with Essential/Full detail, independent Voice volume,
-mono output, and capability-safe touch vibration; it is not delivery truth until PR CI,
-main, Pages, and live smoke pass. Global app/menu text scaling, gamepad/remapping,
-complete device/AT/zoom proof, and the offline shell remain open. No essential mechanic
-depends on hearing a cue.
+and seven source-backed non-color status badges. Shipped PR #190 adds a general
+gameplay-caption lane with Essential/Full detail, independent Voice volume, live mono
+output, and capability-safe touch vibration. Its PR/main CI, Pages deployment, and
+deployed cold-boot/caption/`?dev=1` receipts passed at `bed6ac5`. Global app/menu text
+scaling, gamepad/remapping, complete device/AT/zoom proof, and the offline shell remain
+open. No essential mechanic depends on hearing a cue.
 
 No truthful mobile 120 FPS mode currently ships. Browser animation cadence may exceed
 60 Hz, but meaningful high-refresh presentation needs previous/current render snapshots
@@ -229,14 +229,16 @@ but it does not close full 1.1. A11-01–A11-14 in the
 remaining preference, tutorial/debrief, hierarchy, routing, device/AT, and convergence
 work.
 
-**2026-07-14 A11-10 shipped delta:** [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
+**2026-07-14 A11-10 shipped deltas:** [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
 is merged and deployed at `089d646`. Combat HUD scaling, post-veil high-contrast
 warnings, source-backed non-color status badges, and dedicated Accessibility Settings
-passed PR/main CI, Pages, and live 1280×720 smoke. The current candidate implements the
-next mono/captions/voice/vibration slice behind fresh validators and visual evidence;
-until it passes the ship gates above it remains a candidate. A11-10 stays in flight for
-device/AT proof and full First Light convergence. The development ledger owns exact
-counts and delivery truth.
+passed PR/main CI, Pages, and live 1280×720 smoke. [PR #190](https://github.com/QemmHD/2dgamerepo/pull/190)
+is merged and deployed at `bed6ac5`; captions, independent Voice, mono output, touch
+vibration, hidden-surface lifecycle handling, strict preference receipts, and the real
+routed Web Audio graph passed PR CI `29330155481`, main CI `29330244561`, Pages
+`29330244572`, and deployed smoke. A11-10 stays in flight for device/AT/zoom proof and
+full First Light convergence. The development ledger owns exact counts and delivery
+truth; [`docs/evidence/v1.1`](evidence/v1.1/README.md) indexes the bounded visual proof.
 
 ## 2. What changed since the older plans
 
@@ -245,7 +247,7 @@ counts and delivery truth.
 The state-of-game section in `MAJOR_UPDATE_PLAN.md` was accurate on 2026-07-02
 but is stale as a current backlog. Its major claims now resolve as follows:
 
-| 2026-07-02 concern | 2026-07-13 reality | Remaining work |
+| 2026-07-02 concern | Current reality | Remaining work |
 | --- | --- | --- |
 | Runs collapse around 13 minutes | Hypergrowth moved to 20 minutes at a gentler 1.4x/min; evolution/fusion and draft work landed | Measure actual build completion and late-run readability; tune from cohorts, not comments |
 | 6 weapons, about 4 behavior kinds | 40 weapons across 9 kinds, 11 evolutions, 15 fusions | Identity/balance pass; reduce visually redundant choices rather than add quantity |
@@ -254,10 +256,10 @@ but is stale as a current backlog. Its major claims now resolve as follows:
 | No onboarding and 9-tab dump | 12-step tour; staged unlocks; 11 screens grouped into 6 sections; PR #186 keyboard focus foundation | Controller focus, playable tutorial/debrief, text scaling, complete hierarchy/routing, short first-run comprehension tests |
 | Battle-pass run receipt is dead | Post-run XP buckets, claims, milestones, migration, and Everflame are live | Pacing measurement, collection/source filters, reward-preview polish |
 | Heirloom Cinders is a no-op | Starting-economy flow was repaired and all 9 permanent upgrades are surfaced | Make old upgrades more interesting at cap without breaking save IDs |
-| `Game.js` is 4,119 lines | About 2,874 nonblank lines after update/render/input/combat/photo/run-state splits | Continue seam extraction only when a feature needs it |
+| `Game.js` is 4,119 lines | About 2,945 nonblank lines after update/render/input/combat/photo/run-state splits | Continue seam extraction only when a feature needs it |
 | Obstacle queries allocate per enemy | Spatial obstacle/index work is GC-conscious and shared broadphase exists | Prove nav/collision at 180 bodies and cap unbounded projectile growth |
 | Save version 7 is write-only | Validated version 9 with battle-pass migration | Fixture-tested historical migrations plus export/import and recovery |
-| Deploy-only CI | Syntax, asset, progression, boss, navigation, deterministic-audio, headless game smoke, and PR #186 keyboard/reduced/phone receipt gates exist | Add historical save fixtures plus gamepad/remap/caption/device/AT convergence gates |
+| Deploy-only CI | Syntax, asset, progression, boss, navigation, deterministic-audio, headless game smoke, and PR #186 keyboard/reduced/phone receipt gates exist | Add historical save fixtures plus gamepad/remap and physical-device/AT caption convergence gates |
 
 Most P0/P1 work from that plan is therefore shipped or evolved. The remaining
 high-value pieces are save portability, full accessibility, measured load-time
@@ -287,7 +289,7 @@ bank, not be interpreted as a release log.
 | 15 ASHBOUND | **Partial foundation:** difficulty and modifiers exist; no per-map Ash Rank ladder or Everburn seasons. |
 | 16 NIGHTFALL CYCLES | **Planned:** no Rekindled NG+, cross-map remix cycle, or prestige shelf. |
 | 17 SEALED STORM | **Partial foundation:** daily/weekly generators use local seeded logic and `Game.js` has begun splitting; no single simulation RNG, challenge codes, or Crucible composer. |
-| 18 FORGEGRIP | **Partial shipped foundation:** touch, manifest, icons, reduced effects, active modality, semantic Canvas, and keyboard menu focus exist; gamepad, remaps, complete cross-screen/device proof, big text, vibration settings, and offline shell remain. |
+| 18 FORGEGRIP | **Partial shipped foundation:** touch, manifest, icons, reduced effects, active modality, semantic Canvas, keyboard menu focus, and touch-vibration settings exist; gamepad, remaps, complete cross-screen/device and vibration proof, big text, controller haptics, and offline shell remain. |
 | 19 EMBER RACE | **Planned:** no deterministic ghost/race trace pipeline. |
 | 20 HEARTHHOLD | **Planned:** no personalized trophy camp. |
 
@@ -645,9 +647,10 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
   and vibration off/low/full.
 - Guarantee at least 44x44 CSS-pixel touch targets after safe-area scaling.
 - Preserve the shipped 100/115/130 Combat HUD size, post-veil high-contrast
-  telegraphs, and source-backed color-plus-shape status cues. Ship and harden the current
-  general-caption, independent-voice, mono-audio, and touch-vibration candidate;
-  Combat HUD size does not claim global app/menu text scaling.
+  telegraphs, source-backed color-plus-shape status cues, general captions, independent
+  Voice, mono output, and touch vibration. Complete physical-device, assistive-tech,
+  backgrounding, and zoom proof; Combat HUD size does not claim global app/menu text
+  scaling.
 - Reduced effects disables nonessential flashes, camera impulse, case reel
   motion, and dense weather while retaining attack warnings.
 - Add a **High Refresh** preference, off by default. Keep simulation on the existing
@@ -677,8 +680,8 @@ cadence.
   predecessor trios. Corrupt/unknown boss ids are ignored without wiping valid state.
 - Centralize the lock predicate so map cards, launch validation, save migration, and
   “why locked” copy cannot disagree. Show progress such as “Clear Emberwood: 2/3
-  Keepers defeated.” Preserve `?dev=1`/`unlockMaps` as a QA-only bypass that does not
-  write boss receipts.
+  Keepers defeated.” Retain the visible `?dev=1`/`unlockMaps` control while moving its
+  effect to session-only QA state that cannot write boss receipts or campaign progress.
 - Replace all-at-once polling tasks with a seeded `RunObjectiveDirector`: one current
   Orientation task, one map/mode-valid Tactic, and one Climax. Each card shows progress,
   reward, and next action; unsupported tasks substitute deterministically.
@@ -903,9 +906,10 @@ Preserve the delivered gates, then add the remaining coverage in this order:
    import corruption tests.
 6. **Input/accessibility:** keyboard focus order, active modality, reduced-effects save
    inheritance, phone Settings, and receipt-bearing Home/Mines gates are delivered by
-   PR #186; PR #188 delivers the bounded Combat HUD scale/contrast/status slice. Next add
-   gamepad/touch hybrid-device proof, dead-zone/remap persistence, captions/mono/voice/
-   vibration, and manual device/assistive-tech review.
+   PR #186; PR #188 delivers the bounded Combat HUD scale/contrast/status slice; PR #190
+   delivers captions/mono/Voice/touch vibration plus their deterministic browser gates.
+   Next add gamepad/touch hybrid-device proof, dead-zone/remap persistence, and manual
+   physical-device/assistive-tech review.
 7. **Visual/browser matrix:** desktop menu, 185-enemy house swarm, boss cast,
    second act, full SFX reel, and live score lifecycle are covered. Add narrow
    mobile, notched safe area, 115/130% Combat HUD size, reduced effects, high contrast, and

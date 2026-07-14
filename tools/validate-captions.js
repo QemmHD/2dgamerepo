@@ -11,6 +11,7 @@ const ok = (condition, message) => {
     checks++;
     if (!condition) { failures++; console.error(`  x ${message}`); }
 };
+const readSource = (path) => readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
 
 const presented = [];
 const captions = new CaptionSystem({ onPresent: (item) => presented.push(item) });
@@ -114,9 +115,9 @@ ok(monophonic.snapshot()?.key === 'phase-two'
     && spoken.join(',') === 'arrival,phase-two',
 'new speech replaces the old transcript exactly like the monophonic voice bus');
 
-const updateSource = readFileSync(new URL('../src/core/GameUpdate.js', import.meta.url), 'utf8');
-const uiSource = readFileSync(new URL('../src/systems/UISystem.js', import.meta.url), 'utf8');
-const gameSource = readFileSync(new URL('../src/core/Game.js', import.meta.url), 'utf8');
+const updateSource = readSource(new URL('../src/core/GameUpdate.js', import.meta.url));
+const uiSource = readSource(new URL('../src/systems/UISystem.js', import.meta.url));
+const gameSource = readSource(new URL('../src/core/Game.js', import.meta.url));
 ok(/const captionHidden = [\s\S]*?this\.paused[\s\S]*?this\.photoMode[\s\S]*?this\.upgradeChoices[\s\S]*?this\.gameOver/.test(updateSource)
     && /captionHidden[\s\S]*?audio\?\.stopVoice\?\.\(\)[\s\S]*?captionSystem\?\.update/.test(updateSource)
     && !/captionSystem\?\.snapshot\?\.\(\)\?\.kind[\s\S]{0,160}?stopVoice/.test(updateSource),
