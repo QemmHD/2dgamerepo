@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { computeHUDLayout, hudRectsOverlap } from '../src/systems/HUDLayout.js';
 import { fitHudLabel, wrapText } from '../src/systems/UISystem.js';
+import { RUN_OBJECTIVE_CANDIDATES } from '../src/content/objectives.js';
 
 let checks = 0;
 let failures = 0;
@@ -279,6 +280,12 @@ for (const safeArea of safeAreas) {
                     `${name}: compressed Run Path bar does not clear its footer by 6 CSS pixels`);
                 ok((objectiveLanes.bodyY - titleBottom) * scaleToCss >= 2.99,
                     `${name}: compressed Run Path body does not clear its title by 3 CSS pixels`);
+                if (objective.narrowCompressed) {
+                    ok(objective.h * scaleToCss >= 163.9,
+                        `${name}: narrow compressed Run Path is shorter than 164 CSS pixels`);
+                    ok(objectiveLanes.bodyLines === 3,
+                        `${name}: narrow compressed Run Path lacks its third action line`);
+                }
             }
 
             // Touch removes Blink from the passive cooldown row because its
@@ -322,6 +329,7 @@ ok(truncatedWrap.truncated === true,
 // and the actual allocated pixel width both affect the result.
 class MeasureContext {
     constructor() { this.font = '16px sans-serif'; }
+    fillText() {}
     measureText(text) {
         const size = Number.parseFloat(/([\d.]+)px/.exec(this.font)?.[1] || '16');
         return { width: String(text).length * size * 0.58 };
@@ -329,6 +337,38 @@ class MeasureContext {
 }
 
 const measureCtx = new MeasureContext();
+
+// Linux runners can resolve system-ui to a wider face than Windows. Prove all
+// authored tasks fit the exact narrow-compressed contract with deliberately
+// conservative glyph metrics, rather than trusting one host font.
+const narrowObjectiveLayout = computeHUDLayout({
+    width: 1920, height: 1080, compact: false, touchMode: false,
+    cssScale: 1280 / 1920, uiScale: 100, hasObjective: true,
+});
+class WideMeasureContext extends MeasureContext {
+    measureText(text) {
+        const size = Number.parseFloat(/([\d.]+)px/.exec(this.font)?.[1] || '16');
+        return { width: String(text).length * size * 0.62 };
+    }
+}
+const wideMeasureCtx = new WideMeasureContext();
+wideMeasureCtx.font = `700 ${narrowObjectiveLayout.objective.bodyPx}px system-ui`;
+for (const tasks of Object.values(RUN_OBJECTIVE_CANDIDATES)) {
+    for (const task of tasks) {
+        const wrappedAction = wrapText(
+            wideMeasureCtx,
+            `NEXT · ${task.nextAction}`,
+            0,
+            0,
+            narrowObjectiveLayout.objective.w
+                - narrowObjectiveLayout.objective.lanes.pad * 2,
+            narrowObjectiveLayout.objective.lanes.bodyLineHeight,
+            narrowObjectiveLayout.objective.lanes.bodyLines,
+        );
+        ok(wrappedAction.truncated === false,
+            `1280 narrow compressed Run Path truncates authored task ${task.id}`);
+    }
+}
 const fitLayout = computeHUDLayout({
     width: 1920, height: 1080, compact: true, uiScale: 130,
     abilityCount: 8, hasVigil: true,

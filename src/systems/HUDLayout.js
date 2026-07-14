@@ -179,6 +179,10 @@ export function computeHUDLayout(options = {}) {
     // can reclaim this same lane without stacking two equal-weight panels.
     const phoneGuidance = touchMode && usableW * cssScale <= 700;
     const compressedGuidance = !phoneGuidance && cssScale < 0.999;
+    // A 1280x720 outer window can leave a much shorter content viewport after
+    // browser chrome is removed, pushing the fixed-aspect canvas into this
+    // narrower scale. Linux's wider system font then needs a third action line.
+    const narrowCompressedGuidance = compressedGuidance && cssScale <= 0.7;
     const objectiveRight = right - 38;
     // A phone Run Path owns a real right rail instead of borrowing the combat
     // centre. Forty CSS pixels remain between the player column and the card,
@@ -203,8 +207,10 @@ export function computeHUDLayout(options = {}) {
         // percentage-based body run through the progress bar.
         phoneGuidance ? Math.ceil(134 / cssScale) : 0,
         // A 1920-wide logical canvas shown at common 1280/1600 CSS widths
-        // still needs two complete action lines plus real content gutters.
-        compressedGuidance ? Math.ceil(140 / cssScale) : 0,
+        // still needs two or three complete action lines plus real gutters.
+        compressedGuidance
+            ? Math.ceil((narrowCompressedGuidance ? 164 : 140) / cssScale)
+            : 0,
     );
     const reservedAbilityY = touchMode ? bottom - 394 : bottom - 148;
     const phoneAbilityGap = phoneGuidance ? Math.ceil(4 / cssScale) : 0;
@@ -255,6 +261,7 @@ export function computeHUDLayout(options = {}) {
             edgeCompact: edgeCompactObjective,
             phone: phoneGuidance,
             compressed: compressedGuidance && !denseObjective,
+            narrowCompressed: narrowCompressedGuidance && !denseObjective,
             centerKeepoutPx: phoneGuidance ? 40 : 0,
         })
         : rect(0, 0, 0, 0);
@@ -297,6 +304,7 @@ export function computeHUDLayout(options = {}) {
         } else if (compressedGuidance) {
             const gap3 = Math.ceil(3 / cssScale);
             const gap6 = Math.ceil(6 / cssScale);
+            bodyLines = narrowCompressedGuidance ? 3 : 2;
             const footerTop = footerY - objectiveProgressPx / 2;
             barY = footerTop - gap6 - barH;
             const titleBottom = titleY + objectiveTitlePx / 2;

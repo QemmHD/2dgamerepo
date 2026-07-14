@@ -800,19 +800,36 @@ export class UISystem {
         ctx.font = `700 ${bodyPx}px ${FONT}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#ffd166';
-        ctx.fillText(`${bodyLabel} ·`, r.x + pad, bodyY);
-        const leadW = ctx.measureText(`${bodyLabel} · `).width;
-        ctx.fillStyle = highContrast ? '#ffffff' : 'rgba(244,235,221,0.82)';
-        const actionWrap = wrapText(
-            ctx,
-            body,
-            r.x + pad + leadW,
-            bodyY,
-            r.w - pad * 2 - leadW,
-            lanes.bodyLineHeight ?? bodyPx * 1.08,
-            lanes.bodyLines ?? 2,
-        );
+        let actionWrap;
+        if (lanes.compressed === true) {
+            // Continuation lines own the full card width. Keeping every line
+            // indented after NEXT made Linux's wider system font truncate a
+            // valid objective in a browser-chrome-constrained 1280x720 window.
+            ctx.fillStyle = highContrast ? '#ffffff' : '#ffe0a3';
+            actionWrap = wrapText(
+                ctx,
+                `${bodyLabel} · ${body}`,
+                r.x + pad,
+                bodyY,
+                r.w - pad * 2,
+                lanes.bodyLineHeight ?? bodyPx * 1.08,
+                lanes.bodyLines ?? 2,
+            );
+        } else {
+            ctx.fillStyle = '#ffd166';
+            ctx.fillText(`${bodyLabel} ·`, r.x + pad, bodyY);
+            const leadW = ctx.measureText(`${bodyLabel} · `).width;
+            ctx.fillStyle = highContrast ? '#ffffff' : 'rgba(244,235,221,0.82)';
+            actionWrap = wrapText(
+                ctx,
+                body,
+                r.x + pad + leadW,
+                bodyY,
+                r.w - pad * 2 - leadW,
+                lanes.bodyLineHeight ?? bodyPx * 1.08,
+                lanes.bodyLines ?? 2,
+            );
+        }
         drawProgressBar();
 
         const denseFooter = r.dense || state.touchMode;
