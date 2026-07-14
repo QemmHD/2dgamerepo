@@ -492,7 +492,8 @@ export const GameRenderMethods = {
             this._drawPhotoFilter(ctx);   // grades the world; part of a SNAP
             if (this.photoMode.hudShown) {
                 const photoUIState = buildUIState(this);
-                if (this.screen === 'gameplay' && this.vigilTracker) {
+                if (this.screen === 'gameplay' && this.vigilTracker
+                    && !photoUIState.runObjective && !photoUIState.onboardingLesson) {
                     const vigilLayout = this.ui.getHUDLayout(photoUIState);
                     this.vigilTracker.drawHUD(ctx, vigilLayout.vigil, {
                         compact: vigilLayout.compact,
@@ -523,7 +524,9 @@ export const GameRenderMethods = {
         // lifetime. Yield the persistent chip without mutating tracker state;
         // the next frame after the announcement retires restores it naturally.
         const largeAnnouncementActive = !!gameplayUIState.waveAnnouncement;
-        if (this.screen === 'gameplay' && this.vigilTracker && !largeAnnouncementActive) {
+        if (this.screen === 'gameplay' && this.vigilTracker
+            && !gameplayUIState.runObjective && !gameplayUIState.onboardingLesson
+            && !largeAnnouncementActive) {
             const vigilLayout = this.ui.getHUDLayout(gameplayUIState);
             this.vigilTracker.drawHUD(ctx, vigilLayout.vigil, {
                 compact: vigilLayout.compact,
@@ -536,7 +539,8 @@ export const GameRenderMethods = {
         this.ui.draw(ctx, gameplayUIState);
         this.profiler.end('ui');
 
-        if (this.victory) this._drawVictory(ctx);
+        this._lastVictoryDrawReceipt = false;
+        if (this.victory) this._lastVictoryDrawReceipt = this._drawVictory(ctx) === true;
 
         if (this.screen === 'gameplay' && this.input.touch && this.input.isTouchMode?.()) this.input.touch.draw(ctx);
         // KINDLED touch action buttons (blink + Kindle ult). Active modality,
@@ -664,11 +668,22 @@ export const GameRenderMethods = {
         } else {
             subtitle = `${runMap?.name || 'Vigil'} cleared. Choose your next campaign map.`;
         }
+        const pathDone = this.runObjectiveDirector?.getSummary?.().completedPhases ?? 0;
+        const inMemoryCoins = (this._objRewardReceipts || [])
+            .reduce((sum, receipt) => sum + Math.max(0, Math.floor(receipt?.amount || 0)), 0);
+        const heldCoins = this._guidedObjectiveHeldCoins?.() ?? 0;
+        let pathStatus = null;
+        if (pathDone > 0 && this._objectiveRewardsEligible === false) {
+            pathStatus = `RUN PATH ${pathDone}/3 · ${inMemoryCoins > 0 ? 'REWARD FORFEITED' : 'PRACTICE CLEAR'}`;
+        } else if (pathDone > 0) {
+            pathStatus = `RUN PATH ${pathDone}/3 · ${heldCoins} COINS HELD`;
+        }
         return {
             isBossRush,
             unlockedMap,
             title: isBossRush ? 'GAUNTLET BROKEN' : 'VIGIL TRIUMPHANT',
             subtitle,
+            pathStatus,
             mapActionLabel: unlockedMap ? `SELECT ${unlockedMap.name.toUpperCase()}` : 'CHOOSE MAP',
             mapActionSub: unlockedMap ? unlockedMap.subtitle : 'review maps and campaign progress',
             choices: isBossRush
@@ -698,6 +713,11 @@ export const GameRenderMethods = {
         ctx.fillStyle = '#cde4ff';
         ctx.font = '34px sans-serif';
         ctx.fillText(presentation.subtitle, W / 2, H / 2 - 96);
+        if (presentation.pathStatus) {
+            ctx.fillStyle = '#7fe0a0';
+            ctx.font = 'bold 24px ui-monospace, monospace';
+            ctx.fillText(presentation.pathStatus, W / 2, H / 2 - 56);
+        }
 
         const r = this._victoryRects();
         const btn = (rect, label, sub, fill, border) => {
@@ -737,6 +757,7 @@ export const GameRenderMethods = {
         ctx.restore();
         // Toast (drawn at full alpha, outside the fade save block).
         if (this.shareToast) this._drawShareToast(ctx);
+        return true;
     },
 
     // Small centered toast pill for share results (used by victory + game-over).

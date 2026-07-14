@@ -139,6 +139,20 @@ export function buildUIState(game) {
     base.objectivesTotal = OBJECTIVE_COUNT;
     base.objectivesCompleted = game._objCompleted || [];
     base.vigilTracker = game.vigilTracker?.getSnapshot?.() ?? null;
+    const directorObjective = game.runObjectiveDirector?.getSnapshot?.() ?? null;
+    base.runObjective = game._currentRunObjectiveSnapshot?.(
+        directorObjective,
+        base.vigilTracker?.prompt ?? null,
+    ) ?? directorObjective;
+    base.runPathSummary = game.runObjectiveDirector?.getSummary?.() ?? {
+        completedPhases: base.objectivesDone,
+        totalPhases: OBJECTIVE_COUNT,
+        allComplete: base.objectivesDone >= OBJECTIVE_COUNT,
+        active: null,
+    };
+    base.objectiveRewardsEligible = game._objectiveRewardsEligible !== false;
+    base.objectiveCoinsHeld = game._guidedObjectiveHeldCoins?.() ?? 0;
+    base.objectiveRewardSettlement = game._objRewardSettlement ?? null;
     base.enemyCount = game.enemies.length;
     base.projectileCount = game.projectiles.length;
     base.gemCount = game.gems.length;

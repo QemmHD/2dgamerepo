@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { computeHUDLayout, hudRectsOverlap } from '../src/systems/HUDLayout.js';
 import { fitHudLabel, wrapText } from '../src/systems/UISystem.js';
+import { RUN_OBJECTIVE_CANDIDATES } from '../src/content/objectives.js';
 
 let checks = 0;
 let failures = 0;
@@ -25,6 +26,7 @@ const safeAreas = [
 ];
 const modes = [
     { name: 'desktop', compact: false, touchMode: false },
+    { name: 'desktop-1280', compact: false, touchMode: false, cssScale: 1280 / 1920 },
     { name: 'compact', compact: true, touchMode: false },
     { name: 'touch', compact: true, touchMode: true },
     { name: 'phone-667', compact: true, touchMode: true, cssScale: 667 / 1920 },
@@ -175,6 +177,117 @@ for (const safeArea of safeAreas) {
             ok(!hudRectsOverlap(hud.vigil, hud.bossRush, 6), `${name}: Living Vigil overlaps boss-rush status`);
             ok(!hudRectsOverlap(hud.vigil, hud.abilities, 6), `${name}: Living Vigil overlaps abilities`);
 
+            const objectiveHud = computeHUDLayout({
+                ...options,
+                hasObjective: true,
+                hasVigil: false,
+            });
+            ok(active(objectiveHud.objective) && !active(objectiveHud.vigil),
+                `${name}: Run Path did not become the sole guidance owner`);
+            ok(inside(objectiveHud.objective, objectiveHud),
+                `${name}: Run Path escapes the safe viewport`);
+            ok(objectiveHud.objective.metaPx * objectiveHud.cssScale >= 15.99,
+                `${name}: Run Path phase text falls below 16 CSS pixels`);
+            ok(objectiveHud.objective.bodyPx * objectiveHud.cssScale >= 15.99,
+                `${name}: Run Path action text falls below 16 CSS pixels`);
+            ok(objectiveHud.objective.progressPx * objectiveHud.cssScale >= 15.99,
+                `${name}: Run Path progress text falls below 16 CSS pixels`);
+            ok(objectiveHud.objective.titlePx * objectiveHud.cssScale >= 16.99,
+                `${name}: Run Path title falls below 17 CSS pixels`);
+            const objective = objectiveHud.objective;
+            const objectiveLanes = objective.lanes;
+            ok(!!objectiveLanes && Number.isFinite(objectiveLanes.bodyY)
+                && Number.isFinite(objectiveLanes.barY)
+                && Number.isFinite(objectiveLanes.footerY),
+            `${name}: Run Path omitted its shared internal lane contract`);
+            for (const key of ['pause', 'combo', 'header', 'boss', 'lieutenant', 'bossRush', 'abilities']) {
+                ok(!hudRectsOverlap(objective, objectiveHud[key], 6),
+                    `${name}: Run Path overlaps ${key}`);
+            }
+
+            if (objective.phone) {
+                const scaleToCss = objectiveHud.cssScale;
+                const usableCenter = safeArea.left
+                    + (objectiveHud.width - safeArea.left - safeArea.right) / 2;
+                const rightEdge = objectiveHud.width - safeArea.right - 38;
+                const bodyBottom = objectiveLanes.bodyY
+                    + objectiveLanes.bodyLineHeight * (objectiveLanes.bodyLines - 1)
+                    + objective.bodyPx;
+                const footerTop = objectiveLanes.footerY - objective.progressPx / 2;
+                const footerBottom = objectiveLanes.footerY + objective.progressPx / 2;
+
+                ok(near(objective.x + objective.w, rightEdge),
+                    `${name}: phone Run Path lost its exact right-edge dock`);
+                ok((objective.x - usableCenter) * scaleToCss >= 39.99,
+                    `${name}: phone Run Path entered the 40 CSS-pixel player keepout`);
+                ok(objective.dense === false,
+                    `${name}: phone Run Path regressed to the centered dense slab`);
+                ok(objectiveLanes.bodyBarGap * scaleToCss >= 5.99,
+                    `${name}: phone Run Path body does not clear its progress bar by 6 CSS pixels`);
+                ok(objectiveLanes.barFooterGap * scaleToCss >= 5.99,
+                    `${name}: phone Run Path progress bar does not clear its reward by 6 CSS pixels`);
+                ok(bodyBottom <= objectiveLanes.barY,
+                    `${name}: phone Run Path body crosses its progress-bar lane`);
+                ok(objectiveLanes.barY + objectiveLanes.barH <= footerTop,
+                    `${name}: phone Run Path progress bar crosses its reward lane`);
+                ok(footerBottom <= objective.y + objective.h - objectiveLanes.pad + 0.001,
+                    `${name}: phone Run Path reward escapes its bottom padding`);
+
+                if (objective.edgeCompact) {
+                    const centralRight = Math.max(
+                        objectiveHud.header.x + objectiveHud.header.w,
+                        ...['boss', 'lieutenant', 'bossRush']
+                            .filter((key) => active(objectiveHud[key]))
+                            .map((key) => objectiveHud[key].x + objectiveHud[key].w),
+                    );
+                    ok(objective.w * scaleToCss >= 159.9,
+                        `${name}: combat Run Path rail is narrower than 160 CSS pixels`);
+                    ok(objective.h * scaleToCss >= 139,
+                        `${name}: combat Run Path rail is shorter than 139 CSS pixels`);
+                    ok(objective.x > centralRight,
+                        `${name}: combat Run Path rail enters a central boss/status plate`);
+                    ok((objectiveHud.abilities.y - (objective.y + objective.h)) * scaleToCss >= 3.99,
+                        `${name}: combat Run Path rail does not clear abilities by 4 CSS pixels`);
+                    ok(objectiveLanes.bodyLines === 4
+                        && objectiveLanes.showTitle === false
+                        && objectiveLanes.showContext === false,
+                    `${name}: combat Run Path rail lost its complete four-line action priority`);
+                } else {
+                    ok(objective.h * scaleToCss >= 133.9,
+                        `${name}: phone Run Path cannot contain its three-line action contract`);
+                    ok(objectiveLanes.bodyLines === 3
+                        && objectiveLanes.showTitle === true
+                        && objectiveLanes.showContext === true,
+                    `${name}: normal phone Run Path lost its sequential content lanes`);
+                }
+
+                if (encounter.hasBoss && encounter.hasBossRush && uiScale === 130) {
+                    ok(objective.edgeCompact === true,
+                        `${name}: stacked 130% duel did not enter the edge combat rail`);
+                }
+            }
+
+            if (objectiveLanes.compressed) {
+                const scaleToCss = objectiveHud.cssScale;
+                const titleBottom = objectiveLanes.titleY + objective.titlePx / 2;
+                ok(objective.compressed === true && objective.dense === false,
+                    `${name}: compressed Run Path did not retain its standard-card contract`);
+                ok(objective.h * scaleToCss >= 139.9,
+                    `${name}: compressed Run Path is shorter than 140 CSS pixels`);
+                ok(objectiveLanes.bodyBarGap * scaleToCss >= 5.99,
+                    `${name}: compressed Run Path body does not clear its bar by 6 CSS pixels`);
+                ok(objectiveLanes.barFooterGap * scaleToCss >= 5.99,
+                    `${name}: compressed Run Path bar does not clear its footer by 6 CSS pixels`);
+                ok((objectiveLanes.bodyY - titleBottom) * scaleToCss >= 2.99,
+                    `${name}: compressed Run Path body does not clear its title by 3 CSS pixels`);
+                if (objective.narrowCompressed) {
+                    ok(objective.h * scaleToCss >= 163.9,
+                        `${name}: narrow compressed Run Path is shorter than 164 CSS pixels`);
+                    ok(objectiveLanes.bodyLines === 3,
+                        `${name}: narrow compressed Run Path lacks its third action line`);
+                }
+            }
+
             // Touch removes Blink from the passive cooldown row because its
             // action-disc rim is already the meter; geometry must reflect it.
             if (mode.touchMode) {
@@ -192,25 +305,31 @@ for (const safeArea of safeAreas) {
 }
 
 ok(!active(computeHUDLayout({ hasVigil: false }).vigil), 'disabled Living Vigil still allocates HUD space');
+ok(!active(computeHUDLayout({ hasObjective: false }).objective), 'disabled Run Path still allocates HUD space');
 
 const wrapped = [];
 const wrapCtx = {
     measureText: (text) => ({ width: String(text).length * 10 }),
     fillText: (text) => wrapped.push(text),
 };
-wrapText(wrapCtx, 'one two three', 0, 0, 80, 20, 2);
+const exactWrap = wrapText(wrapCtx, 'one two three', 0, 0, 80, 20, 2);
 ok(wrapped.join('|') === 'one two|three',
     'an exact two-line caption is not given a false ellipsis');
+ok(exactWrap.truncated === false,
+    'an exact two-line wrap reported a false truncation receipt');
 wrapped.length = 0;
-wrapText(wrapCtx, 'one two three four', 0, 0, 80, 20, 2);
+const truncatedWrap = wrapText(wrapCtx, 'one two three four', 0, 0, 80, 20, 2);
 ok(wrapped.join('|') === 'one two|three…',
     'a genuinely truncated two-line caption receives one ellipsis');
+ok(truncatedWrap.truncated === true,
+    'an ellipsized wrap omitted its truncation receipt');
 
 // Canvas-measured fitting is tested with a font-aware deterministic context.
 // Character-count truncation cannot satisfy these contracts because font size
 // and the actual allocated pixel width both affect the result.
 class MeasureContext {
     constructor() { this.font = '16px sans-serif'; }
+    fillText() {}
     measureText(text) {
         const size = Number.parseFloat(/([\d.]+)px/.exec(this.font)?.[1] || '16');
         return { width: String(text).length * size * 0.58 };
@@ -218,6 +337,38 @@ class MeasureContext {
 }
 
 const measureCtx = new MeasureContext();
+
+// Linux runners can resolve system-ui to a wider face than Windows. Prove all
+// authored tasks fit the exact narrow-compressed contract with deliberately
+// conservative glyph metrics, rather than trusting one host font.
+const narrowObjectiveLayout = computeHUDLayout({
+    width: 1920, height: 1080, compact: false, touchMode: false,
+    cssScale: 1280 / 1920, uiScale: 100, hasObjective: true,
+});
+class WideMeasureContext extends MeasureContext {
+    measureText(text) {
+        const size = Number.parseFloat(/([\d.]+)px/.exec(this.font)?.[1] || '16');
+        return { width: String(text).length * size * 0.62 };
+    }
+}
+const wideMeasureCtx = new WideMeasureContext();
+wideMeasureCtx.font = `700 ${narrowObjectiveLayout.objective.bodyPx}px system-ui`;
+for (const tasks of Object.values(RUN_OBJECTIVE_CANDIDATES)) {
+    for (const task of tasks) {
+        const wrappedAction = wrapText(
+            wideMeasureCtx,
+            `NEXT · ${task.nextAction}`,
+            0,
+            0,
+            narrowObjectiveLayout.objective.w
+                - narrowObjectiveLayout.objective.lanes.pad * 2,
+            narrowObjectiveLayout.objective.lanes.bodyLineHeight,
+            narrowObjectiveLayout.objective.lanes.bodyLines,
+        );
+        ok(wrappedAction.truncated === false,
+            `1280 narrow compressed Run Path truncates authored task ${task.id}`);
+    }
+}
 const fitLayout = computeHUDLayout({
     width: 1920, height: 1080, compact: true, uiScale: 130,
     abilityCount: 8, hasVigil: true,
@@ -285,6 +436,11 @@ ok(!/for \(const layer of \[\s*\{/.test(uiSource),
     'player locator reintroduced a per-frame layer array/object allocation');
 ok(/fitHudLabel\(ctx, waveText/.test(uiSource) && /fitHudLabel\(ctx, a\.name/.test(uiSource),
     'wave and ability labels are not both wired to measured fitting');
+ok(/const lanes = r\.lanes/.test(uiSource)
+    && /lanes\.bodyY/.test(uiSource)
+    && /lanes\.barY/.test(uiSource)
+    && /lanes\.footerY/.test(uiSource),
+    'Run Path renderer is not consuming HUDLayout-owned body/bar/footer lanes');
 
 if (failures) {
     console.error(`HUD layout validation failed: ${failures}/${checks} checks across ${scenarios} scenarios.`);

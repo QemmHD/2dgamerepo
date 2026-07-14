@@ -217,8 +217,16 @@ export const RunStateMethods = {
         this._twilightAnnounced = false;
         // Hypergrowth ("the wall", compounding from min 20) one-shot announce latch.
         this._hyperAnnounced = false;
-        // Run objectives: ids completed this run + the list (for the game-over
-        // summary). Repeatable each run.
+        // Guided Run Path: one deterministic Orientation -> Tactic -> Climax
+        // task at a time. Rewards are escrowed here and settled only by a real
+        // death/victory, so pause-abort/reload cannot farm the opening task.
+        this.runObjectiveDirector = null;
+        this._objectiveRunId = null;
+        this._objectiveRewardsEligible = true;
+        this._objRewardReceipts = [];
+        this._objRewardsSettled = false;
+        this._objRewardSettlement = null;
+        this._objA11yId = null;
         this._objDone = new Set();
         this._objCompleted = [];
         // LIVING VIGIL exploration + encounter mastery. The content systems

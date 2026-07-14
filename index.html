@@ -31,14 +31,16 @@
             role="application"
             aria-roledescription="survival action game"
             aria-label="EMBERWAKE main menu"
-            aria-describedby="game-instructions"
+            aria-describedby="game-instructions game-objective"
         ></canvas>
     </div>
     <p id="game-instructions" class="sr-only">
         Use Tab or the arrow keys to move between menu choices, Enter or Space
         to activate a choice, and Escape to go back. During a run, use WASD or
-        the arrow keys to move, Space to blink, Q to Kindle, and P to pause.
+        the arrow keys to move, Space to blink, Q to Kindle, O to hear the
+        current Run Path task, and P to pause.
     </p>
+    <p id="game-objective" class="sr-only"></p>
     <div id="game-status" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <div id="rotate-hint" aria-hidden="true">
         <span>📱↻ Rotate your device to landscape</span>

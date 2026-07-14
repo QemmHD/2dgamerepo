@@ -70,7 +70,11 @@ import { openCase } from '../systems/CaseSystem.js';
 import { resolveAppearance, cosmeticsForAchievement, COSMETICS } from '../content/cosmetics.js';
 import { WEAPONS, computePlayerAura } from '../content/weapons.js';
 import { applyPermanentUpgrades } from '../content/permanentUpgrades.js';
-import { OBJECTIVES } from '../content/objectives.js';
+import {
+    RunObjectiveDirector,
+    runObjectiveAccessibilityText,
+    runObjectiveCapabilities,
+} from '../systems/RunObjectiveDirector.js';
 import { getMap, getMapBosses, getMapTier, MAP_ORDER, DEFAULT_MAP } from '../content/maps.js';
 import { UISystem } from '../systems/UISystem.js';
 import { GFX, LIGHT_COLORS } from '../config/GameConfig.js';
@@ -436,6 +440,13 @@ export class Game {
                 else if (e.code === 'KeyB') { e.preventDefault(); this.victoryToMenu(true); }
                 else if (e.code === 'KeyM' || e.code === 'Escape') { e.preventDefault(); this.victoryToMenu(false); }
                 else if (e.code === 'KeyS') { e.preventDefault(); this._shareMintedCard(); }
+                return;
+            }
+            if (this.screen === 'gameplay' && e.code === 'KeyO') {
+                e.preventDefault();
+                if (!this._announceCurrentObjective(true)) {
+                    this.accessibility?.announce?.('Run Path is complete.');
+                }
                 return;
             }
             // Debug-only time-jump (NOT a player feature): with the debug
@@ -909,6 +920,9 @@ export class Game {
         this._latestCampaignBossDefeatReceipt = null;
         this._campaignUnlockReceipt = null;
         this._initRunState();
+        // Guided objectives remain playable in every real mode, but debug/map
+        // bypass runs are practice-only and therefore escrow zero coins.
+        this._objectiveRewardsEligible = !bypassActive && !debugActive;
         if (this._bossRushConfig) {
             this.bossRush = new BossRushController(getBossRushSequence(this._bossRushConfig), this._bossRushConfig);
         }
@@ -1105,10 +1119,12 @@ export class Game {
             const n = this._bossRushConfig.startingLevelUps || 0;
             if (n > 0) this.pendingLevelUps += this.player.grantLevels(n);
         }
+        if (!this.onboarding) this._beginRunObjectives();
         this.screen = 'gameplay';
         this._resetMenuFocus();
         this.accessibility?.setScreen?.('gameplay', `${biome.name || 'Vigil'} run.`);
         this.accessibility?.announce?.(`${biome.name || 'Vigil'} run started.`);
+        if (this.runObjectiveDirector) this._announceCurrentObjective(true);
         // Kick the driving gameplay theme (resume covers the keyboard-start path
         // where no menu tap fired yet).
         this.audio.resume();
@@ -1125,8 +1141,9 @@ export class Game {
     }
 
     restart() {
-        // Leaving a live (paused) run still banks what was earned, matching
-        // the death path. No-op once already banked this run.
+        // Ordinary pickups bank on exit, but held Run Path rewards explicitly
+        // forfeit on restart. No-op once this run already reached a terminal.
+        this._abandonGuidedObjectiveRewards();
         this._bankRunCoins();
         // A RESTART is a fresh NORMAL run — never silently re-launch a Daily/Trial.
         this.dailyMode = false; this.riteTrialMode = false; this.bossRushMode = false; this.weeklyEmberMode = false;
@@ -1135,12 +1152,14 @@ export class Game {
 
     returnToShop() {
         this.pauseExitConfirm = null;
+        this._abandonGuidedObjectiveRewards();
         this._bankRunCoins();
         this.audio.playMusic('menu');
         this.screen = 'start';
         this.menuTab = 'home';   // back to the lobby (the title screen)
         this._resetMenuFocus();
         this.accessibility?.setScreen?.('start', 'Home.');
+        this.accessibility?.setObjective?.(null);
         this.accessibility?.announce?.('Returned to Home.');
         this.resetConfirming = false;
         this.resetConfirmTimer = 0;
@@ -1408,6 +1427,10 @@ export class Game {
     }
 
     _showVictory() {
+        // Combat resolves after the regular per-frame objective poll. Flush the
+        // authoritative counters here so a final-boss Climax completion is in
+        // escrow before the victory card and its reward truth are composed.
+        this._checkObjectives();
         this.victory = { age: 0 };
         const presentation = this._victoryPresentation?.();
         if (presentation) {
@@ -1416,7 +1439,8 @@ export class Game {
                 `${presentation.title}. ${presentation.subtitle}`,
             );
             this.accessibility?.announce?.(
-                `${presentation.title}. ${presentation.subtitle} ${presentation.choices}`,
+                `${presentation.title}. ${presentation.subtitle} `
+                + `${presentation.pathStatus || ''} ${presentation.choices}`,
             );
         }
         // EMBERGLASS: queue the victory recap card from LIVE fields (runSummary
@@ -1492,6 +1516,8 @@ export class Game {
             if (this.runBonus?.coin > 0 && earned > 0) {
                 this.saveSystem.addCoins(Math.round(earned * this.runBonus.coin));
             }
+            const objectiveSettlement = this._settleGuidedObjectiveRewards();
+            const objectiveCoins = objectiveSettlement?.credited ?? 0;
             this.saveSystem.incrementStat('playtimeSec', Math.max(0, Math.floor(this.time)));
             if (this.difficulty === 'hard') {
                 this.saveSystem.incrementStat('eliteBossesDefeated', this.bossesDefeated);
@@ -1499,12 +1525,16 @@ export class Game {
             this.runSummary = {
                 time: this.time, level: this.player.level, kills: this.kills,
                 bossesDefeated: this.bossesDefeated,
-                coinsEarned: earned,
+                coinsEarned: earned + objectiveCoins,
+                objectiveCoins,
+                objectiveReceipts: objectiveSettlement?.accepted ?? [],
                 totalCoins: this.saveSystem.data.totalCoins,
                 finalWave: (this.waveState?.index ?? 0) + 1,
                 finalWaveName: this.waveState?.name ?? '',
                 chestsOpened: this.chestsOpened ?? 0,
-                objectivesCompleted: this._objDone?.size ?? 0,
+                runPathCompleted: this._objDone?.size ?? 0,
+                objectivesCompleted: this._objectiveRewardsEligible
+                    ? (this._objDone?.size ?? 0) : 0,
                 vigilSitesActivated: this.vigilSitesActivated ?? 0,
                 vigilSiteKindsMastered: this._vigilKindsActivated?.size ?? 0,
                 encountersCleared: this.encountersCleared ?? 0,
@@ -1794,33 +1824,182 @@ export class Game {
         }
     }
 
-    // Evaluate run objectives against live metrics; the first time one is met it
-    // pays its coin reward, announces, and counts toward the game-over summary.
-    _checkObjectives() {
-        const m = {
+    _runObjectiveModeId() {
+        if (this.weeklyEmberMode) return 'weekly';
+        if (this.bossRushMode || this._bossRushConfig) return 'boss-rush';
+        if (this.dailyMode) return 'daily';
+        if (this.riteTrialMode) return 'rite-trial';
+        return 'standard';
+    }
+
+    _runObjectiveMetrics() {
+        return {
             kills: this.kills,
             timeSec: this.time,
             level: this.player.level,
-            comboBest: this.comboBest,
             bosses: this.bossesDefeated,
             sites: this.vigilSitesActivated ?? 0,
             siteKinds: this._vigilKindsActivated?.size ?? 0,
             encounters: this.encountersCleared ?? 0,
         };
-        for (const o of OBJECTIVES) {
-            if (this._objDone.has(o.id)) continue;
-            if ((m[o.metric] ?? 0) >= o.target) {
-                this._objDone.add(o.id);
-                this._objCompleted.push(o.id);
-                // Coin-gain builds apply to objective payouts too (same
-                // player.coinMul the banked run total already respects), so a
-                // coin build is as strong as its cards advertise.
-                const reward = Math.floor(o.reward * (this.player.coinMul ?? 1));
-                this.saveSystem.addCoins(reward);
-                this.audio.objective();
-                this.waveDirector.announce(`✓ ${o.name}  +${reward}`, 2.2, '#7fe0a0');
-            }
+    }
+
+    _currentRunObjectiveSnapshot(sourceSnapshot = null, sourcePrompt = undefined) {
+        const snapshot = sourceSnapshot ?? this.runObjectiveDirector?.getSnapshot?.() ?? null;
+        if (!snapshot) return null;
+        const rawPrompt = sourcePrompt === undefined
+            ? (this.vigilTracker?.getCurrentPrompt?.() ?? null)
+            : sourcePrompt;
+        const showPrompt = rawPrompt && (rawPrompt.urgent || rawPrompt.kind === 'site');
+        const vigilPrompt = showPrompt ? Object.freeze({
+            title: String(rawPrompt.title || '').slice(0, 64),
+            body: String(rawPrompt.body || '').slice(0, 96),
+            color: rawPrompt.color || null,
+            kind: rawPrompt.kind || null,
+        }) : null;
+        return Object.freeze({
+            ...snapshot,
+            rewardEligible: this._objectiveRewardsEligible !== false,
+            vigilPrompt,
+        });
+    }
+
+    _beginRunObjectives() {
+        if (this.runObjectiveDirector) return this.runObjectiveDirector;
+        const modeId = this._runObjectiveModeId();
+        const bossLimit = this.bossRush?.sequence?.length
+            ?? this._bossRushConfig?.bossIds?.length
+            ?? (modeId === 'boss-rush' || modeId === 'weekly' ? 12 : 3);
+        const vigilSites = Array.isArray(this.vigilSiteSystem?.sites)
+            ? this.vigilSiteSystem.sites : [];
+        const vigilKinds = new Set(vigilSites.map((site) => site?.archetype).filter(Boolean)).size;
+        const capabilities = runObjectiveCapabilities({
+            modeId,
+            systems: {
+                livingVigil: vigilSites.length > 0 && !!this.encounterDirector,
+                bosses: bossLimit > 0 && (!!this.bossDirector || !!this.bossRush),
+            },
+            limits: {
+                bosses: bossLimit,
+                sites: vigilSites.length,
+                siteKinds: vigilKinds,
+            },
+        });
+        this._objectiveRunId = this.saveSystem.beginGuidedObjectiveRun();
+        const mapId = this.campaignRun?.mapId ?? this._effectiveMapId();
+        const seed = `${this._objectiveRunId}:${this._livingVigilSeed ?? 0}:${modeId}:${mapId}:${this._heroId}`;
+        this.runObjectiveDirector = new RunObjectiveDirector({
+            runId: this._objectiveRunId,
+            seed,
+            capabilities,
+            metrics: this._runObjectiveMetrics(),
+            rewardMultiplier: this._objectiveRewardsEligible
+                ? (this.player.coinMul ?? 1) : 0,
+        });
+        return this.runObjectiveDirector;
+    }
+
+    _announceCurrentObjective(force = false, suppliedSnapshot = null) {
+        const snapshot = suppliedSnapshot ?? this._currentRunObjectiveSnapshot();
+        this.accessibility?.setObjective?.(snapshot);
+        if (!snapshot || (!force && this._objA11yId === snapshot.id)) return false;
+        this._objA11yId = snapshot.id;
+        return this.accessibility?.announce?.(runObjectiveAccessibilityText(snapshot)) ?? false;
+    }
+
+    _guidedObjectiveHeldCoins() {
+        if (this._objectiveRewardsEligible === false) return 0;
+        return (this._objRewardReceipts || []).reduce(
+            (sum, receipt) => sum + Math.max(0, Math.floor(receipt?.amount || 0)),
+            0,
+        );
+    }
+
+    _abandonGuidedObjectiveRewards() {
+        if (!this._objRewardsSettled) {
+            this._objRewardsSettled = true;
+            this._objRewardSettlement = {
+                credited: 0, accepted: [], duplicates: [], receiptCount: 0,
+            };
         }
+        this.saveSystem.closeGuidedObjectiveRun(this._objectiveRunId);
+        return this._objRewardSettlement;
+    }
+
+    // Commit held rewards only when a run genuinely finishes. Restart,
+    // pause-abandon, and reload deliberately never call this seam.
+    _settleGuidedObjectiveRewards() {
+        if (this._objRewardsSettled) return this._objRewardSettlement;
+        this._objRewardsSettled = true;
+        if (!this._objectiveRewardsEligible || !this._objRewardReceipts.length) {
+            this._objRewardSettlement = {
+                credited: 0, accepted: [], duplicates: [], receiptCount: 0,
+            };
+            this.saveSystem.closeGuidedObjectiveRun(this._objectiveRunId);
+            return this._objRewardSettlement;
+        }
+        this._objRewardSettlement = this.saveSystem.claimGuidedObjectiveRewards(
+            this._objRewardReceipts,
+        );
+        // claim() closes accepted runs; this also retires a malformed/rejected
+        // terminal batch so it can never remain payable after the run ends.
+        this.saveSystem.closeGuidedObjectiveRun(this._objectiveRunId);
+        return this._objRewardSettlement;
+    }
+
+    // Advance exactly one phase from authoritative counters. A new phase takes
+    // its own baseline after the previous completion, preventing cascade clears.
+    _checkObjectives() {
+        if (!this.runObjectiveDirector) {
+            // First-run lessons own the only next-action surface. Orientation
+            // starts from the live state once those lessons retire.
+            if (this.onboarding) return;
+            this._beginRunObjectives();
+            this._announceCurrentObjective(true);
+        }
+        const director = this.runObjectiveDirector;
+        if (!director) return;
+        const event = director.update(this._runObjectiveMetrics(), {
+            rewardMultiplier: this._objectiveRewardsEligible
+                ? (this.player.coinMul ?? 1) : 0,
+        });
+        const active = this._currentRunObjectiveSnapshot();
+        this.accessibility?.setObjective?.(active);
+        if (!event) {
+            this._announceCurrentObjective(false, active);
+            return;
+        }
+
+        const done = event.completed;
+        this._objDone.add(done.id);
+        this._objCompleted.push(done.id);
+        this._objRewardReceipts.push({
+            receiptId: done.reward.receiptId,
+            multiplier: done.reward.multiplier,
+            amount: done.reward.amount,
+            objectiveId: done.id,
+            phase: done.phase,
+            title: done.title,
+        });
+        this.audio.objective();
+        const rewardCopy = done.reward.amount > 0
+            ? `${done.reward.amount} COINS HELD`
+            : 'PRACTICE CLEAR';
+        this.waveDirector.announce(
+            `✓ ${done.phaseLabel} — ${done.title}  ·  ${rewardCopy}`,
+            2.2,
+            '#7fe0a0',
+        );
+        this._objA11yId = event.next?.id ?? null;
+        const nextCopy = event.next
+            ? `Next, ${event.next.phaseLabel}. ${event.next.title}. ${event.next.nextAction}`
+            : 'Run Path complete. All three phases are held until the run ends.';
+        const completionReward = done.reward.amount > 0 && this._objectiveRewardsEligible
+            ? `${done.reward.amount} coins held. Finish the run to bank them.`
+            : 'Practice clear. No coins awarded.';
+        this.accessibility?.announce?.(
+            `${done.phaseLabel} complete. ${done.title}. ${completionReward} ${nextCopy}`,
+        );
     }
 
     _updateFeedback(dt) {
@@ -1979,6 +2158,11 @@ export class Game {
             eligible: false,
             taintReason: reason,
         };
+        // Debug actions also turn the guided path into practice. Previously
+        // held in-memory rewards are intentionally discarded at finalization.
+        this._objectiveRewardsEligible = false;
+        this.runObjectiveDirector?.setRewardMultiplier?.(0);
+        this.accessibility?.setObjective?.(this._currentRunObjectiveSnapshot());
     }
 
     _debugSkipTime(seconds) {
@@ -2827,6 +3011,10 @@ export class Game {
 
     _enterGameOver() {
         if (this.gameOver) return;
+        // The lethal frame can add kills/bosses after the normal objective poll.
+        // Capture that one current phase before settlement; the director still
+        // takes a fresh baseline and therefore never cascades a second phase.
+        this._checkObjectives();
         this.gameOver = true;
         if (this.player) this.player.poseOverride = 'death';   // hero collapses
         this.audio.gameOver();
@@ -2849,6 +3037,8 @@ export class Game {
         if (this.runBonus?.coin > 0 && earned > 0) {
             this.saveSystem.addCoins(Math.round(earned * this.runBonus.coin));
         }
+        const objectiveSettlement = this._settleGuidedObjectiveRewards();
+        const objectiveCoins = objectiveSettlement?.credited ?? 0;
         // Lifetime trackers surfaced on the new Stats screen.
         this.saveSystem.incrementStat('playtimeSec', Math.max(0, Math.floor(this.time)));
         if (this.difficulty === 'hard') {
@@ -2865,12 +3055,16 @@ export class Game {
             level: this.player.level,
             kills: this.kills,
             bossesDefeated: this.bossesDefeated,
-            coinsEarned: earned,
+            coinsEarned: earned + objectiveCoins,
+            objectiveCoins,
+            objectiveReceipts: objectiveSettlement?.accepted ?? [],
             totalCoins: this.saveSystem.data.totalCoins,
             finalWave: (this.waveState?.index ?? 0) + 1,
             finalWaveName: this.waveState?.name ?? '',
             chestsOpened: this.chestsOpened ?? 0,
-            objectivesCompleted: this._objDone?.size ?? 0,
+            runPathCompleted: this._objDone?.size ?? 0,
+            objectivesCompleted: this._objectiveRewardsEligible
+                ? (this._objDone?.size ?? 0) : 0,
             vigilSitesActivated: this.vigilSitesActivated ?? 0,
             vigilSiteKindsMastered: this._vigilKindsActivated?.size ?? 0,
             encountersCleared: this.encountersCleared ?? 0,
@@ -2916,9 +3110,11 @@ export class Game {
 
         this.accessibility?.setScreen?.('gameOver',
             `Level ${this.runSummary.level}. ${this.runSummary.kills} enemies defeated.`);
+        this.accessibility?.setObjective?.(null);
         this.accessibility?.announce?.(
             `Run over. Level ${this.runSummary.level}. ${this.runSummary.kills} enemies defeated. `
-            + `${this.runSummary.coinsEarned} coins earned.`);
+            + `${this.runSummary.coinsEarned} coins earned. `
+            + `Run Path ${this._objDone?.size ?? 0} of 3.`);
 
         this._updateJoystickEnabled();
     }
