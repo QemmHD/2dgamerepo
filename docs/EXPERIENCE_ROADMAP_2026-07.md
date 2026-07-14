@@ -49,9 +49,9 @@ The recommended next releases are therefore:
 ### Additive expansion decision — staged delivery status
 
 The latest scope is accepted as a staged expansion of the existing Ten Fires plan.
-Two bounded foundations are now shipped: PR #192's six-hero animated cosmetic pose
-contract and PR #194's exact per-map campaign ledger. Cosmetic inventory growth,
-High Refresh, guided tasks, House V2, new weapon classes, destinations, minigames,
+Three bounded foundations are now shipped: PR #192's six-hero animated cosmetic pose
+contract, PR #194's exact per-map campaign ledger, and PR #196's deterministic Guided
+Run Path. Cosmetic inventory growth, High Refresh, House V2, new weapon classes, destinations, minigames,
 boss art, and story remain partial or planned exactly as described below. Research and
 grayboxes can run early, but content production follows the dependency gates instead
 of multiplying detached cosmetics, bland maps, or unbalanced weapons.
@@ -61,7 +61,7 @@ of multiplying detached cosmetics, bland maps, or unbalanced weapons.
 | Cosmetic repair and expansion | **Rig shipped in PR #192:** six heroes, 18 body sheets, pose-local head/shoulder/hand contracts, deterministic Blender/install/browser fixtures. Collection growth and paging/filter remain open. | Rig in 1.x; first 30 genuinely distinct looks in 2.x; destination/Chronicle sets through 10.0 | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no hat or cloak remains behind while the body animates. Palette swaps do not count as silhouette variety. |
 | Mobile high frame rate | Profile render interpolation, lighting/overdraw, and quality tiers; name the option **High Refresh** | 1.7 foundation, hardened in 3.8/7.8/9.8 | Fixed deterministic simulation and identical gameplay hashes at Standard/High Refresh; interpolated camera/entities; physical 60/90/120 Hz frame-pacing plus battery/thermal tests. Never promise 120 FPS because browser, display, power mode, and heat can limit cadence. |
 | Campaign unlock truth | **Shipped in PR #194:** save-v10 unique-per-map ledger, conservative legacy migration, centralized receipt/status UI, closed provenance, and a session-only credit-off `?dev=1` bypass. | 1.3 foundation shipped; extend through every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. Malformed current saves never regain lifetime-total access; QA bypass performs zero storage writes. |
-| Guided run tasks | Seeded, mode-aware Orientation → Tactic → Climax director with deterministic fallback | 1.1–1.3, then every mode/map | One current task shows progress, reward, and next action; impossible tasks cannot be selected; retry/reload cannot duplicate rewards; all supported modes complete or substitute across committed seeds. |
+| Guided run tasks | **Shipped in PR #196:** seeded mode/capability-aware Orientation → Tactic → Climax director, one current task, exact progress/action/current potential coin reward, completed Run Path coins held for terminal settlement, terminal completed-phase Deeds XP, safe fallback, atomic coin-receipt ledger, active-task `O` recall, onboarding precedence, announcements, and responsive HUD. | Bounded 1.1 guidance foundation shipped; 1.3/later extension open | One current task shows progress, potential coin reward, and next action; impossible tasks cannot be selected. Debug Mode/`showDebug`, map bypass, and live debug actions disable Run Path coin settlement and objective-derived Deeds XP; `?dev=1`/QA alone does not. A non-terminal abort—including restart or pause-menu abandon—and reload forfeits held Run Path coins and never reaches objective-derived XP; a valid terminal resolution settles. Supported modes complete or substitute across the committed mode/capability/seed matrix. The 26 candidates shipped at main `5abd6fd` are a selection catalog, never 26 simultaneous chores. |
 | House V2 and map composition | One original Emberwood cabin blueprint plus macro-layout plan | 1.4, then packs/Atlas/Chronicle/Worldweave | One blueprint drives render, collision, nav, LOS, doors, spawn exclusion, room zones, roof cutaway, and damage state. The supplied rustic-house image informs room zoning/circulation only; no pixels or unverified art are copied. |
 | Graphics, boss models, wand VFX, and performance | Visual-noise budgets, boss silhouette/pose studies, frame/overdraw probes, one wand spectacle slice | 1.4–1.6, 3.3, 4.x, 6.x, definitive 9.x | Player, hostile tells, pickups, and objectives remain readable in grayscale, muted, reduced-effects, dense-swarm, phone, and minimum-tier captures; every effect stays inside particle/projectile/fill-rate budgets. |
 | Weapon classes, gear, and builds | Define player-facing Wand/Spellblade/Emberbow/Totem/Relic schema separately from runtime behavior kinds; graybox one missing class | Playable class slices in 2.x, 12-weapon expansion in 4.x, creator tools in 5.x, definitive balance in 9.x | Each class earns distinct control/targeting, upgrade path, VFX/SFX/access cues, gear interaction, and counter-build. Fixed-seed matrices and human runs show several viable archetypes and no universal best class. |
@@ -75,8 +75,8 @@ objective, or story progress.
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At the current shipped-main snapshot, `src/` contains 297 files, including
-130 JavaScript modules and about 46,206 nonblank lines of JavaScript. Raw file counts are
+planning documents. At the current shipped-main snapshot, `src/` contains 302 files,
+including 134 JavaScript modules and about 53,028 nonblank lines of JavaScript. Raw file counts are
 inventory context, not a quality claim.
 
 ### Exact playable/content inventory
@@ -90,10 +90,10 @@ inventory context, not a quality claim.
 | Arsenal | 40 weapons across 9 runtime kinds; 11 evolutions; 15 fusions; 20 passives |
 | Build/meta systems | 11 roads; 26 relics (8 attunable); 14 pacts; 10 keystones; 5 patrons; 18 rites (3 per hero) |
 | Equipment and looks | 21 gear pieces in 4 categories; 65 cosmetics in 5 categories; 7 complete cosmetic sets; 6 rarity tiers |
-| Long-term goals | 50 battle-pass levels; 22 achievements; 16 daily challenge templates; 16 run objectives; 9 permanent upgrades |
+| Long-term goals | 50 battle-pass levels; 22 achievements; 16 daily challenge templates; 26 Guided Run Path candidates feeding a three-phase sequential path; 9 permanent upgrades |
 | Modes | Standard run, Daily Road, Rite Trial, Boss Rush (12 apex fights), and Weekly Ember |
 | World encounters/dressing | 4 interactive Vigil Sites; 12 named formation encounters; 13 prop types; 4 structure styles; 4 biome themes; 11 generated structures per world by default |
-| Presentation | 8 photo filters; photo mode; recap/share cards; 12 menu-tour steps; 11 screens grouped into 6 navigation sections |
+| Presentation | 8 photo filters; photo mode; recap/share cards; 12 menu-tour steps; 9 first-run gameplay lessons; 11 screens grouped into 6 navigation sections |
 | Difficulty | 3 difficulty tiers; 9 run modifiers/trials; 6 wave bands; 6 elite affixes |
 | Cases | 6 coin-only cases: gear/cosmetic variants of Basic, Mystic, and Royal |
 
@@ -119,9 +119,9 @@ toolbox even when their names and parameters differ.
 - `src/core/GameUpdate.js` has a consolidated enemy scan, while combat, render, input,
   photo mode, and run state have been split out of the formerly monolithic
   `src/core/Game.js`. The split is real but incomplete: `src/core/Game.js` is
-  still about 2,945 nonblank lines, `src/systems/MenuRenderer.js` about 4,485, and
-  `src/systems/UISystem.js` about 3,293.
-- Save data is validated into schema/version 9 and stored locally. There is no
+  now about 3,233 nonblank lines, `src/systems/MenuRenderer.js` about 4,533, and
+  `src/systems/UISystem.js` about 3,654.
+- Save data is validated into schema/version 10 and stored locally. There is no
   export/import UI, cloud sync, or server dependency.
 - CI now syntax-checks modules, validates credited assets and boss kits, and
   runs a real-game headless smoke. GitHub Pages remains the deployment path.
@@ -138,6 +138,16 @@ plans describe:
   260; and Deeds capped at 520. Bosses, chests, waves, objectives, a campaign
   clear, Boss Rush, Daily Trial XP, and explicit Threat bonuses contribute
   transparently. Very short/empty runs are ineligible.
+- The Guided Run Path keeps one current task at a time as it advances Orientation,
+  Tactic, and Climax. The live card shows the current potential coin reward; completed
+  coin rewards are held in memory for terminal settlement. At a valid terminal
+  resolution that passes Battle Pass eligibility, each eligible completion contributes
+  35 raw Deeds/Vigil XP, at most 105 before the shared 520 Deeds cap, so actual gain may
+  be lower at cap. XP is neither held nor receipted. Debug Mode/`showDebug`, map bypass,
+  and live debug actions disable Run Path coin settlement and objective-derived Deeds XP;
+  `?dev=1`/QA alone does not. A non-terminal abort—including restart or pause-menu
+  abandon—and reload forfeits held Run Path coins and never reaches objective-derived terminal
+  XP; a valid terminal resolution settles.
 - Levels 10/20/30/40/50 deliver the five-piece Last Light cosmetic set.
   Post-level-50 Everflame progress converts each 1,000 overflow XP into 250
   coins rather than deleting progress.
@@ -153,10 +163,10 @@ plans describe:
 What is still missing is not another currency. It is clearer collection routing,
 per-hero outfit convenience, accessible case presentation, and evidence that the
 current time-to-level-50 and coin economy feel rewarding across real playtests. The
-65-item count also overstates visual depth: many looks are palette variants, and
-replaceable hats/cloaks currently follow the hero's world position more reliably than
-the animated head/shoulder pose inside each frame. The rig must be fixed across live
-play and every preview before a large cosmetic pack is credible.
+65-item count also overstates visual depth because many looks are palette variants.
+PR #192 fixed the shared live/preview pose attachment foundation; the next credible
+step is genuinely distinct collection growth through that rig, not another detached
+cosmetic system or recolor-heavy quantity claim.
 
 ### Audio now
 
@@ -255,12 +265,12 @@ but is stale as a current backlog. Its major claims now resolve as follows:
 | 6 weapons, about 4 behavior kinds | 40 weapons across 9 kinds, 11 evolutions, 15 fusions | Identity/balance pass; reduce visually redundant choices rather than add quantity |
 | 16 trash enemies on 5 behaviors; global mix | 20 trash enemies, 7 tagged behavior groups, biome enemy mixes, hazards, lieutenants | Role composition, house tactics, and clearer counters |
 | 3 roads | 11 roads | Improve discovery/route clarity before adding more |
-| No onboarding and 9-tab dump | 12-step tour; staged unlocks; 11 screens grouped into 6 sections; PR #186 keyboard focus foundation | Controller focus, playable tutorial/debrief, text scaling, complete hierarchy/routing, short first-run comprehension tests |
+| No onboarding and 9-tab dump | 12-step menu tour plus a 9-step non-modal first-run gameplay chain; staged unlocks; 11 screens grouped into 6 sections; PR #186 keyboard focus foundation | Add direct blink/Focus/Kindle success and first-death debrief; controller focus, text scaling, complete hierarchy/routing, and short first-run comprehension tests remain open |
 | Battle-pass run receipt is dead | Post-run XP buckets, claims, milestones, migration, and Everflame are live | Pacing measurement, collection/source filters, reward-preview polish |
 | Heirloom Cinders is a no-op | Starting-economy flow was repaired and all 9 permanent upgrades are surfaced | Make old upgrades more interesting at cap without breaking save IDs |
-| `Game.js` is 4,119 lines | About 2,945 nonblank lines after update/render/input/combat/photo/run-state splits | Continue seam extraction only when a feature needs it |
+| `Game.js` is 4,119 lines | About 3,233 nonblank lines after update/render/input/combat/photo/run-state splits and the shipped campaign/Run Path integrations | Continue seam extraction only when a feature needs it |
 | Obstacle queries allocate per enemy | Spatial obstacle/index work is GC-conscious and shared broadphase exists | Prove nav/collision at 180 bodies and cap unbounded projectile growth |
-| Save version 7 is write-only | Validated version 9 with battle-pass migration | Fixture-tested historical migrations plus export/import and recovery |
+| Save version 7 is write-only | Validated top-level save version 10; `guidedObjectives` currently uses nested schema 1 | Fixture-tested historical migrations plus export/import and recovery |
 | Deploy-only CI | Syntax, asset, progression, boss, navigation, deterministic-audio, headless game smoke, and PR #186 keyboard/reduced/phone receipt gates exist | Add historical save fixtures plus gamepad/remap and physical-device/AT caption convergence gates |
 
 Most P0/P1 work from that plan is therefore shipped or evolved. The remaining
@@ -687,18 +697,40 @@ main `b1113cf`:**
   `LOCKED · Emberwood 2/3`. The visible `?dev=1`/`unlockMaps` control now operates as
   session-only QA state, performs zero storage writes, and disables campaign credit.
 
-**Still planned as the next independent progression slice:**
+**Guided Run Path foundation shipped through [PR #196](https://github.com/QemmHD/2dgamerepo/pull/196),
+main `5abd6fd`:**
 
-- Replace all-at-once polling tasks with a seeded `RunObjectiveDirector`: one current
-  Orientation task, one map/mode-valid Tactic, and one Climax. Each card shows progress,
-  reward, and next action; unsupported tasks substitute deterministically.
-- Add explicit Boss Rush/Daily/Weekly fallbacks and idempotent completion receipts so
-  every selected task can finish and reload/abort cannot pay twice.
+- `RunObjectiveDirector` deterministically keeps one current task at a time as the path
+  advances Orientation, Tactic, and Climax from the 26 candidates shipped at main
+  `5abd6fd`. Standard, Daily, Rite Trial, Boss Rush, and Weekly filter by mode,
+  available systems, and finite capacity; unknown/unsupported modes use a bounded
+  elapsed-time fallback.
+- The shared Run Path/Living Vigil lane shows exact progress, physical next action, and
+  the current potential `+N COINS`. Completed coins are held in memory for terminal
+  settlement. At a valid terminal resolution that passes Battle Pass eligibility, the
+  eligible completed-phase count derives 35 raw Deeds/Vigil XP per phase (maximum 105
+  before the Deeds cap; actual gain can be lower at cap). `O` recalls only an active
+  task. The `#game-objective` described-by text and polite live region expose one
+  bounded description while the HUD renders its progress/action/reward fields.
+- Save-v10 coin settlement uses a bounded 96-receipt ledger, slot dedupe, current-run
+  authority, and stale-instance checks. Debug Mode/`showDebug`, map bypass, and live
+  debug actions disable Run Path coin settlement and objective-derived Deeds XP;
+  `?dev=1`/QA alone does not. A non-terminal abort—including restart or pause-menu
+  abandon—and reload forfeits held Run Path coins and never reaches objective-derived
+  terminal XP; a valid terminal resolution settles.
+- Phone field and live-boss states use complete right-rail variants at exact 667×375;
+  compressed desktop/tablet cards reserve measured title/body/bar/footer lanes and
+  the constrained boss edge rail intentionally omits secondary title/context. A static
+  wide-font gate fits all 26 next-action strings under conservative 1280 geometry.
 
-Exit fixtures cover every boss order, repeat, wrong mode/map, old save, corrupted
-ledger, debug bypass, and lock-card/launch agreement. Objective fixtures cover every
-supported mode/map and committed seed with either a reachable completion or a named
-deterministic substitute.
+PR #194's campaign exit fixtures cover every boss order, repeat, wrong mode/map, old
+save, corrupted ledger, debug bypass, and lock-card/launch agreement. Separately,
+PR #196 passed **93,139** Run Path checks across the committed mode/capability/seed
+selection-completion matrix and mode-agnostic settlement fixtures; HUD **14,001 across
+180 scenarios**; the all-26 static next-action gate; seven representative real-Chromium
+states; **24/24** validators; PR/main CI; Pages; and deployed desktop,
+Stormwing-phone, and `?dev=1` receipts. New candidates or modes must retain either a
+reachable completion or a named deterministic substitute.
 
 ## 7. 61-90 days - The Living Road Slice
 
@@ -764,7 +796,7 @@ full Crucible remain out of scope for the 90-day window.
 - Export/import a checksummed JSON save with preview, explicit overwrite
   confirmation, and automatic pre-import backup.
 - Maintain fixture migrations from representative historical versions through
-  version 9 and the new schema.
+  version 10 and every current nested schema.
 - Add a small Codex shell that records encountered enemies/bosses, kills,
   counter hints, and cosmetic sources. Do not begin the full lore/archive reward
   tree until the data and layout prove useful.
@@ -822,7 +854,7 @@ This is scheduling intent, not shipped inventory:
 | Cosmetics/cases | cosmetic/gear registries + `CaseSystem` | boutique/shop/pass | Every item has source metadata; odds/pity use one source of truth |
 | Cosmetic pose rig | shared hero-pose/attachment resolver | player render, Collection, Boutique, Pass, cases, photo, recap | One state/direction/anchor source; previews cannot invent offsets or drift from gameplay |
 | Campaign map gates | unique per-map boss ledger + one unlock predicate | SaveSystem, map cards, launch routing, lock copy | Exactly three unique predecessor bosses; eligible-mode policy and dev bypass cannot diverge |
-| Guided objectives | seeded `RunObjectiveDirector` | HUD, run events, rewards, recap | Mode/map requirement filter, deterministic fallback, one current task, idempotent receipt |
+| Guided objectives | seeded `RunObjectiveDirector` | HUD, run events, rewards, recap | Mode + available-system + finite-capacity filter, deterministic fallback, one current task, idempotent coin receipt; future map-specific tasks add explicit map fixtures |
 | House V2 | versioned structure blueprint | render, collision, nav, LOS, spawns, roof, POIs | Doors/rooms/state are authored once; no visual-only opening or independent collision copy |
 | Input | existing composite + hotspot registry | game/menu | Gamepad/touch/keyboard normalize into the same actions |
 | Simulation RNG | future `RunRng` | directors, drafts, rewards | Gameplay RNG injected; visual RNG separate |
@@ -881,7 +913,7 @@ These are local/QA metrics unless the player explicitly exports a trace.
 | Music | Quantized transitions with controlled tails; <=2 non-boss scene switches/10 s; no scheduler duplication after pause/tab/audio unlock; no clipped offline stress capture |
 | Bosses | 100 commits/boss with no consecutive same ID/kind; every damaging move telegraphs; every signature has a recovery; owned entities clear on defeat |
 | Map unlocks | Three unique predecessor boss ids required; repeats/wrong map/mode/debug do not count; legacy unlocks survive; card and launch predicate agree; `?dev=1` bypass writes no progress |
-| Objectives | One Orientation/Tactic/Climax task at a time; every mode/map/seed completes or names a deterministic substitute; abort/reload cannot duplicate payout |
+| Objectives | One current task at a time as Orientation/Tactic/Climax advances; the committed mode/capability/seed matrix completes or names a deterministic substitute; future map-specific tasks add explicit fixtures; abort/reload cannot settle coins or reach objective XP |
 | Progression | 276+ deterministic checks remain green; level-50 pacing target 35-55 ordinary successful runs; every reward resolves and every duplicate has a receipt |
 | Cosmetics | Gameplay and every preview share pose anchors; zero detached layer in all states/directions; first expansion contains 30 reviewed silhouette/material designs plus paging/filter/source proof |
 | Builds | Each promoted class has a complete vertical slice; fixed-seed matrices and human runs retain starter viability, multiple successful archetypes, bounded VFX/entities, and no universal best class |
@@ -931,8 +963,12 @@ Preserve the delivered gates, then add the remaining coverage in this order:
     **Passed in PR #194:** campaign **319**, integration **161**, combat **65**, and a
     **40,960-case** sanitizer corruption/idempotence probe; PR/main CI, Pages, local and
     deployed browser receipts all passed.
-11. **Guided objectives:** each mode/map requirement set filters correctly; invalid
-    candidates substitute deterministically; completion/abort/reload receipts pay once.
+11. **Guided objectives (delivered baseline):** PR #196 covers **93,139** selection,
+    progress, capability, settlement, stale-instance, abort/reload, and bounded-ledger
+    checks. A static conservative wide-font gate fits all 26 next-action strings; HUD
+    **14,001/180** and seven representative real-Chromium scenarios cover exact
+    desktop/tablet/phone/boss states. Preserve both scopes as later modes and maps add
+    explicit capabilities; never turn the catalog into simultaneous chores.
 12. **House V2:** blueprint mutation propagates to render/collision/nav/LOS/spawn/roof
     fixtures; door sides and room zones cannot disagree; all body/projectile sizes pass.
 13. **High Refresh:** identical input traces match simulation hashes across render
@@ -1014,8 +1050,9 @@ signature and opening, understand every point of post-run XP, dress each hero
 without re-equipping a set or watching its hat/cloak detach, see one reachable guided
 task at a time, understand exactly which of the previous map's three Keepers still
 blocks the next map, and share/replay a deterministic challenge. The cosmetic rig and
-campaign gate are shipped foundations; the House V2 cabin and guided-objective fixtures
-remain required. High Refresh may be called shipped only if interpolation and
+campaign gate and Guided Run Path are shipped foundations; the House V2 cabin,
+playable tutorial/debrief, and later destination-specific guidance remain required.
+High Refresh may be called shipped only if interpolation and
 physical-device gates are complete.
 
 A veteran should feel that the existing 40 weapons, 20 enemies, 12 bosses, 11

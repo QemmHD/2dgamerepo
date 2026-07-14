@@ -1,4 +1,12 @@
-# First Light audio-accessibility visual evidence
+# First Light bounded web evidence
+
+## Guided Run Path
+
+- [Post-deploy Guided Run Path smoke](guided-run-path-deployed-smoke.md) records the
+  deployed desktop, exact-phone live-boss, and five-control `?dev=1` receipts for
+  PR #196/main `5abd6fd`.
+
+## Audio-accessibility captures
 
 Captured at the same 1280×720 deterministic Settings state with reduced motion,
 keyboard focus, 130% Combat HUD size, and High Contrast enabled.
