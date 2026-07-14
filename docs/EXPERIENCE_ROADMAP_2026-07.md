@@ -180,8 +180,8 @@ badges, and deterministic input/accessibility receipts. A web-app manifest and i
 exist.
 
 The four generated boss lines have exact captions, but this is not a general subtitle
-system. Current branch-only A11-10 work adds save-safe 100/115/130 Combat HUD size,
-high-contrast combat tells, and seven source-backed non-color status badges. It does
+system. Shipped PR #188 adds save-safe 100/115/130 Combat HUD size, high-contrast
+combat tells, and seven source-backed non-color status badges. It does
 not provide global app/menu text scaling. Still missing: gamepad/remapping, general
 subtitles and caption detail, independent voice volume, mono/low-hearing support,
 vibration, complete device/AT/zoom proof, and the offline shell. No essential mechanic
@@ -195,13 +195,12 @@ but it does not close full 1.1. A11-01–A11-14 in the
 remaining preference, tutorial/debrief, hierarchy, routing, device/AT, and convergence
 work.
 
-**2026-07-14 A11-10 branch delta:** the first preference slice is locally integrated,
-validated, and published as feature `1cddd9b` in open PR #188, but is not yet merged
-or deployed. Combat HUD scaling,
-post-veil high-contrast warnings, source-backed non-color status badges, and dedicated
-Accessibility Settings are in flight; mono/captions/voice/vibration and full First
-Light convergence remain open. The development ledger owns exact counts and delivery
-truth.
+**2026-07-14 A11-10 shipped delta:** [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
+is merged and deployed at `089d646`. Combat HUD scaling, post-veil high-contrast
+warnings, source-backed non-color status badges, and dedicated Accessibility Settings
+passed PR/main CI, Pages, and live 1280×720 smoke. A11-10 remains in flight because
+mono/captions/voice/vibration, device/AT proof, and full First Light convergence are
+still open. The development ledger owns exact counts and delivery truth.
 
 ## 2. What changed since the older plans
 
@@ -597,7 +596,7 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
 - Support remapping, dead-zone calibration, aim sensitivity, aim-assist amount,
   and vibration off/low/full.
 - Guarantee at least 44x44 CSS-pixel touch targets after safe-area scaling.
-- Preserve the in-flight 100/115/130 Combat HUD size, post-veil high-contrast
+- Preserve the shipped 100/115/130 Combat HUD size, post-veil high-contrast
   telegraphs, and source-backed color-plus-shape status cues. Finish general captions,
   independent voice volume, and a mono-audio-safe mix as separate verified slices;
   Combat HUD size does not claim global app/menu text scaling.
@@ -745,7 +744,7 @@ Preserve the delivered gates, then add the remaining coverage in this order:
    import corruption tests.
 6. **Input/accessibility:** keyboard focus order, active modality, reduced-effects save
    inheritance, phone Settings, and receipt-bearing Home/Mines gates are delivered by
-   PR #186. Scale/contrast/status coverage is in flight locally under A11-10. Next add
+   PR #186; PR #188 delivers the bounded Combat HUD scale/contrast/status slice. Next add
    gamepad/touch hybrid-device proof, dead-zone/remap persistence, captions/mono/voice/
    vibration, and manual device/assistive-tech review.
 7. **Visual/browser matrix:** desktop menu, 185-enemy house swarm, boss cast,

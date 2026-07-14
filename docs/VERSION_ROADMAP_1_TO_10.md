@@ -143,12 +143,12 @@ Settings, attention-badge, and receipt-bearing QA work at `3ed29e0`. Full 1.1 re
 open; the canonical execution truth and exact gaps live in
 [the shared development ledger](DEVELOPMENT_LEDGER.md).
 
-**2026-07-14 branch-only First Light delta:** A11-10 now has an in-flight bounded
-slice for save-safe Combat HUD size 100/115/130, high-contrast combat tells, and
-seven source-backed non-color status badges in feature `1cddd9b` / open PR #188.
-This is not yet a delivery claim and
-does not complete global text scaling, mono audio, caption detail, voice volume,
-vibration, A11-14 convergence, or full 1.1. Exact evidence remains in the ledger.
+**2026-07-14 shipped First Light delta:** [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
+delivered save-safe Combat HUD size 100/115/130, high-contrast combat tells, and
+seven source-backed non-color status badges at main `089d646`; PR/main CI, Pages,
+and live smoke passed. This bounded slice does not complete global text scaling,
+mono audio, caption detail, voice volume, vibration, A11-14 convergence, or full
+1.1. Exact evidence and remaining gates live in the ledger.
 
 ## 3. How versions earn their number
 
@@ -371,8 +371,10 @@ audio, and screenshot gates pass.
 **Delivery status:** [PR #186](https://github.com/QemmHD/2dgamerepo/pull/186)
 shipped the semantic Canvas, menu keyboard focus, active modality, reduced-motion
 inheritance, phone Settings, typed attention badge, keyboard-Mines foundation, and
-deterministic QA gates at `3ed29e0`. This is a foundation, not the complete release:
-the A11-10 preference suite is partially implemented and remains in flight, while
+deterministic QA gates at `3ed29e0`. [PR #188](https://github.com/QemmHD/2dgamerepo/pull/188)
+then shipped the bounded Combat HUD size, high-contrast warning, and non-color status
+slice at `089d646`. These are delivered foundations, not the complete release: A11-10's
+remaining preference controls stay in flight, while
 playable tutorial/debrief, full Play/Now/Explore hierarchy, lock/source/context routing,
 device/AT/zoom proof, and the exact acceptance matrix below remain open. See A11-01–A11-14 in the
 [development ledger](DEVELOPMENT_LEDGER.md); keyboard Mines is explicitly tracked as
@@ -386,7 +388,7 @@ pulled-forward 1.2 work.
   keeps the desktop HUD until a real touch is used.
 - Make the menu phone-aware: stacked Settings, minimum readable helper text, safe
   44-point primary targets, and no fixed two-column layout at narrow physical scale.
-- Preserve the in-flight Combat HUD size presets (100/115/130%), high-contrast
+- Preserve the shipped Combat HUD size presets (100/115/130%), high-contrast
   telegraphs, and seven non-color status glyphs; finish A11-10 with mono audio,
   caption detail, independent voice volume, and vibration controls. Combat HUD size
   is not a claim of global app/menu text scaling.
@@ -1497,8 +1499,8 @@ Release scorecard:
 
 1. Preserve shipped 1.0.2 Waylight Calls and its PR #185 validators, screenshots,
    deterministic fixtures, deployed-main proof, and ledger record.
-2. Continue 1.1 from the shipped PR #186 foundation: land the current A11-10
-   scale/contrast/non-color slice; complete its mono/caption/voice/vibration controls;
+2. Continue 1.1 from the shipped PR #186 foundation and PR #188 A11-10
+   scale/contrast/non-color slice: complete its mono/caption/voice/vibration controls;
    close AT/device/zoom/motion proof; build the playable tutorial/debrief, complete
    Play/Now/Explore hierarchy, and lock/source/context routing; then pass the exact
    First Light comprehension, timing, pointerless, viewport, grayscale/RGB, and
