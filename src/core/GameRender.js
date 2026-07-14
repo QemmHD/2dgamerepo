@@ -38,6 +38,11 @@ import { HazardSystem } from '../systems/HazardSystem.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
 import { gemLightColor } from './GameUpdate.js';
 import { structureRenderer } from '../render/StructureRenderer.js';
+import {
+    combatStatusCueSize,
+    FULL_STATUS_CUE_LIMIT,
+    TRASH_STATUS_CUE_LIMIT,
+} from '../render/CombatCues.js';
 
 // Half the largest sprite (~91) + bar/label headroom + max camera shake. Anything
 // whose center is farther than this from the view edge can't contribute a visible
@@ -95,6 +100,11 @@ export const GameRenderMethods = {
             if (this.minigame.mines) this.minigame.drawMines(ctx);
             return;
         }
+
+        // Read once for this frame, then pass the scalar through the combat
+        // render path. Unknown/legacy saves naturally resolve to false.
+        const highContrast = this.saveSystem?.getSetting?.('highContrast') === true;
+        const uiScale = this.saveSystem?.getSetting?.('uiScale') ?? 100;
 
         // "Emberlight" pipeline. The world draws fully lit; emitters
         // register lights into the darkness buffer as they're drawn; the
@@ -438,9 +448,39 @@ export const GameRenderMethods = {
             ctx.restore();
         }
 
-        // EMBERGLASS: mint the queued death/victory card from the world frame
-        // NOW — before the HUD (ui.draw) and any overlay draw — so the card's
-        // background is the clean world, not the HUD/overlay.
+        // Visibility-aware semantic overlay. It runs after damage numbers so
+        // transient combat math cannot cover a warning/status meaning. Statuses
+        // always retain their non-color language above the veil; high-contrast
+        // mode additionally repeats only contours (never authored fills/glow).
+        // Badge size honors the save UI scale and a minimum CSS footprint.
+        this.profiler.begin('combatCues');
+        ctx.save();
+        this.camera.apply(ctx);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        if (highContrast) this.hazardSystem.drawContrastOverlay(ctx, this);
+        const statusSize = combatStatusCueSize(
+            uiScale,
+            this.renderer?.cssWidth,
+            INTERNAL_WIDTH,
+            this.camera.zoom || 1,
+        );
+        for (const enemy of this.enemies) {
+            if (!enemy.active || !cull(enemy)) continue;
+            const fullStatus = enemy.boss || enemy.lieutenant || enemy.encounterGuardian
+                || enemy === this.focusTarget;
+            enemy.drawCombatCueOverlay(
+                ctx,
+                highContrast,
+                statusSize,
+                fullStatus ? FULL_STATUS_CUE_LIMIT : TRASH_STATUS_CUE_LIMIT,
+            );
+        }
+        ctx.restore();
+        this.profiler.end('combatCues');
+
+        // EMBERGLASS: mint from the completed world frame (including combat
+        // semantics), before the gameplay HUD and modal overlays are painted.
         if (this._pendingCardMint) this._mintPendingCard();
 
         // EMBERGLASS photo mode: HUD off. Draw the rule-of-thirds grid + the
@@ -452,8 +492,12 @@ export const GameRenderMethods = {
             if (this.photoMode.hudShown) {
                 const photoUIState = buildUIState(this);
                 if (this.screen === 'gameplay' && this.vigilTracker) {
-                    const vigilRect = this.ui.getHUDLayout(photoUIState).vigil;
-                    this.vigilTracker.drawHUD(ctx, vigilRect, { compact: !!this.input.isTouchMode?.() });
+                    const vigilLayout = this.ui.getHUDLayout(photoUIState);
+                    this.vigilTracker.drawHUD(ctx, vigilLayout.vigil, {
+                        compact: vigilLayout.compact,
+                        uiScale,
+                        highContrast,
+                    });
                 }
                 this.ui.draw(ctx, photoUIState);
             }
@@ -474,9 +518,17 @@ export const GameRenderMethods = {
         }
 
         const gameplayUIState = buildUIState(this);
-        if (this.screen === 'gameplay' && this.vigilTracker) {
-            const vigilRect = this.ui.getHUDLayout(gameplayUIState).vigil;
-            this.vigilTracker.drawHUD(ctx, vigilRect, { compact: !!this.input.isTouchMode?.() });
+        // The large announcement owns this top-screen band for its brief
+        // lifetime. Yield the persistent chip without mutating tracker state;
+        // the next frame after the announcement retires restores it naturally.
+        const largeAnnouncementActive = !!gameplayUIState.waveAnnouncement;
+        if (this.screen === 'gameplay' && this.vigilTracker && !largeAnnouncementActive) {
+            const vigilLayout = this.ui.getHUDLayout(gameplayUIState);
+            this.vigilTracker.drawHUD(ctx, vigilLayout.vigil, {
+                compact: vigilLayout.compact,
+                uiScale,
+                highContrast,
+            });
         }
 
         this.profiler.begin('ui');

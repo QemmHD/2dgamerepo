@@ -24,6 +24,7 @@ import { MenuRenderer } from './MenuRenderer.js';
 import { computeHUDLayout } from './HUDLayout.js';
 import { DISPLAY_FONT } from '../assets/MenuFont.js';
 import { battlePassRunReceipt } from './BattlePassSystem.js';
+import { normalizeUiScale, uiScaleFactor } from './AccessibilityPreferences.js';
 
 const DEBUG_BUTTON_SIZE = 96;
 const DEBUG_BUTTON_MARGIN = 20;
@@ -40,6 +41,46 @@ const RESTART_BTN_H = 96;
 // font.
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+const LOCATOR_ARC_COUNT = 4;
+const LOCATOR_ARC_OFFSET = 0.18;
+const LOCATOR_ARC_SWEEP = Math.PI / 2 - LOCATOR_ARC_OFFSET * 2;
+
+// Pixel-measured fitting shared by the command rail and ability labels. Reduce
+// within the authored type range first, then ellipsize at the minimum size; the
+// returned width is always measured using the exact font left on the context.
+export function fitHudLabel(ctx, value, maxWidth, options = {}) {
+    const original = String(value ?? '');
+    const limit = Math.max(0, Number.isFinite(maxWidth) ? maxWidth : 0);
+    const weight = options.weight ?? 600;
+    const family = options.family || FONT;
+    const requested = Math.max(1, Math.floor(Number(options.size) || 1));
+    const minimum = Math.max(1, Math.min(requested, Math.floor(Number(options.minSize) || requested)));
+    let fontSize = requested;
+    const setFont = () => { ctx.font = `${weight} ${fontSize}px ${family}`; };
+    setFont();
+    let width = ctx.measureText(original).width;
+    while (fontSize > minimum && width > limit) {
+        fontSize--;
+        setFont();
+        width = ctx.measureText(original).width;
+    }
+    if (width <= limit) return { text: original, fontSize, width, truncated: false };
+
+    const ellipsis = '\u2026';
+    const ellipsisWidth = ctx.measureText(ellipsis).width;
+    if (ellipsisWidth > limit) return { text: '', fontSize, width: 0, truncated: true };
+    let low = 0;
+    let high = original.length;
+    while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        const candidate = `${original.slice(0, mid).trimEnd()}${ellipsis}`;
+        if (ctx.measureText(candidate).width <= limit) low = mid;
+        else high = mid - 1;
+    }
+    const text = `${original.slice(0, low).trimEnd()}${ellipsis}`;
+    width = ctx.measureText(text).width;
+    return { text, fontSize, width, truncated: true };
+}
 
 // Single source of truth for the display title (start screen). Derived from
 // GAME_TITLE so branding can't drift between screens.
@@ -70,6 +111,8 @@ export class UISystem {
         // so a fresh run never flashes on frame 0.
         this._xpFlash = -1;
         this._lastLevel = null;
+        this._activeUiScale = 1;
+        this._highContrast = false;
 
         // The redesigned tabbed main menu. Owns its own clickable hotspots,
         // which Game's pointer handler reads to dispatch menu actions.
@@ -107,7 +150,12 @@ export class UISystem {
             relicCount: state.runRelics?.length ?? 0,
             abilityCount: state.abilityCooldowns?.length ?? 0,
             hasVigil: !!state.vigilTracker,
+            uiScale: normalizeUiScale(state.saveData?.settings?.uiScale),
         });
+    }
+
+    _uiPx(value) {
+        return Math.max(1, Math.round(value * this._activeUiScale));
     }
 
     getHUDLayout(state) {
@@ -168,6 +216,17 @@ export class UISystem {
     }
     // Text with a cheap dark underlayer (crisp without per-frame shadowBlur).
     _textWithShadow(ctx, text, x, y, color) {
+        if (this._highContrast && typeof ctx.strokeText === 'function') {
+            ctx.save();
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#050505'; ctx.lineWidth = 6;
+            ctx.strokeText(text, x, y);
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+            ctx.strokeText(text, x, y);
+            ctx.fillStyle = color; ctx.fillText(text, x, y);
+            ctx.restore();
+            return;
+        }
         ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(text, x + 1.5, y + 1.5);
         ctx.fillStyle = color; ctx.fillText(text, x, y);
     }
@@ -406,6 +465,8 @@ export class UISystem {
     }
 
     draw(ctx, gameState) {
+        this._activeUiScale = uiScaleFactor(gameState.saveData?.settings?.uiScale);
+        this._highContrast = gameState.saveData?.settings?.highContrast === true;
         // Start / shop screen replaces the regular HUD entirely — now the
         // redesigned tabbed main menu (Play/Skills/Loadout/Character/Shop/
         // Battle Pass/Settings) drawn by MenuRenderer.
@@ -495,10 +556,13 @@ export class UISystem {
         });
         roundRectPath(ctx, r.x, r.y, r.w, r.h, 19); ctx.clip();
 
-        const rowY = r.y + (boss ? r.h / 2 : 36);
-        const timerX = r.x + 24;
-        const statRight = r.x + r.w - 24;
-        const tf = compact ? 46 : 42;
+        const scale = hud.uiScale || 1;
+        const command = hud.command || {};
+        const rowY = command.primaryY ?? (r.y + (boss ? r.h / 2 : 36 * scale));
+        const identityY = command.identityY ?? rowY;
+        const timerX = command.timerX ?? (r.x + 24);
+        const statRight = command.countersRight ?? (r.x + r.w - 24);
+        const tf = this._uiPx(compact ? 46 : 42);
         ctx.textBaseline = 'middle';
 
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
@@ -515,14 +579,19 @@ export class UISystem {
             ? (boss ? `VIGIL ${ws.index + 1}` : `WAVE ${ws.index + 1}  ·  ${ws.name}`)
             : 'THE VIGIL';
         ctx.textAlign = 'center';
-        ctx.font = `700 ${compact ? 22 : 19}px ${DISPLAY_FONT}`;
-        this._textWithShadow(ctx, waveText, r.x + r.w * 0.53, rowY,
+        const waveFit = fitHudLabel(ctx, waveText, command.identityMaxW ?? r.w * 0.34, {
+            weight: 700,
+            size: this._uiPx(compact ? 22 : 19),
+            minSize: this._uiPx(compact ? 16 : 14),
+            family: DISPLAY_FONT,
+        });
+        this._textWithShadow(ctx, waveFit.text, command.identityX ?? (r.x + r.w * 0.53), identityY,
             boss ? '#ffc0a2' : '#ffd786');
 
         // Stable icon counters at the right edge.
         const coinVal = `${state.runCoins ?? 0}`;
         const killsVal = `${state.kills ?? 0}`;
-        ctx.font = `800 ${compact ? 21 : 19}px ${MONO}`;
+        ctx.font = `800 ${this._uiPx(compact ? 21 : 19)}px ${MONO}`;
         ctx.textAlign = 'right';
         this._textWithShadow(ctx, coinVal, statRight, rowY + 1, '#ffd166');
         const coinX = statRight - ctx.measureText(coinVal).width - coinW - 7;
@@ -530,7 +599,7 @@ export class UISystem {
         const killRight = coinX - 18;
         this._textWithShadow(ctx, killsVal, killRight, rowY + 1, '#fff');
         const killValueW = ctx.measureText(killsVal).width;
-        ctx.font = `700 ${compact ? 15 : 13}px ${FONT}`;
+        ctx.font = `700 ${this._uiPx(compact ? 15 : 13)}px ${FONT}`;
         ctx.textAlign = 'right';
         this._textWithShadow(ctx, 'KILLS', killRight - killValueW - 7, rowY + 1,
             'rgba(255,255,255,0.58)');
@@ -540,11 +609,11 @@ export class UISystem {
         if (!boss && ws && hud.threat.w > 0) {
             const p = clamp01(state.wavePressure ?? 0);
             const tr = hud.threat;
-            const labelW = compact ? 82 : 72;
-            const pctW = 42;
+            const labelW = (compact ? 82 : 72) * scale;
+            const pctW = 42 * scale;
             const threatColor = p > 0.7 ? '#ff6b4a' : p > 0.35 ? '#ffaf4a' : '#ffd786';
             ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-            ctx.font = `800 ${compact ? 16 : 14}px ${FONT}`;
+            ctx.font = `800 ${this._uiPx(compact ? 16 : 14)}px ${FONT}`;
             this._textWithShadow(ctx, 'THREAT', tr.x, tr.y + tr.h / 2, threatColor);
             const bx = tr.x + labelW;
             const bw = Math.max(40, tr.w - labelW - pctW);
@@ -554,8 +623,14 @@ export class UISystem {
                 roundRectPath(ctx, bx, tr.y + 1, Math.max(3, bw * p), tr.h - 2, 5);
                 ctx.fillStyle = threatColor; ctx.fill();
             }
+            if (this._highContrast) {
+                roundRectPath(ctx, bx, tr.y + 1, bw, tr.h - 2, 5);
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+                ctx.fillStyle = '#ffffff';
+                for (let i = 1; i < 4; i++) ctx.fillRect(bx + bw * i / 4 - 1, tr.y - 1, 2, tr.h + 2);
+            }
             ctx.textAlign = 'right';
-            ctx.font = `800 ${compact ? 15 : 13}px ${MONO}`;
+            ctx.font = `800 ${this._uiPx(compact ? 15 : 13)}px ${MONO}`;
             this._textWithShadow(ctx, `${Math.round(p * 100)}%`, tr.x + tr.w,
                 tr.y + tr.h / 2, 'rgba(255,255,255,0.72)');
         }
@@ -654,7 +729,7 @@ export class UISystem {
         this._hudGlow(ctx, rx - 84, y, 90, color, 0.14 + 0.06 * (pulse - 1) / 0.06);
         ctx.restore();
         ctx.globalAlpha = 1;
-        ctx.font = `900 ${Math.round(34 * pulse)}px ${FONT}`;
+        ctx.font = `900 ${this._uiPx(34 * pulse)}px ${FONT}`;
         this._textWithShadow(ctx, `${combo}× STREAK`, rx, y, color);
         // Draining window bar beneath the text (right-aligned), in the same
         // recessed glass gutter the HP/XP bars sit in.
@@ -779,7 +854,7 @@ export class UISystem {
             ctx.fillRect(x + 3, y + 5, 3, chipH - 10);
             ctx.textBaseline = 'middle';
             ctx.fillStyle = 'rgba(240,244,250,0.92)';
-            ctx.font = `600 14px ${FONT}`; ctx.textAlign = 'left';
+            ctx.font = `600 ${this._uiPx(14)}px ${FONT}`; ctx.textAlign = 'left';
             let label = e.label;
             if (ctx.measureText(label).width > colW - 52) {
                 // Trim with the ellipsis INCLUDED in the measurement — it adds
@@ -790,7 +865,7 @@ export class UISystem {
             ctx.fillText(label, x + 14, y + chipH / 2 + 1);
             if (e.lv) {
                 ctx.fillStyle = e.col;
-                ctx.font = `700 13px ${MONO}`; ctx.textAlign = 'right';
+                ctx.font = `700 ${this._uiPx(13)}px ${MONO}`; ctx.textAlign = 'right';
                 ctx.fillText(e.lv, x + colW - 8, y + chipH / 2 + 1);
             }
         };
@@ -822,7 +897,7 @@ export class UISystem {
                 gx += 22;
             }
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 13px ${FONT}`;
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 ${this._uiPx(13)}px ${FONT}`;
             ctx.fillText(relics.length > maxGems ? `+${relics.length - maxGems} relics` : 'relics', gx + 2, gy + 1);
         }
         ctx.restore();
@@ -876,7 +951,7 @@ export class UISystem {
             ctx.drawImage(icon, x + 5, y + (r.cellH - iconSize) / 2, iconSize, iconSize);
 
             ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-            ctx.font = `800 18px ${MONO}`;
+            ctx.font = `800 ${this._uiPx(18)}px ${MONO}`;
             this._textWithShadow(ctx, item.evolved ? 'E' : `${item.level ?? 1}`,
                 x + r.cellW - 7, y + r.cellH / 2, color);
         }
@@ -891,7 +966,7 @@ export class UISystem {
             ctx.fillStyle = 'rgba(8,8,12,0.82)';
             roundRectPath(ctx, x, y, r.cellW, r.cellH, 10); ctx.fill();
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.font = `800 20px ${MONO}`;
+            ctx.font = `800 ${this._uiPx(20)}px ${MONO}`;
             this._textWithShadow(ctx, `+${overflow + 1}`, x + r.cellW / 2, y + r.cellH / 2,
                 'rgba(255,255,255,0.8)');
         }
@@ -900,7 +975,7 @@ export class UISystem {
             const rows = Math.max(1, Math.ceil(Math.max(1, shown.length) / r.cols));
             const gy = r.y + 10 + rows * r.cellH + Math.max(0, rows - 1) * r.gap + 14;
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.font = `700 15px ${FONT}`;
+            ctx.font = `700 ${this._uiPx(15)}px ${FONT}`;
             this._textWithShadow(ctx, `RELICS  ${relics.length}`, r.x + 12, gy,
                 'rgba(255,224,170,0.72)');
             let gx = r.x + 108;
@@ -926,7 +1001,7 @@ export class UISystem {
         const pct = Math.max(0, Math.min(1, lt.hp / lt.maxHp));
         ctx.save();
         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-        ctx.font = `700 15px ${FONT}`;
+        ctx.font = `700 ${this._uiPx(15)}px ${FONT}`;
         // Dark underlayer so the label reads over bright terrain.
         this._textWithShadow(ctx, '⚔ LIEUTENANT', INTERNAL_WIDTH / 2, barY - 4, '#ffc24a');
         // Same recessed-gutter + gradient/gloss recipe as the boss bar, scaled
@@ -957,26 +1032,34 @@ export class UISystem {
             : lerp(this.dispBossRatio, pct, 0.12);
         const r = hud.boss;
         const compact = hud.compact;
+        const scale = hud.uiScale || 1;
         const enraged = !!boss.enraged;
         const eased = easeOutCubic(this.bossSlideT);
         const y = r.y - (1 - eased) * 48;
         const barX = r.x + 24;
         const barW = r.w - 48;
-        const barH = compact ? 28 : 26;
-        const barY = y + (compact ? 58 : 54);
+        const barH = Math.round((compact ? 28 : 26) * Math.min(scale, 1.2));
+        const barY = y + (compact ? 58 : 54) * scale;
 
         ctx.save();
         ctx.globalAlpha = eased;
         this._hudGlassPlate(ctx, r.x, y, r.w, r.h, 16, {
-            stroke: enraged ? 'rgba(255,62,38,0.72)' : 'rgba(255,105,80,0.48)',
+            stroke: this._highContrast ? '#ffffff'
+                : (enraged ? 'rgba(255,62,38,0.72)' : 'rgba(255,105,80,0.48)'),
         });
+        if (this._highContrast) {
+            roundRectPath(ctx, r.x, y, r.w, r.h, 16);
+            ctx.strokeStyle = '#050505'; ctx.lineWidth = 9; ctx.stroke();
+            roundRectPath(ctx, r.x, y, r.w, r.h, 16);
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke();
+        }
 
         const tierMeta = BOSS_TIERS[boss.tier];
         const pips = tierMeta ? '◆'.repeat(tierMeta.pips) + '◇'.repeat(3 - tierMeta.pips) : '';
         const title = enraged ? `${boss.name.toUpperCase()}  —  ENRAGED` : boss.name.toUpperCase();
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.font = `800 ${compact ? 29 : 25}px ${DISPLAY_FONT}`;
-        this._textWithShadow(ctx, title, r.x + r.w / 2, y + 21,
+        ctx.font = `800 ${this._uiPx(compact ? 29 : 25)}px ${DISPLAY_FONT}`;
+        this._textWithShadow(ctx, title, r.x + r.w / 2, y + 21 * scale,
             enraged ? '#ff6d50' : '#ffb09a');
 
         const meta = [
@@ -984,8 +1067,8 @@ export class UISystem {
             boss.epithet || null,
             `PHASE ${boss.phase ?? 1}`,
         ].filter(Boolean).join('  ·  ');
-        ctx.font = `${tierMeta ? 700 : 600} ${compact ? 17 : 15}px ${FONT}`;
-        this._textWithShadow(ctx, meta, r.x + r.w / 2, y + 42,
+        ctx.font = `${tierMeta ? 700 : 600} ${this._uiPx(compact ? 17 : 15)}px ${FONT}`;
+        this._textWithShadow(ctx, meta, r.x + r.w / 2, y + 42 * scale,
             tierMeta ? tierMeta.color : 'rgba(255,225,210,0.78)');
 
         this._hudBarTrack(ctx, barX, barY, barW, barH);
@@ -1000,7 +1083,7 @@ export class UISystem {
                 borderWidth: 2,
             });
         this._hudBarTicks(ctx, barX, barY, barW, barH, 4);
-        ctx.font = `800 ${compact ? 19 : 17}px ${MONO}`;
+        ctx.font = `800 ${this._uiPx(compact ? 19 : 17)}px ${MONO}`;
         this._textWithShadow(ctx, `${Math.ceil(boss.hp)} / ${Math.ceil(boss.maxHp)}`,
             r.x + r.w / 2, barY + barH / 2 + 1, '#fff');
 
@@ -1020,15 +1103,20 @@ export class UISystem {
             actionProgress = 1 - boss.opening.progress;
         }
         const actionY = y + r.h - (compact ? 17 : 16);
-        ctx.font = `800 ${compact ? 17 : 15}px ${FONT}`;
+        ctx.font = `800 ${this._uiPx(compact ? 17 : 15)}px ${FONT}`;
         this._textWithShadow(ctx, actionText, r.x + r.w / 2, actionY, actionColor);
         if (actionProgress != null) {
             const mw = Math.min(420, r.w * 0.44);
             const mx = r.x + (r.w - mw) / 2;
             const my = y + r.h - 6;
-            ctx.fillStyle = 'rgba(255,255,255,0.13)'; ctx.fillRect(mx, my, mw, 3);
+            ctx.fillStyle = this._highContrast ? '#050505' : 'rgba(255,255,255,0.13)';
+            ctx.fillRect(mx, my, mw, this._highContrast ? 7 : 3);
             ctx.fillStyle = actionColor;
-            ctx.fillRect(mx, my, mw * clamp01(actionProgress), 3);
+            ctx.fillRect(mx, my, mw * clamp01(actionProgress), this._highContrast ? 7 : 3);
+            if (this._highContrast) {
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+                ctx.strokeRect(mx, my, mw, 7);
+            }
         }
         ctx.restore();
     }
@@ -1118,7 +1206,7 @@ export class UISystem {
         }
 
         ctx.fillStyle = '#fff';
-        ctx.font = `bold 18px ${MONO}`;
+        ctx.font = `bold ${this._uiPx(18)}px ${MONO}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(
@@ -1295,8 +1383,8 @@ export class UISystem {
         // Slide down into place on entry.
         const slide = (1 - easeOutCubic(clamp01(t / fadeIn))) * -40;
         const centerY = INTERNAL_HEIGHT * 0.32 + slide;
-        const panelW = 820;
-        const panelH = 120;
+        const panelW = 820 * this._activeUiScale;
+        const panelH = 120 * this._activeUiScale;
         const panelX = (INTERNAL_WIDTH - panelW) / 2;
         const panelY = centerY - panelH / 2;
 
@@ -1324,7 +1412,7 @@ export class UISystem {
         ctx.stroke();
 
         ctx.fillStyle = accent;
-        ctx.font = `bold 48px ${FONT}`;
+        ctx.font = `bold ${this._uiPx(48)}px ${FONT}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(ann.text, INTERNAL_WIDTH / 2, centerY);
@@ -1342,7 +1430,7 @@ export class UISystem {
         const cy = INTERNAL_HEIGHT / 2;
         const sx = (boss.x - cam.x) + cx;
         const sy = (boss.y - cam.y) + cy;
-        const margin = 70;
+        const margin = 70 * this._activeUiScale;
         // On-screen → the HP bar + sprite are enough; no arrow.
         if (sx >= margin && sx <= INTERNAL_WIDTH - margin && sy >= margin && sy <= INTERNAL_HEIGHT - margin) return;
         const ang = Math.atan2(sy - cy, sx - cx);
@@ -1366,10 +1454,11 @@ export class UISystem {
         ctx.strokeStyle = 'rgba(0,0,0,0.5)';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.moveTo(26, 0);
-        ctx.lineTo(-14, -18);
-        ctx.lineTo(-4, 0);
-        ctx.lineTo(-14, 18);
+        const arrowScale = this._activeUiScale;
+        ctx.moveTo(26 * arrowScale, 0);
+        ctx.lineTo(-14 * arrowScale, -18 * arrowScale);
+        ctx.lineTo(-4 * arrowScale, 0);
+        ctx.lineTo(-14 * arrowScale, 18 * arrowScale);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
@@ -1377,11 +1466,11 @@ export class UISystem {
         // Distance label, just inside the arrow.
         ctx.save();
         ctx.fillStyle = 'rgba(255,200,190,0.9)';
-        ctx.font = `bold 18px ${MONO}`;
+        ctx.font = `bold ${this._uiPx(18)}px ${MONO}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const lx = cx + ux * (t - 40);
-        const ly = cy + uy * (t - 40);
+        const lx = cx + ux * (t - 40 * this._activeUiScale);
+        const ly = cy + uy * (t - 40 * this._activeUiScale);
         ctx.fillText(`${dist}`, lx, ly);
         ctx.restore();
     }
@@ -1408,21 +1497,21 @@ export class UISystem {
         }
         ctx.save();
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.font = `800 24px ${FONT}`;
+        ctx.font = `800 ${this._uiPx(24)}px ${FONT}`;
         const w1 = ctx.measureText(line1).width;
-        ctx.font = `600 18px ${FONT}`;
+        ctx.font = `600 ${this._uiPx(18)}px ${FONT}`;
         const w2 = line2 ? ctx.measureText(line2).width : 0;
         const pw = Math.min(rr.w, Math.max(w1, w2) + 48);
-        const ph = line2 ? 64 : 40;
+        const ph = (line2 ? 64 : 40) * this._activeUiScale;
         roundRectPath(ctx, cx - pw / 2, y - ph / 2, pw, ph, 12);
         ctx.fillStyle = 'rgba(40,12,12,0.82)'; ctx.fill();
         ctx.strokeStyle = 'rgba(255,106,74,0.75)'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = '#ffcbb0'; ctx.font = `800 24px ${FONT}`;
-        ctx.fillText(line1, cx, y - (line2 ? 12 : 0));
+        ctx.fillStyle = '#ffcbb0'; ctx.font = `800 ${this._uiPx(24)}px ${FONT}`;
+        ctx.fillText(line1, cx, y - (line2 ? 12 * this._activeUiScale : 0));
         if (line2) {
             ctx.fillStyle = br.phase === 'prep' && !br.cleared ? '#ffd8a0' : 'rgba(255,255,255,0.85)';
-            ctx.font = `600 18px ${FONT}`;
-            ctx.fillText(line2, cx, y + 15);
+            ctx.font = `600 ${this._uiPx(18)}px ${FONT}`;
+            ctx.fillText(line2, cx, y + 15 * this._activeUiScale);
         }
         ctx.restore();
     }
@@ -1434,6 +1523,7 @@ export class UISystem {
         const bw = state.bossWarning;
         if (!bw) return;
         const t = clamp01(bw.t);
+        const scale = this._activeUiScale;
         const pulse = 0.5 + 0.5 * Math.sin(performanceNowSafe() * 0.012);
         ctx.save();
         // Red vignette pulsing from the edges.
@@ -1449,43 +1539,63 @@ export class UISystem {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const by = INTERNAL_HEIGHT * 0.42;
+        const tierMeta = BOSS_TIERS[bw.tier];
+        if (this._highContrast) {
+            const top = by - 52 * scale;
+            const bottomOffset = 58 + (bw.epithet ? 38 : 0) + (tierMeta ? 40 : 0) + 62;
+            const panelW = Math.min(INTERNAL_WIDTH - 160, 980 * scale);
+            const panelH = (52 + bottomOffset) * scale;
+            roundRectPath(ctx, cx - panelW / 2, top, panelW, panelH, 24);
+            ctx.fillStyle = 'rgba(0,0,0,0.94)'; ctx.fill();
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke();
+        }
         ctx.shadowColor = 'rgba(0,0,0,0.6)';
         ctx.shadowBlur = 12;
         ctx.fillStyle = `rgba(255,${Math.round(60 + 40 * pulse)},${Math.round(50 + 30 * pulse)},1)`;
-        ctx.font = `bold 60px ${FONT}`;
-        ctx.fillText('⚠  BOSS INCOMING  ⚠', cx, by);
+        ctx.font = `bold ${this._uiPx(60)}px ${FONT}`;
+        if (this._highContrast) this._textWithShadow(ctx, '⚠  BOSS INCOMING  ⚠', cx, by, '#ff6b52');
+        else ctx.fillText('⚠  BOSS INCOMING  ⚠', cx, by);
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#fff';
-        ctx.font = `bold 40px ${FONT}`;
-        ctx.fillText(bw.name, cx, by + 58);
-        let cursorY = by + 58;
+        ctx.font = `bold ${this._uiPx(40)}px ${FONT}`;
+        if (this._highContrast) this._textWithShadow(ctx, bw.name, cx, by + 58 * scale, '#fff');
+        else ctx.fillText(bw.name, cx, by + 58 * scale);
+        let cursorY = by + 58 * scale;
         // Epithet subtitle (the boss's title), dimmer + italic.
         if (bw.epithet) {
-            cursorY += 38;
+            cursorY += 38 * scale;
             ctx.fillStyle = 'rgba(255,225,210,0.82)';
-            ctx.font = `italic 26px ${FONT}`;
-            ctx.fillText(bw.epithet, cx, cursorY);
+            ctx.font = `italic ${this._uiPx(26)}px ${FONT}`;
+            if (this._highContrast) this._textWithShadow(ctx, bw.epithet, cx, cursorY, '#fff');
+            else ctx.fillText(bw.epithet, cx, cursorY);
         }
         // Difficulty tier badge: a colored label + pips so the threat level
         // reads instantly (SKIRMISHER / WARLORD / APEX).
-        const tierMeta = BOSS_TIERS[bw.tier];
         if (tierMeta) {
-            cursorY += 40;
+            cursorY += 40 * scale;
             const pips = '◆'.repeat(tierMeta.pips) + '◇'.repeat(3 - tierMeta.pips);
             ctx.fillStyle = tierMeta.color;
-            ctx.font = `bold 24px ${FONT}`;
-            ctx.fillText(`${pips}  TIER ${bw.tier} · ${tierMeta.label}  ${pips}`, cx, cursorY);
+            ctx.font = `bold ${this._uiPx(24)}px ${FONT}`;
+            const tierText = `${pips}  TIER ${bw.tier} · ${tierMeta.label}  ${pips}`;
+            if (this._highContrast) this._textWithShadow(ctx, tierText, cx, cursorY, '#fff');
+            else ctx.fillText(tierText, cx, cursorY);
         }
         // Countdown bar (fills as the boss approaches).
-        const barW = 360, barH = 8;
+        const barW = 360 * scale, barH = Math.round(8 * scale);
         const bx = cx - barW / 2;
-        const yy = cursorY + 36;
+        const yy = cursorY + 36 * scale;
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
         roundRectPath(ctx, bx, yy, barW, barH, 4);
         ctx.fill();
         ctx.fillStyle = '#ff5a3c';
         roundRectPath(ctx, bx, yy, barW * t, barH, 4);
         ctx.fill();
+        if (this._highContrast) {
+            roundRectPath(ctx, bx, yy, barW, barH, 4);
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            for (let i = 1; i < 4; i++) ctx.fillRect(bx + barW * i / 4 - 1, yy - 3, 2, barH + 6);
+        }
         ctx.restore();
     }
 
@@ -1502,9 +1612,11 @@ export class UISystem {
             ? (state.abilityCooldowns || []).filter((a) => a.id !== 'blink')
             : state.abilityCooldowns;
         if (!list || list.length === 0) return;
-        const R = 30;
-        const gap = 22;
         const rr = hud.abilities;
+        const R = rr.pipRadius ?? 30;
+        const pitch = rr.pipPitch ?? 82;
+        const gap = rr.pipGap ?? (pitch - R * 2);
+        const labelMaxW = rr.labelMaxW ?? (pitch - 10);
         const cy = rr.y + 38;
         let cx = rr.x + rr.w - 14 - R;
         const now = performanceNowSafe();
@@ -1538,7 +1650,7 @@ export class UISystem {
                 ctx.fill();
                 ctx.globalAlpha = 1;
                 ctx.fillStyle = '#fff';
-                ctx.font = `bold 22px ${FONT}`;
+                ctx.font = `bold ${this._uiPx(22)}px ${FONT}`;
                 ctx.fillText(a.name[0], cx, cy + 1);
             } else {
                 // Dark wedge over the remaining fraction (clockwise from top).
@@ -1550,16 +1662,20 @@ export class UISystem {
                 ctx.closePath();
                 ctx.fill();
                 ctx.fillStyle = '#fff';
-                ctx.font = `bold 22px ${MONO}`;
+                ctx.font = `bold ${this._uiPx(22)}px ${MONO}`;
                 ctx.fillText(a.remaining >= 1 ? String(Math.ceil(a.remaining)) : a.remaining.toFixed(1), cx, cy + 1);
             }
-            // Short name beneath — truncated to fit the 82px pip pitch, so
-            // adjacent labels can't run together ("Shadow DasCinder Aur…").
+            // Pixel-fit the short name to its authored pip pitch. Character
+            // counts are not a width guarantee across fonts or UI scales.
             ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
-            ctx.font = `600 ${hud.compact ? 15 : 13}px ${FONT}`;
             ctx.textBaseline = 'top';
-            const nm = a.name.length > 9 ? a.name.slice(0, 8) + '…' : a.name;
-            ctx.fillText(nm, cx, cy + R + 5);
+            const nameFit = fitHudLabel(ctx, a.name, labelMaxW, {
+                weight: 600,
+                size: this._uiPx(hud.compact ? 15 : 13),
+                minSize: this._uiPx(hud.compact ? 12 : 11),
+                family: FONT,
+            });
+            ctx.fillText(nameFit.text, cx, cy + R + 5);
             cx -= (R * 2 + gap);
         }
         ctx.restore();
@@ -1607,7 +1723,7 @@ export class UISystem {
         // Label above the bar — the hero's ult name when ready, an AIMING
         // countdown while held, else just KINDLE.
         ctx.fillStyle = k.ready || k.aiming ? '#ffe6b8' : 'rgba(255, 255, 255, 0.72)';
-        ctx.font = `700 13px ${FONT}`;
+        ctx.font = `700 ${this._uiPx(13)}px ${FONT}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
         const label = k.aiming
@@ -1747,7 +1863,8 @@ export class UISystem {
         const [px, py] = this._worldToScreen(state, player.x, player.y);
         const now = performanceNowSafe() * 0.001;
         const pulse = 0.5 + 0.5 * Math.sin(now * (endangered ? 7.5 : 4.5));
-        const radius = Math.max(28, (player.radius ?? 18) + 13) + pulse * 3;
+        const radius = (Math.max(28, (player.radius ?? 18) + 13) + pulse * 3)
+            * this._activeUiScale;
         const color = endangered ? '#ff655f' : '#ffd166';
         const glowR = radius + 24;
 
@@ -1762,11 +1879,32 @@ export class UISystem {
         ctx.strokeStyle = color;
         ctx.lineWidth = endangered ? 3.5 : 2.5;
         ctx.globalAlpha = endangered ? 0.9 : 0.72;
-        for (let i = 0; i < 4; i++) {
-            const start = -Math.PI / 2 + i * Math.PI / 2 + 0.18;
+        for (let i = 0; i < LOCATOR_ARC_COUNT; i++) {
+            const start = -Math.PI / 2 + i * Math.PI / 2 + LOCATOR_ARC_OFFSET;
             ctx.beginPath();
-            ctx.arc(px, py, radius, start, start + Math.PI / 2 - 0.36);
+            ctx.arc(px, py, radius, start, start + LOCATOR_ARC_SWEEP);
             ctx.stroke();
+        }
+        if (this._highContrast) {
+            // Explicit passes avoid allocating a two-object layer array every
+            // frame in the dense/high-contrast path.
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = '#050505';
+            ctx.lineWidth = 8;
+            for (let i = 0; i < LOCATOR_ARC_COUNT; i++) {
+                const start = -Math.PI / 2 + i * Math.PI / 2 + LOCATOR_ARC_OFFSET;
+                ctx.beginPath();
+                ctx.arc(px, py, radius, start, start + LOCATOR_ARC_SWEEP);
+                ctx.stroke();
+            }
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < LOCATOR_ARC_COUNT; i++) {
+                const start = -Math.PI / 2 + i * Math.PI / 2 + LOCATOR_ARC_OFFSET;
+                ctx.beginPath();
+                ctx.arc(px, py, radius, start, start + LOCATOR_ARC_SWEEP);
+                ctx.stroke();
+            }
         }
 
         // A small downward chevron remains visible when a large enemy covers
@@ -1783,6 +1921,11 @@ export class UISystem {
         ctx.lineTo(px + 11, chevronY - 3);
         ctx.closePath();
         ctx.fill();
+        if (this._highContrast) {
+            ctx.font = `800 ${this._uiPx(13)}px ${FONT}`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+            this._textWithShadow(ctx, 'YOU', px, chevronY - 7, '#ffffff');
+        }
         ctx.restore();
     }
 
@@ -1846,9 +1989,9 @@ export class UISystem {
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
         this._hudGlow(ctx, lvCx, L.y + L.h / 2 - 4, 26, '#ffd06a', 0.14);
         ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
-        ctx.font = `800 ${L.compact ? 40 : 34}px ${MONO}`;
+        ctx.font = `800 ${this._uiPx(L.compact ? 40 : 34)}px ${MONO}`;
         this._textWithShadow(ctx, `${state.player.level}`, lvCx, L.y + L.h / 2 - 8, '#ffd06a');
-        ctx.font = `700 ${L.compact ? 15 : 12}px ${FONT}`;
+        ctx.font = `700 ${this._uiPx(L.compact ? 15 : 12)}px ${FONT}`;
         this._textWithShadow(ctx, 'LEVEL', lvCx, L.y + L.h - 16, 'rgba(255,255,255,0.55)');
 
         // Low-HP frame glow (additive, same 9Hz pulse as the border).
@@ -1872,29 +2015,30 @@ export class UISystem {
         // "872 / 1160" is ~102px wide, so a fixed skip zone under-covers and
         // the heart lands on the leading digit through a whole HP band.
         const readout = `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`;
-        ctx.font = `800 ${L.compact ? 21 : 17}px ${MONO}`;
+        ctx.font = `800 ${this._uiPx(L.compact ? 21 : 17)}px ${MONO}`;
         const roW = ctx.measureText(readout).width;
-        ctx.font = `800 ${L.compact ? 17 : 14}px ${DISPLAY_FONT}`;
+        ctx.font = `800 ${this._uiPx(L.compact ? 17 : 14)}px ${DISPLAY_FONT}`;
         const hpLabelW = ctx.measureText('HP').width;
         // Heart end-cap riding the fill tip (tinted to the HP band). Skipped
         // once the tip (±13px of heart + glow fringe) would enter the digits.
         const capX = Math.max(barLeft + 9, Math.min(barLeft + barW - 9, barLeft + barW * target));
+        const capHalf = 13 * this._activeUiScale;
         if (target > 0.02
-            && capX - 13 > barLeft + 12 + hpLabelW + 10
-            && capX + 13 < barLeft + barW - 14 - roW) {
+            && capX - capHalf > barLeft + 12 + hpLabelW + 10
+            && capX + capHalf < barLeft + barW - 14 - roW) {
             const tint = target < 0.3 ? '#ff5a4a' : target < 0.6 ? '#ff8a3a' : '#74e890';
             const lp = 0.5 + 0.5 * Math.sin(state.time * 9);
             ctx.save(); ctx.globalCompositeOperation = 'lighter';
-            this._hudGlow(ctx, capX, midY, 22, tint, 0.30 + (target < 0.3 ? 0.25 * lp : 0));
+            this._hudGlow(ctx, capX, midY, 22 * this._activeUiScale, tint, 0.30 + (target < 0.3 ? 0.25 * lp : 0));
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
-            this._hudHeartSigil(ctx, capX, midY, 16, tint);
+            this._hudHeartSigil(ctx, capX, midY, 16 * this._activeUiScale, tint);
         }
         // Explicit labels + numbers live inside the bars so compact players do
         // not need to infer meaning by colour alone.
-        ctx.font = `800 ${L.compact ? 17 : 14}px ${DISPLAY_FONT}`;
+        ctx.font = `800 ${this._uiPx(L.compact ? 17 : 14)}px ${DISPLAY_FONT}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         this._textWithShadow(ctx, 'HP', barLeft + 12, midY, 'rgba(255,255,255,0.86)');
-        ctx.font = `800 ${L.compact ? 21 : 17}px ${MONO}`;
+        ctx.font = `800 ${this._uiPx(L.compact ? 21 : 17)}px ${MONO}`;
         ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
         this._textWithShadow(ctx, readout, barLeft + barW - 12, midY, '#fff');
         ctx.restore();
@@ -1940,10 +2084,10 @@ export class UISystem {
         const readout = `${Math.ceil(state.player.xp)} / ${state.player.xpToNext}`;
         const midY = barY + L.xpH / 2;
         ctx.textBaseline = 'middle';
-        ctx.font = `800 ${L.compact ? 14 : 11}px ${DISPLAY_FONT}`;
+        ctx.font = `800 ${this._uiPx(L.compact ? 14 : 11)}px ${DISPLAY_FONT}`;
         ctx.textAlign = 'left';
         this._textWithShadow(ctx, 'XP', barLeft + 10, midY, 'rgba(225,245,255,0.92)');
-        ctx.font = `800 ${L.compact ? 15 : 12}px ${MONO}`;
+        ctx.font = `800 ${this._uiPx(L.compact ? 15 : 12)}px ${MONO}`;
         ctx.textAlign = 'right';
         this._textWithShadow(ctx, readout, barLeft + barW - 10, midY, '#f2fbff');
         ctx.restore();

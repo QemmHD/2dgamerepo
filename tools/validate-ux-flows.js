@@ -37,8 +37,14 @@ for (const step of TOUR_STEPS) {
     ok(menuIds.includes(step.tab), `tour references unknown tab: ${step.tab}`);
     ok(Array.isArray(step.lines) && step.lines.length > 0 && step.lines.length <= 5,
         `${step.tab} tour copy must contain 1..5 lines`);
+    ok(step.settingsPane === undefined || step.tab === 'settings',
+        `${step.tab} tour step cannot target a nested Settings pane`);
 }
 ok(tourTabs.has('modes') && tourTabs.has('boutique'), 'Modes and Boutique need explicit lessons');
+const settingsTourStep = TOUR_STEPS.find((step) => step.tab === 'settings');
+ok(settingsTourStep?.settingsPane === 'accessibility'
+    && settingsTourStep.highlightAction === 'replayTutorial',
+'Settings tour must enter Accessibility before highlighting Replay Tutorial');
 
 // A selector change deployed mid-day can leave old ids in the save. Only
 // challenges present in the active deterministic set count toward menu badges.
@@ -72,6 +78,23 @@ ok(gameSource.includes('this._menuKeyboardActivate()')
     && inputActionSource.includes("stats?.runs ?? 0) === 0 && tab === 'home'")
     && inputActionSource.includes("this._menuAction('tab', 'play')"),
 'keyboard activation on fresh HOME must open guided setup through the central tab action before launch');
+const applyTourStart = gameSource.indexOf('_applyTourStep() {');
+const applyTourEnd = gameSource.indexOf('_endMenuTour()', applyTourStart);
+const applyTourBlock = gameSource.slice(applyTourStart, applyTourEnd);
+ok(applyTourStart >= 0 && applyTourEnd > applyTourStart,
+    'guided tour application block is discoverable');
+ok(applyTourBlock.includes("step.tab === 'settings'")
+    && applyTourBlock.includes("step.settingsPane === 'accessibility'")
+    && applyTourBlock.includes("? 'accessibility'")
+    && applyTourBlock.includes(": 'general'"),
+'guided tour must route nested Settings steps and reset other steps to General');
+const endTourStart = gameSource.indexOf('_endMenuTour() {');
+const endTourEnd = gameSource.indexOf('// ── First-run onboarding', endTourStart);
+const endTourBlock = gameSource.slice(endTourStart, endTourEnd);
+ok(endTourStart >= 0 && endTourEnd > endTourStart
+    && endTourBlock.includes("this.menuTab = 'home'")
+    && endTourBlock.includes("this.settingsPane = 'general'"),
+'finishing or skipping the tour must return Home with General as the next Settings pane');
 
 // Every modal owner suppresses the free-floating tutorial banner/pointer.
 ok(!onboardingModalActive({}), 'ordinary gameplay must allow onboarding guidance');

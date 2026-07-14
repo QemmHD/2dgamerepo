@@ -3,6 +3,8 @@
 // the only gameplay surface; this bridge supplies its semantic name, a polite
 // live-status channel, and stable names/keys for the existing hotspot router.
 
+import { normalizeUiScale } from './AccessibilityPreferences.js';
+
 const TAB_LABELS = Object.freeze({
     home: 'Home',
     play: 'Run setup',
@@ -23,6 +25,7 @@ const SETTING_LABELS = Object.freeze({
     damageNumbers: 'Damage numbers',
     particles: 'Particles',
     reducedEffects: 'Reduce motion and effects',
+    uiScale: 'Combat HUD size',
     highContrast: 'High contrast warnings',
     monoAudio: 'Mono audio',
     vibration: 'Vibration',
@@ -73,6 +76,7 @@ export function menuHotspotLabel(action, arg, explicitLabel = '') {
         case 'selectPatron': return `Select patron ${words(id)}`;
         case 'selectCharacter': return `Select hero ${words(id)}`;
         case 'selectMap': return `Select map ${words(id)}`;
+        case 'setUiScale': return `Set combat HUD size to ${normalizeUiScale(id)} percent`;
         case 'toggleSetting': return `Toggle ${SETTING_LABELS[id] || words(id)}`;
         case 'volUp': return `Increase ${SETTING_LABELS[id] || words(id)}`;
         case 'volDown': return `Decrease ${SETTING_LABELS[id] || words(id)}`;

@@ -1,6 +1,6 @@
 # EMBERWAKE — The Ten Fires Roadmap (1.0 → 10.0)
 
-**Status:** code-grounded product plan, 2026-07-13
+**Status:** code-grounded product plan, 2026-07-14
 **Current product:** browser-first, offline-capable, single-player survivor roguelite
 **North star:** a dark-fantasy monkey-and-wand game that feels authored, readable,
 responsive, generous, and worth mastering for hundreds of runs.
@@ -142,6 +142,12 @@ keyboard menu/Mines foundations, active modality, reduced-motion inheritance, ph
 Settings, attention-badge, and receipt-bearing QA work at `3ed29e0`. Full 1.1 remains
 open; the canonical execution truth and exact gaps live in
 [the shared development ledger](DEVELOPMENT_LEDGER.md).
+
+**2026-07-14 branch-only First Light delta:** A11-10 now has an in-flight bounded
+slice for save-safe Combat HUD size 100/115/130, high-contrast combat tells, and
+seven source-backed non-color status badges. This is not yet a delivery claim and
+does not complete global text scaling, mono audio, caption detail, voice volume,
+vibration, A11-14 convergence, or full 1.1. Exact evidence remains in the ledger.
 
 ## 3. How versions earn their number
 
@@ -365,9 +371,9 @@ audio, and screenshot gates pass.
 shipped the semantic Canvas, menu keyboard focus, active modality, reduced-motion
 inheritance, phone Settings, typed attention badge, keyboard-Mines foundation, and
 deterministic QA gates at `3ed29e0`. This is a foundation, not the complete release:
-preference controls, playable tutorial/debrief, full Play/Now/Explore hierarchy,
-lock/source/context routing, device/AT/zoom proof, and the exact acceptance matrix below
-remain open. See A11-01–A11-14 in the
+the A11-10 preference suite is partially implemented and remains in flight, while
+playable tutorial/debrief, full Play/Now/Explore hierarchy, lock/source/context routing,
+device/AT/zoom proof, and the exact acceptance matrix below remain open. See A11-01–A11-14 in the
 [development ledger](DEVELOPMENT_LEDGER.md); keyboard Mines is explicitly tracked as
 pulled-forward 1.2 work.
 
@@ -379,8 +385,10 @@ pulled-forward 1.2 work.
   keeps the desktop HUD until a real touch is used.
 - Make the menu phone-aware: stacked Settings, minimum readable helper text, safe
   44-point primary targets, and no fixed two-column layout at narrow physical scale.
-- Add UI scale (100/115/130%), high-contrast telegraphs, non-color status glyphs,
-  mono audio, caption detail, voice volume, and vibration controls.
+- Preserve the in-flight Combat HUD size presets (100/115/130%), high-contrast
+  telegraphs, and seven non-color status glyphs; finish A11-10 with mono audio,
+  caption detail, independent voice volume, and vibration controls. Combat HUD size
+  is not a claim of global app/menu text scaling.
 - “Reduce Motion & Effects” inherits the OS preference for new saves and freezes
   decorative pulse/overshoot while preserving static combat warnings.
 - Stage the tutorial as short playable beats: move, auto-fire, gem, level-up, blink,
@@ -1488,10 +1496,12 @@ Release scorecard:
 
 1. Preserve shipped 1.0.2 Waylight Calls and its PR #185 validators, screenshots,
    deterministic fixtures, deployed-main proof, and ledger record.
-2. Continue 1.1 from the shipped PR #186 foundation: close AT/device/zoom/motion proof;
-   build the preference suite, playable tutorial/debrief, complete Play/Now/Explore
-   hierarchy, and lock/source/context routing; then pass the exact First Light
-   comprehension, timing, pointerless, viewport, grayscale/RGB, and reduced-motion gate.
+2. Continue 1.1 from the shipped PR #186 foundation: land the current A11-10
+   scale/contrast/non-color slice; complete its mono/caption/voice/vibration controls;
+   close AT/device/zoom/motion proof; build the playable tutorial/debrief, complete
+   Play/Now/Explore hierarchy, and lock/source/context routing; then pass the exact
+   First Light comprehension, timing, pointerless, viewport, grayscale/RGB, and
+   reduced-motion gate.
 3. Build 1.2 Fair Forge save/economy/territory-policy fixtures before adding pools,
    rewards, chapter currencies, high-stakes tables, or native storefront surfaces.
 4. Produce one modular house/POI vertical slice while 1.3 enemy roles navigate and fight

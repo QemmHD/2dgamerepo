@@ -17,6 +17,11 @@ import {
     BP_EVERFLAME_COINS, BP_MAX_LEVEL, BP_SCHEMA, PASS_COSMETIC_MILESTONES,
     bpProgress, migrateBattlePassXpV1,
 } from '../content/battlePass.js';
+import {
+    DEFAULT_UI_SCALE,
+    normalizeHighContrast,
+    normalizeUiScale,
+} from './AccessibilityPreferences.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 export const MAX_COIN_BALANCE = Number.MAX_SAFE_INTEGER;
@@ -102,6 +107,8 @@ function defaultData({ reducedEffects = false } = {}) {
             damageNumbers: true,
             particles: true,
             reducedEffects: reducedEffects === true,
+            uiScale: DEFAULT_UI_SCALE,
+            highContrast: false,
             volMusic: 0.7,
             volSfx: 0.8,
             // Testing: unlock every biome regardless of boss kills.
@@ -294,7 +301,11 @@ export class SaveSystem {
         if (data.settings && typeof data.settings === 'object') {
             for (const key of Object.keys(def.settings)) {
                 const v = data.settings[key];
-                if (typeof def.settings[key] === 'boolean') {
+                if (key === 'uiScale') {
+                    settings.uiScale = normalizeUiScale(v);
+                } else if (key === 'highContrast') {
+                    settings.highContrast = normalizeHighContrast(v);
+                } else if (typeof def.settings[key] === 'boolean') {
                     if (typeof v === 'boolean') settings[key] = v;
                 } else if (Number.isFinite(v)) {
                     settings[key] = Math.max(0, Math.min(1, v));
@@ -770,8 +781,14 @@ export class SaveSystem {
 
     setSetting(key, value) {
         if (!this.data.settings) this.data.settings = {};
-        this.data.settings[key] = value;
+        const normalized = key === 'uiScale'
+            ? normalizeUiScale(value)
+            : key === 'highContrast'
+                ? normalizeHighContrast(value)
+                : value;
+        this.data.settings[key] = normalized;
         this.save();
+        return normalized;
     }
 
     // ── Cosmetics ──────────────────────────────────────────────────────

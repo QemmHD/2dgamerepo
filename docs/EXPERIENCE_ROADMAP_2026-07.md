@@ -3,7 +3,7 @@
 The versioned release sequence that grows this audit through the 2.0–10.0
 milestones lives in [`VERSION_ROADMAP_1_TO_10.md`](VERSION_ROADMAP_1_TO_10.md).
 
-Status: code-grounded implementation baseline and update plan, 2026-07-13. It
+Status: code-grounded implementation baseline and update plan, 2026-07-14. It
 reconciles the current game with
 [the 2026-07-04 master roadmap](ROADMAP.md) and
 [The Long Vigil plan](MAJOR_UPDATE_PLAN.md), then sets a practical 30/60/90-day
@@ -179,11 +179,13 @@ reduced-motion defaults, keyboard Mines foundation, phone Settings, typed attent
 badges, and deterministic input/accessibility receipts. A web-app manifest and icons
 exist.
 
-The four generated boss lines now have exact captions. Still missing: gamepad
-polling, control remapping, UI/text-scale presets, high-contrast/color-safe telegraphs,
-a general subtitle system, independent voice volume, mono/low-hearing support,
-vibration controls, complete device/assistive-tech/zoom proof, and a complete offline
-service-worker shell. No essential mechanic depends on hearing a cue.
+The four generated boss lines have exact captions, but this is not a general subtitle
+system. Current branch-only A11-10 work adds save-safe 100/115/130 Combat HUD size,
+high-contrast combat tells, and seven source-backed non-color status badges. It does
+not provide global app/menu text scaling. Still missing: gamepad/remapping, general
+subtitles and caption detail, independent voice volume, mono/low-hearing support,
+vibration, complete device/AT/zoom proof, and the offline shell. No essential mechanic
+depends on hearing a cue.
 
 **2026-07-13 First Light foundation delta:**
 [PR #186](https://github.com/QemmHD/2dgamerepo/pull/186) is merged and deployed at
@@ -192,6 +194,13 @@ but it does not close full 1.1. A11-01–A11-14 in the
 [development ledger](DEVELOPMENT_LEDGER.md) separate shipped foundations from the
 remaining preference, tutorial/debrief, hierarchy, routing, device/AT, and convergence
 work.
+
+**2026-07-14 A11-10 branch delta:** the first preference slice is locally integrated
+and validated, but not yet committed, merged, or deployed. Combat HUD scaling,
+post-veil high-contrast warnings, source-backed non-color status badges, and dedicated
+Accessibility Settings are in flight; mono/captions/voice/vibration and full First
+Light convergence remain open. The development ledger owns exact counts and delivery
+truth.
 
 ## 2. What changed since the older plans
 
@@ -587,8 +596,10 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
 - Support remapping, dead-zone calibration, aim sensitivity, aim-assist amount,
   and vibration off/low/full.
 - Guarantee at least 44x44 CSS-pixel touch targets after safe-area scaling.
-- Add 100/125/150% HUD text, high-contrast telegraphs, color-plus-shape status
-  cues, captions, and a mono-audio-safe mix.
+- Preserve the in-flight 100/115/130 Combat HUD size, post-veil high-contrast
+  telegraphs, and source-backed color-plus-shape status cues. Finish general captions,
+  independent voice volume, and a mono-audio-safe mix as separate verified slices;
+  Combat HUD size does not claim global app/menu text scaling.
 - Reduced effects disables nonessential flashes, camera impulse, case reel
   motion, and dense weather while retaining attack warnings.
 - Test keyboard-only, gamepad-only, touch-only, and mixed-input handoff.
@@ -733,11 +744,12 @@ Preserve the delivered gates, then add the remaining coverage in this order:
    import corruption tests.
 6. **Input/accessibility:** keyboard focus order, active modality, reduced-effects save
    inheritance, phone Settings, and receipt-bearing Home/Mines gates are delivered by
-   PR #186. Next add gamepad/touch hybrid-device proof, dead-zone/remap persistence,
-   complete caption/contrast/scale state, and manual device/assistive-tech review.
+   PR #186. Scale/contrast/status coverage is in flight locally under A11-10. Next add
+   gamepad/touch hybrid-device proof, dead-zone/remap persistence, captions/mono/voice/
+   vibration, and manual device/assistive-tech review.
 7. **Visual/browser matrix:** desktop menu, 185-enemy house swarm, boss cast,
    second act, full SFX reel, and live score lifecycle are covered. Add narrow
-   mobile, notched safe area, 125/150% text, reduced effects, high contrast, and
+   mobile, notched safe area, 115/130% Combat HUD size, reduced effects, high contrast, and
    20-minute/Boss Rush/case/BP/Ruin Bell scenarios.
 8. **Determinism:** same seed/content version produces the same gameplay event
    log; different visual randomness does not alter that log.

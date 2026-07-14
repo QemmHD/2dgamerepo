@@ -55,6 +55,7 @@ export function buildUIState(game) {
         base.stats = game.saveSystem.data.stats;
         // Menu state consumed by MenuRenderer.
         base.menuTab = game.menuTab;
+        base.settingsPane = game.settingsPane === 'accessibility' ? 'accessibility' : 'general';
         base.menuFocusKey = game.menuFocusKey || null;
         base.menuFocusVisible = game.input?.getModality?.() === 'keyboard';
         base.inputModality = game.input?.getModality?.() || 'pointer';

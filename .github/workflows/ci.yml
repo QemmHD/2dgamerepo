@@ -65,6 +65,9 @@ jobs:
       - name: Validate accessibility and input contracts
         run: node tools/validate-accessibility.js
 
+      - name: Validate high-contrast combat cues
+        run: node tools/validate-combat-cues.js
+
       - name: Validate reduced-motion save inheritance
         run: node tools/validate-accessibility-save.js
 
@@ -162,9 +165,41 @@ jobs:
                 echo "FAIL: matrix scenario '${QUERY}' did not persist Reduced Effects"; exit 1;
               }
             fi
+            if [[ "$QUERY" =~ uiscale=([0-9]+) ]]; then
+              EXPECTED_UI_SCALE="${BASH_REMATCH[1]}"
+              grep -q "data-qa-ui-scale=\"${EXPECTED_UI_SCALE}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not apply Combat HUD size ${EXPECTED_UI_SCALE}%"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ contrast=([01]) ]]; then
+              EXPECTED_CONTRAST="false"
+              if [ "${BASH_REMATCH[1]}" = "1" ]; then EXPECTED_CONTRAST="true"; fi
+              grep -q "data-qa-high-contrast=\"${EXPECTED_CONTRAST}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not apply high contrast=${EXPECTED_CONTRAST}"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ settingspane=([a-z]+) ]]; then
+              EXPECTED_SETTINGS_PANE="${BASH_REMATCH[1]}"
+              grep -q "data-qa-settings-pane=\"${EXPECTED_SETTINGS_PANE}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not stage Settings pane '${EXPECTED_SETTINGS_PANE}'"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"statuses=all"* ]]; then
+              grep -q 'data-qa-statuses="all"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not stage every combat status cue"; exit 1;
+              }
+            fi
             if [[ "$QUERY" == *"focus=tab%3Aplay%230"* ]]; then
               grep -q 'data-qa-focus="tab:play#0"' "$MATRIX_DOM" || {
                 echo "FAIL: matrix scenario '${QUERY}' did not retain the requested menu focus"; exit 1;
+              }
+              grep -q 'data-qa-focus-visible="true"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not expose visible keyboard focus"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"focus=setUiScale%3A130%230"* ]]; then
+              grep -q 'data-qa-focus="setUiScale:130#0"' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not retain the 130% Combat HUD size focus"; exit 1;
               }
               grep -q 'data-qa-focus-visible="true"' "$MATRIX_DOM" || {
                 echo "FAIL: matrix scenario '${QUERY}' did not expose visible keyboard focus"; exit 1;
@@ -183,9 +218,31 @@ jobs:
           emberwood|map=emberwood&tp=vigilSite
           emberwood|map=emberwood&tp=vigilBeaconCleared
           emberwood|map=emberwood&touch=1
-          emberwood|screen=menu&tab=home
+          emberwood|screen=menu&tab=home&uiscale=100&contrast=0
           emberwood|screen=menu&tab=home&input=keyboard&focus=tab%3Aplay%230&reduced=1
+          emberwood|screen=menu&tab=settings&settingspane=accessibility&uiscale=130&contrast=1&input=keyboard&focus=setUiScale%3A130%230
+          emberwood|uiscale=130&contrast=1&statuses=all
           emberwood|screen=menu&tab=battlepass&bpxp=12600&bpclaimthrough=12&bpreceipt=1
           emberwood|screen=menu&tab=shop&mines=250&minessafe=3&input=keyboard&minesFocus=7&reduced=1
           MATRIX
-          echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, reduced motion, menus, Mines)"
+
+          # Strict query allowlists must fail loudly rather than silently
+          # coercing a screenshot into a different accessibility state.
+          INVALID_DOM="/tmp/harness-invalid-controls.html"
+          INVALID_PROFILE=$(mktemp -d)
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+            --autoplay-policy=no-user-gesture-required \
+            --disable-background-networking --disable-component-update \
+            --force-device-scale-factor=1 --window-size=1280,720 \
+            --virtual-time-budget=7000 --user-data-dir="$INVALID_PROFILE" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=settings&uiscale=129&contrast=yes&settingspane=display&statuses=none" \
+            > "$INVALID_DOM"
+          INVALID_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_DOM" | head -1)
+          echo "Invalid-control receipt: $INVALID_TITLE"
+          echo "$INVALID_TITLE" | grep -q 'DONE EXC:4 ' || {
+            echo 'FAIL: invalid accessibility harness controls did not emit four deterministic ERR receipts'; exit 1;
+          }
+          grep -q 'data-qa-ready="1"' "$INVALID_DOM" || {
+            echo 'FAIL: invalid accessibility harness controls omitted their QA receipt'; exit 1;
+          }
+          echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, menus, Mines)"

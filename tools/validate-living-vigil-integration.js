@@ -135,10 +135,21 @@ sourceCheck(renderSource, /vigilSiteSystem\?\.forVisible\?\./, 'lighting pass cu
 sourceCheck(renderSource, /encounterGuardian[\s\S]*?_drawEncounterGuardianMark/,
     'guardian enemies receive their readable world marker');
 sourceCheck(renderSource, /vigilSiteSystem\.drawAbove\(/, 'site interaction copy has an above-veil render pass');
-sourceCheck(renderSource, /getHUDLayout\(gameplayUIState\)\.vigil[\s\S]*?vigilTracker\.drawHUD/,
-    'tracker HUD consumes the shared vigil layout rectangle');
-sourceCheck(renderSource, /if \(this\.photoMode\.hudShown\) \{[\s\S]*?getHUDLayout\(photoUIState\)\.vigil[\s\S]*?vigilTracker\.drawHUD[\s\S]*?this\.ui\.draw\(ctx, photoUIState\)/,
-    'photo mode HUD toggle includes the Living Vigil tracker');
+sourceCheck(renderSource, /const vigilLayout = this\.ui\.getHUDLayout\(gameplayUIState\);[\s\S]*?vigilTracker\.drawHUD\(ctx, vigilLayout\.vigil, \{[\s\S]*?compact: vigilLayout\.compact,[\s\S]*?uiScale,[\s\S]*?highContrast/,
+    'tracker HUD consumes the shared layout rectangle and accessibility preferences');
+sourceCheck(renderSource, /const gameplayUIState = buildUIState\(this\);[\s\S]*?const largeAnnouncementActive = !!gameplayUIState\.waveAnnouncement;[\s\S]*?if \(this\.screen === 'gameplay' && this\.vigilTracker && !largeAnnouncementActive\) \{[\s\S]*?vigilTracker\.drawHUD/,
+    'large gameplay announcement deterministically suppresses the persistent tracker chip');
+sourceCheck(renderSource, /if \(this\.photoMode\.hudShown\) \{[\s\S]*?const vigilLayout = this\.ui\.getHUDLayout\(photoUIState\);[\s\S]*?vigilTracker\.drawHUD\(ctx, vigilLayout\.vigil, \{[\s\S]*?compact: vigilLayout\.compact,[\s\S]*?uiScale,[\s\S]*?highContrast,[\s\S]*?this\.ui\.draw\(ctx, photoUIState\)/,
+    'photo mode HUD toggle passes the Living Vigil layout and accessibility preferences');
+const photoModeRenderSource = renderSource.match(/if \(this\.photoMode\) \{[\s\S]*?\n            return;\n        \}/)?.[0] || '';
+sourceCheck(photoModeRenderSource, /if \(this\.screen === 'gameplay' && this\.vigilTracker\) \{[\s\S]*?vigilTracker\.drawHUD/,
+    'photo-mode HUD keeps its normal tracker behavior during annotated shots');
+check(!photoModeRenderSource.includes('largeAnnouncementActive'),
+    'gameplay announcement suppression does not leak into photo mode');
+check((renderSource.match(/vigilTracker\.drawHUD\(ctx, vigilLayout\.vigil, \{[\s\S]*?uiScale,[\s\S]*?highContrast,[\s\S]*?\}\);/g) || []).length === 2,
+    'both gameplay and photo-mode Living Vigil draws receive UI scale and high contrast');
+sourceCheck(renderSource, /getSetting\?\.\('uiScale'\) \?\? 100/,
+    'combat renderer reads UI scale once for procedural combat HUD consumers');
 check(renderSource.indexOf('vigilSiteSystem.drawAbove') < renderSource.indexOf('this.ui.draw(ctx, gameplayUIState)'),
     'site prompt is composed before the final HUD without bypassing it');
 sourceCheck(uiStateSource, /base\.vigilTracker = game\.vigilTracker\?\.getSnapshot\?\.\(\) \?\? null/,
@@ -484,6 +495,17 @@ check(vigilLayout.vigil.x >= 0 && vigilLayout.vigil.y >= 0
     && vigilLayout.vigil.x + vigilLayout.vigil.w <= 1920
     && vigilLayout.vigil.y + vigilLayout.vigil.h <= 1080,
     'runtime tracker allocation stays inside the logical canvas');
+const scaledVigilLayout = ui.getHUDLayout({
+    ...layoutState,
+    saveData: { settings: { uiScale: 130, highContrast: true } },
+});
+check(scaledVigilLayout.vigil.uiScale === 1.3
+    && Math.abs(scaledVigilLayout.vigil.w - vigilLayout.vigil.w * 1.3) < 0.001
+    && Math.abs(scaledVigilLayout.vigil.h - vigilLayout.vigil.h * 1.3) < 0.001,
+    'runtime Living Vigil allocation scales its complete geometry to 130%');
+check(Math.abs((scaledVigilLayout.vigil.x + scaledVigilLayout.vigil.w)
+    - (vigilLayout.vigil.x + vigilLayout.vigil.w)) < 0.001,
+    'scaled Living Vigil retains its safe right-edge anchor');
 const gatedLayout = ui.getHUDLayout({ ...layoutState, vigilTracker: null }).vigil;
 check(gatedLayout.w === 0 && gatedLayout.h === 0,
     'runtime HUD collapses the tracker slot when Living Vigil is gated off');

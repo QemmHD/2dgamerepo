@@ -50,6 +50,7 @@ import { getEnemyAiFrames, getEnemyAiDirFrames } from '../assets/EnemySprites.js
 import { getPixelBossFrames } from '../assets/PixelBosses.js';
 import { EnemyProjectile } from './EnemyProjectile.js';
 import { drawWorldHealthBar, healthColor } from '../render/DrawUtils.js';
+import { drawCachedStatusGlyph, strokeHighContrastPath } from '../render/CombatCues.js';
 import { steerEnemyMovement } from '../systems/EnemyNavigation.js';
 import {
     BOSS_EXPOSED_DAMAGE_MUL,
@@ -1042,6 +1043,112 @@ export class Enemy {
             }
         }
         ctx.restore();
+    }
+
+    // Contrast-only windup geometry. This intentionally redraws no authored
+    // fills, sprite pixels, or translucent rings; it is safe to run after the
+    // darkness veil without making the normal world pass double-thick.
+    drawWindupContrastCue(ctx) {
+        const bossWinding = this.boss && this.bossWindupTimer > 0 && this.bossWindupDuration > 0;
+        const wupTot = bossWinding ? this.bossWindupDuration
+            : (this.lieutenant ? this._ltWindupDur : this.def.windup);
+        const windupRemaining = bossWinding ? this.bossWindupTimer : this.windupTimer;
+        if (!(windupRemaining > 0) || !(wupTot > 0)) return 0;
+
+        const wp = clamp(1 - windupRemaining / wupTot, 0, 1);
+        const warn = this.boss ? (this.phase2Entered ? '#ff3326' : '#ff6b4a')
+            : this.lieutenant ? '#ffc24a'
+            : this.behavior === 'charger' ? '#ff6a3c'
+            : this.behavior === 'bomber' ? '#ff9a3c'
+            : this.behavior === 'summoner' ? '#b48cff'
+            : this.behavior === 'teleporter' ? '#7fe0ff'
+            : this.behavior === 'spitter' ? '#c97bff' : '#ffcc4a';
+        const tr = this.radius;
+        const rr = tr * 1.32;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.beginPath();
+        ctx.arc(0, 0, rr, 0, TWO_PI);
+        strokeHighContrastPath(ctx, warn, 2);
+        ctx.beginPath();
+        ctx.arc(0, 0, rr, -Math.PI / 2, -Math.PI / 2 + wp * TWO_PI);
+        strokeHighContrastPath(ctx, warn, 3);
+
+        const ang = Math.atan2(this._windupAimY, this._windupAimX);
+        const cd = tr * (1.5 + 0.55 * wp);
+        const cs = tr * (0.42 + 0.40 * wp);
+        ctx.translate(Math.cos(ang) * cd, Math.sin(ang) * cd);
+        ctx.rotate(ang);
+        ctx.beginPath();
+        ctx.moveTo(cs, 0);
+        ctx.lineTo(-cs * 0.6, cs * 0.7);
+        ctx.lineTo(-cs * 0.6, -cs * 0.7);
+        ctx.closePath();
+        strokeHighContrastPath(ctx, warn, 1.5);
+        ctx.restore();
+        return 3;
+    }
+
+    // Non-color status language for the post-veil visibility pass. Trash uses
+    // a deterministic semantic priority (shield, freeze, burn, shock, shred,
+    // chill, slow); important/focused enemies pass a limit of seven. Counting
+    // and dispatch stay scalar, and cached badges cost one blit apiece.
+    drawStatusCues(ctx, highContrast = false, size = 15, maxStatuses = 3) {
+        const limit = Math.min(7, Math.max(0, maxStatuses | 0));
+        if (limit <= 0) return 0;
+
+        let count = 0;
+        if (this.shieldTimer > 0 && count < limit) count++;
+        if (this.freezeTimer > 0 && count < limit) count++;
+        if (this.burnTimer > 0 && count < limit) count++;
+        if (this.shockTimer > 0 && count < limit) count++;
+        if (this.shredTimer > 0 && count < limit) count++;
+        if (this.chillTimer > 0 && count < limit) count++;
+        if (this.slowTimer > 0 && count < limit) count++;
+        if (count === 0) return 0;
+
+        const badgeSize = Math.max(10, size);
+        const step = badgeSize * 1.22 + 4;
+        let x = this.x - (count - 1) * step * 0.5;
+        const hpTop = this.y - this.radius - UI.enemyHealthBar.marginAboveRadius;
+        const y = hpTop - badgeSize * 0.62 - 5;
+        let drawn = 0;
+
+        if (this.shieldTimer > 0 && drawn < limit) {
+            drawCachedStatusGlyph(ctx, 'shield', x, y, badgeSize, 0, highContrast);
+            drawn++; x += step;
+        }
+        if (this.freezeTimer > 0 && drawn < limit) {
+            drawCachedStatusGlyph(ctx, 'freeze', x, y, badgeSize, 0, highContrast);
+            drawn++; x += step;
+        }
+        if (this.burnTimer > 0 && drawn < limit) {
+            drawCachedStatusGlyph(ctx, 'burn', x, y, badgeSize, 0, highContrast);
+            drawn++; x += step;
+        }
+        if (this.shockTimer > 0 && drawn < limit) {
+            drawCachedStatusGlyph(ctx, 'shock', x, y, badgeSize, this.shockStacks, highContrast);
+            drawn++; x += step;
+        }
+        if (this.shredTimer > 0 && drawn < limit) {
+            drawCachedStatusGlyph(ctx, 'shred', x, y, badgeSize, this.shredStacks, highContrast);
+            drawn++; x += step;
+        }
+        if (this.chillTimer > 0 && drawn < limit) {
+            drawCachedStatusGlyph(ctx, 'chill', x, y, badgeSize, this.chillStacks, highContrast);
+            drawn++; x += step;
+        }
+        if (this.slowTimer > 0 && drawn < limit) {
+            drawCachedStatusGlyph(ctx, 'slow', x, y, badgeSize, 0, highContrast);
+            drawn++;
+        }
+        return drawn;
+    }
+
+    drawCombatCueOverlay(ctx, highContrast, statusSize, maxStatuses) {
+        if (highContrast) this.drawWindupContrastCue(ctx);
+        return this.drawStatusCues(ctx, highContrast, statusSize, maxStatuses);
     }
 
     drawHpBar(ctx) {

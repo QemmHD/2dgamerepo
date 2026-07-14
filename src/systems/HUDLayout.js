@@ -4,6 +4,8 @@
 // Keeping the arithmetic here makes desktop, touch, cover-crop, and boss
 // layouts testable without booting the game.
 
+import { uiScaleFactor } from './AccessibilityPreferences.js';
+
 const DEFAULT_W = 1920;
 const DEFAULT_H = 1080;
 
@@ -47,6 +49,9 @@ export function computeHUDLayout(options = {}) {
     const relicCount = Math.max(0, Math.floor(finiteOr(options.relicCount)));
     const abilityCount = Math.max(0, Math.floor(finiteOr(options.abilityCount)));
     const hasVigil = !!options.hasVigil;
+    // UI scale is a screen-space HUD preference. It must never alter world or
+    // camera coordinates, renderer fit, or the fixed touch-action discs.
+    const uiScale = uiScaleFactor(options.uiScale);
 
     const left = safe.left;
     const right = width - safe.right;
@@ -59,11 +64,40 @@ export function computeHUDLayout(options = {}) {
     // the THREAT band. A duel shortens it to one row and claims a dedicated
     // plate immediately below; no method invents another top-centre Y value.
     const headerW = Math.min(compact ? 640 : 620, Math.max(360, usableW - 520));
-    const headerH = hasBoss ? 80 : 104;
+    const headerH = (hasBoss ? 80 : 104) + Math.round((uiScale - 1) * 80);
     const header = rect(centerX - headerW / 2, top + 8, headerW, headerH);
     const threat = hasBoss
         ? rect(0, 0, 0, 0)
         : rect(header.x + 24, header.y + header.h - 25, header.w - 48, 10);
+    // Scaled HUDs use the extra rail height as a real second lane:
+    // timer/counters stay in the primary lane, while the wave identity owns a
+    // separate bounded lane above THREAT. At 100% the original single-row
+    // coordinates remain exact. CSS widths around 1280 still select the desktop
+    // cockpit, so this cannot be restricted to touch/compact mode.
+    const splitCommandLanes = uiScale > 1;
+    const timerTextPx = (compact ? 46 : 42) * uiScale;
+    const identityTextPx = (compact ? 22 : 19) * uiScale;
+    const primaryY = splitCommandLanes
+        ? header.y + 4 + timerTextPx / 2
+        : header.y + (hasBoss ? header.h / 2 : 36 * uiScale);
+    const identityY = splitCommandLanes
+        ? primaryY + timerTextPx / 2 + 4 + identityTextPx / 2
+        : primaryY;
+    const command = {
+        split: splitCommandLanes,
+        primaryY,
+        identityY,
+        primaryTop: primaryY - timerTextPx / 2,
+        primaryBottom: primaryY + timerTextPx / 2,
+        identityTop: identityY - identityTextPx / 2,
+        identityBottom: identityY + identityTextPx / 2,
+        timerX: header.x + 24,
+        timerMaxW: header.w * (splitCommandLanes ? 0.45 : 0.30),
+        countersRight: header.x + header.w - 24,
+        countersMaxW: header.w * (splitCommandLanes ? 0.45 : 0.30),
+        identityX: header.x + header.w * 0.53,
+        identityMaxW: splitCommandLanes ? header.w - 48 : header.w * 0.34,
+    };
 
     // Keep the duel plate out of the left-side cockpit. Compact mode reserves
     // the wider vitals console; desktop reserves the build strip. The plate
@@ -81,7 +115,8 @@ export function computeHUDLayout(options = {}) {
         Math.max(520, usableW - 96),
     );
     const boss = hasBoss
-        ? rect(centerX - bossW / 2, header.y + header.h + 12, bossW, compact ? 124 : 116)
+        ? rect(centerX - bossW / 2, header.y + header.h + 12, bossW,
+            (compact ? 124 : 116) + Math.round((uiScale - 1) * 80))
         : rect(0, 0, 0, 0);
 
     const secondaryTop = hasBoss ? boss.y + boss.h + 10 : header.y + header.h + 14;
@@ -91,7 +126,7 @@ export function computeHUDLayout(options = {}) {
         : rect(0, 0, 0, 0);
     const bossRushTop = hasLieutenant ? lieutenant.y + lieutenant.h + 10 : secondaryTop;
     const bossRush = hasBossRush
-        ? rect(centerX - 280, bossRushTop, 560, 66)
+        ? rect(centerX - 280, bossRushTop, 560, Math.round(66 * uiScale))
         : rect(0, 0, 0, 0);
 
     // Desktop keeps the familiar bottom-left cockpit. Touch/compact mode moves
@@ -136,15 +171,26 @@ export function computeHUDLayout(options = {}) {
         activeBottom(lieutenant, top),
         activeBottom(bossRush, top),
     );
+    const vigilW = 350 * uiScale;
+    const vigilH = (compact ? 118 : 126) * uiScale;
     const vigil = hasVigil
-        ? rect(right - 388, vigilTop, 350, compact ? 118 : 126)
+        ? Object.assign(rect(right - 38 - vigilW, vigilTop, vigilW, vigilH), { uiScale })
         : rect(0, 0, 0, 0);
 
     const filteredAbilityCount = touchMode ? Math.max(0, abilityCount - 1) : abilityCount;
     const pipPitch = 82;
+    const pipRadius = 30;
+    const pipGap = pipPitch - pipRadius * 2;
+    const abilityLabelMaxW = pipPitch - 10;
     const abilityW = filteredAbilityCount > 0 ? filteredAbilityCount * pipPitch - 22 + 28 : 0;
     const abilityY = touchMode ? bottom - 394 : bottom - 148;
-    const abilities = rect(right - 28 - abilityW, abilityY, abilityW, 92);
+    const abilities = Object.assign(rect(right - 28 - abilityW, abilityY, abilityW, 92), {
+        pipPitch,
+        pipRadius,
+        pipGap,
+        labelMaxW: abilityLabelMaxW,
+        count: filteredAbilityCount,
+    });
     const kindle = touchMode
         ? rect(0, 0, 0, 0)
         : rect(right - 328, bottom - 176, 300, 22);
@@ -155,9 +201,11 @@ export function computeHUDLayout(options = {}) {
         width,
         height,
         safe,
+        uiScale,
         compact,
         touchMode,
         header,
+        command,
         threat,
         boss,
         lieutenant,

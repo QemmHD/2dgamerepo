@@ -16,6 +16,7 @@ const ICON_PX = 64;
 const baseCache = new Map();  // baseId → base glyph canvas
 const iconCache = new Map();  // `${baseId}:${rarity}` → framed, recolored canvas
 const glyphCache = new Map(); // baseId → imported white glyph canvas (ICON_PX)
+const tintCache = new Map();  // `${baseId}:${tint}` → flat-tinted glyph canvas
 
 // Imported icon glyphs — real CC-BY 3.0 game-icons.net art (white-on-transparent
 // so the rarity recolor reads cleanly). baseId → file. When loaded, these take
@@ -70,10 +71,15 @@ function getBase(baseId) {
     // Prefer an imported game-icons.net glyph if it loaded; else draw the
     // procedural fallback glyph.
     const imported = glyphCache.get(baseId);
-    if (imported) { baseCache.set(baseId, imported); return imported; }
+    if (imported) {
+        imported._gameIconId = baseId;
+        baseCache.set(baseId, imported);
+        return imported;
+    }
     const c = makeCanvas(ICON_PX, ICON_PX);
     const cx = c.getContext('2d');
     (BASE_DRAWERS[baseId] || BASE_DRAWERS.spark)(cx, ICON_PX);
+    c._gameIconId = baseId;
     baseCache.set(baseId, c);
     return c;
 }
@@ -104,10 +110,30 @@ export async function loadIconGlyphs() {
         if (!imgs[i]) return;
         const c = makeCanvas(ICON_PX, ICON_PX);
         c.getContext('2d').drawImage(imgs[i], 0, 0, ICON_PX, ICON_PX);
+        c._gameIconId = id;
         glyphCache.set(id, c);
         anyOk = true;
     });
     return anyOk;
+}
+
+// Raw credited game-icons.net glyph for compact in-game semantic cues. An
+// optional flat tint is cached once, so callers can bake HUD/status sprites
+// without re-running compositing in a render loop. The source id is retained
+// on the canvas for deterministic asset/attribution validation.
+export function getIconGlyph(baseId, tint = null) {
+    const base = getBase(baseId);
+    if (!tint || tint === '#ffffff' || tint === '#fff') return base;
+    const key = `${baseId}:${tint}`;
+    if (tintCache.has(key)) return tintCache.get(key);
+    const out = recolorCanvas(
+        base,
+        { op: 'source-atop', color: tint, alpha: 1 },
+        `customglyph:${key}`,
+    );
+    out._gameIconId = baseId;
+    tintCache.set(key, out);
+    return out;
 }
 
 // A rarity-customized icon: the base glyph recolored toward the rarity color
