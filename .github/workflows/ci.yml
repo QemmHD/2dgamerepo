@@ -695,7 +695,7 @@ jobs:
             case "$COLLECTION_IB_KIND" in
               collection-keyboard)
                 grep -q 'data-qa-input="keyboard"' "$COLLECTION_IB_DOM" \
-                  && grep -q 'data-qa-focus="collectionCategory:fur#0"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-focus="collectionCategory:cloak#0"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-focus-visible="true"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-collection-category="fur"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-collection-page="2"' "$COLLECTION_IB_DOM" \
@@ -731,7 +731,7 @@ jobs:
           }
 
           capture_collection_ib collection-fur-page2-desktop 1600,900 \
-            'screen=menu&tab=character&collectioncat=fur&collectionpage=2&pursuit=stormglass&input=keyboard&focus=collectionCategory%3Afur%230' \
+            'screen=menu&tab=character&collectioncat=fur&collectionpage=2&pursuit=stormglass&input=keyboard&focus=collectionCategory%3Acloak%230' \
             collection-keyboard
           capture_collection_ib collection-fur-page2-phone 844,390 \
             'screen=menu&tab=character&collectioncat=fur&collectionpage=2&pursuit=stormglass&input=touch' \
