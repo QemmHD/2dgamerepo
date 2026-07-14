@@ -351,7 +351,9 @@ export class Player {
         const ch = getCharacter(this.characterId);
         const ap = this.appearance || {};
         const hasCatalogHat = !!ap.hatShape && ap.hatShape !== 'none';
-        this.heroFrames = getHeroFrames(this.characterId, ch, ap.furColor || null, hasCatalogHat);
+        // Pass the complete resolved treatment so patterned/material fur is
+        // baked into every pose frame beside the historical flat colour.
+        this.heroFrames = getHeroFrames(this.characterId, ch, ap, hasCatalogHat);
         this.isLpcBody = this.heroFrames?.kind === 'lpc';
     }
 

@@ -24,6 +24,15 @@ import {
     HERO_POSE_FRAME_COUNTS,
 } from '../src/assets/HeroPoseData.js';
 import { AURA_FX_STYLES, TRAIL_FX_STYLES } from '../src/assets/CosmeticFx.js';
+import { CLOAK_STYLES, HAT_SHAPES } from '../src/assets/PixelArt.js';
+import {
+    deriveCosmeticFurPalette,
+    FUR_STYLES,
+    HERO_APPEARANCE_CACHE_LIMIT,
+    isFurTreatmentPixel,
+    normalizeFurTreatment,
+} from '../src/assets/ProceduralSprites.js';
+import { CHARACTERS } from '../src/content/characters.js';
 import { COSMETIC_LIST } from '../src/content/cosmetics.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,10 +63,25 @@ const FRAME_COUNTS = Object.freeze({
 });
 const LEGACY_GRIP_STATES = Object.freeze(['idle', 'walk', 'cast', 'hurt']);
 const SEGMENT_SLOTS = Object.freeze(['headSeat', 'shoulders']);
-const REQUIRED_CLOAK_STYLES = Object.freeze(['classic', 'splitwatch', 'mothwing']);
-const REQUIRED_HEAD_SHAPES = Object.freeze(['waylantern', 'mothmask']);
-const REQUIRED_AURA_FX = Object.freeze(['oathwheel', 'gloam_moths']);
-const REQUIRED_TRAIL_FX = Object.freeze(['waymarks', 'gloam_wisps']);
+const REQUIRED_FUR_STYLES = Object.freeze([
+    'embervein', 'frosttip', 'mossmottle', 'starspeck', 'sunstripe', 'gloammask',
+]);
+const REQUIRED_CLOAK_STYLES = Object.freeze([
+    'classic', 'splitwatch', 'mothwing',
+    'embertail', 'rimecoat', 'briarwing', 'stormsplit', 'sunscarf', 'graveveil',
+]);
+const REQUIRED_HEAD_SHAPES = Object.freeze([
+    'waylantern', 'mothmask',
+    'embercrest', 'rimeantlers', 'briarcrown', 'stormcoil', 'sunvisor', 'gravecowl',
+]);
+const REQUIRED_AURA_FX = Object.freeze([
+    'oathwheel', 'gloam_moths',
+    'cinder_run', 'snow_orbit', 'thorn_bloom', 'storm_arc', 'sun_mirage', 'grave_bells',
+]);
+const REQUIRED_TRAIL_FX = Object.freeze([
+    'waymarks', 'gloam_wisps',
+    'ember_paws', 'ice_runes', 'briar_leaves', 'storm_sparks', 'sand_steps', 'grave_candles',
+]);
 const POINT_SLOTS_PER_FRAME = 5;
 const SPRITE_SIZE = 182;
 const SPRITE_HALF = SPRITE_SIZE / 2;
@@ -604,22 +628,75 @@ check(pixelCloakStart >= 0 && pixelHatStart > pixelCloakStart,
     'could not locate the authored PixelArt cloak vocabulary');
 check(pixelHatStart >= 0 && pixelHatEnd > pixelHatStart,
     'could not locate the authored PixelArt hat vocabulary');
+check(Object.isFrozen(CLOAK_STYLES) && new Set(CLOAK_STYLES).size === CLOAK_STYLES.length,
+    'PixelArt cloak vocabulary must be frozen and duplicate-free');
+check(Object.isFrozen(HAT_SHAPES) && new Set(HAT_SHAPES).size === HAT_SHAPES.length,
+    'PixelArt head vocabulary must be frozen and duplicate-free');
 for (const style of REQUIRED_CLOAK_STYLES) {
-    check(supportedCloakStyles.has(style),
+    check(CLOAK_STYLES.includes(style) && supportedCloakStyles.has(style),
         `PixelArt is missing required cloak style "${style}"`);
 }
 for (const shape of REQUIRED_HEAD_SHAPES) {
-    check(supportedHatShapes.has(shape),
+    check(HAT_SHAPES.includes(shape) && supportedHatShapes.has(shape),
         `PixelArt is missing required head shape "${shape}"`);
 }
 for (const item of COSMETIC_LIST.filter((cosmetic) => cosmetic.category === 'cloak')) {
     const style = item.cloakStyle ?? item.style ?? 'classic';
-    check(typeof style === 'string' && supportedCloakStyles.has(style),
+    check(typeof style === 'string' && CLOAK_STYLES.includes(style)
+        && supportedCloakStyles.has(style),
         `${item.id} equips unsupported PixelArt cloak style "${style}"`);
 }
 for (const item of COSMETIC_LIST.filter((cosmetic) => cosmetic.category === 'hat')) {
-    check(typeof item.shape === 'string' && supportedHatShapes.has(item.shape),
+    check(typeof item.shape === 'string' && HAT_SHAPES.includes(item.shape)
+        && supportedHatShapes.has(item.shape),
         `${item.id} equips unsupported PixelArt hat shape "${item.shape}"`);
+}
+
+check(Object.isFrozen(FUR_STYLES) && new Set(FUR_STYLES).size === FUR_STYLES.length,
+    'fur material vocabulary must be frozen and duplicate-free');
+check(HERO_APPEARANCE_CACHE_LIMIT === 8,
+    'patterned hero appearances must retain the bounded eight-entry LRU');
+for (const style of REQUIRED_FUR_STYLES) {
+    check(FUR_STYLES.includes(style), `ProceduralSprites is missing required fur style "${style}"`);
+}
+for (const item of COSMETIC_LIST.filter((cosmetic) => cosmetic.category === 'fur')) {
+    const style = item.furStyle ?? 'solid';
+    check(typeof style === 'string' && FUR_STYLES.includes(style),
+        `${item.id} equips unsupported fur material "${style}"`);
+    if (style !== 'solid') {
+        const treatment = normalizeFurTreatment(item);
+        check(treatment.style === style && typeof treatment.color === 'string'
+            && typeof treatment.accent === 'string' && typeof treatment.accent2 === 'string',
+        `${item.id} does not normalize to a complete baked fur treatment`);
+    }
+}
+check(normalizeFurTreatment({ furColor: '#AABBCC', furStyle: '__unknown__' }).style === 'solid'
+    && normalizeFurTreatment({ furColor: '#AABBCC', furStyle: '__unknown__' }).color === '#aabbcc',
+'unknown fur material does not fail closed while preserving its safe tint');
+
+// A cosmetic recolor owns its full light/mid/dark ramp. Retaining Pyra's brown
+// authored shades under an orange cosmetic was the visible fallback-body seam.
+const derivedKilnPalette = deriveCosmeticFurPalette(CHARACTERS.monkey.palette, '#D95A32');
+check(derivedKilnPalette.fur === '#d95a32'
+    && derivedKilnPalette.furDark === '#82361e'
+    && derivedKilnPalette.furLight === '#e6947a'
+    && derivedKilnPalette.furDark !== CHARACTERS.monkey.palette.furDark
+    && derivedKilnPalette.furLight !== CHARACTERS.monkey.palette.furLight,
+'procedural cosmetic fur did not derive a complete replacement shade ramp');
+
+// Five shipped face palettes sit inside the old hue-only fur threshold. Probe
+// every hero's exact authored ramp against its protected face/accent seeds so a
+// future optimization cannot silently paint material veins across skin/gear.
+for (const heroId of HERO_IDS) {
+    const hero = CHARACTERS[heroId];
+    for (const key of ['fur', 'furDark', 'furLight']) {
+        check(isFurTreatmentPixel(hero.palette[key], hero.palette, hero.accent),
+            `${heroId} ${key} is no longer accepted by the fur material mask`);
+    }
+    check(!isFurTreatmentPixel(hero.palette.face, hero.palette, hero.accent),
+        `${heroId} face pixels leak into the fur material mask`);
+    check(!isFurTreatmentPixel(hero.accent, hero.palette, hero.accent),
+        `${heroId} identity accent pixels leak into the fur material mask`);
 }
 
 check(Object.isFrozen(AURA_FX_STYLES) && new Set(AURA_FX_STYLES).size === AURA_FX_STYLES.length,
@@ -647,6 +724,8 @@ check(pixelSource.includes('`cloak:${dir}:${cloakStyle}:${color}`'),
     'cloak cache key must include direction, cloakStyle, and color');
 check(pixelSource.includes('`hat:${dir}:${shape}:${color}`'),
     'hat cache key must include direction, shape, and color');
+check(pixelSource.includes('`fur:${furStyle}:${base}:${accent || \'auto\'}:${accent2 || \'auto\'}`'),
+    'fur swatch cache key must include material, base, and both accents');
 const cloakCacheProbeKeys = [];
 for (const dir of DIRECTIONS) {
     for (const style of REQUIRED_CLOAK_STYLES) {
@@ -701,6 +780,21 @@ check(playerSource.includes('ap.cloakStyle')
     && /_drawCloak\(ctx, color, style, pose\)/.test(playerSource)
     && /drawPixelCloak\([\s\S]{0,180}cloakStyle\)/.test(playerSource),
     'Player no longer threads appearance.cloakStyle through the shared shoulder rig');
+check(/getHeroFrames\(this\.characterId,\s*ch,\s*ap,\s*hasCatalogHat\)/.test(playerSource),
+    'Player no longer passes the complete baked fur treatment to hero frames');
+check((menuSource.match(/getHeroFrames\(ch\.id,\s*ch,\s*ap,/g) ?? []).length >= 4,
+    'one or more menu mannequins dropped the complete baked fur treatment');
+check(proceduralSource.includes('HERO_APPEARANCE_CACHE_LIMIT = 8')
+    && proceduralSource.includes('heroAppearanceCache')
+    && proceduralSource.includes('furTreatmentKey(treatment)'),
+'patterned hero frames lost their bounded style/color/accent cache identity');
+check(proceduralSource.includes('deriveCosmeticFurPalette(pal, treatment.color)')
+    && proceduralSource.includes('char?.palette, char?.accent')
+    && proceduralSource.includes('createFurPixelClassifier(sourcePalette, protectedAccentHex)'),
+'runtime fur baking bypasses the derived ramp or protected palette classifier');
+check(menuSource.includes('drawPixelFurSwatch')
+    && /item\.furStyle\s*\|\|\s*['"]solid['"]/.test(menuSource),
+'Collection/case swatches no longer expose authored fur materials');
 check(/applyHeroAttachmentTransform\(ctx, pose, 'shoulders'\)[\s\S]{0,900}drawPixelCloak/.test(playerSource),
     'Player cloak styles bypass the shared pose shoulder transform');
 check(/drawTrailPoint\([\s\S]{0,220}reducedEffects\)/.test(playerSource)

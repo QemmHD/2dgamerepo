@@ -24,6 +24,27 @@ import { getDecorSprite } from './DecorSprites.js';
 
 const cache = new Map();
 
+// Fur cosmetics can now describe a material/pattern as well as a flat colour.
+// Keep the vocabulary finite: catalog validation can reject typos, cache keys
+// stay bounded, and every renderer resolves the same authored treatment.
+export const FUR_STYLES = Object.freeze([
+    'solid',
+    'embervein',
+    'frosttip',
+    'mossmottle',
+    'starspeck',
+    'sunstripe',
+    'gloammask',
+]);
+const FUR_STYLE_SET = new Set(FUR_STYLES);
+
+// A recoloured 27-frame 182px hero set is roughly 3.4 MiB of raw RGBA pixels.
+// Keep only the most recently used authored appearances; natural/base sets stay
+// in the long-lived sprite cache and are therefore pinned. Never prewarm the
+// full hero x fur matrix on memory-constrained phones.
+export const HERO_APPEARANCE_CACHE_LIMIT = 8;
+const heroAppearanceCache = new Map();
+
 // LPC sheets do not ship authored attachment measurements. Keep every slot on
 // the one neutral seat instead of pretending Blender-monkey limb motion matches
 // a different 64px LPC skeleton. This preserves the historical stable overlay;
@@ -301,18 +322,154 @@ function hexToRgb(hex) {
 }
 const hueDist = (a, b) => { const d = Math.abs(a - b); return Math.min(d, 1 - d); };
 
-function furRecolorSet(set, color, baseFurHex) {
+const mixRgb = (rgb, toward, amount) => rgb.map((channel) =>
+    Math.round(channel + (toward - channel) * amount));
+const rgbToHex = (rgb) => `#${rgb.map((channel) =>
+    Math.max(0, Math.min(255, channel)).toString(16).padStart(2, '0')).join('')}`;
+const rgbDistanceSq = (r, g, b, seed) => {
+    const dr = r - seed[0], dg = g - seed[1], db = b - seed[2];
+    return dr * dr + dg * dg + db * db;
+};
+function nearestSeedDistanceSq(r, g, b, seeds) {
+    let best = Infinity;
+    for (const seed of seeds) best = Math.min(best, rgbDistanceSq(r, g, b, seed));
+    return best;
+}
+
+// Cosmetic fur replaces a material, not just its middle swatch. The historical
+// spread retained each hero's authored furDark/furLight after replacing `fur`,
+// which left green/purple/brown shadow bands inside an otherwise new pelt.
+// Derive the complete three-tone ramp from the cosmetic base instead.
+export function deriveCosmeticFurPalette(palette, furColor) {
+    const color = normalizedHex(furColor);
+    if (!color) return palette || {};
+    const base = hexToRgb(color);
+    return {
+        ...(palette || {}),
+        fur: color,
+        furDark: rgbToHex(mixRgb(base, 0, 0.4)),
+        furLight: rgbToHex(mixRgb(base, 255, 0.35)),
+    };
+}
+
+function createFurPixelClassifier(sourcePalette, protectedAccentHex = null) {
+    const palette = sourcePalette?.fur ? sourcePalette : { fur: '#8b5a2b' };
+    const base = hexToRgb(palette.fur);
+    const [, baseS] = rgbToHsl(...base);
+    if (baseS < 0.08) return () => false;
+
+    // Nearest-palette classification prevents the hue-only mask from eating the
+    // cream face/belly or a character accent when those hues happen to sit near
+    // the pelt (true for five of the six shipped heroes). Include the authored
+    // fur ramp plus the small back/highlight variants used by PixelArt.
+    const furDark = hexToRgb(palette.furDark) || mixRgb(base, 0, 0.4);
+    const furLight = hexToRgb(palette.furLight) || mixRgb(base, 255, 0.35);
+    const furSeeds = [
+        base, furDark, furLight,
+        mixRgb(base, 0, 0.18), mixRgb(base, 255, 0.05),
+        mixRgb(base, 0, 0.32), mixRgb(base, 0, 0.1),
+    ];
+    const protectedSeeds = [];
+    const face = hexToRgb(palette.face);
+    if (face) {
+        protectedSeeds.push(
+            face,
+            mixRgb(face, 0, 0.25),
+            mixRgb(face, 0, 0.32),
+            mixRgb(mixRgb(face, 0, 0.32), 0, 0.25),
+            mixRgb(face, 255, 0.12),
+        );
+    }
+    const accent = hexToRgb(protectedAccentHex);
+    if (accent) protectedSeeds.push(
+        accent, mixRgb(accent, 0, 0.25), mixRgb(accent, 255, 0.2));
+    const [baseH] = rgbToHsl(...base);
+
+    return (r, g, b) => {
+        const [h, s, l] = rgbToHsl(r, g, b);
+        if (s < 0.14 || l < 0.09 || l > 0.97 || hueDist(h, baseH) > 0.11) return false;
+        if (!protectedSeeds.length) return true;
+        return nearestSeedDistanceSq(r, g, b, furSeeds)
+            <= nearestSeedDistanceSq(r, g, b, protectedSeeds);
+    };
+}
+
+// Pure contract probe used by the deterministic validator. Runtime builds the
+// classifier once per cached appearance rather than rebuilding seeds per pixel.
+export function isFurTreatmentPixel(color, sourcePalette, protectedAccentHex = null) {
+    const rgb = typeof color === 'string' ? hexToRgb(color) : color;
+    return Array.isArray(rgb) && rgb.length >= 3
+        ? createFurPixelClassifier(sourcePalette, protectedAccentHex)(rgb[0], rgb[1], rgb[2])
+        : false;
+}
+
+const FUR_STYLE_DEFAULT_ACCENTS = Object.freeze({
+    solid: Object.freeze([null, null]),
+    embervein: Object.freeze(['#ff8a3c', '#ffd27a']),
+    frosttip: Object.freeze(['#dff6ff', '#77caff']),
+    mossmottle: Object.freeze(['#8bcf6d', '#314d32']),
+    starspeck: Object.freeze(['#9ee8ff', '#ffffff']),
+    sunstripe: Object.freeze(['#ffe080', '#74401f']),
+    gloammask: Object.freeze(['#241a35', '#c89cff']),
+});
+
+function normalizedHex(value) {
+    const match = typeof value === 'string' ? /^#?([0-9a-f]{6})$/i.exec(value) : null;
+    return match ? `#${match[1].toLowerCase()}` : null;
+}
+
+// Accept the historical color string as well as a catalog item, the resolved
+// appearance object, or a compact { color, style, accent, accent2 } descriptor.
+// Unknown styles fail closed to the legacy solid treatment.
+export function normalizeFurTreatment(value) {
+    const raw = typeof value === 'string'
+        ? { color: value }
+        : (value && typeof value === 'object' ? value : {});
+    const requestedStyle = raw.furStyle ?? raw.style
+        ?? raw.furPattern ?? raw.pattern ?? raw.furMaterial ?? 'solid';
+    const style = typeof requestedStyle === 'string' && FUR_STYLE_SET.has(requestedStyle)
+        ? requestedStyle : 'solid';
+    const defaults = FUR_STYLE_DEFAULT_ACCENTS[style];
+    return {
+        color: normalizedHex(raw.furColor ?? raw.color),
+        style,
+        accent: style === 'solid' ? null
+            : (normalizedHex(raw.furAccent ?? raw.accent) || defaults[0]),
+        accent2: style === 'solid' ? null
+            : (normalizedHex(raw.furAccent2 ?? raw.accent2) || defaults[1]),
+    };
+}
+
+function furTreatmentKey(treatment) {
+    return [
+        treatment.style,
+        treatment.color || 'base',
+        treatment.accent || 'none',
+        treatment.accent2 || 'none',
+    ].join(':');
+}
+
+const clampUnit = (value) => Math.max(0, Math.min(1, value));
+
+// One cache-fill pixel pass recolors the body fur and bakes its material into
+// copied frames. This is never a live overlay, so it cannot detach from a pose.
+function furTreatmentSet(set, treatment, sourcePalette, protectedAccentHex = null) {
     try {
-        const target = hexToRgb(color);
-        const base = hexToRgb(baseFurHex || '#8b5a2b');
+        // Preserve the historical getHeroFrames(id, null, '#rrggbb') path: if
+        // no catalog character accompanies the frame set, classify against the
+        // canonical monkey fur instead of constructing an always-false mask.
+        const effectivePalette = sourcePalette?.fur
+            ? sourcePalette : { fur: '#8b5a2b' };
+        const baseFurHex = effectivePalette.fur;
+        const target = hexToRgb(treatment.color || baseFurHex);
+        const base = hexToRgb(baseFurHex);
         if (!target || !base) return set;
         const [tH, tS] = rgbToHsl(...target);
-        const [bH, bS] = rgbToHsl(...base);
-        // A grey base fur has no meaningful hue to key on — leave the set as
-        // generated (the procedural tier already palette-swapped upstream).
-        if (bS < 0.08) return set;
+        const accent = rgbToHsl(...(hexToRgb(treatment.accent) || target));
+        const accent2 = rgbToHsl(...(hexToRgb(treatment.accent2) || target));
+        const isFurPixel = createFurPixelClassifier(effectivePalette, protectedAccentHex);
         const tinted = new Map();
-        const recolor = (f) => {
+        const bake = (f) => {
             if (!f) return f;
             if (tinted.has(f)) return tinted.get(f);
             const c = document.createElement('canvas');
@@ -324,13 +481,64 @@ function furRecolorSet(set, color, baseFurHex) {
             for (let i = 0; i < d.length; i += 4) {
                 if (d[i + 3] < 12) continue;
                 const [h, s, l] = rgbToHsl(d[i], d[i + 1], d[i + 2]);
-                // Fur mask: hue within ~40° of the hero's base fur, with real
-                // saturation, and not near-black (outline/eyes) or blown white.
-                if (s < 0.14 || l < 0.09 || l > 0.97 || hueDist(h, bH) > 0.11) continue;
-                // Remap hue+saturation to the cosmetic; keep the pixel's own
-                // luminance so every shading step of the original art survives.
-                const ns = tS * (0.55 + 0.45 * s);
-                const [nr, ng, nb] = hslToRgb(tH, ns, l);
+                // Fur mask: hue/material proximity to the authored fur ramp,
+                // excluding face/belly and identity-accent pixels even when
+                // their hue is close to fur.
+                if (!isFurPixel(d[i], d[i + 1], d[i + 2])) continue;
+                // Four-pixel cells preserve the game's chunky clusters instead
+                // of adding high-frequency one-pixel noise to the 182px sprite.
+                const pixel = i >> 2;
+                const x = pixel % c.width;
+                const y = Math.floor(pixel / c.width);
+                const gx = Math.floor(x / 4);
+                const gy = Math.floor(y / 4);
+                const hash = ((gx * 73856093) ^ (gy * 19349663)) >>> 0;
+                let oh = tH;
+                let os = tS * (0.55 + 0.45 * s);
+                let ol = l;
+                let tone = null;
+                let lightBias = 0;
+                let saturationScale = 1;
+
+                if (treatment.style === 'embervein') {
+                    const vein = (gx * 3 + gy * 5 + ((gx ^ gy) & 7)) % 19;
+                    if (vein < 2) { tone = accent; lightBias = 0.08; saturationScale = 1.08; }
+                    else if (vein === 9) { tone = accent2; lightBias = 0.12; saturationScale = 0.92; }
+                } else if (treatment.style === 'frosttip') {
+                    if (l > 0.58 || hash % 29 === 0) { tone = accent; lightBias = 0.12; saturationScale = 0.72; }
+                    else if (hash % 17 === 0) { tone = accent2; lightBias = 0.05; saturationScale = 0.82; }
+                    else os *= 0.78;
+                } else if (treatment.style === 'mossmottle') {
+                    const mottle = hash % 17;
+                    if (mottle < 5) { tone = accent; lightBias = 0.01; saturationScale = 0.82; }
+                    else if (mottle === 15 || mottle === 16) { tone = accent2; lightBias = -0.06; saturationScale = 0.78; }
+                } else if (treatment.style === 'starspeck') {
+                    const fork = (gx * 5 + gy * 3 + ((gx ^ (gy * 2)) & 7)) % 23;
+                    if (fork < 2) { tone = accent2; lightBias = 0.22; saturationScale = 0.5; }
+                    else if (fork === 11 || hash % 31 === 0) { tone = accent; lightBias = 0.10; saturationScale = 0.78; }
+                    else { os *= 0.88; ol = clampUnit(ol * 0.94); }
+                } else if (treatment.style === 'sunstripe') {
+                    const stripe = ((gx + gy * 2) % 13 + 13) % 13;
+                    if (stripe < 4) { tone = accent; lightBias = 0.05; saturationScale = 0.96; }
+                    else if (stripe === 8 || stripe === 9) { tone = accent2; lightBias = -0.08; saturationScale = 0.9; }
+                } else if (treatment.style === 'gloammask') {
+                    const dx = Math.abs(x - c.width * 0.5) / c.width;
+                    const masked = y < c.height * 0.52
+                        && dx < 0.23 + (y / c.height) * 0.08
+                        && ((gx + gy) % 9 < 6);
+                    if (masked) { tone = accent; lightBias = -0.10; saturationScale = 0.92; }
+                    else if (hash % 23 === 0) { tone = accent2; lightBias = 0.08; saturationScale = 0.9; }
+                }
+
+                if (tone) {
+                    oh = tone[0];
+                    os = clampUnit(tone[1] * (0.6 + 0.4 * s) * saturationScale);
+                    // Source luminance remains the majority term, retaining all
+                    // baked shading while the material can add a readable edge.
+                    ol = clampUnit(l * 0.72 + tone[2] * 0.28 + lightBias);
+                }
+
+                const [nr, ng, nb] = hslToRgb(oh, clampUnit(os), clampUnit(ol));
                 d[i] = nr; d[i + 1] = ng; d[i + 2] = nb;
             }
             g.putImageData(img, 0, 0);
@@ -340,21 +548,47 @@ function furRecolorSet(set, color, baseFurHex) {
         const dirs = {};
         for (const [dk, dd] of Object.entries(set.dirs)) {
             const nd = {};
-            for (const [pk, arr] of Object.entries(dd)) nd[pk] = Array.isArray(arr) ? arr.map(recolor) : arr;
+            for (const [pk, arr] of Object.entries(dd)) nd[pk] = Array.isArray(arr) ? arr.map(bake) : arr;
             dirs[dk] = nd;
         }
         return { ...set, dirs };
     } catch (e) { return set; }   // no-DOM env → uncolored fallback
 }
 
-export function getHeroFrames(id, char = null, furColor = null, suppressReplaceableHeadwear = false) {
-    // Fur cosmetics are a first-class variant: one cached set per (hero, fur),
-    // so menu previews, the boutique mannequin and the in-run player all pull
-    // the SAME recolored frames (the old draw-time tint only ran in-game).
+function appearanceCacheGet(key) {
+    if (!heroAppearanceCache.has(key)) return null;
+    const value = heroAppearanceCache.get(key);
+    // Map insertion order is the LRU order. Refresh a hit without rebuilding.
+    heroAppearanceCache.delete(key);
+    heroAppearanceCache.set(key, value);
+    return value;
+}
+
+function appearanceCacheSet(key, value) {
+    if (heroAppearanceCache.has(key)) heroAppearanceCache.delete(key);
+    heroAppearanceCache.set(key, value);
+    while (heroAppearanceCache.size > HERO_APPEARANCE_CACHE_LIMIT) {
+        const oldest = heroAppearanceCache.keys().next().value;
+        heroAppearanceCache.delete(oldest);
+    }
+}
+
+export function getHeroFrames(id, char = null, fur = null, suppressReplaceableHeadwear = false) {
+    // `fur` remains backwards-compatible with the historical color string.
+    // Descriptor callers can provide a material style and two accent colors;
+    // every menu and live consumer still receives the exact same baked frames.
+    const treatment = normalizeFurTreatment(fur);
+    const hasTreatment = !!treatment.color || treatment.style !== 'solid';
     const suppressFeature = suppressReplaceableHeadwear
         && ['hat', 'horns', 'hood'].includes(char?.feature);
-    const key = `heroFrames:${id}:${furColor || 'nat'}:${suppressFeature ? 'cosmetic-headwear' : 'native-headwear'}`;
-    if (cache.has(key)) return cache.get(key);
+    const headwearKey = suppressFeature ? 'cosmetic-headwear' : 'native-headwear';
+    const key = hasTreatment
+        ? `heroFrames:${id}:fur:${furTreatmentKey(treatment)}:${headwearKey}`
+        : `heroFrames:${id}:nat:${headwearKey}`;
+    if (hasTreatment) {
+        const hit = appearanceCacheGet(key);
+        if (hit) return hit;
+    } else if (cache.has(key)) return cache.get(key);
     let set = null;
     // Only use the LPC body if its sheet actually loaded; otherwise fall through
     // to the recolored pixel hero (NOT the brute stand-in getLpcFrames returns).
@@ -362,20 +596,29 @@ export function getHeroFrames(id, char = null, furColor = null, suppressReplacea
     // Pixel-bodied heroes prefer the HQ AI body sheets (shared base + per-hero
     // tint/feature composite); null until loaded / on failure → procedural.
     if (!set) set = getAiHeroFrames(id, char, suppressFeature);
-    // Baked/imported bodies can't regenerate — recolor their fur pixels via
-    // the per-pixel hue remap (true recolor, shading preserved).
-    if (set && furColor) set = furRecolorSet(set, furColor, char && char.palette && char.palette.fur);
-    if (!set) {
-        // Procedural tier gets the REAL thing: the fur cosmetic replaces the
-        // palette's fur before generation, so only true fur pixels recolor
-        // (shaded furD/furL variants derive from it correctly).
-        const pal = char ? char.palette : null;
-        const opts = char
-            ? { palette: furColor ? { ...pal, fur: furColor } : pal, feature: suppressFeature ? null : char.feature, accent: char.accent }
-            : (furColor ? { palette: { fur: furColor } } : {});
-        set = buildPixelHeroSet(opts);
+    // Baked/imported bodies cannot regenerate. Recolor and material-bake their
+    // true fur pixels in one cache-fill pass; natural source frames stay clean.
+    if (set && hasTreatment) {
+        set = furTreatmentSet(set, treatment, char?.palette, char?.accent);
     }
-    cache.set(key, set);
+    if (!set) {
+        // The procedural tier can palette-swap solid fur before generation,
+        // retaining its derived furDark/furLight steps. Patterned variants then
+        // receive the same single bake pass as imported/bespoke bodies.
+        const pal = char ? char.palette : null;
+        const renderPalette = treatment.color
+            ? deriveCosmeticFurPalette(pal, treatment.color) : pal;
+        const opts = char
+            ? { palette: renderPalette, feature: suppressFeature ? null : char.feature, accent: char.accent }
+            : (treatment.color ? { palette: renderPalette } : {});
+        set = buildPixelHeroSet(opts);
+        if (treatment.style !== 'solid') {
+            const generatedPalette = renderPalette || { fur: '#8b5a2b' };
+            set = furTreatmentSet(set, treatment, generatedPalette, char?.accent);
+        }
+    }
+    if (hasTreatment) appearanceCacheSet(key, set);
+    else cache.set(key, set);
     return set;
 }
 
@@ -384,6 +627,7 @@ export function getHeroFrames(id, char = null, furColor = null, suppressReplacea
 // procedural sets first).
 export function clearHeroFrameCache() {
     for (const k of [...cache.keys()]) if (k.startsWith('heroFrames:')) cache.delete(k);
+    heroAppearanceCache.clear();
 }
 
 // Flatten every unique frame canvas in a hero set (used for fur-tint caching).

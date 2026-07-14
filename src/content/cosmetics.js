@@ -11,18 +11,27 @@
 //   category        'fur' | 'cloak' | 'hat' | 'aura' | 'trail'
 //   rarity          key into RARITIES (UI color only)
 //   color           hex used for the tint/glow/draw (null = "none"/natural)
+//   furStyle        (fur only) authored material/pattern treatment:
+//                   embervein | frosttip | mossmottle | starspeck |
+//                   sunstripe | gloammask. Missing keeps solid recoloured fur.
 //   cloakStyle      (cloak only) silhouette variant: classic | splitwatch |
-//                   mothwing (resolved for every equipped cloak)
+//                   mothwing | embertail | rimecoat | briarwing |
+//                   stormsplit | sunscarf | graveveil
+//                   (resolved for every equipped cloak)
 //   shape           (hat only) which procedural accessory to draw — one of:
 //                   none | cap | candle | horns | crown | hood | tophat |
 //                   flower | antlers | halo | party | banana | waylantern |
-//                   mothmask
+//                   mothmask | embercrest | rimeantlers | briarcrown |
+//                   stormcoil | sunvisor | gravecowl
 //                   (each authored in PixelArt.pixelHat)
 //   fx              (aura/trail only) animated VFX style — the prestige layer:
 //                   aura:  pulse | spin | flame | rainbow | starfield |
-//                          oathwheel | gloam_moths
+//                          oathwheel | gloam_moths | cinder_run | snow_orbit |
+//                          thorn_bloom | storm_arc | sun_mirage | grave_bells
 //                   trail: rainbow | flame | stars | hearts | waymarks |
-//                          gloam_wisps
+//                          gloam_wisps | ember_paws | ice_runes |
+//                          briar_leaves | storm_sparks | sand_steps |
+//                          grave_candles
 //                   (rendered by assets/CosmeticFx.js in-game AND in the menu)
 //   description     short flavor
 //   defaultUnlocked owned from first launch
@@ -54,6 +63,12 @@ export const COSMETICS = {
     fur_galaxy:  { id: 'fur_galaxy',  category: 'fur', name: 'Galactic', rarity: 'mythic',    color: '#6a4fb0', coinCost: 4500, description: 'Star-stuff, worn as a coat.' },
     fur_vigil:   { id: 'fur_vigil',   category: 'fur', name: 'Vigilforged', rarity: 'epic', color: '#d8643d', passLevel: 10, caseExcluded: true, description: 'Cinder-dark fur lit along every edge.' },
     fur_waylight:{ id: 'fur_waylight',category: 'fur', name: 'Lanternmarked', rarity: 'rare', color: '#c9a76a', achievement: 'waylight_pathfinder', caseExcluded: true, description: 'Warm roadlight caught in every strand.' },
+    fur_kilncracked:{ id: 'fur_kilncracked', category: 'fur', name: 'Kiln-Cracked Pelt', rarity: 'epic', color: '#d95a32', furStyle: 'embervein', furAccent: '#ffb24a', furAccent2: '#fff0a0', coinCost: 1800, caseExcluded: true, description: 'Glazed cinder plates split along bright kiln seams.' },
+    fur_rimeglass:{ id: 'fur_rimeglass', category: 'fur', name: 'Rimeglass Pelt', rarity: 'uncommon', color: '#a9ecff', furStyle: 'frosttip', furAccent: '#eefcff', furAccent2: '#6dc9f2', description: 'Translucent facets turn each tuft into cut winter glass.' },
+    fur_briarhide:{ id: 'fur_briarhide', category: 'fur', name: 'Briarhide Pelt', rarity: 'rare', color: '#6f8f45', furStyle: 'mossmottle', furAccent: '#9ac66b', furAccent2: '#30442b', coinCost: 900, caseExcluded: true, description: 'Bark plates and hooked vine bands grow with every pose.' },
+    fur_stormglass:{ id: 'fur_stormglass', category: 'fur', name: 'Stormglass Pelt', rarity: 'epic', color: '#5f86a8', furStyle: 'starspeck', furAccent: '#9be7ff', furAccent2: '#f2fbff', coinCost: 1800, description: 'Dark glass fur carries branching seams of bottled lightning.' },
+    fur_dunebanded:{ id: 'fur_dunebanded', category: 'fur', name: 'Dunebanded Pelt', rarity: 'rare', color: '#d4a052', furStyle: 'sunstripe', furAccent: '#ffe080', furAccent2: '#74401f', coinCost: 1000, caseExcluded: true, description: 'Wind-cut chevrons stripe a hide burnished by desert light.' },
+    fur_ossuary:{ id: 'fur_ossuary', category: 'fur', name: 'Ossuary Pelt', rarity: 'rare', color: '#c5bca9', furStyle: 'gloammask', furAccent: '#35313c', furAccent2: '#c8a9dd', description: 'Bone-white plates lock together over charcoal mortar seams.' },
 
     // ── Cloak ───────────────────────────────────────────────────────────
     cloak_none:    { id: 'cloak_none',    category: 'cloak', name: 'No Cloak', rarity: 'common', color: null, description: 'Travel light.', defaultUnlocked: true },
@@ -70,6 +85,12 @@ export const COSMETICS = {
     cloak_waylight:{ id: 'cloak_waylight', category: 'cloak', name: 'Crossroads Mantle', rarity: 'epic', color: '#315b5d', achievement: 'waylight_encounters', caseExcluded: true, description: 'A deep-teal mantle for roads made safe.' },
     cloak_splitwatch:{ id: 'cloak_splitwatch', category: 'cloak', name: 'Splitwatch Mantle', rarity: 'rare', color: '#d98b45', cloakStyle: 'splitwatch', coinCost: 900, caseExcluded: true, description: 'Twin road-panels part cleanly around a keeper in motion.' },
     cloak_mothwing:{ id: 'cloak_mothwing', category: 'cloak', name: 'Duskmoth Wings', rarity: 'legendary', color: '#76538f', cloakStyle: 'mothwing', description: 'Broad velvet wings carry the hush of the Gloam.' },
+    cloak_coalwing:{ id: 'cloak_coalwing', category: 'cloak', name: 'Coalwing Mantle', rarity: 'epic', color: '#572b29', cloakStyle: 'embertail', coinCost: 1900, caseExcluded: true, description: 'Layered kiln-shard panels flare into a serrated coal-black hem.' },
+    cloak_icefall:{ id: 'cloak_icefall', category: 'cloak', name: 'Icefall Mantle', rarity: 'rare', color: '#83cce5', cloakStyle: 'rimecoat', description: 'Stepped crystal panels descend like a frozen waterfall.' },
+    cloak_thornbough:{ id: 'cloak_thornbough', category: 'cloak', name: 'Thornbough Mantle', rarity: 'epic', color: '#536c36', cloakStyle: 'briarwing', coinCost: 1400, caseExcluded: true, description: 'A leafless thorn lattice forks into two hooked tails.' },
+    cloak_stormkite:{ id: 'cloak_stormkite', category: 'cloak', name: 'Stormkite Mantle', rarity: 'legendary', color: '#526f91', cloakStyle: 'stormsplit', coinCost: 2600, description: 'An angular kite canopy parts around a conductive diamond tail.' },
+    cloak_sunsail:{ id: 'cloak_sunsail', category: 'cloak', name: 'Sunsail Mantle', rarity: 'epic', color: '#d98a39', cloakStyle: 'sunscarf', coinCost: 1500, caseExcluded: true, description: 'Asymmetric sailcloth and tasselled corners catch an unseen desert wind.' },
+    cloak_pallbearer:{ id: 'cloak_pallbearer', category: 'cloak', name: 'Pallbearer Mantle', rarity: 'epic', color: '#514b5d', cloakStyle: 'graveveil', description: 'Layered funeral panels hang from a chain-weighted rectangular hem.' },
 
     // ── Hat / accessory ─────────────────────────────────────────────────
     hat_none:   { id: 'hat_none',   category: 'hat', name: 'Bare',       rarity: 'common', color: null, shape: 'none', description: 'No accessory.', defaultUnlocked: true },
@@ -88,6 +109,12 @@ export const COSMETICS = {
     hat_waylight:{ id: 'hat_waylight', category: 'hat', name: 'Wayfinder Halo', rarity: 'epic', color: '#ffe0a0', shape: 'halo', achievement: 'waylight_cartographer', caseExcluded: true, description: 'Four roads resolved into one steady ring.' },
     hat_waylantern:{ id: 'hat_waylantern', category: 'hat', name: 'Waylantern', rarity: 'epic', color: '#ffd06a', shape: 'waylantern', coinCost: 1400, caseExcluded: true, description: 'A road lantern worn high enough to guide the whole party.' },
     hat_mothmask:{ id: 'hat_mothmask', category: 'hat', name: 'Duskmoth Mask', rarity: 'epic', color: '#b896cb', shape: 'mothmask', description: 'Soft antennae frame a moon-pale watch mask.' },
+    hat_crucible:{ id: 'hat_crucible', category: 'hat', name: 'Crucible Crest', rarity: 'legendary', color: '#d66a36', shape: 'embercrest', coinCost: 2600, caseExcluded: true, description: 'A vented crucible brow carries one contained tongue of white fire.' },
+    hat_glaciercrest:{ id: 'hat_glaciercrest', category: 'hat', name: 'Glacier Crest', rarity: 'rare', color: '#c2efff', shape: 'rimeantlers', description: 'Uneven ice blades fan from a low frost-bound circlet.' },
+    hat_briarhelm:{ id: 'hat_briarhelm', category: 'hat', name: 'Thorncrown', rarity: 'rare', color: '#8c7044', shape: 'briarcrown', coinCost: 1100, caseExcluded: true, description: 'Interlocked briars form a crown whose hooked tips stay unmistakable.' },
+    hat_thundercrest:{ id: 'hat_thundercrest', category: 'hat', name: 'Thundercrest', rarity: 'epic', color: '#70b8d5', shape: 'stormcoil', coinCost: 1800, description: 'Twin copper rods cradle a faceted stormglass core.' },
+    hat_sunorrery:{ id: 'hat_sunorrery', category: 'hat', name: 'Sun Orrery', rarity: 'legendary', color: '#f0b84d', shape: 'sunvisor', coinCost: 2300, caseExcluded: true, description: 'Concentric solar arcs turn around a fixed dawnstone.' },
+    hat_gravebell:{ id: 'hat_gravebell', category: 'hat', name: 'Gravebell Crown', rarity: 'legendary', color: '#a69a87', shape: 'gravecowl', description: 'A bone arch suspends a small iron bell above the brow.' },
 
     // ── Aura (glow + light) — the prestige layer carries animated `fx` ───
     aura_ember:   { id: 'aura_ember',   category: 'aura', name: 'Ember Aura',  rarity: 'common', color: '#ff9a3c', description: 'A warm halo.', defaultUnlocked: true },
@@ -105,6 +132,12 @@ export const COSMETICS = {
     aura_prism:   { id: 'aura_prism',   category: 'aura', name: 'Prismatic Aura', rarity: 'mythic', color: '#ffffff', fx: 'rainbow', coinCost: 5000, description: 'Every colour at once — proof you ground for it.' },
     aura_oathwheel:{ id: 'aura_oathwheel', category: 'aura', name: 'Oathwheel Aura', rarity: 'legendary', color: '#ffc85a', fx: 'oathwheel', coinCost: 2400, caseExcluded: true, description: 'Four bright vows turn around a steady central flame.' },
     aura_gloam_moths:{ id: 'aura_gloam_moths', category: 'aura', name: 'Gloam Mothwake', rarity: 'mythic', color: '#a779c5', fx: 'gloam_moths', description: 'Moonlit moths gather wherever the darkness thins.' },
+    aura_forgehalo:{ id: 'aura_forgehalo', category: 'aura', name: 'Forgehalo', rarity: 'mythic', color: '#ff7545', fx: 'cinder_run', coinCost: 4200, caseExcluded: true, description: 'Segmented molten rings shed bright hammer-sparks without hiding the hero.' },
+    aura_snowprism:{ id: 'aura_snowprism', category: 'aura', name: 'Snowprism Halo', rarity: 'epic', color: '#d9f7ff', fx: 'snow_orbit', description: 'Six refracted frost rays meet in a slow crystalline wheel.' },
+    aura_brambleward:{ id: 'aura_brambleward', category: 'aura', name: 'Brambleward', rarity: 'legendary', color: '#91d057', fx: 'thorn_bloom', coinCost: 2300, caseExcluded: true, description: 'A thorn loop opens and closes around four drifting seed-lights.' },
+    aura_tempestcage:{ id: 'aura_tempestcage', category: 'aura', name: 'Tempest Cage', rarity: 'mythic', color: '#73d7ff', fx: 'storm_arc', coinCost: 4300, description: 'Jagged lightning rails lock into a readable three-ring storm cage.' },
+    aura_miragecrown:{ id: 'aura_miragecrown', category: 'aura', name: 'Mirage Crown', rarity: 'legendary', color: '#ffd06a', fx: 'sun_mirage', coinCost: 2700, caseExcluded: true, description: 'Heat-bent ellipses lift a sharp sun-diamond above the sand.' },
+    aura_requiem:{ id: 'aura_requiem', category: 'aura', name: 'Requiem Orbit', rarity: 'mythic', color: '#b7a7cf', fx: 'grave_bells', description: 'Bell-wave arcs carry four tiny grave markers around a quiet centre.' },
 
     // ── Trail ───────────────────────────────────────────────────────────
     trail_none:   { id: 'trail_none',   category: 'trail', name: 'No Trail', rarity: 'common', color: null, description: 'Leave no mark.', defaultUnlocked: true },
@@ -123,6 +156,12 @@ export const COSMETICS = {
     trail_waylight:{ id: 'trail_waylight', category: 'trail', name: 'Starpath Trail', rarity: 'legendary', color: '#ffcf78', fx: 'stars', achievement: 'waylight_guardian', caseExcluded: true, description: 'Safe crossings shine behind the pathkeeper.' },
     trail_waymarks:{ id: 'trail_waymarks', category: 'trail', name: 'Waymark Trail', rarity: 'epic', color: '#73d7c3', fx: 'waymarks', coinCost: 1500, caseExcluded: true, description: 'Tiny route sigils mark every safe step behind you.' },
     trail_gloam_wisps:{ id: 'trail_gloam_wisps', category: 'trail', name: 'Gloam Wisps', rarity: 'rare', color: '#8e70b6', fx: 'gloam_wisps', description: 'Dim wandering lights follow at a respectful distance.' },
+    trail_slagprints:{ id: 'trail_slagprints', category: 'trail', name: 'Slagprint Wake', rarity: 'legendary', color: '#ff6c3f', fx: 'ember_paws', coinCost: 2400, caseExcluded: true, description: 'Cooling slag plates crack, glow and darken behind each step.' },
+    trail_hoarfrost:{ id: 'trail_hoarfrost', category: 'trail', name: 'Hoarfrost Wake', rarity: 'uncommon', color: '#bfefff', fx: 'ice_runes', description: 'Branching frost-ferns crystallize briefly across the road.' },
+    trail_rootstitch:{ id: 'trail_rootstitch', category: 'trail', name: 'Rootstitch Wake', rarity: 'epic', color: '#86b84f', fx: 'briar_leaves', coinCost: 1400, caseExcluded: true, description: 'Living roots stitch one fading footprint to the next.' },
+    trail_fulgurite:{ id: 'trail_fulgurite', category: 'trail', name: 'Fulgurite Wake', rarity: 'legendary', color: '#82e4ff', fx: 'storm_sparks', coinCost: 2500, description: 'Ground-struck glass forks into a new lightning scar at every step.' },
+    trail_sandglass:{ id: 'trail_sandglass', category: 'trail', name: 'Sandglass Wake', rarity: 'epic', color: '#f0bd63', fx: 'sand_steps', coinCost: 1500, caseExcluded: true, description: 'Hourglass sigils collapse into paired dune chevrons.' },
+    trail_epitaph:{ id: 'trail_epitaph', category: 'trail', name: 'Epitaph Wake', rarity: 'epic', color: '#aaa0b9', fx: 'grave_candles', description: 'Small inscribed stone tiles sink into violet grave-dust.' },
 };
 
 export const COSMETIC_LIST = Object.values(COSMETICS);
@@ -224,6 +263,18 @@ export const COSMETIC_SETS = [
       pieces: { fur: 'fur_waylight', cloak: 'cloak_splitwatch', hat: 'hat_waylantern', aura: 'aura_oathwheel', trail: 'trail_waymarks' } },
     { id: 'duskmoth', name: 'Duskmoth Court', color: '#9a70b7',
       pieces: { fur: 'fur_shadow', cloak: 'cloak_mothwing', hat: 'hat_mothmask', aura: 'aura_gloam_moths', trail: 'trail_gloam_wisps' } },
+    { id: 'kilnheart', name: 'Kilnheart Panoply', color: '#ff7045',
+      pieces: { fur: 'fur_kilncracked', cloak: 'cloak_coalwing', hat: 'hat_crucible', aura: 'aura_forgehalo', trail: 'trail_slagprints' } },
+    { id: 'rimeglass', name: 'Rimeglass Court', color: '#bcefff',
+      pieces: { fur: 'fur_rimeglass', cloak: 'cloak_icefall', hat: 'hat_glaciercrest', aura: 'aura_snowprism', trail: 'trail_hoarfrost' } },
+    { id: 'thorncrown', name: 'Thorncrown Covenant', color: '#91bd57',
+      pieces: { fur: 'fur_briarhide', cloak: 'cloak_thornbough', hat: 'hat_briarhelm', aura: 'aura_brambleward', trail: 'trail_rootstitch' } },
+    { id: 'stormglass', name: 'Stormglass Covenant', color: '#73d7ff',
+      pieces: { fur: 'fur_stormglass', cloak: 'cloak_stormkite', hat: 'hat_thundercrest', aura: 'aura_tempestcage', trail: 'trail_fulgurite' } },
+    { id: 'sunscar', name: 'Sunscar Caravan', color: '#ffc85a',
+      pieces: { fur: 'fur_dunebanded', cloak: 'cloak_sunsail', hat: 'hat_sunorrery', aura: 'aura_miragecrown', trail: 'trail_sandglass' } },
+    { id: 'gravebell', name: 'Gravebell Reliquary', color: '#b6a8c8',
+      pieces: { fur: 'fur_ossuary', cloak: 'cloak_pallbearer', hat: 'hat_gravebell', aura: 'aura_requiem', trail: 'trail_epitaph' } },
 ];
 
 // The set whose every piece is currently equipped, or null.
@@ -263,6 +314,9 @@ export function resolveAppearance(equipped) {
     }
     return {
         furColor: fur.color,
+        furStyle: fur.furStyle ?? null,
+        furAccent: fur.furAccent ?? null,
+        furAccent2: fur.furAccent2 ?? null,
         cloakColor: cloak.color,
         cloakStyle: cloak.cloakStyle ?? 'classic',
         hatShape: hat.shape ?? 'none',
