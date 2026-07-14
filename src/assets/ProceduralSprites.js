@@ -24,6 +24,23 @@ import { getDecorSprite } from './DecorSprites.js';
 
 const cache = new Map();
 
+// LPC bodies currently ship one idle frame and reuse it for cast/hurt. Their
+// attachment arrays must mirror that exact body contract; pairing the aliased
+// idle art with monkey cast anchors would move a hat/hand while the body stayed
+// still, and the two-frame canonical idle array would fail strict resolution.
+const LPC_HERO_POSE_ATTACHMENTS = Object.fromEntries(
+    ['down', 'up', 'side'].map((dir) => {
+        const source = HERO_POSE_ATTACHMENTS[dir];
+        const neutral = source.idle[0];
+        return [dir, {
+            idle: [neutral],
+            walk: source.walk,
+            cast: [neutral],
+            hurt: [neutral],
+        }];
+    }),
+);
+
 // Soft white radial used as a light cutout (drawn with 'destination-out'
 // to carve holes in the darkness veil) and reused as a particle mask.
 export function getLightMaskSprite() {
@@ -237,7 +254,7 @@ function buildLpcHeroSet(model) {
     if (!down) return null;            // sheet failed → fall back to pixel set
     const up = pick(fr.up) || down;
     const side = pick(fr.right) || down; // side faces +x; Player flips for left
-    return { kind: 'lpc', dirs: { down, up, side }, attachments: HERO_POSE_ATTACHMENTS };
+    return { kind: 'lpc', dirs: { down, up, side }, attachments: LPC_HERO_POSE_ATTACHMENTS };
 }
 
 // ── True fur recolor for baked/imported frame sets (AI sheets, LPC) ──────
