@@ -598,20 +598,37 @@ jobs:
           # uploaded for human layout review; deterministic geometry/source truth
           # remains owned by validate-cosmetic-collection.js.
           COLLECTION_RECEIPTS=/tmp/collection-growth-ia
-          mkdir -p "$COLLECTION_RECEIPTS"
+          rm -rf "$COLLECTION_RECEIPTS" __out
+          mkdir -p "$COLLECTION_RECEIPTS" __out
           for COLLECTION_TAB in character boutique; do
             COLLECTION_PROFILE=$(mktemp -d)
+            COLLECTION_NAME="${COLLECTION_TAB}-1600x900.png"
+            COLLECTION_DOM="/tmp/collection-growth-ia-${COLLECTION_TAB}.html"
+            case "$COLLECTION_TAB" in
+              character) COLLECTION_FOCUS='collectionCategory%3Ahat%230' ;;
+              boutique) COLLECTION_FOCUS='boutiqueCategory%3Aaura%230' ;;
+            esac
             timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
               --autoplay-policy=no-user-gesture-required \
               --disable-background-networking --disable-component-update \
               --force-device-scale-factor=1 --window-size=1600,900 \
               --virtual-time-budget=7000 --user-data-dir="$COLLECTION_PROFILE" \
-              --screenshot="$COLLECTION_RECEIPTS/${COLLECTION_TAB}-1600x900.png" \
-              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=${COLLECTION_TAB}"
-            test -s "$COLLECTION_RECEIPTS/${COLLECTION_TAB}-1600x900.png" || {
-              echo "FAIL: ${COLLECTION_TAB} visual receipt was not written"; exit 1;
+              --dump-dom \
+              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=${COLLECTION_TAB}&input=keyboard&focus=${COLLECTION_FOCUS}&out=${COLLECTION_NAME}" \
+              > "$COLLECTION_DOM"
+            COLLECTION_TITLE=$(grep -o '<title>[^<]*</title>' "$COLLECTION_DOM" | head -1)
+            echo "Collection visual ${COLLECTION_TAB}: $COLLECTION_TITLE"
+            echo "$COLLECTION_TITLE" | grep -q 'DONE EXC:0 ' \
+              && grep -q 'data-qa-ready="1"' "$COLLECTION_DOM" \
+              && grep -q "data-qa-output=\"${COLLECTION_NAME}\"" "$COLLECTION_DOM" || {
+              echo "FAIL: ${COLLECTION_TAB} canvas receipt did not finish cleanly"; exit 1;
             }
+            cp "__out/${COLLECTION_NAME}" "$COLLECTION_RECEIPTS/${COLLECTION_NAME}"
+            node tools/artshot/validate-receipt-png.mjs "$COLLECTION_RECEIPTS/${COLLECTION_NAME}"
           done
+          cmp -s "$COLLECTION_RECEIPTS/character-1600x900.png" \
+            "$COLLECTION_RECEIPTS/boutique-1600x900.png" \
+            && { echo 'FAIL: Character and Boutique receipts are byte-identical'; exit 1; }
           echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, Collection, Boutique, menus, Mines)"
 
       - name: Upload Collection Growth I-A visual receipts
