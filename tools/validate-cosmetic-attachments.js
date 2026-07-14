@@ -5,10 +5,12 @@
 // both runtime renderers on one frame-accurate contract. This probe is DOM-free
 // so it can run quickly in Node before the browser smoke matrix.
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import zlib from 'node:zlib';
 
 import {
     applyHeroAttachmentTransform,
@@ -18,17 +20,27 @@ import {
 } from '../src/assets/HeroPose.js';
 import {
     HERO_POSE_ATTACHMENTS,
+    HERO_POSE_ATTACHMENTS_BY_HERO,
     HERO_POSE_FRAME_COUNTS,
 } from '../src/assets/HeroPoseData.js';
 import { COSMETIC_LIST } from '../src/content/cosmetics.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ANCHORS_PATH = path.join(ROOT, 'tools', 'blender', 'anchors.json');
+const BLENDER_DIR = path.join(ROOT, 'tools', 'blender');
+const HERO_ASSET_DIR = path.join(ROOT, 'src', 'assets', 'hero');
+const HERO_MANIFEST_PATH = path.join(HERO_ASSET_DIR, 'hero-install-manifest.json');
 const PLAYER_PATH = path.join(ROOT, 'src', 'entities', 'Player.js');
 const MENU_PATH = path.join(ROOT, 'src', 'systems', 'MenuRenderer.js');
+const HERO_AI_PATH = path.join(ROOT, 'src', 'assets', 'HeroAiSprites.js');
+const PROCEDURAL_PATH = path.join(ROOT, 'src', 'assets', 'ProceduralSprites.js');
 const PIXEL_ART_PATH = path.join(ROOT, 'src', 'assets', 'PixelArt.js');
 
 const DIRECTIONS = Object.freeze(['down', 'up', 'side']);
+const HERO_IDS = Object.freeze(['monkey', 'elf', 'orc', 'wizard', 'berserker', 'assassin']);
+const PIXELATION_OPTIONS = Object.freeze({ cell: 256, logical: 96, colors: 32, outline: 1 });
+const OUTLINE_RGBA = '10,13,20,217';
+const ALLOWED_ALPHA_VALUES = Object.freeze([0, 217, 255]);
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const FACING_BY_DIRECTION = Object.freeze({ down: 'down', up: 'up', side: 'right' });
 const FRAME_COUNTS = Object.freeze({
     idle: 2,
@@ -106,78 +118,250 @@ function mirrorSegment(segment) {
     };
 }
 
-let authored = null;
+let installManifest = null;
 try {
-    authored = JSON.parse(fs.readFileSync(ANCHORS_PATH, 'utf8'));
+    installManifest = JSON.parse(fs.readFileSync(HERO_MANIFEST_PATH, 'utf8'));
 } catch (error) {
-    check(false, `could not parse tools/blender/anchors.json: ${error.message}`);
+    check(false, `could not parse src/assets/hero/hero-install-manifest.json: ${error.message}`);
 }
 
-const attachments = authored?.attachments;
-check(exactKeys(attachments, DIRECTIONS),
-    'anchors.json attachments must contain exactly down, up, and side directions');
-check(isDeepStrictEqual(HERO_POSE_FRAME_COUNTS, FRAME_COUNTS),
-    'generated frame-count constants drifted from the 2/3/1/1/1/1 contract');
-check(isDeepStrictEqual(HERO_POSE_ATTACHMENTS, attachments),
-    'HeroPoseData.js is stale; regenerate it from tools/blender/anchors.json');
+const expectedManifestIdentities = HERO_IDS.flatMap((heroId) => DIRECTIONS.map((direction) => ({
+    heroId,
+    direction,
+    path: `src/assets/hero/${heroId}_${direction}.png`,
+})));
+check(exactKeys(installManifest, ['schemaVersion', 'generator', 'pixelation', 'sheets']),
+    'hero install manifest must expose exactly schemaVersion, generator, pixelation, and sheets');
+check(installManifest?.schemaVersion === 1, 'hero install manifest schemaVersion must be 1');
+check(installManifest?.generator === 'tools/generate-hero-install-manifest.js',
+    'hero install manifest must name its deterministic generator');
+check(isDeepStrictEqual(installManifest?.pixelation, PIXELATION_OPTIONS),
+    'hero install manifest pixelation options must remain cell=256, logical=96, colors=32, outline=1');
+check(Array.isArray(installManifest?.sheets) && installManifest.sheets.length === 18,
+    'hero install manifest must contain exactly 18 installed sheets');
+check(isDeepStrictEqual(
+    installManifest?.sheets?.map(({ heroId, direction, path: sheetPath }) => ({
+        heroId, direction, path: sheetPath,
+    })),
+    expectedManifestIdentities,
+), 'hero install manifest identities/order must cover every hero and direction exactly once');
+for (const entry of installManifest?.sheets ?? []) {
+    check(exactKeys(entry, ['heroId', 'direction', 'path', 'sha256']),
+        `${entry?.path ?? 'unknown sheet'} manifest entry has unexpected or missing fields`);
+    check(SHA256_PATTERN.test(entry?.sha256 ?? ''),
+        `${entry?.path ?? 'unknown sheet'} manifest hash must be lowercase SHA-256`);
+}
+const manifestByPath = new Map(
+    (installManifest?.sheets ?? []).map((entry) => [entry.path, entry]),
+);
 
-const meta = authored?.meta;
-check(meta?.spriteSize === SPRITE_SIZE, 'anchor metadata spriteSize must be 182');
-check(meta?.yDownPositive === true, 'anchor metadata must declare y-down-positive coordinates');
-check(meta?.attachmentSchema === 1, 'anchor metadata attachmentSchema must be 1');
-check(meta?.attachmentSpace === 'sprite-offset',
-    'anchor metadata attachmentSpace must be sprite-offset');
-check(isDeepStrictEqual(meta?.attachmentStates, FRAME_COUNTS),
-    'anchor metadata state counts drifted from the runtime frame contract');
+function decodeHeroSheet(filePath) {
+    const png = fs.readFileSync(filePath);
+    check(png.length > 1024, `${path.basename(filePath)} is implausibly small or empty`);
+    check(png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+        `${path.basename(filePath)} is not a PNG`);
+    let offset = 8;
+    let width = 0;
+    let height = 0;
+    let channels = 0;
+    const idat = [];
+    while (offset + 12 <= png.length) {
+        const length = png.readUInt32BE(offset);
+        const type = png.toString('ascii', offset + 4, offset + 8);
+        const data = png.subarray(offset + 8, offset + 8 + length);
+        if (type === 'IHDR') {
+            width = data.readUInt32BE(0);
+            height = data.readUInt32BE(4);
+            check(data[8] === 8 && data[9] === 6 && data[12] === 0,
+                `${path.basename(filePath)} must be 8-bit, non-interlaced RGBA`);
+            channels = data[9] === 6 ? 4 : 0;
+        } else if (type === 'IDAT') {
+            idat.push(data);
+        } else if (type === 'IEND') {
+            break;
+        }
+        offset += length + 12;
+    }
+    check(width === 2304 && height === 256,
+        `${path.basename(filePath)} must remain a 9 x 256px sheet (found ${width}x${height})`);
+    check(idat.length > 0, `${path.basename(filePath)} has no image payload`);
+    if (!channels || !idat.length || width !== 2304 || height !== 256) return null;
 
-for (const dir of DIRECTIONS) {
-    const direction = attachments?.[dir];
-    check(exactKeys(direction, Object.keys(FRAME_COUNTS)),
-        `attachments.${dir} must contain exactly the six authored states`);
-    for (const [state, expectedCount] of Object.entries(FRAME_COUNTS)) {
-        const frames = direction?.[state];
-        check(Array.isArray(frames) && frames.length === expectedCount,
-            `attachments.${dir}.${state} must contain ${expectedCount} frame(s)`);
-        if (!Array.isArray(frames)) continue;
-        for (let index = 0; index < frames.length; index++) {
-            frameTotal++;
-            const frame = frames[index];
-            const label = `attachments.${dir}.${state}[${index}]`;
-            check(exactKeys(frame, ['headSeat', 'shoulders', 'handR']),
-                `${label} must contain exactly headSeat, shoulders, and handR`);
-            for (const slot of SEGMENT_SLOTS) {
-                const segment = frame?.[slot];
-                check(exactKeys(segment, ['left', 'right']),
-                    `${label}.${slot} must contain exactly left and right endpoints`);
-                validatePoint(segment?.left, `${label}.${slot}.left`);
-                validatePoint(segment?.right, `${label}.${slot}.right`);
-                if (finitePoint(segment?.left) && finitePoint(segment?.right)) {
-                    check(segment.right[0] - segment.left[0] > 0,
-                        `${label}.${slot} projected width must stay positive`);
+    const packed = zlib.inflateSync(Buffer.concat(idat));
+    const stride = width * channels;
+    const previous = new Uint8Array(stride);
+    const current = new Uint8Array(stride);
+    const cellOpaque = Array(9).fill(0);
+    const opaquePalette = new Set();
+    const visiblePalette = new Set();
+    const alphaValues = new Set();
+    const translucentPalette = new Set();
+    const paeth = (a, b, c) => {
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+    };
+    let cursor = 0;
+    for (let y = 0; y < height; y++) {
+        const filter = packed[cursor++];
+        for (let x = 0; x < stride; x++) {
+            const raw = packed[cursor++];
+            const left = x >= channels ? current[x - channels] : 0;
+            const up = previous[x];
+            const upLeft = x >= channels ? previous[x - channels] : 0;
+            let value = raw;
+            if (filter === 1) value += left;
+            else if (filter === 2) value += up;
+            else if (filter === 3) value += (left + up) >> 1;
+            else if (filter === 4) value += paeth(left, up, upLeft);
+            else if (filter !== 0) throw new Error(`${path.basename(filePath)} uses invalid PNG filter ${filter}`);
+            current[x] = value & 0xff;
+        }
+        for (let x = 0; x < width; x++) {
+            const pixel = x * channels;
+            const alpha = current[pixel + 3];
+            alphaValues.add(alpha);
+            if (alpha > 0) {
+                const rgba = `${current[pixel]},${current[pixel + 1]},${current[pixel + 2]},${alpha}`;
+                visiblePalette.add(rgba);
+                if (alpha === 255) {
+                    opaquePalette.add(`${current[pixel]},${current[pixel + 1]},${current[pixel + 2]}`);
+                } else {
+                    translucentPalette.add(rgba);
                 }
             }
-            validatePoint(frame?.handR, `${label}.handR`);
+            if (alpha > 8) cellOpaque[Math.floor(x / 256)]++;
+        }
+        previous.set(current);
+    }
+    return {
+        cellOpaque,
+        sha256: crypto.createHash('sha256').update(png).digest('hex'),
+        opaquePalette,
+        visiblePalette,
+        alphaValues: [...alphaValues].sort((a, b) => a - b),
+        translucentPalette,
+    };
+}
+
+for (const heroId of HERO_IDS) {
+    for (const direction of DIRECTIONS) {
+        const filename = `${heroId}_${direction}.png`;
+        const manifestPath = `src/assets/hero/${filename}`;
+        try {
+            const decoded = decodeHeroSheet(path.join(HERO_ASSET_DIR, filename));
+            decoded?.cellOpaque.forEach((count, index) => check(count >= 500,
+                `${filename} frame ${index} is blank or lost its body silhouette (${count} opaque pixels)`));
+            check(manifestByPath.get(manifestPath)?.sha256 === decoded?.sha256,
+                `${filename} bytes drifted from the generated install manifest`);
+            check(decoded?.opaquePalette.size > 0
+                && decoded.opaquePalette.size <= PIXELATION_OPTIONS.colors,
+            `${filename} must contain 1..${PIXELATION_OPTIONS.colors} opaque palette colors `
+                + `(found ${decoded?.opaquePalette.size ?? 0})`);
+            check(decoded?.visiblePalette.size <= PIXELATION_OPTIONS.colors + PIXELATION_OPTIONS.outline,
+                `${filename} exceeds the 33-color visible palette contract `
+                + `(found ${decoded?.visiblePalette.size ?? 0})`);
+            check(isDeepStrictEqual(decoded?.alphaValues, ALLOWED_ALPHA_VALUES),
+                `${filename} alpha values must be exactly transparent, canonical outline, and opaque`);
+            check(decoded?.translucentPalette.size === 1
+                && decoded.translucentPalette.has(OUTLINE_RGBA),
+            `${filename} must use only the canonical #0a0d14/85% outline outside opaque pixels`);
+        } catch (error) {
+            check(false, `${filename} could not be decoded: ${error.message}`);
         }
     }
 }
 
-check(frameTotal === 27, `expected exactly 27 attachment frames, found ${frameTotal}`);
-check(pointTotal === 27 * POINT_SLOTS_PER_FRAME,
-    `expected exactly 135 measured points, found ${pointTotal}`);
-
-// The four historical wand-grip arrays remain a compatibility receipt. They
-// must be the same measurement now consumed through each frame's handR slot.
-for (const dir of DIRECTIONS) {
-    for (const state of LEGACY_GRIP_STATES) {
-        const legacy = authored?.[dir]?.[state];
-        const current = attachments?.[dir]?.[state];
-        check(Array.isArray(legacy) && legacy.length === FRAME_COUNTS[state],
-            `${dir}.${state} legacy grip receipt has the wrong frame count`);
-        check(Array.isArray(current) && Array.isArray(legacy)
-            && isDeepStrictEqual(legacy, current.map((frame) => frame.handR)),
-        `${dir}.${state} legacy grips no longer exactly match attachment.handR`);
+const authoredByHero = {};
+for (const heroId of HERO_IDS) {
+    const filename = heroId === 'monkey' ? 'anchors.json' : `${heroId}_anchors.json`;
+    try {
+        authoredByHero[heroId] = JSON.parse(fs.readFileSync(path.join(BLENDER_DIR, filename), 'utf8'));
+    } catch (error) {
+        check(false, `could not parse tools/blender/${filename}: ${error.message}`);
     }
 }
+
+const authored = authoredByHero.monkey;
+const attachments = authored?.attachments;
+check(isDeepStrictEqual(HERO_POSE_FRAME_COUNTS, FRAME_COUNTS),
+    'generated frame-count constants drifted from the 2/3/1/1/1/1 contract');
+check(exactKeys(HERO_POSE_ATTACHMENTS_BY_HERO, HERO_IDS),
+    'generated pose data must contain exactly the six shipped Blender heroes');
+
+for (const heroId of HERO_IDS) {
+    const heroAuthored = authoredByHero[heroId];
+    const heroAttachments = heroAuthored?.attachments;
+    check(exactKeys(heroAttachments, DIRECTIONS),
+        `${heroId} attachments must contain exactly down, up, and side directions`);
+    check(isDeepStrictEqual(HERO_POSE_ATTACHMENTS_BY_HERO?.[heroId], heroAttachments),
+        `HeroPoseData.js ${heroId} tree is stale; regenerate it from Blender exports`);
+
+    const meta = heroAuthored?.meta;
+    check(meta?.heroId === heroId, `${heroId} metadata heroId must match its receipt filename`);
+    check(SHA256_PATTERN.test(meta?.presetSha256 ?? ''),
+        `${heroId} metadata presetSha256 must be a lowercase SHA-256`);
+    check(meta?.spriteSize === SPRITE_SIZE, `${heroId} metadata spriteSize must be 182`);
+    check(meta?.yDownPositive === true, `${heroId} metadata must declare y-down-positive coordinates`);
+    check(meta?.attachmentSchema === 1, `${heroId} metadata attachmentSchema must be 1`);
+    check(meta?.attachmentSpace === 'sprite-offset',
+        `${heroId} metadata attachmentSpace must be sprite-offset`);
+    check(isDeepStrictEqual(meta?.attachmentStates, FRAME_COUNTS),
+        `${heroId} metadata state counts drifted from the runtime frame contract`);
+
+    for (const dir of DIRECTIONS) {
+        const direction = heroAttachments?.[dir];
+        check(exactKeys(direction, Object.keys(FRAME_COUNTS)),
+            `${heroId}.attachments.${dir} must contain exactly the six authored states`);
+        for (const [state, expectedCount] of Object.entries(FRAME_COUNTS)) {
+            const frames = direction?.[state];
+            check(Array.isArray(frames) && frames.length === expectedCount,
+                `${heroId}.attachments.${dir}.${state} must contain ${expectedCount} frame(s)`);
+            if (!Array.isArray(frames)) continue;
+            for (let index = 0; index < frames.length; index++) {
+                frameTotal++;
+                const frame = frames[index];
+                const label = `${heroId}.attachments.${dir}.${state}[${index}]`;
+                check(exactKeys(frame, ['headSeat', 'shoulders', 'handR']),
+                    `${label} must contain exactly headSeat, shoulders, and handR`);
+                for (const slot of SEGMENT_SLOTS) {
+                    const segment = frame?.[slot];
+                    check(exactKeys(segment, ['left', 'right']),
+                        `${label}.${slot} must contain exactly left and right endpoints`);
+                    validatePoint(segment?.left, `${label}.${slot}.left`);
+                    validatePoint(segment?.right, `${label}.${slot}.right`);
+                    if (finitePoint(segment?.left) && finitePoint(segment?.right)) {
+                        check(segment.right[0] - segment.left[0] > 0,
+                            `${label}.${slot} projected width must stay positive`);
+                    }
+                }
+                validatePoint(frame?.handR, `${label}.handR`);
+            }
+        }
+    }
+
+    // Each export keeps its own legacy GRIP arrays as a reproducibility receipt.
+    for (const dir of DIRECTIONS) {
+        for (const state of LEGACY_GRIP_STATES) {
+            const legacy = heroAuthored?.[dir]?.[state];
+            const current = heroAttachments?.[dir]?.[state];
+            check(Array.isArray(legacy) && legacy.length === FRAME_COUNTS[state],
+                `${heroId}.${dir}.${state} legacy grip receipt has the wrong frame count`);
+            check(Array.isArray(current) && Array.isArray(legacy)
+                && isDeepStrictEqual(legacy, current.map((frame) => frame.handR)),
+            `${heroId}.${dir}.${state} legacy grips no longer match attachment.handR`);
+        }
+    }
+}
+
+check(isDeepStrictEqual(HERO_POSE_ATTACHMENTS, attachments),
+    'the compatibility attachment alias must remain the monkey-base tree');
+check(frameTotal === HERO_IDS.length * 27,
+    `expected exactly ${HERO_IDS.length * 27} attachment frames, found ${frameTotal}`);
+check(pointTotal === HERO_IDS.length * 27 * POINT_SLOTS_PER_FRAME,
+    `expected exactly ${HERO_IDS.length * 135} measured points, found ${pointTotal}`);
 
 // Use plain objects as sprite identities: the resolver must never separate a
 // sprite frame from its attachment frame or neutral pose.
@@ -189,6 +373,42 @@ for (const dir of DIRECTIONS) {
     }
 }
 const frameSet = { kind: 'contract-probe', dirs: spriteDirs, attachments };
+
+// Bespoke bodies must map the canonical pixel-cosmetic art space directly
+// onto their own current segment, including at idle. This catches the subtle
+// failure where per-hero deltas animated correctly but the neutral hat/collar
+// still retained monkey placement and scale.
+for (const heroId of HERO_IDS) {
+    const heroAttachments = HERO_POSE_ATTACHMENTS_BY_HERO?.[heroId];
+    const heroFrameSet = {
+        kind: 'contract-probe',
+        dirs: spriteDirs,
+        attachments: heroAttachments,
+        assetAttachments: HERO_POSE_ATTACHMENTS,
+    };
+    for (const dir of DIRECTIONS) {
+        for (const [state, frames] of Object.entries(heroAttachments?.[dir] ?? {})) {
+            frames.forEach((frame, index) => {
+                const pose = resolveHeroPose(heroFrameSet, FACING_BY_DIRECTION[dir], state, index);
+                check(pose.assetNeutralAttachments === HERO_POSE_ATTACHMENTS[dir].idle[0],
+                    `${heroId}.${dir}.${state}[${index}] lost canonical cosmetic authoring space`);
+                for (const slot of SEGMENT_SLOTS) {
+                    let captured = null;
+                    const context = { transform: (...values) => { captured = values; } };
+                    const applied = applyHeroAttachmentTransform(context, pose, slot);
+                    const matrix = captured && {
+                        a: captured[0], b: captured[1], c: captured[2],
+                        d: captured[3], e: captured[4], f: captured[5], valid: true,
+                    };
+                    check(applied === true && matrixIsFinite(matrix)
+                        && matrixMapsSegment(matrix,
+                            HERO_POSE_ATTACHMENTS[dir].idle[0][slot], frame[slot]),
+                    `${heroId}.${dir}.${state}[${index}].${slot} misses its exact body segment`);
+                }
+            });
+        }
+    }
+}
 
 for (const dir of DIRECTIONS) {
     for (const [state, count] of Object.entries(FRAME_COUNTS)) {
@@ -286,42 +506,56 @@ for (const [label, neutral, current] of [
         `${label} was not rejected with a finite invalid identity`);
 }
 
-// Side art is canonical right-facing. A left-facing pose mirrors hand X once,
-// leaves Y untouched, and applies a finite mirrored segment transform.
-for (const [state, frames] of Object.entries(attachments?.side ?? {})) {
-    frames.forEach((frame, index) => {
-        const rightPose = resolveHeroPose(frameSet, 'right', state, index);
-        const leftPose = resolveHeroPose(frameSet, 'left', state, index);
-        const before = JSON.stringify(frame);
-        const rightHand = heroPosePoint(rightPose, 'handR');
-        const leftHand = heroPosePoint(leftPose, 'handR');
-        check(isDeepStrictEqual(rightHand, frame.handR),
-            `side.${state}[${index}] right hand changed canonical coordinates`);
-        check(near(leftHand?.[0], -frame.handR[0]) && near(leftHand?.[1], frame.handR[1]),
-            `side.${state}[${index}] left hand was not mirrored exactly once`);
-        check(isDeepStrictEqual(heroPosePoint(leftPose, 'handR'), leftHand)
-            && JSON.stringify(frame) === before,
-        `side.${state}[${index}] hand mirroring mutated or compounded its source point`);
+// Side art is canonical right-facing. Every hero's left-facing pose mirrors
+// hand X once and maps the mirrored CANONICAL asset neutral onto that hero's
+// mirrored body segment. Testing only the monkey tree would miss a double flip
+// or a regression that accidentally ignored bespoke `assetAttachments`.
+for (const heroId of HERO_IDS) {
+    const heroAttachments = HERO_POSE_ATTACHMENTS_BY_HERO[heroId];
+    const heroFrameSet = {
+        kind: 'contract-probe',
+        dirs: spriteDirs,
+        attachments: heroAttachments,
+        assetAttachments: HERO_POSE_ATTACHMENTS,
+    };
+    for (const [state, frames] of Object.entries(heroAttachments?.side ?? {})) {
+        frames.forEach((frame, index) => {
+            const rightPose = resolveHeroPose(heroFrameSet, 'right', state, index);
+            const leftPose = resolveHeroPose(heroFrameSet, 'left', state, index);
+            const before = JSON.stringify(frame);
+            const rightHand = heroPosePoint(rightPose, 'handR');
+            const leftHand = heroPosePoint(leftPose, 'handR');
+            const label = `${heroId}.side.${state}[${index}]`;
+            check(isDeepStrictEqual(rightHand, frame.handR),
+                `${label} right hand changed canonical coordinates`);
+            check(near(leftHand?.[0], -frame.handR[0]) && near(leftHand?.[1], frame.handR[1]),
+                `${label} left hand was not mirrored exactly once`);
+            check(isDeepStrictEqual(heroPosePoint(leftPose, 'handR'), leftHand)
+                && JSON.stringify(frame) === before,
+            `${label} hand mirroring mutated or compounded its source point`);
+            check(leftPose.assetNeutralAttachments === HERO_POSE_ATTACHMENTS.side.idle[0],
+                `${label} lost canonical asset-neutral anchors while flipped`);
 
-        for (const slot of SEGMENT_SLOTS) {
-            let captured = null;
-            const context = { transform: (...values) => { captured = values; } };
-            const applied = applyHeroAttachmentTransform(context, leftPose, slot);
-            check(applied === true && Array.isArray(captured)
-                && captured.length === 6 && captured.every(Number.isFinite),
-            `side.${state}[${index}].${slot} left transform was not applied finitely`);
-            if (applied) {
-                const matrix = {
-                    a: captured[0], b: captured[1], c: captured[2],
-                    d: captured[3], e: captured[4], f: captured[5], valid: true,
-                };
-                check(matrixMapsSegment(matrix,
-                    mirrorSegment(leftPose.neutralAttachments[slot]),
-                    mirrorSegment(leftPose.attachments[slot])),
-                `side.${state}[${index}].${slot} left transform double-mirrored its seat`);
+            for (const slot of SEGMENT_SLOTS) {
+                let captured = null;
+                const context = { transform: (...values) => { captured = values; } };
+                const applied = applyHeroAttachmentTransform(context, leftPose, slot);
+                check(applied === true && Array.isArray(captured)
+                    && captured.length === 6 && captured.every(Number.isFinite),
+                `${label}.${slot} left transform was not applied finitely`);
+                if (applied) {
+                    const matrix = {
+                        a: captured[0], b: captured[1], c: captured[2],
+                        d: captured[3], e: captured[4], f: captured[5], valid: true,
+                    };
+                    check(matrixMapsSegment(matrix,
+                        mirrorSegment(leftPose.assetNeutralAttachments[slot]),
+                        mirrorSegment(leftPose.attachments[slot])),
+                    `${label}.${slot} left transform double-mirrored its asset seat`);
+                }
             }
-        }
-    });
+        });
+    }
 }
 
 // Catalog vocabulary gate: every accessory a save can equip must have an
@@ -345,6 +579,8 @@ for (const item of COSMETIC_LIST.filter((cosmetic) => cosmetic.category === 'hat
 // Player and every menu avatar must consume the same pose/seat/hand contract.
 const playerSource = fs.readFileSync(PLAYER_PATH, 'utf8');
 const menuSource = fs.readFileSync(MENU_PATH, 'utf8');
+const heroAiSource = fs.readFileSync(HERO_AI_PATH, 'utf8');
+const proceduralSource = fs.readFileSync(PROCEDURAL_PATH, 'utf8');
 
 function importedNames(source) {
     const match = source.match(/import\s*\{([^}]*)\}\s*from\s*['"]\.\.\/assets\/HeroPose\.js['"]/m);
@@ -372,6 +608,30 @@ check(!/castPose\s*\?\s*50(?:\.0)?\s*:\s*31\.5/.test(menuSource)
 'MenuRenderer reintroduced the historical cast/rest 50/11 hand-anchor branch');
 check(!/\bcloakOx\b/.test(playerSource),
     'Player reintroduced whole-cloak cloakOx movement lag that detaches the collar');
+check(heroAiSource.includes('HERO_POSE_ATTACHMENTS_BY_HERO[id]'),
+    'bespoke hero sheets no longer select their own generated attachment tree');
+check(heroAiSource.includes('applyHeroAttachmentTransform(cx')
+    && heroAiSource.includes("}, 'headSeat')")
+    && heroAiSource.includes('assetNeutralAttachments: assetNeutral'),
+    'native hero identity features no longer follow the exported head-seat transform');
+check(heroAiSource.includes("['hat', 'horns', 'hood']")
+    && heroAiSource.includes("feature: null"),
+    'catalog hats no longer suppress replaceable native headwear overlays');
+const pixelArtSource = fs.readFileSync(PIXEL_ART_PATH, 'utf8');
+check(/death:\s*\[\[[^\]]+\]\]/.test(pixelArtSource)
+    && /victory:\s*\[\[[^\]]+\]\]/.test(pixelArtSource),
+    'native feature motion no longer defines death and victory states');
+check(/walk:\s*\[neutral,\s*neutral,\s*neutral\]/.test(proceduralSource),
+    'LPC compatibility fallback no longer keeps its unauthored walk anchors neutral');
+check(playerSource.includes("P.dir === 'up' ? 'behind' : 'front'"),
+    'held-prop layering no longer follows the resolved pose direction');
+const localTransformStart = playerSource.indexOf('ctx.translate(this.x, this.y + bobY)');
+const heldBehind = playerSource.indexOf("this._drawHeldWeapons(ctx, alpha, 'behind')", localTransformStart);
+const heldFront = playerSource.indexOf("this._drawHeldWeapons(ctx, alpha, 'front')", heldBehind);
+const localTransformEnd = playerSource.indexOf('ctx.restore();', heldFront);
+check(localTransformStart >= 0 && heldBehind > localTransformStart
+    && heldFront > heldBehind && localTransformEnd > heldFront,
+'held props must remain inside the same local animation transform as the body');
 
 if (failures > 0) {
     console.error(`Cosmetic attachment validation failed: ${failures}/${checks} checks failed `

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RUNNING hero contract</title>
+</head>
+<body>
+<script type="module">
+// Fast browser-native contract probe for the complete shipped hero matrix.
+// This deliberately draws no presentation UI: CI needs to prove that every
+// decoded sheet can build its real Canvas frames without silently dropping to
+// the procedural/monkey fallback hidden behind getAiHeroFrames' safety catch.
+
+import { loadHeroAiSprites } from '../../src/assets/HeroAiSprites.js';
+import { clearHeroFrameCache, getHeroFrames } from '../../src/assets/ProceduralSprites.js';
+import { resolveHeroPose } from '../../src/assets/HeroPose.js';
+import {
+    HERO_POSE_ATTACHMENTS,
+    HERO_POSE_ATTACHMENTS_BY_HERO,
+    HERO_POSE_FRAME_COUNTS,
+} from '../../src/assets/HeroPoseData.js';
+import { getCharacter } from '../../src/content/characters.js';
+
+const ERR = [];
+const HERO_IDS = ['monkey', 'elf', 'orc', 'wizard', 'berserker', 'assassin'];
+const DIRECTIONS = ['down', 'up', 'side'];
+const FACING = { down: 'down', up: 'up', side: 'right' };
+const REPLACEABLE = new Set(['wizard', 'berserker', 'assassin']);
+
+window.addEventListener('error', (event) => {
+    ERR.push(`window-error:${String(event.message || event.error || event)}`);
+});
+window.addEventListener('unhandledrejection', (event) => {
+    ERR.push(`promise:${String(event.reason)}`);
+});
+
+function check(condition, key, detail) {
+    if (!condition) ERR.push(`${key}:${detail}`);
+}
+
+function validCanvas(canvas, label) {
+    const valid = canvas instanceof HTMLCanvasElement
+        && canvas.width === 182
+        && canvas.height === 182;
+    check(valid, 'canvas-shape', label);
+    if (!valid) return false;
+    let pixels = null;
+    try {
+        pixels = canvas.getContext('2d', { willReadFrequently: true })
+            ?.getImageData(0, 0, canvas.width, canvas.height).data;
+    } catch (error) {
+        ERR.push(`canvas-read:${label}:${String(error && error.message || error)}`);
+        return false;
+    }
+    let opaque = false;
+    for (let index = 3; pixels && index < pixels.length; index += 4) {
+        if (pixels[index] > 8) { opaque = true; break; }
+    }
+    check(opaque, 'canvas-empty', label);
+    return opaque;
+}
+
+function canvasHash(canvas) {
+    const pixels = canvas.getContext('2d', { willReadFrequently: true })
+        .getImageData(0, 0, canvas.width, canvas.height).data;
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < pixels.length; index++) {
+        hash ^= pixels[index];
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+}
+
+async function run() {
+    const loaded = await loadHeroAiSprites();
+    check(loaded === true, 'sheet-load', 'canonical monkey trio did not load');
+    // Boot may have cached procedural sets before assets resolved. The probe
+    // intentionally consumes the same public invalidation seam as production.
+    clearHeroFrameCache();
+
+    let variants = 0;
+    let frames = 0;
+    for (const heroId of HERO_IDS) {
+        const character = getCharacter(heroId);
+        const native = getHeroFrames(heroId, character, null, false);
+        const suppressed = getHeroFrames(heroId, character, null, true);
+        const variantsForHero = [
+            ['native', native],
+            ['suppressed', suppressed],
+        ];
+
+        const expectedAttachments = HERO_POSE_ATTACHMENTS_BY_HERO[heroId];
+        for (const [variantName, set] of variantsForHero) {
+            variants++;
+            const variantLabel = `${heroId}.${variantName}`;
+            check(set?.kind === 'pixel', 'render-tier', `${variantLabel} resolved ${set?.kind || 'null'}`);
+            check(set?.attachments === expectedAttachments,
+                'attachment-tree', `${variantLabel} did not select ${heroId} anchors`);
+            check(set?.assetAttachments === HERO_POSE_ATTACHMENTS,
+                'asset-neutral', `${variantLabel} lost canonical cosmetic authoring space`);
+
+            for (const direction of DIRECTIONS) {
+                for (const [state, count] of Object.entries(HERO_POSE_FRAME_COUNTS)) {
+                    const sprites = set?.dirs?.[direction]?.[state];
+                    check(Array.isArray(sprites) && sprites.length === count,
+                        'frame-count', `${variantLabel}.${direction}.${state}`);
+                    for (let index = 0; index < count; index++) {
+                        frames++;
+                        const label = `${variantLabel}.${direction}.${state}[${index}]`;
+                        const sprite = sprites?.[index];
+                        validCanvas(sprite, label);
+                        const pose = resolveHeroPose(set, FACING[direction], state, index);
+                        check(pose.sprite === sprite, 'sprite-pair', label);
+                        check(pose.attachments === expectedAttachments?.[direction]?.[state]?.[index],
+                            'anchor-pair', label);
+                        check(pose.neutralAttachments === expectedAttachments?.[direction]?.idle?.[0],
+                            'body-neutral', label);
+                        check(pose.assetNeutralAttachments === HERO_POSE_ATTACHMENTS?.[direction]?.idle?.[0],
+                            'asset-neutral-frame', label);
+                        check(pose.dir === direction && pose.state === state && pose.index === index,
+                            'pose-receipt', label);
+                    }
+                }
+            }
+        }
+
+        // Passing suppression for anatomical/non-feature heroes must be a true
+        // cache hit. Replaceable identity headwear must build a distinct bitmap
+        // with visibly different pixels, not merely a differently keyed wrapper.
+        const nativeSample = native?.dirs?.down?.idle?.[0];
+        const suppressedSample = suppressed?.dirs?.down?.idle?.[0];
+        const shouldDiffer = REPLACEABLE.has(heroId);
+        const identityDiffers = native !== suppressed && nativeSample !== suppressedSample;
+        let pixelsDiffer = false;
+        if (validCanvas(nativeSample, `${heroId}.native-sample`)
+            && validCanvas(suppressedSample, `${heroId}.suppressed-sample`)) {
+            pixelsDiffer = canvasHash(nativeSample) !== canvasHash(suppressedSample);
+        }
+        check(shouldDiffer ? identityDiffers && pixelsDiffer : native === suppressed && !pixelsDiffer,
+            'headwear-variant', `${heroId} expected ${shouldDiffer ? 'distinct' : 'shared'} canvases`);
+    }
+
+    return { heroes: HERO_IDS.length, variants, frames, replaceable: REPLACEABLE.size };
+}
+
+function finish(receipt) {
+    const errorKeys = [...new Set(ERR.map((entry) => String(entry).split(':', 1)[0]))]
+        .sort()
+        .join(',');
+    const root = document.documentElement;
+    root.dataset.qaReady = '1';
+    root.dataset.qaHeroes = String(receipt.heroes);
+    root.dataset.qaVariants = String(receipt.variants);
+    root.dataset.qaFrames = String(receipt.frames);
+    root.dataset.qaReplaceable = String(receipt.replaceable);
+    root.dataset.qaErrorKeys = errorKeys;
+    window.__heroContractReceipt = {
+        done: true,
+        exceptions: ERR.length,
+        errorKeys,
+        ...receipt,
+    };
+    document.title = `DONE EXC:${ERR.length} heroes:${receipt.heroes}`
+        + ` variants:${receipt.variants} frames:${receipt.frames}`
+        + ` replaceable:${receipt.replaceable}`;
+}
+
+run().then(finish).catch((error) => {
+    ERR.push(`boot:${String(error && error.stack || error)}`);
+    finish({ heroes: 0, variants: 0, frames: 0, replaceable: REPLACEABLE.size });
+});
+</script>
+</body>
+</html>

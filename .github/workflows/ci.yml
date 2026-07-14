@@ -122,6 +122,33 @@ jobs:
           CHROME=$(ls /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 || true)
           CHROME=${CHROME:-$(command -v google-chrome || command -v chromium-browser || command -v chromium)}
           echo "Using browser: $CHROME"
+
+          # Build every shipped hero through the real browser Canvas path before
+          # the gameplay smoke. This catches bespoke-sheet decode/build failures
+          # that getAiHeroFrames intentionally hides behind its safe fallback.
+          HERO_CONTRACT_DOM=/tmp/hero-contract.html
+          HERO_CONTRACT_PROFILE=$(mktemp -d)
+          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+            --disable-background-networking --disable-component-update \
+            --force-device-scale-factor=1 --window-size=1280,720 \
+            --virtual-time-budget=10000 --user-data-dir="$HERO_CONTRACT_PROFILE" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/herocontract.html" \
+            > "$HERO_CONTRACT_DOM"
+          HERO_CONTRACT_TITLE=$(grep -o '<title>[^<]*</title>' "$HERO_CONTRACT_DOM" | head -1)
+          echo "Hero contract: $HERO_CONTRACT_TITLE"
+          echo "$HERO_CONTRACT_TITLE" | grep -q \
+            'DONE EXC:0 heroes:6 variants:12 frames:324 replaceable:3' || {
+              echo 'FAIL: browser hero matrix did not pass'; exit 1;
+            }
+          grep -q 'data-qa-ready="1"' "$HERO_CONTRACT_DOM" \
+            && grep -q 'data-qa-heroes="6"' "$HERO_CONTRACT_DOM" \
+            && grep -q 'data-qa-variants="12"' "$HERO_CONTRACT_DOM" \
+            && grep -q 'data-qa-frames="324"' "$HERO_CONTRACT_DOM" \
+            && grep -q 'data-qa-replaceable="3"' "$HERO_CONTRACT_DOM" \
+            && grep -q 'data-qa-error-keys=""' "$HERO_CONTRACT_DOM" || {
+              echo 'FAIL: browser hero matrix omitted its QA receipt'; exit 1;
+            }
+
           # --dump-dom serializes the page after the virtual-time budget, so
           # the <title> carries the harness's final "DONE EXC:<n> enemies:<m>".
           "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \

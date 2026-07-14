@@ -167,23 +167,27 @@ async function boot() {
             sctx.drawImage(canvas, px - crop / 2, py - crop / 2, crop, crop, c * CELL, r * CELL, CELL, CELL);
         }
     }
-    sheet.toBlob((blob) => {
-        fetch('/__save/' + OUT, { method: 'PUT', body: blob })
-            .then(() => {
-                const receipt = {
-                    done: true,
-                    exceptions: ERR.length,
-                    rows: ROWS.length,
-                    anchors: SHOW_ANCHORS ? 1 : 0,
-                };
-                window.__heroSheetReceipt = receipt;
-                // Keep the legacy DONE EXC:<n> prefix intact for callers while
-                // exposing the selected matrix size and anchor-fixture state.
-                document.title = 'DONE EXC:' + ERR.length
-                    + ' rows:' + receipt.rows + ' anchors:' + receipt.anchors;
-            })
-            .catch((e) => { document.title = 'SAVEFAIL'; });
-    }, 'image/png');
+    try {
+        const blob = await new Promise((resolve, reject) => sheet.toBlob(
+            (value) => value ? resolve(value) : reject(new Error('sheet.toBlob returned null')),
+            'image/png'));
+        const response = await fetch('/__save/' + OUT, { method: 'PUT', body: blob });
+        if (!response.ok) throw new Error(`save returned ${response.status}`);
+        const receipt = {
+            done: true,
+            exceptions: ERR.length,
+            rows: ROWS.length,
+            anchors: SHOW_ANCHORS ? 1 : 0,
+        };
+        window.__heroSheetReceipt = receipt;
+        // Keep the legacy DONE EXC:<n> prefix intact for callers while
+        // exposing the selected matrix size and anchor-fixture state.
+        document.title = 'DONE EXC:' + ERR.length
+            + ' rows:' + receipt.rows + ' anchors:' + receipt.anchors;
+    } catch (error) {
+        ERR.push('save: ' + String(error && error.message || error));
+        document.title = 'SAVEFAIL';
+    }
 }
 boot().catch((e) => { ERR.push(String(e && e.stack || e)); document.title = 'BOOTFAIL:' + String(e).slice(0, 60); });
 </script>

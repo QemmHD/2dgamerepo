@@ -121,6 +121,7 @@ const BADGE = params.get('badge') === '1';
 const SCREEN = params.get('screen') || 'run';   // 'run' | 'menu'
 const TAB = params.get('tab') || 'play';
 const QA_DEV = params.get('dev') === '1';
+const OUT = params.get('out');
 // showcase="1" (all) or a csv of enemy types → spawn a ring of them around the
 // player and shoot after a short settle, so a verification frame shows the exact
 // sprites regardless of when they'd naturally spawn.
@@ -906,6 +907,21 @@ async function boot() {
     qaRoot.dataset.qaErrorKeys = [...new Set(ERR.map((entry) => String(entry).split(':', 1)[0]))]
         .sort()
         .join(',');
+    // In-app browser QA cannot rely on OS-level screenshot flags. When an
+    // output name is requested, persist the exact production canvas through
+    // the existing local artshot PUT endpoint before publishing DONE.
+    if (OUT) {
+        try {
+            const blob = await new Promise((resolve, reject) => canvas.toBlob(
+                (value) => value ? resolve(value) : reject(new Error('canvas.toBlob returned null')),
+                'image/png'));
+            const response = await fetch('/__save/' + OUT, { method: 'PUT', body: blob });
+            if (!response.ok) throw new Error(`save returned ${response.status}`);
+            qaRoot.dataset.qaOutput = OUT;
+        } catch (error) {
+            ERR.push('save: ' + String(error && error.message || error));
+        }
+    }
     qaRoot.dataset.qaReady = '1';
     document.title = 'DONE EXC:' + ERR.length + ' enemies:' + (game.enemies ? game.enemies.length : -1) +
         ' map:' + (game._obstacleBiome || 'unknown') + qaBossSummary
