@@ -58,6 +58,7 @@ from mathutils import Vector  # noqa: E402
 from PIL import Image  # noqa: E402
 
 import monkey_rig as MR  # noqa: E402
+import hero_presets as HP  # noqa: E402
 
 RAW_DIR = os.path.join(HERE, 'raw')
 FRAME_DIR = os.path.join(RAW_DIR, 'frames')
@@ -142,17 +143,16 @@ def shifted_anchor(point, direction_dy):
 def main():
     os.makedirs(FRAME_DIR, exist_ok=True)
 
-    # Hero variant: HERO_NAME picks the output sheet/anchor prefix, HERO_PARAMS
-    # (optional JSON path) supplies a proportion/palette delta merged over
-    # DEFAULT_PARAMS. Unset => the canonical monkey (identical to before).
+    # Hero variant: HERO_NAME picks the output sheet/anchor prefix. The five
+    # shipped variants auto-load their committed hero_params/<name>.json delta;
+    # HERO_PARAMS remains an explicit override for one-off/new variants.
+    # Unset => the canonical monkey (identical to before).
     hero = os.environ.get('HERO_NAME', 'monkey')
-    delta = None
-    pj = os.environ.get('HERO_PARAMS')
-    if pj and os.path.exists(pj):
-        with open(pj) as f:
-            delta = json.load(f)
-        print(f'HERO {hero}: applying {len(delta)} param override(s) from {pj}',
-              flush=True)
+    delta, preset_path, preset_digest = HP.load_hero_delta(
+        hero, MR.DEFAULT_PARAMS, os.environ.get('HERO_PARAMS'))
+    if delta is not None:
+        print(f'HERO {hero}: applying {len(delta)} param override(s) from '
+              f'{preset_path} (sha256 {preset_digest[:12]})', flush=True)
 
     rig = MR.build_rigged_monkey(params=delta)
     P = rig['params']
