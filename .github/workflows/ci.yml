@@ -56,6 +56,9 @@ jobs:
       - name: Validate exact campaign map progression
         run: node tools/validate-campaign-progression.js
 
+      - name: Validate deterministic guided Run Path
+        run: node tools/validate-run-objectives.js
+
       - name: Validate fair gambling economy and disclosures
         run: node tools/validate-gambling-economy.js
 
@@ -154,7 +157,7 @@ jobs:
 
           # --dump-dom serializes the page after the virtual-time budget, so
           # the <title> carries the harness's final "DONE EXC:<n> enemies:<m>".
-          "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
             --autoplay-policy=no-user-gesture-required \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1600,900 \
@@ -175,14 +178,44 @@ jobs:
           while IFS='|' read -r EXPECTED_MAP QUERY; do
             MATRIX_INDEX=$((MATRIX_INDEX + 1))
             MATRIX_DOM="/tmp/harness-matrix-${MATRIX_INDEX}.html"
-            MATRIX_PROFILE=$(mktemp -d)
-            "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-              --autoplay-policy=no-user-gesture-required \
-              --disable-background-networking --disable-component-update \
-              --force-device-scale-factor=1 --window-size=1280,720 \
-              --virtual-time-budget=7000 --user-data-dir="$MATRIX_PROFILE" \
-              --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&badge=1&${QUERY}" \
-              > "$MATRIX_DOM"
+            MATRIX_TOUCH=false
+            MATRIX_WINDOW_WIDTH=1280
+            MATRIX_WINDOW_HEIGHT=720
+            MATRIX_ATTEMPTS=1
+            if [[ "&${QUERY}&" == *"&touch=1&"* ]]; then
+              MATRIX_TOUCH=true
+              MATRIX_WINDOW_WIDTH=667
+              MATRIX_WINDOW_HEIGHT=375
+              MATRIX_ATTEMPTS=3
+            fi
+            # Chrome's --window-size may describe outer bounds on one runner
+            # and the content viewport on another. Touch rows calibrate against
+            # the harness's real window.innerWidth/innerHeight receipt, then the
+            # final DOM must prove the exact 667x375 playable viewport.
+            for ((MATRIX_ATTEMPT=1; MATRIX_ATTEMPT<=MATRIX_ATTEMPTS; MATRIX_ATTEMPT++)); do
+              MATRIX_PROFILE=$(mktemp -d)
+              MATRIX_WINDOW="${MATRIX_WINDOW_WIDTH},${MATRIX_WINDOW_HEIGHT}"
+              timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+                --autoplay-policy=no-user-gesture-required \
+                --disable-background-networking --disable-component-update \
+                --force-device-scale-factor=1 --window-size="$MATRIX_WINDOW" \
+                --virtual-time-budget=7000 --user-data-dir="$MATRIX_PROFILE" \
+                --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&badge=1&${QUERY}" \
+                > "$MATRIX_DOM"
+              if [[ "$MATRIX_TOUCH" != true ]]; then break; fi
+              VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
+              VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
+              if [[ ! "$VIEWPORT_WIDTH" =~ ^[0-9]+$ || ! "$VIEWPORT_HEIGHT" =~ ^[0-9]+$ ]]; then
+                echo "FAIL: touch scenario '${QUERY}' omitted its numeric viewport receipt"; exit 1
+              fi
+              if (( VIEWPORT_WIDTH == 667 && VIEWPORT_HEIGHT == 375 )); then break; fi
+              MATRIX_WINDOW_WIDTH=$((MATRIX_WINDOW_WIDTH + 667 - VIEWPORT_WIDTH))
+              MATRIX_WINDOW_HEIGHT=$((MATRIX_WINDOW_HEIGHT + 375 - VIEWPORT_HEIGHT))
+              if (( MATRIX_WINDOW_WIDTH < 320 || MATRIX_WINDOW_WIDTH > 2048
+                || MATRIX_WINDOW_HEIGHT < 240 || MATRIX_WINDOW_HEIGHT > 2048 )); then
+                echo "FAIL: touch viewport calibration produced implausible outer bounds ${MATRIX_WINDOW_WIDTH}x${MATRIX_WINDOW_HEIGHT}"; exit 1
+              fi
+            done
             MATRIX_TITLE=$(grep -o '<title>[^<]*</title>' "$MATRIX_DOM" | head -1)
             echo "Matrix ${MATRIX_INDEX}: $MATRIX_TITLE"
             echo "$MATRIX_TITLE" | grep -q 'DONE EXC:0 ' || {
@@ -194,6 +227,12 @@ jobs:
             grep -q 'data-qa-ready="1"' "$MATRIX_DOM" || {
               echo "FAIL: matrix scenario '${QUERY}' omitted its QA receipt"; exit 1;
             }
+            if [[ "$MATRIX_TOUCH" == true ]]; then
+              grep -q 'data-qa-viewport-width="667"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-viewport-height="375"' "$MATRIX_DOM" || {
+                  echo "FAIL: touch scenario '${QUERY}' inner viewport was ${VIEWPORT_WIDTH:-missing}x${VIEWPORT_HEIGHT:-missing}; expected exact 667x375 after calibration"; exit 1;
+                }
+            fi
             if [[ "$QUERY" == *"input=keyboard"* ]]; then
               grep -q 'data-qa-input="keyboard"' "$MATRIX_DOM" || {
                 echo "FAIL: matrix scenario '${QUERY}' did not stage keyboard modality"; exit 1;
@@ -326,6 +365,106 @@ jobs:
                 echo "FAIL: matrix scenario '${QUERY}' did not retain the requested Mines focus"; exit 1;
               }
             fi
+            if [[ "&${QUERY}&" == *"&boss=1&"* ]]; then
+              grep -q 'data-qa-active-boss-id="stormwingAlpha"' "$MATRIX_DOM" || {
+                echo "FAIL: live boss phone fixture did not retain Stormwing Alpha"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ objectivephase=([a-z]+) ]]; then
+              EXPECTED_OBJECTIVE_PHASE="${BASH_REMATCH[1]}"
+              case "$EXPECTED_OBJECTIVE_PHASE" in
+                orientation) EXPECTED_OBJECTIVE_INDEX=0 ;;
+                tactic) EXPECTED_OBJECTIVE_INDEX=1 ;;
+                climax) EXPECTED_OBJECTIVE_INDEX=2 ;;
+              esac
+              grep -q "data-qa-objective-phase=\"${EXPECTED_OBJECTIVE_PHASE}\"" "$MATRIX_DOM" \
+                && grep -q 'data-qa-objective-id="[^\"]\+"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-objective-metric="[^\"]\+"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-objective-progress="[0-9]\+"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-objective-expected-progress="[0-9]\+"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-objective-target="[1-9][0-9]*"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-objective-status="active"' "$MATRIX_DOM" \
+                && grep -q "data-qa-objective-receipt=\"go[0-9a-z]\\+:${EXPECTED_OBJECTIVE_INDEX}:[A-Za-z0-9_-]\\+\"" "$MATRIX_DOM" || {
+                  echo "FAIL: matrix scenario '${QUERY}' omitted its complete Run Path receipt"; exit 1;
+                }
+              ACTUAL_OBJECTIVE_PROGRESS=$(grep -o 'data-qa-objective-progress="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
+              EXPECTED_OBJECTIVE_PROGRESS=$(grep -o 'data-qa-objective-expected-progress="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
+              [ "$ACTUAL_OBJECTIVE_PROGRESS" = "$EXPECTED_OBJECTIVE_PROGRESS" ] || {
+                echo "FAIL: matrix scenario '${QUERY}' did not stage its exact requested progress"; exit 1;
+              }
+              EXPECTED_OBJECTIVE_HUD="true"
+              if [[ "$QUERY" == *"pause=1"* || "$QUERY" == *"gameover=1"* || "$QUERY" == *"victory=1"* ]]; then
+                EXPECTED_OBJECTIVE_HUD="false"
+              fi
+              grep -q "data-qa-objective-hud-visible=\"${EXPECTED_OBJECTIVE_HUD}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' exposed the wrong persistent Run Path HUD state"; exit 1;
+              }
+              grep -q "data-qa-objective-rendered=\"${EXPECTED_OBJECTIVE_HUD}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not produce the matching Run Path draw receipt"; exit 1;
+              }
+              if [[ "$EXPECTED_OBJECTIVE_HUD" == true ]]; then
+                grep -q 'data-qa-objective-text-complete="true"' "$MATRIX_DOM" || {
+                  echo "FAIL: matrix scenario '${QUERY}' truncated its Run Path action or reward"; exit 1;
+                }
+                if [[ "$MATRIX_TOUCH" == true ]]; then
+                  EXPECTED_OBJECTIVE_VARIANT="phone"
+                  if [[ "&${QUERY}&" == *"&boss=1&"* ]]; then EXPECTED_OBJECTIVE_VARIANT="edge"; fi
+                  grep -q "data-qa-objective-variant=\"${EXPECTED_OBJECTIVE_VARIANT}\"" "$MATRIX_DOM" || {
+                    echo "FAIL: matrix scenario '${QUERY}' rendered the wrong phone Run Path variant"; exit 1;
+                  }
+                fi
+              fi
+              if [[ "$QUERY" == *"gameover=1"* ]]; then
+                grep -q 'data-qa-objective-a11y=""' "$MATRIX_DOM" || {
+                  echo "FAIL: game-over matrix retained a stale current-objective description"; exit 1;
+                }
+              else
+                grep -q 'data-qa-objective-a11y="[^\"]\+"' "$MATRIX_DOM" || {
+                  echo "FAIL: matrix scenario '${QUERY}' omitted current-objective accessibility copy"; exit 1;
+                }
+              fi
+              if [[ "$QUERY" != *"pause=1"* && "$QUERY" != *"gameover=1"* && "$QUERY" != *"victory=1"* ]]; then
+                grep -q 'data-qa-canvas-label="EMBERWAKE gameplay' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-live-status="[^\"]\+"' "$MATRIX_DOM" || {
+                    echo "FAIL: active objective lost its canvas label or live announcement"; exit 1;
+                  }
+              fi
+            fi
+            if [[ "$QUERY" == *"pause=1"* ]]; then
+              grep -q 'data-qa-paused="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-pause-rendered="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-canvas-label="EMBERWAKE paused run' "$MATRIX_DOM" \
+                && grep -q 'data-qa-live-status="Game paused' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not open the production pause overlay"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"gameover=1"* ]]; then
+              grep -q 'data-qa-game-over="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-game-over-rendered="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-canvas-label="EMBERWAKE run summary' "$MATRIX_DOM" \
+                && grep -q 'data-qa-live-status="Run over' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not settle the production game-over path"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" == *"victory=1"* ]]; then
+              grep -q 'data-qa-victory="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-victory-rendered="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-canvas-label="EMBERWAKE victory' "$MATRIX_DOM" \
+                && grep -q 'data-qa-live-status="VIGIL TRIUMPHANT' "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not open the production victory path"; exit 1;
+              }
+            fi
+            if [[ "$QUERY" =~ runmode=([a-z-]+) ]]; then
+              grep -q "data-qa-run-mode=\"${BASH_REMATCH[1]}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not preserve Run Path mode '${BASH_REMATCH[1]}'"; exit 1;
+              }
+              if [[ "${BASH_REMATCH[1]}" == "boss-rush" || "${BASH_REMATCH[1]}" == "weekly" ]]; then
+                grep -q 'data-qa-boss-rush-active="true"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-gauntlet-metric-safe="true"' "$MATRIX_DOM" || {
+                    echo "FAIL: gauntlet scenario '${QUERY}' lacks its controller or selected an unsafe metric"; exit 1;
+                  }
+              fi
+            fi
           done <<'MATRIX'
           emberwood|map=emberwood&tp=buildingInside
           hollowreach|map=hollowreach&tp=buildingExterior
@@ -342,6 +481,13 @@ jobs:
           emberwood|uiscale=130&contrast=1&statuses=all&captions=1&captiondetail=full&caption=danger
           emberwood|captions=1&captiondetail=essential&caption=voice
           emberwood|captions=1&vibration=full&bosswarning=1
+          emberwood|objectivephase=orientation&objectiveprogress=0.4&runmode=standard
+          emberwood|objectivephase=tactic&objectiveprogress=0.5&runmode=boss-rush
+          emberwood|objectivephase=tactic&objectiveprogress=0.5&runmode=standard&pause=1
+          emberwood|objectivephase=tactic&objectiveprogress=0.5&runmode=standard&gameover=1
+          emberwood|objectivephase=tactic&objectiveprogress=0.5&runmode=standard&victory=1
+          emberwood|objectivephase=climax&objectiveprogress=0.65&runmode=weekly&touch=1&uiscale=130&reduced=1&contrast=1
+          emberwood|objectivephase=climax&objectiveprogress=0.65&runmode=weekly&touch=1&uiscale=130&reduced=1&contrast=1&boss=1&bossid=stormwingAlpha&bossframes=1
           emberwood|screen=menu&tab=battlepass&bpxp=12600&bpclaimthrough=12&bpreceipt=1
           emberwood|screen=menu&tab=shop&mines=250&minessafe=3&input=keyboard&minesFocus=7&reduced=1
           MATRIX
@@ -376,7 +522,7 @@ jobs:
           # coercing a screenshot into a different accessibility state.
           INVALID_DOM="/tmp/harness-invalid-controls.html"
           INVALID_PROFILE=$(mktemp -d)
-          "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
             --autoplay-policy=no-user-gesture-required \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1280,720 \
@@ -395,11 +541,26 @@ jobs:
             echo 'FAIL: invalid accessibility harness controls did not report every expected error key'; exit 1;
           }
 
+          INVALID_OBJECTIVE_DOM="/tmp/harness-invalid-objective-controls.html"
+          INVALID_OBJECTIVE_PROFILE=$(mktemp -d)
+          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+            --disable-background-networking --disable-component-update \
+            --force-device-scale-factor=1 --window-size=1280,720 \
+            --virtual-time-budget=7000 --user-data-dir="$INVALID_OBJECTIVE_PROFILE" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&runmode=chaos&objectivephase=middle&objectiveprogress=&pause=yes" \
+            > "$INVALID_OBJECTIVE_DOM"
+          INVALID_OBJECTIVE_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_OBJECTIVE_DOM" | head -1)
+          echo "Invalid Run Path controls: $INVALID_OBJECTIVE_TITLE"
+          echo "$INVALID_OBJECTIVE_TITLE" | grep -q 'DONE EXC:4 ' \
+            && grep -q 'data-qa-error-keys="param"' "$INVALID_OBJECTIVE_DOM" || {
+              echo 'FAIL: invalid Run Path controls did not fail closed'; exit 1;
+            }
+
           # Lexical strictness: the old numeric parser silently treated an empty
           # voicevol value as zero. The allowlist must reject that exact spelling.
           EMPTY_VOICE_DOM="/tmp/harness-invalid-empty-voice.html"
           EMPTY_VOICE_PROFILE=$(mktemp -d)
-          "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1280,720 \
             --virtual-time-budget=7000 --user-data-dir="$EMPTY_VOICE_PROFILE" \

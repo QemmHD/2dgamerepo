@@ -36,7 +36,7 @@ export const PAUSE_EXIT_CONFIRM_MS = 3000;
 export const DISCRETE_KEY_CODES = Object.freeze([
     'Backquote', 'F2',
     'Enter', 'Space', 'Escape',
-    'KeyC', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyM', 'KeyN', 'KeyP',
+    'KeyC', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyM', 'KeyN', 'KeyO', 'KeyP',
     'KeyR', 'KeyB', 'KeyS', 'KeyA',
     'BracketRight', 'Backslash',
     'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Digit7', 'Digit8', 'Digit9',
@@ -223,6 +223,17 @@ export const GameInputActionMethods = {
         // The hearth damps down while paused (soft whoosh + held music dim).
         if (this.paused) this.audio.pauseIn(); else this.audio.pauseOut();
         this.audio.setPaused(this.paused);
+        const heldCoins = this._guidedObjectiveHeldCoins?.() ?? 0;
+        if (this.paused) {
+            const heldCopy = heldCoins > 0
+                ? `${heldCoins} Run Path coins are held. Restart or leave forfeits them.`
+                : 'No Run Path coins are currently held.';
+            this.accessibility?.setScreen?.('paused', heldCopy);
+            this.accessibility?.announce?.(`Game paused. ${heldCopy}`);
+        } else {
+            this.accessibility?.setScreen?.('gameplay', 'Run resumed.');
+            this.accessibility?.announce?.('Run resumed.');
+        }
         this._updateJoystickEnabled();
     },
     cancelPauseExitConfirm() {
@@ -240,6 +251,12 @@ export const GameInputActionMethods = {
         if (!armed || armed.action !== action || !(armed.expiresAt > now)) {
             this.pauseExitConfirm = { action, expiresAt: now + PAUSE_EXIT_CONFIRM_MS };
             if (this.audio?.uiTick) this.audio.uiTick();
+            const heldCoins = this._guidedObjectiveHeldCoins?.() ?? 0;
+            const loss = heldCoins > 0
+                ? ` ${heldCoins} held Run Path coins will be forfeited.` : '';
+            this.accessibility?.announce?.(
+                `${action === 'restart' ? 'Restart' : 'Leave'} confirmation armed.${loss} Activate again to confirm.`,
+            );
             return false;
         }
 

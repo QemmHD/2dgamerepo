@@ -4,6 +4,7 @@
 // live-status channel, and stable names/keys for the existing hotspot router.
 
 import { normalizeUiScale } from './AccessibilityPreferences.js';
+import { runObjectiveAccessibilityText } from './RunObjectiveDirector.js';
 
 const TAB_LABELS = Object.freeze({
     home: 'Home',
@@ -39,6 +40,10 @@ const SETTING_LABELS = Object.freeze({
 function cleanText(value, fallback = 'Menu action') {
     const text = String(value ?? '').replace(/\s+/g, ' ').trim();
     return (text || fallback).slice(0, 240);
+}
+
+export function objectiveDescription(snapshot) {
+    return snapshot ? cleanText(runObjectiveAccessibilityText(snapshot), '') : '';
 }
 
 function stableValue(value) {
@@ -107,7 +112,11 @@ export class AccessibilityBridge {
         this.status = statusElement || (typeof document !== 'undefined'
             ? document.getElementById('game-status')
             : null);
+        this.objective = typeof document !== 'undefined'
+            ? document.getElementById('game-objective')
+            : null;
         this.lastMessage = '';
+        this.lastObjective = '';
         this.serial = 0;
 
         if (this.canvas && typeof this.canvas.setAttribute === 'function') {
@@ -115,7 +124,7 @@ export class AccessibilityBridge {
             this.canvas.setAttribute('role', 'application');
             this.canvas.setAttribute('aria-roledescription', 'survival action game');
             this.canvas.setAttribute('aria-label', 'EMBERWAKE main menu');
-            this.canvas.setAttribute('aria-describedby', 'game-instructions');
+            this.canvas.setAttribute('aria-describedby', 'game-instructions game-objective');
         }
     }
 
@@ -129,12 +138,24 @@ export class AccessibilityBridge {
         const suffix = cleanText(detail, '');
         const base = screen === 'gameplay'
             ? 'EMBERWAKE gameplay'
+            : screen === 'paused'
+                ? 'EMBERWAKE paused run'
             : screen === 'victory'
                 ? 'EMBERWAKE victory'
             : screen === 'gameOver'
                 ? 'EMBERWAKE run summary'
                 : 'EMBERWAKE main menu';
         this.canvas.setAttribute('aria-label', suffix ? `${base}. ${suffix}` : base);
+    }
+
+    // Queryable but deliberately non-live. Progress may update every frame;
+    // only assignment/completion events use the polite announcement channel.
+    setObjective(snapshot) {
+        const text = objectiveDescription(snapshot);
+        if (text === this.lastObjective) return false;
+        this.lastObjective = text;
+        if (this.objective) this.objective.textContent = text;
+        return true;
     }
 
     announce(message) {

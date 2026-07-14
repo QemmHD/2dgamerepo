@@ -113,6 +113,15 @@ export class UISystem {
         this._lastLevel = null;
         this._activeUiScale = 1;
         this._highContrast = false;
+        // Reused, allocation-free render receipt for visual regression tooling.
+        // A surface is true only when its real draw method completed this frame.
+        this._lastDrawReceipt = {
+            objective: false,
+            objectiveVariant: 'hidden',
+            objectiveTextComplete: false,
+            pause: false,
+            gameOver: false,
+        };
 
         // The redesigned tabbed main menu. Owns its own clickable hotspots,
         // which Game's pointer handler reads to dispatch menu actions.
@@ -149,7 +158,8 @@ export class UISystem {
             loadoutCount: (state.ownedWeapons?.length ?? 0) + (state.ownedPassives?.length ?? 0),
             relicCount: state.runRelics?.length ?? 0,
             abilityCount: state.abilityCooldowns?.length ?? 0,
-            hasVigil: !!state.vigilTracker,
+            hasObjective: !!state.runObjective,
+            hasVigil: !!state.vigilTracker && !state.runObjective,
             uiScale: normalizeUiScale(state.saveData?.settings?.uiScale),
             cssScale: cssW / INTERNAL_WIDTH,
         });
@@ -466,6 +476,12 @@ export class UISystem {
     }
 
     draw(ctx, gameState) {
+        const receipt = this._lastDrawReceipt;
+        receipt.objective = false;
+        receipt.objectiveVariant = 'hidden';
+        receipt.objectiveTextComplete = false;
+        receipt.pause = false;
+        receipt.gameOver = false;
         this._activeUiScale = uiScaleFactor(gameState.saveData?.settings?.uiScale);
         this._highContrast = gameState.saveData?.settings?.highContrast === true;
         this._reducedEffects = gameState.saveData?.settings?.reducedEffects === true;
@@ -481,6 +497,11 @@ export class UISystem {
         this._drawCommandRail(ctx, gameState, hud);
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
             this._drawComboMeter(ctx, gameState, hud);
+        }
+        if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward
+            && !gameState.altar && !gameState.paused && !gameState.victory
+            && !gameState.waveAnnouncement) {
+            receipt.objective = this._drawRunObjectiveCard(ctx, gameState, hud) === true;
         }
         this._drawBossPlate(ctx, gameState, hud);
         this._drawLieutenantBar(ctx, gameState, hud);
@@ -529,7 +550,7 @@ export class UISystem {
 
         // Overlay priority: game-over > chest > altar > level-up > pause.
         if (gameState.gameOver) {
-            this._drawGameOverOverlay(ctx, gameState);
+            receipt.gameOver = this._drawGameOverOverlay(ctx, gameState) === true;
         } else if (gameState.chestReward) {
             this._drawChestOverlay(ctx, gameState);
         } else if (gameState.altar) {
@@ -537,7 +558,7 @@ export class UISystem {
         } else if (gameState.upgradeChoices) {
             this._drawLevelUpOverlay(ctx, gameState);
         } else if (gameState.paused) {
-            this._drawPauseOverlay(ctx, gameState);
+            receipt.pause = this._drawPauseOverlay(ctx, gameState) === true;
         }
 
         // Transient hit/heal/level-up screen flashes paint last so they
@@ -546,6 +567,270 @@ export class UISystem {
     }
 
     // ── Top-center readout: big tabular timer + kills/coins ────────────
+    // One combined right-rail guidance owner: current Run Path task plus the
+    // compact Living Vigil context that previously required a second panel.
+    _drawRunObjectiveCard(ctx, state, hud) {
+        const objective = state.runObjective;
+        const r = hud.objective;
+        if (!objective || !r || r.w <= 0 || r.h <= 0) return;
+        const scale = hud.uiScale || 1;
+        const lanes = r.lanes || {};
+        const pad = lanes.pad ?? 18 * scale;
+        const accent = objective.accent || '#ffd166';
+        const highContrast = this._highContrast === true;
+        const metaPx = Math.max(12, Math.floor(r.metaPx || 15 * scale));
+        const titlePx = Math.max(metaPx, Math.floor(r.titlePx || 22 * scale));
+        const bodyPx = Math.max(12, Math.floor(r.bodyPx || 16 * scale));
+        const progressPx = Math.max(12, Math.floor(r.progressPx || 15 * scale));
+        const immediate = objective.vigilPrompt ?? null;
+        const bodyLabel = 'NEXT';
+        const body = objective.nextAction;
+        const vigil = state.vigilTracker;
+        const contextText = immediate?.title
+            ? `NOW · ${immediate.title}`
+            : vigil
+                ? `SITES ${vigil.activatedSites}/${vigil.siteKindTotal} · PACKS ${vigil.encountersCleared}`
+                : state.touchMode ? 'PATH ACTIVE' : 'O · HEAR TASK';
+        const contextColor = immediate?.color
+            || (highContrast ? '#ffffff' : 'rgba(225,216,203,0.62)');
+
+        ctx.save();
+        this._hudGlassPlate(ctx, r.x, r.y, r.w, r.h, 18 * scale, {
+            stroke: highContrast ? '#ffffff' : accent,
+        });
+        if (highContrast) {
+            roundRectPath(ctx, r.x + 4, r.y + 4, r.w - 8, r.h - 8, 14 * scale);
+            ctx.strokeStyle = '#050505';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            roundRectPath(ctx, r.x + 7, r.y + 7, r.w - 14, r.h - 14, 12 * scale);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        ctx.fillStyle = accent;
+        roundRectPath(ctx, r.x + pad, r.y + 7 * scale,
+            r.w - pad * 2, 4 * scale, 2 * scale);
+        ctx.fill();
+
+        const headerY = lanes.headerY ?? (r.y + pad + metaPx * 0.52);
+        const phaseSuffix = objective.substitution ? ' · SAFE ROUTE' : '';
+        const phaseText = lanes.compactPhase
+            ? `${objective.phaseNumeral} · ${objective.phaseLabel}${phaseSuffix}`
+            : `${objective.phaseNumeral} / III · ${objective.phaseLabel}${phaseSuffix}`;
+        const progressText = lanes.compactPhase
+            ? `${objective.current}/${objective.target}`
+            : `${objective.current} / ${objective.target}`;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.font = `850 ${metaPx}px ${MONO}`;
+        const progressWidth = ctx.measureText(progressText).width;
+        const headerGap = lanes.compactPhase
+            ? Math.max(6 * scale, metaPx * 0.18)
+            : Math.max(10 * scale, metaPx * 0.35);
+        const phaseFit = fitHudLabel(ctx, phaseText,
+            Math.max(0, r.w - pad * 2 - progressWidth - headerGap), {
+                weight: 850,
+                size: metaPx,
+                minSize: metaPx,
+                family: MONO,
+            });
+        this._textWithShadow(ctx, phaseFit.text, r.x + pad, headerY, accent);
+        ctx.textAlign = 'right';
+        this._textWithShadow(
+            ctx,
+            progressText,
+            r.x + r.w - pad,
+            headerY,
+            '#fff7e8',
+        );
+
+        const drawProgressBar = () => {
+            const barX = r.x + pad;
+            const barW = r.w - pad * 2;
+            const barH = lanes.barH ?? Math.max(7 * scale, 7);
+            const barY = lanes.barY
+                ?? (r.y + r.h - pad - progressPx - 12 * scale - barH);
+            this._hudBarTrack(ctx, barX, barY, barW, barH);
+            const fillW = barW * clamp01(objective.progress);
+            if (fillW > 0) {
+                roundRectPath(ctx, barX, barY, Math.max(barH, fillW), barH, barH / 2);
+                ctx.fillStyle = accent;
+                ctx.fill();
+            }
+            if (highContrast) {
+                roundRectPath(ctx, barX, barY, barW, barH, barH / 2);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        };
+
+        const drawFooter = ({
+            footerY,
+            rewardMaxW,
+            contextMaxW,
+            showContext = true,
+            minRewardSize = progressPx,
+        }) => {
+            const rewardText = state.objectiveRewardsEligible === false
+                ? 'NO COIN REWARD'
+                : `+${objective.reward.amount} COINS`;
+            const rewardFit = fitHudLabel(ctx, rewardText, rewardMaxW, {
+                weight: 800,
+                size: progressPx,
+                minSize: minRewardSize,
+                family: MONO,
+            });
+            ctx.font = `800 ${rewardFit.fontSize}px ${MONO}`;
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = state.objectiveRewardsEligible === false ? '#a9a1b5' : '#7fe0a0';
+            ctx.fillText(rewardFit.text, r.x + pad, footerY);
+            if (showContext) {
+                const contextFit = fitHudLabel(ctx, contextText, contextMaxW, {
+                    weight: 800,
+                    size: progressPx,
+                    minSize: progressPx,
+                    family: MONO,
+                });
+                ctx.font = `800 ${contextFit.fontSize}px ${MONO}`;
+                ctx.textAlign = 'right';
+                ctx.fillStyle = contextColor;
+                ctx.fillText(contextFit.text, r.x + r.w - pad, footerY);
+            }
+            return rewardFit;
+        };
+
+        // Phone guidance follows sequential lanes owned by HUDLayout. A normal
+        // card keeps its title and a three-line action. During a stacked duel,
+        // the narrow edge rail prioritises the complete action, progress, and
+        // reward over secondary title/context copy.
+        if (lanes.stackedAction) {
+            if (lanes.showTitle !== false && Number.isFinite(lanes.titleY)) {
+                const titleFit = fitHudLabel(ctx, objective.title, r.w - pad * 2, {
+                    weight: 850,
+                    size: titlePx,
+                    minSize: Math.max(metaPx, titlePx - 4),
+                    family: DISPLAY_FONT,
+                });
+                ctx.textAlign = 'left';
+                this._textWithShadow(ctx, titleFit.text,
+                    r.x + pad, lanes.titleY, '#fff4df');
+            }
+
+            ctx.font = `700 ${bodyPx}px ${FONT}`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = highContrast ? '#ffffff' : '#ffe0a3';
+            const actionWrap = wrapText(
+                ctx,
+                `${bodyLabel} · ${body}`,
+                r.x + pad,
+                lanes.bodyY,
+                r.w - pad * 2,
+                lanes.bodyLineHeight,
+                lanes.bodyLines,
+            );
+            drawProgressBar();
+
+            const showContext = lanes.showContext !== false
+                && state.objectiveRewardsEligible !== false;
+            const rewardFit = drawFooter({
+                footerY: lanes.footerY,
+                rewardMaxW: showContext ? r.w * 0.44 : r.w - pad * 2,
+                contextMaxW: r.w * 0.44,
+                showContext,
+            });
+            this._lastDrawReceipt.objectiveVariant = r.edgeCompact ? 'edge' : 'phone';
+            this._lastDrawReceipt.objectiveTextComplete = actionWrap?.truncated !== true
+                && rewardFit.truncated !== true;
+            ctx.restore();
+            return true;
+        }
+
+        if (r.dense) {
+            const contentY = lanes.titleY ?? (r.y + r.h * 0.46);
+            const titleMaxW = r.w * 0.39;
+            const denseTitle = fitHudLabel(ctx, objective.title, titleMaxW, {
+                weight: 850,
+                size: titlePx,
+                minSize: Math.max(metaPx, titlePx - 4),
+                family: DISPLAY_FONT,
+            });
+            ctx.textAlign = 'left';
+            this._textWithShadow(ctx, denseTitle.text, r.x + pad, contentY, '#fff4df');
+            const actionX = r.x + r.w * 0.44;
+            ctx.font = `700 ${bodyPx}px ${FONT}`;
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#ffd166';
+            const actionWrap = wrapText(
+                ctx,
+                `${bodyLabel} · ${body}`,
+                actionX,
+                lanes.bodyY ?? (contentY - bodyPx * 0.58),
+                r.x + r.w - pad - actionX,
+                lanes.bodyLineHeight ?? bodyPx * 1.02,
+                lanes.bodyLines ?? 2,
+            );
+            const rewardFit = drawFooter({
+                footerY: lanes.footerY ?? (r.y + r.h - progressPx - 15 * scale),
+                rewardMaxW: r.w * 0.45,
+                contextMaxW: r.w * 0.45,
+            });
+            drawProgressBar();
+            this._lastDrawReceipt.objectiveVariant = 'dense';
+            this._lastDrawReceipt.objectiveTextComplete = actionWrap?.truncated !== true
+                && rewardFit.truncated !== true;
+            ctx.restore();
+            return true;
+        }
+
+        const titleY = lanes.titleY ?? (r.y + r.h * 0.31);
+        const titleFit = fitHudLabel(ctx, objective.title, r.w - pad * 2, {
+            weight: 850,
+            size: titlePx,
+            minSize: Math.max(metaPx, titlePx - 4),
+            family: DISPLAY_FONT,
+        });
+        ctx.textAlign = 'left';
+        this._textWithShadow(ctx, titleFit.text, r.x + pad, titleY, '#fff4df');
+
+        const bodyY = lanes.bodyY ?? (r.y + r.h * 0.47);
+        ctx.font = `700 ${bodyPx}px ${FONT}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#ffd166';
+        ctx.fillText(`${bodyLabel} ·`, r.x + pad, bodyY);
+        const leadW = ctx.measureText(`${bodyLabel} · `).width;
+        ctx.fillStyle = highContrast ? '#ffffff' : 'rgba(244,235,221,0.82)';
+        const actionWrap = wrapText(
+            ctx,
+            body,
+            r.x + pad + leadW,
+            bodyY,
+            r.w - pad * 2 - leadW,
+            lanes.bodyLineHeight ?? bodyPx * 1.08,
+            lanes.bodyLines ?? 2,
+        );
+        drawProgressBar();
+
+        const denseFooter = r.dense || state.touchMode;
+        const rewardFit = drawFooter({
+            footerY: lanes.footerY ?? (r.y + r.h - pad - progressPx * 0.42),
+            rewardMaxW: r.w * (state.objectiveRewardsEligible === false
+                ? 0.43 : denseFooter ? 0.38 : 0.30),
+            contextMaxW: r.w * (state.objectiveRewardsEligible === false
+                ? 0.43 : denseFooter ? 0.50 : 0.56),
+            minRewardSize: denseFooter ? Math.max(12, progressPx - 3) : progressPx,
+        });
+        this._lastDrawReceipt.objectiveVariant = 'standard';
+        this._lastDrawReceipt.objectiveTextComplete = actionWrap?.truncated !== true
+            && rewardFit.truncated !== true;
+        ctx.restore();
+        return true;
+    }
+
     _drawCommandRail(ctx, state, hud) {
         const r = hud.header;
         const ws = state.waveState;
@@ -1180,7 +1465,8 @@ export class UISystem {
         // per-frame shadowBlur — this is the busiest moment on screen.
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
-        const throb = enraged ? 0.6 + 0.4 * Math.sin((state.time ?? 0) * 6) : 1;
+        const throb = enraged && !this._reducedEffects
+            ? 0.6 + 0.4 * Math.sin((state.time ?? 0) * 6) : 1;
         this._hudGlow(ctx, INTERNAL_WIDTH / 2, padTop - 18, enraged ? 70 : 52,
             enraged ? '#ff2a1e' : '#ff5a4a', (enraged ? 0.22 : 0.10) * throb);
         ctx.restore();
@@ -1386,8 +1672,9 @@ export class UISystem {
         alpha = Math.max(0, Math.min(1, alpha));
         if (alpha <= 0) return;
 
-        // Slide down into place on entry.
-        const slide = (1 - easeOutCubic(clamp01(t / fadeIn))) * -40;
+        // Reduced Effects retains the readable hold/fade but removes travel.
+        const reduced = this._reducedEffects === true;
+        const slide = reduced ? 0 : (1 - easeOutCubic(clamp01(t / fadeIn))) * -40;
         const centerY = INTERNAL_HEIGHT * 0.32 + slide;
         const panelW = 820 * this._activeUiScale;
         const panelH = 120 * this._activeUiScale;
@@ -1409,7 +1696,7 @@ export class UISystem {
         ctx.stroke();
 
         // Accent line sweeps across as it settles.
-        const sweep = easeOutCubic(clamp01(t / (fadeIn * 1.6)));
+        const sweep = reduced ? 1 : easeOutCubic(clamp01(t / (fadeIn * 1.6)));
         ctx.strokeStyle = `rgba(${rgb}, 0.85)`;
         ctx.lineWidth = 3;
         ctx.beginPath();
@@ -2341,13 +2628,40 @@ export class UISystem {
         ctx.font = `bold 96px ${FONT}`;
         ctx.fillText('PAUSED', INTERNAL_WIDTH / 2, INTERNAL_HEIGHT / 2 - 180);
 
+        const confirm = state.pauseExitConfirm;
+        const heldCoins = Math.max(0, Math.floor(state.objectiveCoinsHeld ?? 0));
+        const objective = state.runObjective;
+        if (objective) {
+            const reward = state.objectiveRewardsEligible === false
+                ? 'PRACTICE' : `+${objective.reward.amount} COIN REWARD`;
+            const line = `${objective.phaseLabel} ${objective.phaseIndex + 1}/3 · `
+                + `${objective.title} ${objective.current}/${objective.target} · ${reward}`;
+            ctx.font = `750 26px ${MONO}`;
+            ctx.fillStyle = objective.accent || '#ffd166';
+            const fit = fitHudLabel(ctx, line, 920, {
+                weight: 750, size: 26, minSize: 20, family: MONO,
+            });
+            ctx.font = `750 ${fit.fontSize}px ${MONO}`;
+            ctx.fillText(fit.text, INTERNAL_WIDTH / 2,
+                INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 126 : 108));
+        }
+        if (heldCoins > 0) {
+            const armed = confirm?.action === 'restart' || confirm?.action === 'menu';
+            ctx.font = `800 22px ${MONO}`;
+            ctx.fillStyle = armed ? '#ff8b80' : '#ffd166';
+            ctx.fillText(
+                `${heldCoins} COINS HELD · RESTART OR LEAVE FORFEITS THEM`,
+                INTERNAL_WIDTH / 2,
+                INTERNAL_HEIGHT / 2 - 88,
+            );
+        }
+
         const resume = this.getResumeButtonRect();
         this._drawSummaryButton(ctx, resume, 'RESUME', '#5fe87a',
             'rgba(95, 232, 122, 0.3)', this._pressAmt(state, 'resume'), true);
 
         const restart = this.getPauseRestartRect();
         const shop = this.getPauseShopRect();
-        const confirm = state.pauseExitConfirm;
         const restartArmed = confirm?.action === 'restart';
         const menuArmed = confirm?.action === 'menu';
         this._drawSummaryButton(ctx, restart, restartArmed ? 'CONFIRM RESTART' : 'RESTART',
@@ -2412,6 +2726,7 @@ export class UISystem {
             : 'P / Esc to resume';
         ctx.fillText(pauseHint, INTERNAL_WIDTH / 2, INTERNAL_HEIGHT - 60 - this.renderer.safeArea.bottom);
         ctx.restore();
+        return true;
     }
 
     // Bouncing world-space pointer at the CURRENT lesson's subject (nearest
@@ -2425,12 +2740,13 @@ export class UISystem {
         const cx = INTERNAL_WIDTH / 2, cy = INTERNAL_HEIGHT / 2;
         const sx = (tgt.x - cam.x) + cx;
         const sy = (tgt.y - cam.y) + cy;
-        const t = performanceNowSafe() * 0.001;
-        const bounce = 4 + 4 * Math.sin(t * 6);
+        const reduced = this._reducedEffects === true;
+        const t = reduced ? 0 : performanceNowSafe() * 0.001;
+        const bounce = reduced ? 0 : 4 + 4 * Math.sin(t * 6);
         const m = 96;
         ctx.save();
         if (sx >= m && sx <= INTERNAL_WIDTH - m && sy >= m && sy <= INTERNAL_HEIGHT - m) {
-            const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+            const pulse = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(t * 4);
             ctx.strokeStyle = `rgba(255,224,120,${0.45 + 0.4 * pulse})`;
             ctx.lineWidth = 3;
             ctx.beginPath(); ctx.arc(sx, sy, 30 + 6 * pulse, 0, Math.PI * 2); ctx.stroke();
@@ -2497,7 +2813,7 @@ export class UISystem {
             roundRectPath(ctx, cx0, y0, cw, chh, 16);
             ctx.fillStyle = 'rgba(8,7,12,0.9)'; ctx.fill();
             ctx.save();
-            ctx.globalAlpha = 0.7 + 0.3 * Math.sin(t * 4);
+            ctx.globalAlpha = this._reducedEffects ? 1 : 0.7 + 0.3 * Math.sin(t * 4);
             roundRectPath(ctx, cx0, y0, cw, chh, 16);
             ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
             ctx.restore();
@@ -2926,12 +3242,16 @@ export class UISystem {
     _drawGameOverOverlay(ctx, state) {
         const summary = state.runSummary;
         const sa = this.renderer.safeArea;
+        const reduced = this._reducedEffects === true;
         // Death BEAT: hold the frozen world — the hero collapsing in its death
         // pose — fully visible for ~0.6s before the overlay animates in. This
         // sits inside the window the dismiss-tap is already locked out for, so
         // the collapse reads before "GAME OVER" takes the screen.
         const DEATH_BEAT = 0.6;
-        const age = Math.max(0, (state.gameOverAge ?? (1 + DEATH_BEAT)) - DEATH_BEAT);
+        const rawAge = state.gameOverAge ?? (1 + DEATH_BEAT);
+        const age = reduced
+            ? (rawAge >= DEATH_BEAT ? 10 : 0)
+            : Math.max(0, rawAge - DEATH_BEAT);
 
         ctx.save();
         // Backdrop fades in.
@@ -2959,7 +3279,7 @@ export class UISystem {
             if (nb.wave) beaten.push('WAVE');
             if (nb.level) beaten.push('LEVEL');
             if (nb.kills) beaten.push('KILLS');
-            const pulse = 0.7 + 0.3 * ((Math.sin(age * 6) + 1) / 2);
+            const pulse = reduced ? 1 : 0.7 + 0.3 * ((Math.sin(age * 6) + 1) / 2);
             ctx.save();
             ctx.globalAlpha = pulse;
             ctx.fillStyle = '#ffd166';
@@ -2976,6 +3296,11 @@ export class UISystem {
         // BOSSFORGE — Boss Rush swaps the wave/objective-centric readout for a
         // gauntlet result: bosses felled, whether it was cleared, the apex reached,
         // time, and score. (The hero + build/weapons are on the recap card.)
+        const activePath = state.runObjective;
+        const pathDone = state.runPathSummary?.completedPhases ?? state.objectivesDone ?? 0;
+        const pathValue = activePath
+            ? `${pathDone}/3 · ${activePath.phaseLabel} ${activePath.current}/${activePath.target}`
+            : `${pathDone}/3${pathDone >= 3 ? ' · COMPLETE' : ''}`;
         const stats = summary.bossRush ? [
             [summary.bossRushLabel || 'Boss Rush', summary.bossRushCleared ? 'CLEARED!' : 'Fell short'],
             ['Bosses felled', `${summary.bossRushBosses ?? 0}/${summary.bossRushTotal ?? 0}`],
@@ -2983,6 +3308,7 @@ export class UISystem {
             ['Time', formatTime(summary.time)],
             ['Level', `Lv ${summary.level}`],
             ['Score', `${summary.bossRushScore ?? 0}`],
+            ['Run Path', pathValue],
             ['Coins earned', summary.coinsEarned],
         ] : [
             ['Survived', formatTime(summary.time)],
@@ -2990,7 +3316,7 @@ export class UISystem {
             ['Level', `Lv ${summary.level}`],
             ['Kills', summary.kills],
             ['Bosses', summary.bossesDefeated],
-            ['Objectives', `${state.objectivesDone ?? 0}/${state.objectivesTotal ?? 0}`],
+            ['Run Path', pathValue],
             ['Vigil sites', `${summary.vigilSitesActivated ?? 0}  •  ${summary.vigilSiteKindsMastered ?? 0}/4 kinds`],
             ['Tactical packs', summary.encountersCleared ?? 0],
             ['Beacon packs', summary.guardianPacksDefeated ?? 0],
@@ -3003,7 +3329,7 @@ export class UISystem {
         ctx.font = `28px ${FONT}`;
         for (let i = 0; i < stats.length; i++) {
             // Stagger stat rows in top-to-bottom.
-            const rowT = clamp01((age - 0.3 - i * 0.05) / 0.25);
+            const rowT = reduced ? 1 : clamp01((age - 0.3 - i * 0.05) / 0.25);
             if (rowT <= 0) continue;
             const col = i % 2;
             const row = Math.floor(i / 2);
@@ -3019,7 +3345,7 @@ export class UISystem {
         }
         ctx.globalAlpha = 1;
 
-        const tailT = clamp01((age - 0.55) / 0.3);
+        const tailT = reduced ? 1 : clamp01((age - 0.55) / 0.3);
         ctx.globalAlpha = tailT;
 
         ctx.textAlign = 'center';
@@ -3055,6 +3381,12 @@ export class UISystem {
                 color: '#ff5a8a',
             });
         }
+        if ((summary.objectiveCoins ?? 0) > 0) {
+            rewardLines.push({
+                text: `✓ RUN PATH · ${pathDone}/3 PHASES · +${summary.objectiveCoins} COINS BANKED ✓`,
+                color: '#7fe0a0',
+            });
+        }
         // Daily Road payout — the curated daily always pays score-band coins,
         // plus the first-clear-of-day free case (label carried on the summary).
         if (summary.dailyRoadScore != null) {
@@ -3075,7 +3407,7 @@ export class UISystem {
             rewardLines.push({ text: `🎁 COSMETIC UNLOCKED — ${summary.cosmeticUnlocks.join('  ·  ')}`, color: '#c08bff', cosmetic: true });
         const rewardBase = statsStartY + Math.ceil(stats.length / 2) * lineH + 52;
         if (rewardLines.length) {
-            const pulse = 0.7 + 0.3 * ((Math.sin(age * 5) + 1) / 2);
+            const pulse = reduced ? 1 : 0.7 + 0.3 * ((Math.sin(age * 5) + 1) / 2);
             ctx.save();
             ctx.textAlign = 'center';
             for (let i = 0; i < rewardLines.length; i++) {
@@ -3087,14 +3419,14 @@ export class UISystem {
                 if (cos) {
                     // The cosmetic-unlock line pops in with a bouncy scale + a pair
                     // of twinkling sparkles — the grind payoff deserves a flourish.
-                    const sc = 0.55 + 0.45 * easeOutBack(tailT);
+                    const sc = reduced ? 1 : 0.55 + 0.45 * easeOutBack(tailT);
                     const w = ctx.measureText(rewardLines[i].text).width;
                     ctx.save();
                     ctx.translate(INTERNAL_WIDTH / 2, ly);
                     ctx.scale(sc, sc);
                     ctx.fillText(rewardLines[i].text, 0, 0);
                     ctx.restore();
-                    for (let sgn = -1; sgn <= 1; sgn += 2) {
+                    for (let sgn = -1; !reduced && sgn <= 1; sgn += 2) {
                         const tw = 0.5 + 0.5 * Math.sin(age * 6 + sgn * 1.7);
                         this._sparkle(ctx, INTERNAL_WIDTH / 2 + sgn * (w * sc / 2 + 30), ly - 7,
                             6 + 5 * tw, rewardLines[i].color, tailT * (0.5 + 0.5 * tw));
@@ -3132,11 +3464,11 @@ export class UISystem {
 
         // Buttons fade in last. RESTART is the primary (filled, gentle
         // pulse); RETURN TO SHOP is secondary (outline).
-        const btnT = clamp01((age - 0.7) / 0.3);
+        const btnT = reduced ? 1 : clamp01((age - 0.7) / 0.3);
         ctx.globalAlpha = btnT;
         const restartBtn = this.getRestartButtonRect();
         const shopBtn = this.getReturnToShopButtonRect();
-        const pulse = 0.85 + 0.15 * ((Math.sin(age * 4) + 1) / 2);
+        const pulse = reduced ? 1 : 0.85 + 0.15 * ((Math.sin(age * 4) + 1) / 2);
         this._drawSummaryButton(ctx, restartBtn, 'RESTART', '#5fe87a',
             `rgba(95, 232, 122, ${0.32 * pulse})`,
             this._pressAmt(state, 'restart'), true);
@@ -3199,6 +3531,7 @@ export class UISystem {
         }
 
         ctx.restore();
+        return true;
     }
 
     _drawSummaryButton(ctx, btn, label, borderColor, fillColor, press = 0, primary = false) {
@@ -3481,6 +3814,7 @@ export function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 8) {
     const words = String(text).split(/\s+/);
     const lines = [];
     let line = '';
+    let truncated = false;
     for (let i = 0; i < words.length; i++) {
         const testLine = line ? line + ' ' + words[i] : words[i];
         if (ctx.measureText(testLine).width > maxWidth && line) {
@@ -3493,6 +3827,7 @@ export function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 8) {
                     last = last.slice(0, -1).trimEnd();
                 }
                 lines.push(last + '…');
+                truncated = true;
                 line = '';
                 break;
             }
@@ -3502,8 +3837,20 @@ export function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 8) {
             line = testLine;
         }
     }
-    if (line && lines.length < maxLines) lines.push(line);
+    if (line && lines.length < maxLines) {
+        if (ctx.measureText(line).width > maxWidth) {
+            while (line && ctx.measureText(line + '…').width > maxWidth) {
+                line = line.slice(0, -1).trimEnd();
+            }
+            line += '…';
+            truncated = true;
+        }
+        lines.push(line);
+    } else if (line) {
+        truncated = true;
+    }
     for (let i = 0; i < lines.length; i++) {
         ctx.fillText(lines[i], x, y + i * lineHeight);
     }
+    return { lines, truncated };
 }

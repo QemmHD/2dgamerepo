@@ -49,6 +49,7 @@ export function computeHUDLayout(options = {}) {
     const relicCount = Math.max(0, Math.floor(finiteOr(options.relicCount)));
     const abilityCount = Math.max(0, Math.floor(finiteOr(options.abilityCount)));
     const hasVigil = !!options.hasVigil;
+    const hasObjective = !!options.hasObjective;
     // UI scale is a screen-space HUD preference. It must never alter world or
     // camera coordinates, renderer fit, or the fixed touch-action discs.
     const uiScale = uiScaleFactor(options.uiScale);
@@ -167,12 +168,149 @@ export function computeHUDLayout(options = {}) {
     const controlSize = 96;
     const pause = rect(right - 228, top + 20, controlSize, controlSize);
     const combo = rect(right - 260, top + 140, 220, 68);
-    const vigilTop = Math.max(
+    const guidanceTop = Math.max(
         combo.y + combo.h + 16,
         activeBottom(boss, top),
         activeBottom(lieutenant, top),
         activeBottom(bossRush, top),
     );
+    // One right-rail guidance owner. The Run Path combines the current task and
+    // Living Vigil counts; once all three phases finish, the richer Vigil card
+    // can reclaim this same lane without stacking two equal-weight panels.
+    const phoneGuidance = touchMode && usableW * cssScale <= 700;
+    const objectiveRight = right - 38;
+    // A phone Run Path owns a real right rail instead of borrowing the combat
+    // centre. Forty CSS pixels remain between the player column and the card,
+    // even with a landscape safe inset or 130% Combat HUD text.
+    const phoneCenterGap = phoneGuidance ? Math.ceil(40 / cssScale) : 0;
+    const phoneRailLeft = centerX + phoneCenterGap;
+    const baseObjectiveW = (compact ? 620 : 420) * uiScale;
+    const objectiveW = phoneGuidance
+        ? Math.min(baseObjectiveW, Math.max(0, objectiveRight - phoneRailLeft))
+        : baseObjectiveW;
+    const objectiveMetaPx = Math.max(14 * uiScale, Math.ceil(16 / cssScale));
+    const objectiveTitlePx = Math.max(22 * uiScale, Math.ceil(17 / cssScale));
+    const objectiveBodyPx = Math.max(15 * uiScale, Math.ceil(16 / cssScale));
+    const objectiveProgressPx = Math.max(14 * uiScale, Math.ceil(16 / cssScale));
+    const objectiveH = Math.max(
+        (compact ? 230 : 172) * uiScale,
+        objectiveMetaPx + objectiveTitlePx + objectiveBodyPx * 2
+            + objectiveProgressPx + 70 * uiScale,
+        // At the 667x375 ship target some authored next actions need three
+        // lines at the 16 CSS-pixel accessibility floor. This height gives the
+        // title, action, bar, and reward sequential lanes instead of letting a
+        // percentage-based body run through the progress bar.
+        phoneGuidance ? Math.ceil(134 / cssScale) : 0,
+    );
+    const reservedAbilityY = touchMode ? bottom - 394 : bottom - 148;
+    const phoneAbilityGap = phoneGuidance ? Math.ceil(4 / cssScale) : 0;
+    const edgeCompactObjective = hasObjective && phoneGuidance
+        && guidanceTop + objectiveH + phoneAbilityGap > reservedAbilityY;
+    const denseObjective = hasObjective && compact && !phoneGuidance
+        && guidanceTop + objectiveH + 8 > reservedAbilityY;
+    const denseObjectiveW = Math.min(1320, Math.max(640, usableW - 64));
+    // During a stacked phone duel, the objective becomes a narrow/tall combat
+    // rail beside every top-centre plate. It keeps the complete next action and
+    // reward visible without laying a 69%-wide slab over the player's arena.
+    const centralPlateRight = Math.max(
+        header.x + header.w,
+        activeBottom(boss) ? boss.x + boss.w : 0,
+        activeBottom(lieutenant) ? lieutenant.x + lieutenant.w : 0,
+        activeBottom(bossRush) ? bossRush.x + bossRush.w : 0,
+    );
+    const edgeObjectiveX = edgeCompactObjective
+        ? Math.max(phoneRailLeft, centralPlateRight + Math.ceil(6 / cssScale))
+        : 0;
+    const edgeObjectiveY = combo.y + combo.h + 16;
+    const edgeObjectiveBottom = reservedAbilityY - phoneAbilityGap;
+    const allocatedObjectiveW = edgeCompactObjective
+        ? Math.max(0, objectiveRight - edgeObjectiveX)
+        : denseObjective ? denseObjectiveW : objectiveW;
+    const allocatedObjectiveH = edgeCompactObjective
+        ? Math.max(0, edgeObjectiveBottom - edgeObjectiveY)
+        : denseObjective
+            ? Math.max(164, reservedAbilityY - guidanceTop - 12)
+            : objectiveH;
+    const objective = hasObjective
+        ? Object.assign(rect(
+            edgeCompactObjective
+                ? edgeObjectiveX
+                : denseObjective
+                    ? centerX - allocatedObjectiveW / 2
+                    : objectiveRight - allocatedObjectiveW,
+            edgeCompactObjective ? edgeObjectiveY : guidanceTop,
+            allocatedObjectiveW,
+            allocatedObjectiveH,
+        ), {
+            uiScale,
+            metaPx: objectiveMetaPx,
+            titlePx: objectiveTitlePx,
+            bodyPx: objectiveBodyPx,
+            progressPx: objectiveProgressPx,
+            dense: denseObjective,
+            edgeCompact: edgeCompactObjective,
+            phone: phoneGuidance,
+            centerKeepoutPx: phoneGuidance ? 40 : 0,
+        })
+        : rect(0, 0, 0, 0);
+    if (hasObjective) {
+        const pad = phoneGuidance ? Math.ceil(6 / cssScale) : 18 * uiScale;
+        const barH = Math.max(7 * uiScale, 7);
+        const cssGap3 = phoneGuidance ? Math.ceil(3 / cssScale) : 0;
+        const cssGap6 = phoneGuidance ? Math.ceil(6 / cssScale) : 0;
+        let headerY = objective.y + pad + objectiveMetaPx * 0.52;
+        let titleY = objective.y + objective.h * 0.31;
+        let bodyY = objective.y + objective.h * 0.47;
+        let bodyLineHeight = objectiveBodyPx * 1.08;
+        let bodyLines = 2;
+        let footerY = objective.y + objective.h - pad - objectiveProgressPx * 0.42;
+        let barY = objective.y + objective.h - pad - objectiveProgressPx
+            - 12 * uiScale - barH;
+
+        if (edgeCompactObjective) {
+            headerY = objective.y + pad + objectiveMetaPx / 2;
+            titleY = null;
+            bodyY = headerY + objectiveMetaPx / 2 + Math.ceil(5 / cssScale);
+            bodyLineHeight = objectiveBodyPx * 1.02;
+            bodyLines = 4;
+            footerY = objective.y + objective.h - pad - objectiveProgressPx / 2;
+            barY = footerY - objectiveProgressPx / 2 - cssGap6 - barH;
+        } else if (phoneGuidance) {
+            headerY = objective.y + pad + objectiveMetaPx / 2;
+            titleY = headerY + objectiveMetaPx / 2 + cssGap3 + objectiveTitlePx / 2;
+            bodyY = titleY + objectiveTitlePx / 2 + cssGap3;
+            bodyLineHeight = objectiveBodyPx * 0.96;
+            bodyLines = 3;
+            footerY = objective.y + objective.h - pad - objectiveProgressPx / 2;
+            barY = footerY - objectiveProgressPx / 2 - cssGap6 - barH;
+        } else if (denseObjective) {
+            titleY = objective.y + objective.h * 0.46;
+            bodyY = titleY - objectiveBodyPx * 0.58;
+            bodyLineHeight = objectiveBodyPx * 1.02;
+            footerY = objective.y + objective.h - objectiveProgressPx - 15 * uiScale;
+            barY = objective.y + objective.h - barH - 5 * uiScale;
+        }
+
+        objective.lanes = {
+            pad,
+            headerY,
+            titleY,
+            bodyY,
+            bodyLineHeight,
+            bodyLines,
+            footerY,
+            barY,
+            barH,
+            bodyBarGap: barY - (bodyY + bodyLineHeight * (bodyLines - 1) + objectiveBodyPx),
+            barFooterGap: footerY - objectiveProgressPx / 2 - (barY + barH),
+            stackedAction: phoneGuidance,
+            showTitle: !edgeCompactObjective,
+            showContext: !edgeCompactObjective,
+            compactPhase: edgeCompactObjective,
+            minimumGap: phoneGuidance ? cssGap6 : 0,
+        };
+    }
+    const vigilTop = hasObjective ? activeBottom(objective, guidanceTop) : guidanceTop;
     const vigilW = 350 * uiScale;
     const vigilH = (compact ? 118 : 126) * uiScale;
     const vigil = hasVigil
@@ -185,7 +323,7 @@ export function computeHUDLayout(options = {}) {
     const pipGap = pipPitch - pipRadius * 2;
     const abilityLabelMaxW = pipPitch - 10;
     const abilityW = filteredAbilityCount > 0 ? filteredAbilityCount * pipPitch - 22 + 28 : 0;
-    const abilityY = touchMode ? bottom - 394 : bottom - 148;
+    const abilityY = reservedAbilityY;
     const abilities = Object.assign(rect(right - 28 - abilityW, abilityY, abilityW, 92), {
         pipPitch,
         pipRadius,
@@ -232,6 +370,7 @@ export function computeHUDLayout(options = {}) {
         uiScale,
         compact,
         touchMode,
+        cssScale,
         header,
         command,
         threat,
@@ -242,6 +381,7 @@ export function computeHUDLayout(options = {}) {
         loadout,
         pause,
         combo,
+        objective,
         vigil,
         abilities,
         kindle,

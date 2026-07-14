@@ -218,12 +218,12 @@ sourceCheck(renderSource, /encounterGuardian[\s\S]*?_drawEncounterGuardianMark/,
 sourceCheck(renderSource, /vigilSiteSystem\.drawAbove\(/, 'site interaction copy has an above-veil render pass');
 sourceCheck(renderSource, /const vigilLayout = this\.ui\.getHUDLayout\(gameplayUIState\);[\s\S]*?vigilTracker\.drawHUD\(ctx, vigilLayout\.vigil, \{[\s\S]*?compact: vigilLayout\.compact,[\s\S]*?uiScale,[\s\S]*?highContrast/,
     'tracker HUD consumes the shared layout rectangle and accessibility preferences');
-sourceCheck(renderSource, /const gameplayUIState = buildUIState\(this\);[\s\S]*?const largeAnnouncementActive = !!gameplayUIState\.waveAnnouncement;[\s\S]*?if \(this\.screen === 'gameplay' && this\.vigilTracker && !largeAnnouncementActive\) \{[\s\S]*?vigilTracker\.drawHUD/,
-    'large gameplay announcement deterministically suppresses the persistent tracker chip');
+sourceCheck(renderSource, /const gameplayUIState = buildUIState\(this\);[\s\S]*?const largeAnnouncementActive = !!gameplayUIState\.waveAnnouncement;[\s\S]*?if \(this\.screen === 'gameplay' && this\.vigilTracker[\s\S]*?!gameplayUIState\.runObjective && !gameplayUIState\.onboardingLesson[\s\S]*?&& !largeAnnouncementActive\) \{[\s\S]*?vigilTracker\.drawHUD/,
+    'announcements, tutorial guidance, and the combined Run Path suppress the competing tracker chip');
 sourceCheck(renderSource, /if \(this\.photoMode\.hudShown\) \{[\s\S]*?const vigilLayout = this\.ui\.getHUDLayout\(photoUIState\);[\s\S]*?vigilTracker\.drawHUD\(ctx, vigilLayout\.vigil, \{[\s\S]*?compact: vigilLayout\.compact,[\s\S]*?uiScale,[\s\S]*?highContrast,[\s\S]*?this\.ui\.draw\(ctx, photoUIState\)/,
     'photo mode HUD toggle passes the Living Vigil layout and accessibility preferences');
 const photoModeRenderSource = renderSource.match(/if \(this\.photoMode\) \{[\s\S]*?\n            return;\n        \}/)?.[0] || '';
-sourceCheck(photoModeRenderSource, /if \(this\.screen === 'gameplay' && this\.vigilTracker\) \{[\s\S]*?vigilTracker\.drawHUD/,
+sourceCheck(photoModeRenderSource, /if \(this\.screen === 'gameplay' && this\.vigilTracker[\s\S]*?!photoUIState\.runObjective && !photoUIState\.onboardingLesson\) \{[\s\S]*?vigilTracker\.drawHUD/,
     'photo-mode HUD keeps its normal tracker behavior during annotated shots');
 check(!photoModeRenderSource.includes('largeAnnouncementActive'),
     'gameplay announcement suppression does not leak into photo mode');
@@ -235,7 +235,8 @@ check(renderSource.indexOf('vigilSiteSystem.drawAbove') < renderSource.indexOf('
     'site prompt is composed before the final HUD without bypassing it');
 sourceCheck(uiStateSource, /base\.vigilTracker = game\.vigilTracker\?\.getSnapshot\?\.\(\) \?\? null/,
     'UI state exposes only a defensive tracker snapshot');
-sourceCheck(uiSource, /hasVigil: !!state\.vigilTracker/, 'UI layout allocation is gated by tracker presence');
+sourceCheck(uiSource, /hasVigil: !!state\.vigilTracker && !state\.runObjective/,
+    'UI layout gives the Run Path sole ownership of the guidance lane');
 sourceCheck(uiSource, /\['Vigil sites',[\s\S]*?vigilSiteKindsMastered[\s\S]*?\['Tactical packs'[\s\S]*?\['Beacon packs'/,
     'game-over summary separates exploration, tactical packs, and beacon packs');
 sourceCheck(uiSource, /Waylight \$\{receipt\.waylightWithinDeeds\} of Deeds/,

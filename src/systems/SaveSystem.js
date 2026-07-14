@@ -7,6 +7,11 @@
 
 import { DEFAULT_UNLOCKED_GEAR, DEFAULT_EQUIPPED_GEAR, GEAR_LIST } from '../content/gear.js';
 import { DEFAULT_UNLOCKED_COSMETICS, DEFAULT_EQUIPPED_COSMETICS, COSMETIC_LIST } from '../content/cosmetics.js';
+import {
+    RUN_OBJECTIVE_CANDIDATES,
+    RUN_OBJECTIVE_MAX_REWARD_MULTIPLIER,
+    RUN_OBJECTIVE_PHASES,
+} from '../content/objectives.js';
 import { CHARACTER_IDS, DEFAULT_CHARACTER } from '../content/characters.js';
 import { MAPS, DEFAULT_MAP } from '../content/maps.js';
 import { PERMANENT_UPGRADES } from '../content/permanentUpgrades.js';
@@ -40,11 +45,79 @@ import {
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
 export const MAX_COIN_BALANCE = Number.MAX_SAFE_INTEGER;
+export const GUIDED_OBJECTIVE_SCHEMA = 1;
+export const GUIDED_OBJECTIVE_RECEIPT_LIMIT = 96;
+const GUIDED_OBJECTIVE_META = new Map(RUN_OBJECTIVE_PHASES.flatMap((phase, phaseIndex) =>
+    (RUN_OBJECTIVE_CANDIDATES[phase.id] || []).map((objective) => [objective.id, {
+        phaseIndex,
+        reward: objective.reward,
+    }])));
+const GUIDED_OBJECTIVE_RECEIPT_RE = /^go([0-9a-z]{1,46}):([0-2]):([A-Za-z0-9_-]{1,64})$/;
+const GUIDED_OBJECTIVE_RUN_RE = /^go([0-9a-z]{1,46})$/;
 const UPGRADE_MAX_BY_ID = Object.freeze(Object.fromEntries(
     PERMANENT_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxLevel]),
 ));
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+function parseGuidedObjectiveReceiptId(value) {
+    if (typeof value !== 'string') return false;
+    const match = GUIDED_OBJECTIVE_RECEIPT_RE.exec(value);
+    if (!match) return null;
+    const meta = GUIDED_OBJECTIVE_META.get(match[3]);
+    if (!meta || meta.phaseIndex !== Number(match[2])) return null;
+    const serial = Number.parseInt(match[1], 36);
+    if (!Number.isSafeInteger(serial) || serial < 1) return null;
+    return { receiptId: value, serial, objectiveId: match[3], ...meta };
+}
+
+function parseGuidedObjectiveRunSerial(value) {
+    if (typeof value !== 'string') return 0;
+    const match = GUIDED_OBJECTIVE_RUN_RE.exec(value);
+    if (!match) return 0;
+    const serial = Number.parseInt(match[1], 36);
+    return Number.isSafeInteger(serial) && serial > 0 ? serial : 0;
+}
+
+function normalizeGuidedObjectives(raw) {
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const receipts = [];
+    const seen = new Set();
+    const seenSlots = new Set();
+    let maxRetainedSerial = 0;
+    if (Array.isArray(source.receipts)) {
+        for (const value of source.receipts) {
+            const parsed = parseGuidedObjectiveReceiptId(value);
+            const slot = parsed ? `${parsed.serial}:${parsed.phaseIndex}` : null;
+            if (!parsed || seen.has(value) || seenSlots.has(slot)) continue;
+            seen.add(value);
+            seenSlots.add(slot);
+            receipts.push(value);
+            maxRetainedSerial = Math.max(maxRetainedSerial, parsed.serial);
+        }
+    }
+    const suppliedNext = Number.isSafeInteger(source.nextRunId) && source.nextRunId > 0
+        ? source.nextRunId : 1;
+    // Never reissue a retained run prefix after a malformed/rolled-back save.
+    // Otherwise a legitimate new completion would look like a duplicate and
+    // silently pay zero.
+    const nextRunId = Math.min(
+        MAX_COIN_BALANCE,
+        Math.max(suppliedNext, maxRetainedSerial + 1),
+    );
+    const suppliedActive = Number.isSafeInteger(source.activeRunSerial)
+        && source.activeRunSerial > 0 ? source.activeRunSerial : 0;
+    const activeRunSerial = suppliedActive > 0
+        && (suppliedActive + 1 === nextRunId
+            || (suppliedActive === MAX_COIN_BALANCE && nextRunId === 1))
+        ? suppliedActive : 0;
+    return {
+        schema: GUIDED_OBJECTIVE_SCHEMA,
+        nextRunId,
+        activeRunSerial,
+        receipts: receipts.slice(-GUIDED_OBJECTIVE_RECEIPT_LIMIT),
+    };
+}
 
 // OS motion preference is consulted only when creating a genuinely fresh
 // profile (including an in-memory/corrupt/reset profile). Existing saves keep
@@ -217,6 +290,15 @@ function defaultData({ reducedEffects = false } = {}) {
         // analogue of riteTrial's best-of-day (auto-resets when the week rolls;
         // prevBest keeps LAST week's best across the roll). Additive, no wipe.
         weeklyEmber: { week: 0, best: 0, prevBest: 0 },
+        // Stable, bounded receipts for the three-phase guided Run Path. Rewards
+        // stay escrowed in run memory until a genuine death/victory, then this
+        // ledger makes the single final credit replay-safe.
+        guidedObjectives: {
+            schema: GUIDED_OBJECTIVE_SCHEMA,
+            nextRunId: 1,
+            activeRunSerial: 0,
+            receipts: [],
+        },
         version: CAMPAIGN_SAVE_VERSION,
     };
 }
@@ -255,8 +337,18 @@ export class SaveSystem {
         // QA map access is intentionally session-only. It must never contaminate
         // campaign progression, selection, or serialized settings.
         this._session = { unlockMaps: false, selectedMap: null };
+        // A persisted run serial is useful for durable retirement, but never
+        // sufficient authority to pay a receipt. Reloading creates a new
+        // SaveSystem with no in-memory authority and therefore forfeits escrow.
+        this._guidedObjectiveSessionSerial = 0;
         this.available = this._probe();
         this.data = this._loadOrDefault();
+        const interrupted = normalizeGuidedObjectives(this.data.guidedObjectives);
+        if (interrupted.activeRunSerial > 0) {
+            interrupted.activeRunSerial = 0;
+            this.data.guidedObjectives = interrupted;
+            this.save();
+        }
     }
 
     _probe() {
@@ -586,7 +678,12 @@ export class SaveSystem {
             prevBest: Number.isFinite(wed.prevBest) && wed.prevBest > 0 ? Math.floor(wed.prevBest) : 0,
         };
 
-        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, campaignProgress, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, weeklyEmber, version: CAMPAIGN_SAVE_VERSION };
+        // Guided objectives own an additive nested schema. Keep campaign save
+        // version 10 stable while repairing tampered counters and dropping
+        // malformed/unknown/unbounded reward receipts.
+        const guidedObjectives = normalizeGuidedObjectives(data.guidedObjectives);
+
+        return { totalCoins, upgrades, stats, settings, cosmetics, gear, battlePass, selectedCharacter, forge, casePity, gamble, selectedMap, campaignProgress, difficulty, achievements, daily, dailyRoad, streak, onboarding, pactMastery, discoveredRelics, relicAttunement, heroAttunement, rites, riteTrial, bossRush, weeklyEmber, guidedObjectives, version: CAMPAIGN_SAVE_VERSION };
     }
 
     save() {
@@ -598,17 +695,164 @@ export class SaveSystem {
         }
     }
 
-    addCoins(amount) {
-        if (!Number.isFinite(amount) || amount <= 0) return;
+    _creditCoins(amount) {
+        if (!Number.isFinite(amount) || amount <= 0) return 0;
         const credit = Math.min(MAX_COIN_BALANCE, Math.floor(amount));
-        if (credit <= 0) return;
+        if (credit <= 0) return 0;
         const raw = this.data.totalCoins;
         const balance = raw === Infinity ? MAX_COIN_BALANCE
             : Number.isFinite(raw) && raw > 0 ? Math.min(MAX_COIN_BALANCE, Math.floor(raw)) : 0;
-        this.data.totalCoins = credit > MAX_COIN_BALANCE - balance
+        const next = credit > MAX_COIN_BALANCE - balance
             ? MAX_COIN_BALANCE
             : balance + credit;
+        this.data.totalCoins = next;
+        return next - balance;
+    }
+
+    addCoins(amount) {
+        const credited = this._creditCoins(amount);
+        if (credited > 0) this.save();
+    }
+
+    // Reserve a globally stable id before a Run Path starts. Aborted/reloaded
+    // runs consume an id but carry no persisted reward, preventing the old
+    // first-task restart farm while keeping completed-run receipts unique.
+    beginGuidedObjectiveRun() {
+        const ledger = normalizeGuidedObjectives(this.data.guidedObjectives);
+        let serial = ledger.nextRunId;
+        if (serial >= MAX_COIN_BALANCE) {
+            // Reaching this boundary would require quadrillions of runs. Reset
+            // the bounded history with the counter so ids remain unique within
+            // every retained receipt window instead of sticking at MAX_SAFE.
+            serial = 1;
+            ledger.nextRunId = 2;
+            ledger.receipts = [];
+        } else {
+            ledger.nextRunId = serial + 1;
+        }
+        ledger.activeRunSerial = serial;
+        this._guidedObjectiveSessionSerial = serial;
+        this.data.guidedObjectives = ledger;
         this.save();
+        return `go${serial.toString(36)}`;
+    }
+
+    // Explicitly retire a live objective run without paying it. The caller must
+    // own the same in-memory session reservation, so stale tabs/reloads and
+    // forged run ids cannot close or revive another run. Safe to call twice.
+    closeGuidedObjectiveRun(runId = null) {
+        const requestedSerial = runId == null
+            ? this._guidedObjectiveSessionSerial
+            : parseGuidedObjectiveRunSerial(runId);
+        const sessionSerial = this._guidedObjectiveSessionSerial;
+        if (!sessionSerial || requestedSerial !== sessionSerial) return false;
+
+        this._guidedObjectiveSessionSerial = 0;
+        if (!this.available) {
+            const ledger = normalizeGuidedObjectives(this.data.guidedObjectives);
+            if (ledger.activeRunSerial !== sessionSerial) return false;
+            ledger.activeRunSerial = 0;
+            this.data.guidedObjectives = ledger;
+            return true;
+        }
+
+        // Merge into the latest serialized save instead of writing this
+        // instance's potentially stale full data object. A reloaded/newer tab
+        // may already own a different run and counter; that authority wins.
+        try {
+            const persisted = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+            if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) return false;
+            const ledger = normalizeGuidedObjectives(persisted.guidedObjectives);
+            if (ledger.activeRunSerial !== sessionSerial) return false;
+            ledger.activeRunSerial = 0;
+            persisted.guidedObjectives = ledger;
+            localStorage.setItem(SAVE_KEY, JSON.stringify(persisted));
+            this.data.guidedObjectives = ledger;
+            return true;
+        } catch (e) {
+            return false; // unreadable/newer authority fails closed without a stale write
+        }
+    }
+
+    getGuidedObjectiveLedger() {
+        this.data.guidedObjectives = normalizeGuidedObjectives(this.data.guidedObjectives);
+        return {
+            schema: this.data.guidedObjectives.schema,
+            nextRunId: this.data.guidedObjectives.nextRunId,
+            activeRunSerial: this.data.guidedObjectives.activeRunSerial,
+            receipts: [...this.data.guidedObjectives.receipts],
+        };
+    }
+
+    // Settle up to one complete three-stage path in one atomic save. Replaying
+    // the same death/victory callback (or a stale receipt after reload) credits
+    // zero; new receipt ids are appended and capped to a fixed history.
+    claimGuidedObjectiveRewards(receipts) {
+        const ledger = normalizeGuidedObjectives(this.data.guidedObjectives);
+        // Re-read only the tiny persisted authority boundary. This makes a
+        // second tab/instance that retires an interrupted run visible to an
+        // older instance instead of letting stale in-memory state pay it.
+        let persistedActiveSerial = ledger.activeRunSerial;
+        if (this.available) {
+            try {
+                const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+                persistedActiveSerial = normalizeGuidedObjectives(
+                    raw?.guidedObjectives,
+                ).activeRunSerial;
+            } catch (e) {
+                persistedActiveSerial = 0; // corrupted/unreadable authority fails closed
+            }
+        }
+        const seen = new Set(ledger.receipts);
+        const seenSlots = new Set(ledger.receipts.map((receiptId) => {
+            const parsed = parseGuidedObjectiveReceiptId(receiptId);
+            return parsed ? `${parsed.serial}:${parsed.phaseIndex}` : null;
+        }).filter(Boolean));
+        const accepted = [];
+        const duplicates = [];
+        let credited = 0;
+        const source = Array.isArray(receipts) ? receipts.slice(0, 3) : [];
+        for (const raw of source) {
+            const receiptId = raw?.receiptId;
+            const parsed = parseGuidedObjectiveReceiptId(receiptId);
+            const multiplier = Number.isFinite(raw?.multiplier) && raw.multiplier >= 0
+                ? Math.min(RUN_OBJECTIVE_MAX_REWARD_MULTIPLIER, raw.multiplier)
+                : null;
+            if (!parsed || multiplier === null) continue;
+            // The objective id + encoded phase select the authored base reward;
+            // caller-supplied coin amounts are never authoritative.
+            const amount = Math.max(0, Math.floor(parsed.reward * multiplier));
+            const slot = `${parsed.serial}:${parsed.phaseIndex}`;
+            if (seen.has(receiptId) || seenSlots.has(slot)) {
+                duplicates.push(receiptId);
+                continue;
+            }
+            // Only the most recently reserved live run can introduce new slots.
+            // Starting another run retires an abort forever; a settled run is
+            // closed below, so bounded-ledger eviction can never reopen it.
+            if (parsed.serial !== ledger.activeRunSerial
+                || parsed.serial !== this._guidedObjectiveSessionSerial
+                || parsed.serial !== persistedActiveSerial) continue;
+            seen.add(receiptId);
+            seenSlots.add(slot);
+            ledger.receipts.push(receiptId);
+            const paid = this._creditCoins(amount);
+            credited += paid;
+            accepted.push({ receiptId, requested: amount, credited: paid });
+        }
+        ledger.receipts = ledger.receipts.slice(-GUIDED_OBJECTIVE_RECEIPT_LIMIT);
+        if (accepted.length) {
+            ledger.activeRunSerial = 0;
+            this._guidedObjectiveSessionSerial = 0;
+        }
+        this.data.guidedObjectives = ledger;
+        if (accepted.length) this.save();
+        return {
+            credited,
+            accepted,
+            duplicates,
+            receiptCount: ledger.receipts.length,
+        };
     }
 
     spendCoins(amount) {
@@ -1255,6 +1499,7 @@ export class SaveSystem {
 
     reset() {
         this._session = { unlockMaps: false, selectedMap: null };
+        this._guidedObjectiveSessionSerial = 0;
         this.data = freshDefaultData();
         this.save();
     }

@@ -10,6 +10,8 @@
      while Renderer.safeArea correctly assumes an even top/bottom crop. */
   #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
   canvas { display: block; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 </style>
 </head>
 <body>
@@ -50,6 +52,9 @@
     caption  stage a gameplay caption fixture: "voice" or "danger" (run only)
     bosswarning "1" stages the real Emberwood boss-warning integration (run only)
     statuses "all" stages all seven combat-status cues on one enemy (run only)
+    pause    "1" opens the production pause overlay after all run fixtures
+    gameover "1" settles the staged run through the production death summary
+    victory  "1" opens the production victory choice after run fixtures
     bpxp / bpclaimthrough / bpreceipt  seed Battle-Pass QA states (menu only)
     mines=<preset> / minessafe=<n>  stage an honest Mines quote (menu only)
     minesFocus=<0..24>  select a Mines tile for keyboard-focus visual QA
@@ -64,7 +69,10 @@
     skipOnboarding  forced to "1" here (deterministic frames); pass "=0"
              explicitly to shoot the guided-first-run hint pill itself
 -->
-<div id="stage"><canvas id="game"></canvas></div>
+<div id="stage"><canvas id="game" aria-describedby="game-instructions game-objective"></canvas></div>
+<p id="game-instructions" class="sr-only">Press O to hear the current Run Path task.</p>
+<p id="game-objective" class="sr-only"></p>
+<div id="game-status" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 <script>
 // Deterministic frames: force ?skipOnboarding=1 unless the URL sets it
 // explicitly. A fresh headless profile has runs === 0, which would otherwise
@@ -216,6 +224,46 @@ const BOSS_WARNING_REQUEST = params.has('bosswarning') ? params.get('bosswarning
 const QA_BOSS_WARNING = BOSS_WARNING_REQUEST === '1';
 const STATUSES_REQUEST = params.has('statuses') ? params.get('statuses') : null;
 const QA_STATUSES = STATUSES_REQUEST === 'all' ? 'all' : null;
+const QA_PAUSED = params.get('pause') === '1';
+const QA_GAME_OVER = params.get('gameover') === '1';
+const QA_VICTORY = params.get('victory') === '1';
+const RUN_MODE_REQUEST = params.get('runmode');
+const RUN_MODES = ['standard', 'daily', 'rite-trial', 'boss-rush', 'weekly'];
+const QA_RUN_MODE = RUN_MODES.includes(RUN_MODE_REQUEST)
+    ? RUN_MODE_REQUEST
+    : 'standard';
+const OBJECTIVE_PHASE_REQUEST = params.get('objectivephase');
+const OBJECTIVE_PHASES = ['orientation', 'tactic', 'climax'];
+const QA_OBJECTIVE_PHASE = OBJECTIVE_PHASES.includes(OBJECTIVE_PHASE_REQUEST)
+    ? OBJECTIVE_PHASE_REQUEST
+    : null;
+const OBJECTIVE_PROGRESS_RAW = params.get('objectiveprogress');
+const OBJECTIVE_PROGRESS_REQUEST = params.has('objectiveprogress')
+    ? Number(OBJECTIVE_PROGRESS_RAW)
+    : 0.45;
+const OBJECTIVE_PROGRESS_VALID = !params.has('objectiveprogress')
+    || (String(OBJECTIVE_PROGRESS_RAW).trim() !== ''
+        && Number.isFinite(OBJECTIVE_PROGRESS_REQUEST)
+        && OBJECTIVE_PROGRESS_REQUEST >= 0 && OBJECTIVE_PROGRESS_REQUEST < 1);
+const QA_OBJECTIVE_PROGRESS = OBJECTIVE_PROGRESS_VALID
+    ? OBJECTIVE_PROGRESS_REQUEST
+    : 0.45;
+let qaExpectedObjectiveProgress = null;
+if (RUN_MODE_REQUEST != null && !RUN_MODES.includes(RUN_MODE_REQUEST)) {
+    ERR.push(`param: invalid runmode '${RUN_MODE_REQUEST}'`);
+}
+if (OBJECTIVE_PHASE_REQUEST != null && !OBJECTIVE_PHASES.includes(OBJECTIVE_PHASE_REQUEST)) {
+    ERR.push(`param: invalid objectivephase '${OBJECTIVE_PHASE_REQUEST}'`);
+}
+if (!OBJECTIVE_PROGRESS_VALID) ERR.push('param: invalid objectiveprogress');
+for (const terminalParam of ['pause', 'gameover', 'victory']) {
+    if (params.has(terminalParam) && !['0', '1'].includes(params.get(terminalParam))) {
+        ERR.push(`param: invalid ${terminalParam}`);
+    }
+}
+if ([QA_PAUSED, QA_GAME_OVER, QA_VICTORY].filter(Boolean).length > 1) {
+    ERR.push('param: pause, gameover, and victory are mutually exclusive');
+}
 // Roadmap #6 profiling pass (tooling only). profile=<N> runs N measured frames
 // with the FrameProfiler enabled, wrapping update()/render() so the top-level
 // buckets (normally timed by GameLoop, which sync-stepping bypasses) populate,
@@ -453,7 +501,11 @@ async function boot() {
                 if (!game.saveSystem.setSelectedMap(MAP)) ERR.push(`map: could not select '${MAP}'`);
             } catch (e) { ERR.push('map: ' + String(e)); }
         }
-        game._startRun();                // default hero (monkey "Pyra"), default map
+        if (QA_RUN_MODE === 'daily') game.dailyMode = true;
+        else if (QA_RUN_MODE === 'rite-trial') game.riteTrialMode = true;
+        else if (QA_RUN_MODE === 'boss-rush') game.bossRushMode = true;
+        else if (QA_RUN_MODE === 'weekly') game.weeklyEmberMode = true;
+        game._startRun();                // default hero (monkey "Pyra"), requested mode/map
         game.player.damageTakenMul = 0;  // harness godmode: survive the swarm for the shot
         if (QA_BOSS_WARNING) game._startBossWarning('stormwingAlpha');
 
@@ -743,6 +795,61 @@ async function boot() {
                 qaStatusEnemy = enemy;
             } catch (e) { ERR.push('statuses: ' + String(e && e.stack || e)); }
         }
+        if (QA_OBJECTIVE_PHASE) {
+            try {
+                // Retire first-run lessons so this fixture has exactly one
+                // guidance owner, then begin a fresh production director from
+                // the already-staged world state.
+                game.onboarding = null;
+                let draftGuard = 32;
+                while (game.upgradeChoices && draftGuard-- > 0) game.selectUpgrade(0);
+                game.runObjectiveDirector = null;
+                game._objectiveRunId = null;
+                game._objDone.clear();
+                game._objCompleted.length = 0;
+                game._objRewardReceipts.length = 0;
+                game._objRewardsSettled = false;
+                game._objRewardSettlement = null;
+                game._beginRunObjectives();
+
+                const setMetric = (snapshot, value) => {
+                    const target = Math.max(0, Math.floor(value));
+                    if (snapshot.metric === 'kills') game.kills = target;
+                    else if (snapshot.metric === 'timeSec') game.time = target;
+                    else if (snapshot.metric === 'level') game.player.level = target;
+                    else if (snapshot.metric === 'bosses') game.bossesDefeated = target;
+                    else if (snapshot.metric === 'sites') game.vigilSitesActivated = target;
+                    else if (snapshot.metric === 'siteKinds') {
+                        game._vigilKindsActivated = new Set(
+                            ['hearth', 'archive', 'cache', 'beacon'].slice(0, target),
+                        );
+                    } else if (snapshot.metric === 'encounters') game.encountersCleared = target;
+                };
+                const requestedIndex = { orientation: 0, tactic: 1, climax: 2 }[QA_OBJECTIVE_PHASE];
+                while (game.runObjectiveDirector?.getSnapshot()?.phaseIndex < requestedIndex) {
+                    const current = game.runObjectiveDirector.getSnapshot();
+                    setMetric(current, current.goalValue);
+                    game._checkObjectives();
+                }
+                const current = game.runObjectiveDirector?.getSnapshot?.();
+                if (!current || current.phase !== QA_OBJECTIVE_PHASE) {
+                    throw new Error(`director did not reach ${QA_OBJECTIVE_PHASE}`);
+                }
+                const stagedProgress = Math.floor(current.target * QA_OBJECTIVE_PROGRESS);
+                qaExpectedObjectiveProgress = stagedProgress;
+                setMetric(current, current.baseline + stagedProgress);
+                game._checkObjectives();
+                if (game.waveDirector) game.waveDirector.announcement = null;
+            } catch (e) { ERR.push('objective: ' + String(e && e.stack || e)); }
+        }
+        if (QA_GAME_OVER) {
+            game._enterGameOver();
+            game.update(2); // clear the death beat and settle the full summary
+        } else if (QA_VICTORY) {
+            game._showVictory();
+            game.update(1.2); // settle the production victory entrance animation
+        }
+        else if (QA_PAUSED) game.togglePause();
         game.render();
     }
 
@@ -787,6 +894,11 @@ async function boot() {
     const devControlCount = requiredDevControls.filter(([action, arg]) => menuHotspots.some(
         (hotspot) => hotspot.action === action && hotspot.arg === arg,
     )).length;
+    const qaObjective = game.runObjectiveDirector?.getSnapshot?.() ?? null;
+    const qaObjectiveHudVisible = !!qaObjective && game.screen === 'gameplay'
+        && !game.gameOver && !game.upgradeChoices && !game.chestReward && !game.altar
+        && !game.paused && !game.victory && !game.waveDirector?.announcement;
+    const qaActiveBoss = game.enemies?.find((enemy) => enemy.active && enemy.boss) || null;
     const qaState = {
         inputModality: input.getModality(),
         menuFocusKey: game.menuFocusKey || null,
@@ -821,6 +933,36 @@ async function boot() {
         settingsPane: game.settingsPane === 'accessibility' ? 'accessibility' : 'general',
         statuses: allStatusTimersActive ? 'all' : '',
         minesFocusIndex: game.minigame?.mines ? game.minesFocusIndex : null,
+        objectivePhase: qaObjective?.phase || '',
+        objectiveId: qaObjective?.id || '',
+        objectiveMetric: qaObjective?.metric || '',
+        objectiveProgress: qaObjective?.current ?? null,
+        objectiveExpectedProgress: qaExpectedObjectiveProgress,
+        objectiveTarget: qaObjective?.target ?? null,
+        objectiveStatus: qaObjective?.status || '',
+        objectiveReceipt: qaObjective?.reward?.receiptId || '',
+        objectiveSubstitution: qaObjective?.substitution || '',
+        objectiveHudVisible: qaObjectiveHudVisible,
+        objectiveRendered: game.ui?._lastDrawReceipt?.objective === true,
+        objectiveVariant: game.ui?._lastDrawReceipt?.objectiveVariant || 'hidden',
+        objectiveTextComplete: game.ui?._lastDrawReceipt?.objectiveTextComplete === true,
+        objectiveA11y: document.getElementById('game-objective')?.textContent || '',
+        activeBossId: qaActiveBoss?.type || '',
+        runMode: game._runObjectiveModeId?.() || '',
+        bossRushActive: !!game.bossRush,
+        gauntletMetricSafe: !qaObjective
+            || !['boss-rush', 'weekly'].includes(game._runObjectiveModeId?.())
+            || !['kills', 'sites', 'siteKinds', 'encounters'].includes(qaObjective.metric),
+        paused: game.paused === true,
+        pauseRendered: game.ui?._lastDrawReceipt?.pause === true,
+        gameOver: game.gameOver === true,
+        gameOverRendered: game.ui?._lastDrawReceipt?.gameOver === true,
+        victory: !!game.victory,
+        victoryRendered: game._lastVictoryDrawReceipt === true,
+        canvasLabel: canvas.getAttribute('aria-label') || '',
+        liveStatus: document.getElementById('game-status')?.textContent || '',
+        viewportWidth: Math.round(window.innerWidth),
+        viewportHeight: Math.round(window.innerHeight),
     };
     if (ACTIVE_INPUT_MODE && qaState.inputModality !== ACTIVE_INPUT_MODE) {
         ERR.push(`receipt: input expected '${ACTIVE_INPUT_MODE}', got '${qaState.inputModality}'`);
@@ -897,6 +1039,58 @@ async function boot() {
     if (MINES_FOCUS != null && qaState.minesFocusIndex !== MINES_FOCUS) {
         ERR.push(`receipt: Mines focus expected ${MINES_FOCUS}, got ${qaState.minesFocusIndex}`);
     }
+    if (QA_OBJECTIVE_PHASE && (qaState.objectivePhase !== QA_OBJECTIVE_PHASE
+        || !qaState.objectiveId || !qaState.objectiveReceipt
+        || (!(QA_PAUSED || QA_GAME_OVER || QA_VICTORY) && !qaState.objectiveHudVisible)
+        || (!QA_GAME_OVER && !qaState.objectiveA11y))) {
+        ERR.push(`receipt: objective ${QA_OBJECTIVE_PHASE} was not fully staged`);
+    }
+    if (QA_OBJECTIVE_PHASE && qaState.objectiveProgress !== qaState.objectiveExpectedProgress) {
+        ERR.push(`receipt: objective progress expected ${qaState.objectiveExpectedProgress}, got ${qaState.objectiveProgress}`);
+    }
+    if (QA_OBJECTIVE_PHASE && !(QA_PAUSED || QA_GAME_OVER || QA_VICTORY)
+        && !qaState.objectiveRendered) {
+        ERR.push('render: active Run Path card did not complete its draw call');
+    }
+    if (QA_OBJECTIVE_PHASE && qaState.objectiveHudVisible
+        && !qaState.objectiveTextComplete) {
+        ERR.push('render: active Run Path action or reward was truncated');
+    }
+    if (QABOSS && !qaState.activeBossId) {
+        ERR.push('boss: requested live boss was not present in the final frame');
+    }
+    if (QA_PAUSED && (!qaState.paused || !qaState.pauseRendered)) {
+        ERR.push('receipt: pause=1 did not render the pause overlay');
+    }
+    if (QA_GAME_OVER && (!qaState.gameOver || !qaState.gameOverRendered)) {
+        ERR.push('receipt: gameover=1 did not render the settled run summary');
+    }
+    if (QA_VICTORY && (!qaState.victory || !qaState.victoryRendered)) {
+        ERR.push('receipt: victory=1 did not render the victory overlay');
+    }
+    if (QA_PAUSED && (!qaState.canvasLabel.startsWith('EMBERWAKE paused run')
+        || !qaState.liveStatus.includes('Game paused'))) {
+        ERR.push('a11y: pause label/live announcement did not transition');
+    }
+    if (QA_GAME_OVER && (!qaState.canvasLabel.startsWith('EMBERWAKE run summary')
+        || !qaState.liveStatus.includes('Run over'))) {
+        ERR.push('a11y: game-over label/live summary did not transition');
+    }
+    if (QA_VICTORY && (!qaState.canvasLabel.startsWith('EMBERWAKE victory')
+        || !qaState.liveStatus.includes('VIGIL TRIUMPHANT'))) {
+        ERR.push('a11y: victory label/live announcement did not transition');
+    }
+    if (QA_OBJECTIVE_PHASE && !(QA_PAUSED || QA_GAME_OVER || QA_VICTORY)
+        && (!qaState.canvasLabel.startsWith('EMBERWAKE gameplay') || !qaState.liveStatus)) {
+        ERR.push('a11y: active objective lacks gameplay label/live announcement');
+    }
+    if (['boss-rush', 'weekly'].includes(QA_RUN_MODE)
+        && (!qaState.bossRushActive || !qaState.gauntletMetricSafe)) {
+        ERR.push(`receipt: ${QA_RUN_MODE} lacks its controller or selected an unsafe metric`);
+    }
+    if (QA_RUN_MODE && qaState.runMode !== QA_RUN_MODE) {
+        ERR.push(`receipt: runmode expected '${QA_RUN_MODE}', got '${qaState.runMode}'`);
+    }
 
     // Final frame is on the canvas. Optionally stamp an exception badge.
     if (BADGE) {
@@ -954,6 +1148,37 @@ async function boot() {
     qaRoot.dataset.qaMinesFocus = window.__qaState.minesFocusIndex == null
         ? ''
         : String(window.__qaState.minesFocusIndex);
+    qaRoot.dataset.qaObjectivePhase = window.__qaState.objectivePhase;
+    qaRoot.dataset.qaObjectiveId = window.__qaState.objectiveId;
+    qaRoot.dataset.qaObjectiveMetric = window.__qaState.objectiveMetric;
+    qaRoot.dataset.qaObjectiveProgress = window.__qaState.objectiveProgress == null
+        ? '' : String(window.__qaState.objectiveProgress);
+    qaRoot.dataset.qaObjectiveExpectedProgress = window.__qaState.objectiveExpectedProgress == null
+        ? '' : String(window.__qaState.objectiveExpectedProgress);
+    qaRoot.dataset.qaObjectiveTarget = window.__qaState.objectiveTarget == null
+        ? '' : String(window.__qaState.objectiveTarget);
+    qaRoot.dataset.qaObjectiveStatus = window.__qaState.objectiveStatus;
+    qaRoot.dataset.qaObjectiveReceipt = window.__qaState.objectiveReceipt;
+    qaRoot.dataset.qaObjectiveSubstitution = window.__qaState.objectiveSubstitution;
+    qaRoot.dataset.qaObjectiveHudVisible = String(window.__qaState.objectiveHudVisible);
+    qaRoot.dataset.qaObjectiveRendered = String(window.__qaState.objectiveRendered);
+    qaRoot.dataset.qaObjectiveVariant = window.__qaState.objectiveVariant;
+    qaRoot.dataset.qaObjectiveTextComplete = String(window.__qaState.objectiveTextComplete);
+    qaRoot.dataset.qaObjectiveA11y = window.__qaState.objectiveA11y;
+    qaRoot.dataset.qaActiveBossId = window.__qaState.activeBossId;
+    qaRoot.dataset.qaRunMode = window.__qaState.runMode;
+    qaRoot.dataset.qaBossRushActive = String(window.__qaState.bossRushActive);
+    qaRoot.dataset.qaGauntletMetricSafe = String(window.__qaState.gauntletMetricSafe);
+    qaRoot.dataset.qaPaused = String(window.__qaState.paused);
+    qaRoot.dataset.qaPauseRendered = String(window.__qaState.pauseRendered);
+    qaRoot.dataset.qaGameOver = String(window.__qaState.gameOver);
+    qaRoot.dataset.qaGameOverRendered = String(window.__qaState.gameOverRendered);
+    qaRoot.dataset.qaVictory = String(window.__qaState.victory);
+    qaRoot.dataset.qaVictoryRendered = String(window.__qaState.victoryRendered);
+    qaRoot.dataset.qaCanvasLabel = window.__qaState.canvasLabel;
+    qaRoot.dataset.qaLiveStatus = window.__qaState.liveStatus;
+    qaRoot.dataset.qaViewportWidth = String(window.__qaState.viewportWidth);
+    qaRoot.dataset.qaViewportHeight = String(window.__qaState.viewportHeight);
     qaRoot.dataset.qaErrorKeys = [...new Set(ERR.map((entry) => String(entry).split(':', 1)[0]))]
         .sort()
         .join(',');

@@ -23,7 +23,10 @@ export const RUN_XP_RULES = Object.freeze({
     boss: 70,
     chest: 18,
     wave: 16,
-    objective: 25,
+    // The old hidden system could tick up to 16 parallel thresholds. The Run
+    // Path now has exactly three more meaningful phases, so each carries a
+    // slightly stronger disclosed deed (3/3 = 105 XP before the deeds cap).
+    objective: 35,
     vigilSite: 12,
     tacticalEncounter: 24,
     guardianPack: 24,

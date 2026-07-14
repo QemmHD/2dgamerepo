@@ -81,16 +81,23 @@ ok(attr(canvasTag, 'aria-roledescription').length > 0, 'game canvas has a readab
 ok(/emberwake/i.test(attr(canvasTag, 'aria-label')), 'game canvas has a named EMBERWAKE surface');
 const describedBy = attr(canvasTag, 'aria-describedby');
 ok(!!describedBy, 'game canvas references keyboard instructions');
+const describedIds = describedBy.split(/\s+/).filter(Boolean);
+ok(describedIds.includes('game-instructions') && describedIds.includes('game-objective'),
+    'Canvas description includes instructions and the queryable current objective');
 
-const instructionsTag = tagWithId(html, 'p', describedBy);
+const instructionsTag = tagWithId(html, 'p', 'game-instructions');
 ok(!!instructionsTag, 'aria-describedby resolves to a real instruction node');
 ok(/\bsr-only\b/.test(attr(instructionsTag, 'class')), 'instructions are visually hidden, not removed');
 ok(!/aria-hidden\s*=\s*["']true/i.test(instructionsTag), 'instructions remain exposed to assistive technology');
-const instructionsText = html.match(new RegExp(`<p\\b[^>]*\\bid\\s*=\\s*["']${describedBy}["'][^>]*>([\\s\\S]*?)<\\/p>`, 'i'))?.[1]
+const instructionsText = html.match(new RegExp(`<p\\b[^>]*\\bid\\s*=\\s*["']game-instructions["'][^>]*>([\\s\\S]*?)<\\/p>`, 'i'))?.[1]
     ?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '';
 for (const phrase of ['Tab', 'arrow keys', 'Enter', 'Space', 'Escape']) {
     ok(instructionsText.includes(phrase), `keyboard instructions name ${phrase}`);
 }
+const objectiveTag = tagWithId(html, 'p', 'game-objective');
+ok(!!objectiveTag && /\bsr-only\b/.test(attr(objectiveTag, 'class'))
+    && !/aria-live/i.test(objectiveTag),
+'current objective is visually hidden, queryable, and deliberately non-live');
 
 const statusTag = tagWithId(html, 'div', 'game-status');
 ok(!!statusTag, 'index exposes the live game-status node');
@@ -123,7 +130,8 @@ const fakeStatus = { textContent: '' };
 const bridge = new AccessibilityBridge(fakeCanvas, fakeStatus);
 ok(fakeCanvas.tabIndex === 0, 'bridge repairs Canvas tabIndex defensively');
 ok(attributes.get('role') === 'application', 'bridge repairs Canvas role defensively');
-ok(attributes.get('aria-describedby') === 'game-instructions', 'bridge connects the Canvas instructions');
+ok(attributes.get('aria-describedby') === 'game-instructions game-objective',
+    'bridge connects Canvas instructions and current objective');
 bridge.focusCanvas();
 ok(focusCalls === 1 && fakeCanvas.focusOptions?.preventScroll === true, 'bridge focuses Canvas without scrolling');
 bridge.setScreen('gameplay', 'Boss incoming');
