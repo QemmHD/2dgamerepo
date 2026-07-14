@@ -605,8 +605,16 @@ jobs:
             COLLECTION_NAME="${COLLECTION_TAB}-1600x900.png"
             COLLECTION_DOM="/tmp/collection-growth-ia-${COLLECTION_TAB}.html"
             case "$COLLECTION_TAB" in
-              character) COLLECTION_FOCUS='collectionCategory%3Ahat%230' ;;
-              boutique) COLLECTION_FOCUS='boutiqueCategory%3Aaura%230' ;;
+              character)
+                COLLECTION_FOCUS='collectionCategory%3Afur%230'
+                COLLECTION_EXTRA=''
+                COLLECTION_EXPECTED_FOCUS='collectionCategory:fur#0'
+                ;;
+              boutique)
+                COLLECTION_FOCUS='boutiqueCategory%3Acloak%230'
+                COLLECTION_EXTRA='&tryset=lanternward'
+                COLLECTION_EXPECTED_FOCUS='boutiqueCategory:cloak#0'
+                ;;
             esac
             timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
               --autoplay-policy=no-user-gesture-required \
@@ -614,15 +622,24 @@ jobs:
               --force-device-scale-factor=1 --window-size=1600,900 \
               --virtual-time-budget=7000 --user-data-dir="$COLLECTION_PROFILE" \
               --dump-dom \
-              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=${COLLECTION_TAB}&input=keyboard&focus=${COLLECTION_FOCUS}&out=${COLLECTION_NAME}" \
+              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&screen=menu&tab=${COLLECTION_TAB}&input=keyboard&focus=${COLLECTION_FOCUS}&out=${COLLECTION_NAME}${COLLECTION_EXTRA}" \
               > "$COLLECTION_DOM"
             COLLECTION_TITLE=$(grep -o '<title>[^<]*</title>' "$COLLECTION_DOM" | head -1)
             echo "Collection visual ${COLLECTION_TAB}: $COLLECTION_TITLE"
             echo "$COLLECTION_TITLE" | grep -q 'DONE EXC:0 ' \
               && grep -q 'data-qa-ready="1"' "$COLLECTION_DOM" \
+              && grep -q "data-qa-focus=\"${COLLECTION_EXPECTED_FOCUS}\"" "$COLLECTION_DOM" \
+              && grep -q 'data-qa-focus-visible="true"' "$COLLECTION_DOM" \
               && grep -q "data-qa-output=\"${COLLECTION_NAME}\"" "$COLLECTION_DOM" || {
               echo "FAIL: ${COLLECTION_TAB} canvas receipt did not finish cleanly"; exit 1;
             }
+            if [ "$COLLECTION_TAB" = boutique ]; then
+              grep -q 'data-qa-cosmetic-set="lanternward"' "$COLLECTION_DOM" \
+                && grep -q 'data-qa-boutique-category="cloak"' "$COLLECTION_DOM" \
+                && grep -q 'data-qa-boutique-set-page="3"' "$COLLECTION_DOM" || {
+                  echo 'FAIL: Boutique visual did not stage the Lanternward fitting-room state'; exit 1;
+                }
+            fi
             cp "__out/${COLLECTION_NAME}" "$COLLECTION_RECEIPTS/${COLLECTION_NAME}"
             node tools/artshot/validate-receipt-png.mjs "$COLLECTION_RECEIPTS/${COLLECTION_NAME}"
           done
