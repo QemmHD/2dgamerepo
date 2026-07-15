@@ -32,6 +32,7 @@ export const COSMETIC_COLLECTION_SOURCE_FILTERS = Object.freeze([
     'all',
     'starter',
     'boutique',
+    'blueprint',
     'case',
     'achievement',
     'vigil',
@@ -53,6 +54,12 @@ const SOURCE_ALIASES = Object.freeze({
     coins: 'boutique',
     purchase: 'boutique',
     'direct-purchase': 'boutique',
+    blueprint: 'blueprint',
+    blueprints: 'blueprint',
+    craft: 'blueprint',
+    crafting: 'blueprint',
+    forge: 'blueprint',
+    'known-price': 'blueprint',
     case: 'case',
     cases: 'case',
     drop: 'case',
@@ -176,6 +183,7 @@ export function cosmeticCollectionSources(item) {
     importedRouteSources(item, sources);
     if (item.defaultUnlocked === true) sources.add('starter');
     if (Number.isFinite(item.coinCost) && item.coinCost > 0) sources.add('boutique');
+    if (Number.isSafeInteger(item.blueprintCost) && item.blueprintCost > 0) sources.add('blueprint');
     if (typeof item.achievement === 'string' && item.achievement) sources.add('achievement');
     if (Number.isFinite(item.passLevel) && item.passLevel > 0) sources.add('vigil');
     if (item.defaultUnlocked !== true && item.caseExcluded !== true) sources.add('case');

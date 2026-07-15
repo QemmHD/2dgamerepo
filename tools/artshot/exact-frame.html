@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>EMBERWAKE exact frame harness</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #000; }
+  iframe { display: block; border: 0; }
+</style>
+</head>
+<body>
+<iframe id="frame" title="Exact viewport game harness"></iframe>
+<script>
+(() => {
+    'use strict';
+    const root = document.documentElement;
+    const params = new URLSearchParams(location.search);
+    const widthText = params.get('width') || '';
+    const heightText = params.get('height') || '';
+    const width = /^(0|[1-9]\d*)$/.test(widthText) ? Number(widthText) : NaN;
+    const height = /^(0|[1-9]\d*)$/.test(heightText) ? Number(heightText) : NaN;
+    const target = location.hash.slice(1);
+    const local = location.hostname === 'localhost'
+        || location.hostname === '127.0.0.1' || location.hostname === '[::1]';
+    const valid = local && Number.isSafeInteger(width) && width >= 320 && width <= 2048
+        && Number.isSafeInteger(height) && height >= 240 && height <= 2048
+        && target.startsWith('/tools/artshot/harness.html?');
+    if (!valid) {
+        root.dataset.qaReady = '1';
+        root.dataset.qaErrorKeys = 'frame';
+        document.title = 'DONE EXC:1 enemies:0 map:unknown error:frame invalid exact viewport request';
+        return;
+    }
+
+    const frame = document.getElementById('frame');
+    frame.width = String(width);
+    frame.height = String(height);
+    frame.style.width = `${width}px`;
+    frame.style.height = `${height}px`;
+    root.dataset.qaFrameViewport = `${width}x${height}`;
+
+    // The parent page owns the dump-dom receipt, while the production harness
+    // and its canvas live in the exact-size child viewport. Mirror every child
+    // QA attribute as it appears so Chromium can serialize the canonical child
+    // metrics on the parent document. Waiting to copy until the DONE title can
+    // race virtual time while the child is still loading its module graph.
+    let observer = null;
+    let observedRoot = null;
+    let fallbackMirror = null;
+    let finished = false;
+    const syncReceipt = () => {
+        if (finished) return;
+        try {
+            const childRoot = frame.contentDocument?.documentElement;
+            const childTitle = frame.contentDocument?.title || '';
+            if (childRoot) {
+                for (const name of childRoot.getAttributeNames()) {
+                    if (name.startsWith('data-qa-')) {
+                        root.setAttribute(name, childRoot.getAttribute(name) || '');
+                    }
+                }
+            }
+            if (childRoot?.dataset.qaReady === '1' && childTitle.startsWith('DONE EXC:')) {
+                document.title = childTitle;
+                finished = true;
+                observer?.disconnect();
+                clearInterval(fallbackMirror);
+            }
+        } catch (error) {
+            root.dataset.qaReady = '1';
+            root.dataset.qaErrorKeys = 'frame';
+            document.title = `DONE EXC:1 enemies:0 map:unknown error:frame ${String(error)}`;
+            finished = true;
+            observer?.disconnect();
+            clearInterval(fallbackMirror);
+        }
+    };
+    const observeChild = () => {
+        try {
+            const childRoot = frame.contentDocument?.documentElement;
+            if (!childRoot) return;
+            if (childRoot === observedRoot) {
+                syncReceipt();
+                return;
+            }
+            observer?.disconnect();
+            observedRoot = childRoot;
+            observer = new MutationObserver(syncReceipt);
+            observer.observe(childRoot, {
+                attributes: true,
+                childList: true,
+                characterData: true,
+                subtree: true,
+            });
+            syncReceipt();
+        } catch (error) {
+            root.dataset.qaReady = '1';
+            root.dataset.qaErrorKeys = 'frame';
+            document.title = `DONE EXC:1 enemies:0 map:unknown error:frame ${String(error)}`;
+            finished = true;
+        }
+    };
+    frame.addEventListener('load', observeChild);
+    frame.src = target;
+    fallbackMirror = setInterval(() => {
+        if (finished) {
+            clearInterval(fallbackMirror);
+            return;
+        }
+        observeChild();
+        syncReceipt();
+    }, 50);
+
+    // Keep this beyond CI's 7 s virtual-time budget. A 6 s parent timeout could
+    // win against the child module load and erase an otherwise valid receipt.
+    setTimeout(() => {
+        if (finished) return;
+        root.dataset.qaReady = '1';
+        root.dataset.qaErrorKeys = 'frame';
+        document.title = 'DONE EXC:1 enemies:0 map:unknown error:frame child did not finish';
+        finished = true;
+        observer?.disconnect();
+        clearInterval(fallbackMirror);
+    }, 15000);
+})();
+</script>
+</body>
+</html>

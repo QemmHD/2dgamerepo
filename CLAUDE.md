@@ -161,13 +161,26 @@ for all enemy/creature art:
   effects must retain the shared six-hero × 27-pose attachment contract and freeze
   under Reduced Effects. Cosmetics remain visual-only; neither slice changed Battle
   Pass/achievement rewards, case costs/odds/pity/unowned weighting, Mines stakes, or
-  the 93% return. Gravebell's case-only Mythic has no deterministic ceiling; preserve
-  that named watchpoint until a future Blueprint/direct-price decision. Complete
-  Collection Growth I, A11-13, 1.1, 1.6, the 1.0 → 2.0 arc, 2.0, and 2.8 remain open.
-  Durable visual, hash, delivery, hosted-source, and limitation receipts live in
+  the 93% return. Complete Collection Growth I, A11-13, 1.1, 1.2/Fair Forge, 1.6, the
+  1.0 → 2.0 arc, 2.0, and 2.8 remain open. Durable visual, hash, delivery, hosted-source, and
+  limitation receipts live in
   `docs/evidence/v1.1/collection-growth-ia-deployed-smoke.md`,
   `docs/evidence/v1.1/collection-growth-ib-deployed-smoke.md`, and
   `docs/evidence/v1.1/collection-growth-ib-pr201-deployed-reconciliation.md`.
+- Collection Completion Truth is an accepted PR #203 candidate at feature head
+  `35be073`; it is not shipped until merge, `main` CI, Pages, public smoke, and deployed
+  `?dev=1` retention pass. It reports 103 cosmetics/15 sets, five category totals,
+  overlapping source counts, 85 known-route items, and 18 random-only items from the
+  shared catalog. Exactly two case-routed Mythics (`aura_gloam_moths` and
+  `aura_requiem`) gain fixed 72,000 earned-coin Blueprints; Royal Cases remain random
+  with identical pools/order, cost, odds, pity, unowned weighting, and duplicate
+  conversion. `blueprintClaims` is additive save v10. Earned-coin and once-only Case,
+  Mines, Battle Pass, Daily Road, shop, and Blueprint flows use an exclusive fail-closed
+  transaction; ordinary synchronous writes use a compare-before-save stale-authority
+  guard, not an atomic mutex, so two simultaneous ordinary writers can still race.
+  Battle Pass XP/rewards, Mines math/93% return, cosmetics, currency, power, and all five
+  `?dev=1` controls remain unchanged. Preserve the exact contract and nonclaims in
+  `docs/evidence/v1.1/collection-completion-truth-pr203.md`.
 - Player is PROCEDURAL & animated (4-dir × idle/walk/cast/hurt) — never
   replace the hero with a flat AI sprite.
 - Enemy sprites resolve through layered fallbacks in `Enemy.js`

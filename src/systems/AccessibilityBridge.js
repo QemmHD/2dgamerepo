@@ -87,6 +87,15 @@ export function menuHotspotLabel(action, arg, explicitLabel = '') {
         case 'collectionOwnership': return `Filter collection to ${words(id)}`;
         case 'collectionSource': return `Filter collection source to ${words(id)}`;
         case 'collectionPage': return `Open collection page ${id}`;
+        case 'openCollectionCompletion': return 'Open Collection Completion overview';
+        case 'openCollectionBlueprint': return `Open Mythic Blueprint details for ${words(id)}`;
+        case 'closeCollectionCompletion': return 'Back to Character Collection';
+        case 'collectionCompletionSection': return `Open Collection Completion ${words(id)}`;
+        case 'collectionCompletionPage': return `Open Collection Completion set page ${id}`;
+        case 'collectionCompletionBlueprint': return `Show Mythic Blueprint ${words(id)}`;
+        case 'purchaseCollectionBlueprint': return `Forge Mythic Blueprint ${words(id)}`;
+        case 'cancelCollectionBlueprint': return `Cancel Mythic Blueprint confirmation ${words(id)}`;
+        case 'collectionCompletionBack': return 'Back within Collection Completion';
         case 'boutiqueCategory': return `Show ${words(id)} Boutique stock`;
         case 'boutiquePage': return `Open Boutique stock page ${id}`;
         case 'boutiqueSetPage': return `Open Boutique set page ${id}`;

@@ -10,6 +10,10 @@ import { GEAR } from '../content/gear.js';
 import { COSMETICS } from '../content/cosmetics.js';
 import { rarityDust, rarityName } from '../content/rarities.js';
 import { openCase } from './CaseSystem.js';
+import {
+    commitEntitlementTransaction,
+    commitEntitlementTransactionAtomic,
+} from './EntitlementTransaction.js';
 
 // The four readable Vigil-XP buckets. Kills/time are capped so an endless or
 // spawn-heavy Trial cannot run away with the pass; bosses, chests, objectives,
@@ -117,11 +121,19 @@ export function battlePassRunReceipt(result) {
 
 // Fold a run into the battle-pass track. Returns a summary of the gain.
 export function awardRun(save, summary, options = {}) {
-    const before = bpProgress(save.getBattlePassXp());
+    const xpBefore = save.getBattlePassXp();
+    const before = bpProgress(xpBefore);
     const breakdown = runXpBreakdown(summary, options);
-    const gained = breakdown.total;
-    const saveResult = gained > 0 ? (save.addBattlePassXp(gained) || {}) : {};
-    const after = bpProgress(save.getBattlePassXp());
+    const attempted = breakdown.total;
+    const saveResult = attempted > 0 ? (save.addBattlePassXp(attempted) || {}) : {};
+    const xpAfter = save.getBattlePassXp();
+    // The receipt is about durable progress, not the authored award. Whole-save
+    // persistence can fail or reject a stale tab; in that case XP is unchanged
+    // and every results surface must say +0 rather than celebrating an award
+    // that vanished. Deriving the value from the accepted before/after state
+    // also preserves the lightweight dependency-injected validator seam.
+    const gained = Math.max(0, Math.floor(xpAfter) - Math.floor(xpBefore));
+    const after = bpProgress(xpAfter);
     const crossedLevels = [];
     for (let level = before.level + 1; level <= after.level; level++) crossedLevels.push(level);
     return {
@@ -131,6 +143,8 @@ export function awardRun(save, summary, options = {}) {
         leveledUp: after.level > before.level,
         crossedLevels,
         breakdown,
+        attempted,
+        persisted: gained === attempted,
         everflameCaches: saveResult.everflameCaches || 0,
         everflameCoins: saveResult.everflameCoins || 0,
     };
@@ -165,55 +179,102 @@ export function rewardLabel(reward) {
     return '';
 }
 
-// Apply a reward's effects to the save. Duplicates (already-owned item) fall
-// back to coins so a claim is never wasted. Returns a short result label.
-function grantReward(save, reward) {
-    if (!reward) return '';
+// Structured reward resolver. A failed free case remains a failure so its
+// level marker cannot be committed without the randomized reward.
+function grantRewardToDraft(save, reward) {
+    if (!reward) return { ok: false, reason: 'invalid' };
     switch (reward.type) {
         case 'coins':
             save.addCoins(reward.amount);
-            return `+${reward.amount} coins`;
+            return { ok: true, label: `+${reward.amount} coins` };
         case 'case': {
-            const r = openCase(save, reward.caseType, { free: true });
-            return r.ok ? `Case: ${r.label}` : 'Case';
+            const result = openCase(save, reward.caseType, { free: true });
+            return result.ok
+                ? { ok: true, label: `Case: ${result.label}` }
+                : { ok: false, reason: result.reason || 'save-unavailable' };
         }
         case 'cosmetic': {
-            const c = COSMETICS[reward.itemId];
-            if (!c) return '';
-            if (save.unlockCosmetic(reward.itemId)) return `Unlocked ${c.name}`;
-            const amount = rarityDust(c.rarity);
+            const item = COSMETICS[reward.itemId];
+            if (!item) return { ok: false, reason: 'invalid' };
+            if (save.unlockCosmetic(reward.itemId)) {
+                return { ok: true, label: `Unlocked ${item.name}` };
+            }
+            const amount = rarityDust(item.rarity);
             save.addCoins(amount);
-            return `${c.name} owned → +${amount} coins`;
+            return { ok: true, label: `${item.name} owned → +${amount} coins` };
         }
         case 'gear': {
-            const g = GEAR[reward.itemId];
-            if (!g) return '';
-            if (save.unlockGear(reward.itemId)) return `Unlocked ${g.name}`;
-            const amount = rarityDust(g.rarity);
+            const item = GEAR[reward.itemId];
+            if (!item) return { ok: false, reason: 'invalid' };
+            if (save.unlockGear(reward.itemId)) {
+                return { ok: true, label: `Unlocked ${item.name}` };
+            }
+            const amount = rarityDust(item.rarity);
             save.addCoins(amount);
-            return `${g.name} owned → +${amount} coins`;
+            return { ok: true, label: `${item.name} owned → +${amount} coins` };
         }
-        case 'bundle':
-            return (reward.rewards || []).map((part) => grantReward(save, part)).filter(Boolean).join(' · ');
+        case 'bundle': {
+            const labels = [];
+            for (const part of reward.rewards || []) {
+                const granted = grantRewardToDraft(save, part);
+                if (!granted.ok) return granted;
+                if (granted.label) labels.push(granted.label);
+            }
+            return { ok: true, label: labels.join(' · ') };
+        }
         default:
-            return '';
+            return { ok: false, reason: 'invalid' };
     }
 }
 
-// Claim a single reached level. Returns { ok, label } or { ok:false }.
+function resolveClaimOnDraft(save, level) {
+    if (!Number.isInteger(level) || level < 1 || level > BP_MAX_LEVEL) {
+        return { ok: false, reason: 'invalid' };
+    }
+    const { level: reached } = bpProgress(save.getBattlePassXp());
+    if (level > reached) return { ok: false, reason: 'locked' };
+    if (save.isLevelClaimed(level)) return { ok: false, reason: 'claimed' };
+    if (!save.claimLevel(level)) return { ok: false, reason: 'claimed' };
+    const granted = grantRewardToDraft(save, BATTLE_PASS_LEVELS[level - 1].reward);
+    return granted.ok ? { ok: true, label: granted.label, level } : granted;
+}
+
+// Deterministic/internal synchronous seam. Browser UI must use claimAtomic so
+// another live participant cannot enter the read-to-write interval.
 export function claim(save, level) {
     if (!Number.isInteger(level) || level < 1 || level > BP_MAX_LEVEL) return { ok: false, reason: 'invalid' };
     const { level: reached } = bpProgress(save.getBattlePassXp());
     if (level > reached) return { ok: false, reason: 'locked' };
     if (save.isLevelClaimed(level)) return { ok: false, reason: 'claimed' };
     const entry = BATTLE_PASS_LEVELS[level - 1];
-    const label = grantReward(save, entry.reward);
-    save.claimLevel(level);
-    return { ok: true, label };
+
+    // Claim marker and all reward effects share one final write. Free-case RNG
+    // happens only on the detached draft; failed/stale commits restore the live
+    // object so retrying cannot duplicate a previously granted case.
+    if (save?.data && typeof save.save === 'function') {
+        return commitEntitlementTransaction(save, (draft) => (
+            resolveClaimOnDraft(draft, level)
+        ));
+    }
+
+    // Preserve the lightweight dependency-injected validator seam.
+    const granted = grantRewardToDraft(save, entry.reward);
+    if (!granted.ok) return granted;
+    if (!save.claimLevel(level)) return { ok: false, reason: 'claimed' };
+    return { ok: true, label: granted.label };
 }
 
-// Claim every reached-but-unclaimed level. Preserve the individual labels so
-// the caller can tell the player what cases/items/duplicates were actually won.
+// Production browser entrypoint. Eligibility is re-checked only after this tab
+// owns the exclusive save boundary, so a contending participant cannot race a
+// claim marker, reward roll, or final write.
+export function claimAtomic(save, level) {
+    return commitEntitlementTransactionAtomic(save, (draft) => (
+        resolveClaimOnDraft(draft, level)
+    ));
+}
+
+// Deterministic/internal Claim All seam. Preserve individual labels for tests
+// and non-browser tools; production menu actions use claimAllAtomic below.
 export function claimAll(save) {
     const labels = [];
     for (const lvl of claimableLevels(save)) {
@@ -221,4 +282,24 @@ export function claimAll(save) {
         if (result.ok) labels.push(result.label);
     }
     return { count: labels.length, labels };
+}
+
+export function claimAllAtomic(save) {
+    return commitEntitlementTransactionAtomic(save, (draft) => {
+        const levels = claimableLevels(draft);
+        if (!levels.length) {
+            return { ok: false, reason: 'nothing-to-claim', count: 0, labels: [] };
+        }
+        const labels = [];
+        for (const level of levels) {
+            const result = resolveClaimOnDraft(draft, level);
+            if (!result.ok) return result;
+            labels.push(result.label);
+        }
+        return {
+            ok: true,
+            count: labels.length,
+            labels: Object.freeze(labels),
+        };
+    });
 }

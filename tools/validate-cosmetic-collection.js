@@ -34,9 +34,10 @@ import {
     normalizeCosmeticCollectionPage,
     normalizeCosmeticCollectionSource,
 } from '../src/systems/CosmeticCollection.js';
+import { buildCosmeticCompletionSnapshot } from '../src/systems/CollectionCompletion.js';
 
 const { COSMETIC_CATEGORIES, COSMETIC_LIST } = CosmeticContent;
-const CONTENT_ROUTE_ORDER = ['starter', 'boutique', 'case', 'achievement', 'vigil'];
+const CONTENT_ROUTE_ORDER = ['starter', 'boutique', 'blueprint', 'case', 'achievement', 'vigil'];
 
 let checks = 0;
 function check(condition, message) {
@@ -53,6 +54,7 @@ function fieldRoutes(item) {
     const routes = [];
     if (item.defaultUnlocked === true) routes.push('starter');
     if (Number.isFinite(item.coinCost) && item.coinCost > 0) routes.push('boutique');
+    if (Number.isSafeInteger(item.blueprintCost) && item.blueprintCost > 0) routes.push('blueprint');
     if (item.defaultUnlocked !== true && item.caseExcluded !== true) routes.push('case');
     if (typeof item.achievement === 'string' && item.achievement) routes.push('achievement');
     if (Number.isInteger(item.passLevel) && item.passLevel > 0) routes.push('vigil');
@@ -175,7 +177,7 @@ check(COSMETIC_COLLECTION_PAGE_SIZE === 8, 'collection page size must remain eig
 same(COSMETIC_COLLECTION_CATEGORY_FILTERS, ['all', ...COSMETIC_CATEGORIES], 'category filters drifted');
 same(COSMETIC_COLLECTION_OWNERSHIP_FILTERS, ['all', 'owned', 'locked'], 'ownership filters drifted');
 same(COSMETIC_COLLECTION_SOURCE_FILTERS,
-    ['all', 'starter', 'boutique', 'case', 'achievement', 'vigil'],
+    ['all', 'starter', 'boutique', 'blueprint', 'case', 'achievement', 'vigil'],
     'source filters drifted');
 for (const filters of [
     COSMETIC_COLLECTION_CATEGORY_FILTERS,
@@ -235,10 +237,12 @@ same(cosmeticCollectionSources({}), [], 'malformed item exposed a route');
 const routeCases = {
     fur_natural: ['starter'],
     fur_ashen: ['boutique', 'case'],
-    fur_frost: ['case'],
+    fur_frost: ['case', 'vigil'],
     fur_void: ['case', 'achievement'],
     fur_vigil: ['vigil'],
     fur_waylight: ['achievement'],
+    aura_gloam_moths: ['blueprint', 'case'],
+    aura_requiem: ['blueprint', 'case'],
 };
 for (const [id, routes] of Object.entries(routeCases)) {
     const item = COSMETIC_LIST.find((candidate) => candidate.id === id);
@@ -448,7 +452,9 @@ for (const page of [1, 2]) {
         `renderer hat page ${page} retained ambiguous SHOWN copy`);
     same(segmentedActions, ['collectionCategory', 'collectionOwnership', 'collectionSource'],
         `renderer hat page ${page} omitted a filter lane`);
-    check(pageButtons.length === 2, `renderer hat page ${page} omitted pager controls`);
+    const pagerButtons = pageButtons.filter((button) =>
+        button.label.includes('PREV') || button.label.includes('NEXT'));
+    check(pagerButtons.length === 2, `renderer hat page ${page} omitted pager controls`);
     for (let i = 0; i < rendered.length; i++) {
         const a = rendered[i].rect;
         check(a.x >= collectionRect.x && a.y >= collectionRect.y
@@ -574,8 +580,8 @@ for (const [label, fixture] of resolvedPhoneFixtures.slice(2)) {
     check(compactLayout.compact === true && compactLayout.touchSafe === true
         && compactLayout.minTouchCss >= 44,
     `${label} compact fallback is not touch-safe`);
-    same(compactLayout.compactControls.length, 4,
-        `${label} compact fallback lost a filter or Hero Rites control`);
+    same(compactLayout.compactControls.length, 5,
+        `${label} compact fallback lost a filter, Completion, or Hero Rites control`);
     same(compactLayout.cards.length, 8,
         `${label} compact fallback lost an eight-card page slot`);
     const compactTargets = [
@@ -647,6 +653,7 @@ for (const [label, rects] of [
 for (const [label, rect] of [
     ['previous page', phoneLayout.previousButton],
     ['next page', phoneLayout.nextButton],
+    ['Completion route', phoneLayout.completionButton],
     ['Rites route', phoneLayout.attuneButton],
 ]) {
     check(Math.min(rect.w, rect.h) * phoneCssScale >= 44,
@@ -686,12 +693,19 @@ check(pageButtons.length === 2, 'phone renderer omitted pager controls');
 check(renderedText.some((text) => text.includes('MATCHES')
     && text.includes('OWNED') && text.includes('SETS')),
 'phone renderer lacks its readable completion summary');
-check(renderer._lastCollectionPursuitGuidance === true
+const expectedCompletion = buildCosmeticCompletionSnapshot({
+    ownedIds: renderState.saveData.cosmetics.unlocked,
+    blueprintClaims: renderState.saveData.cosmetics.blueprintClaims,
+    pursuitSetId: renderState.saveData.cosmetics.pursuitSetId,
+    coinBalance: renderState.saveData.totalCoins,
+});
+check(expectedCompletion.trackedSet?.id === 'stormglass'
+    && renderer._lastCollectionPursuitGuidance === true
     && renderedText.some((text) => text.includes('TRACKING Stormglass') && text.includes('NEXT')),
-'phone renderer did not draw tracked-set next-source guidance');
+'phone renderer did not draw model-driven tracked-set next-source guidance');
 
 // Compact fallback executes the real collection handler paths: three cycle
-// actions, the in-Character Hero Rites route, two pagers, and all eight entries.
+// actions, Completion and Hero Rites routes, two pagers, and all eight entries.
 const compact480Fixture = rendererPhoneFixture(480, 270);
 const compact480Layout = computePhoneCharacterCollectionLayout(compact480Fixture.content, {
     cssScale: compact480Fixture.cssScale, compact: true,
@@ -708,6 +722,7 @@ for (const [action, arg] of [
     ['collectionCategory', 'aura'],
     ['collectionOwnership', 'owned'],
     ['collectionSource', 'starter'],
+    ['openCollectionCompletion', undefined],
     ['characterPhonePane', 'rites'],
 ]) check(pageButtons.some((button) => button.options.action === action
     && button.options.arg === arg),

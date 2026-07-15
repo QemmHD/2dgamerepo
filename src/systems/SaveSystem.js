@@ -11,7 +11,9 @@ import {
     DEFAULT_EQUIPPED_COSMETICS,
     COSMETIC_LIST,
     COSMETIC_SETS,
+    COSMETIC_BLUEPRINT_IDS,
     cosmeticById,
+    cosmeticBlueprintCost,
     cosmeticCoinCost,
 } from '../content/cosmetics.js';
 import {
@@ -26,7 +28,8 @@ import { getAttunable, attuneCost } from '../content/relics.js';
 import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
 import { riteIdsFor, ritesCompletedCount } from '../content/rites.js';
 import {
-    BP_EVERFLAME_COINS, BP_MAX_LEVEL, BP_SCHEMA, PASS_COSMETIC_MILESTONES,
+    ALL_PASS_COSMETIC_MILESTONES,
+    BP_EVERFLAME_COINS, BP_MAX_LEVEL, BP_SCHEMA,
     bpProgress, migrateBattlePassXpV1,
 } from '../content/battlePass.js';
 import {
@@ -51,6 +54,8 @@ import {
 } from './CampaignProgression.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
+export const SAVE_TRANSACTION_LOCK_NAME = 'emberwake:save:v1:exclusive';
+export const SAVE_PARTICIPATION_LOCK_NAME = 'emberwake:save:v1:participants';
 export const MAX_COIN_BALANCE = Number.MAX_SAFE_INTEGER;
 export const GUIDED_OBJECTIVE_SCHEMA = 1;
 export const GUIDED_OBJECTIVE_RECEIPT_LIMIT = 96;
@@ -65,6 +70,7 @@ const UPGRADE_MAX_BY_ID = Object.freeze(Object.fromEntries(
     PERMANENT_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxLevel]),
 ));
 const COSMETIC_PRESET_SLOTS = Object.freeze(Object.keys(DEFAULT_EQUIPPED_COSMETICS));
+const COSMETIC_BLUEPRINT_ID_SET = new Set(COSMETIC_BLUEPRINT_IDS);
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -228,6 +234,10 @@ function defaultData({ reducedEffects = false } = {}) {
             // reading the same stable shape.
             presets: createCosmeticPresets(DEFAULT_EQUIPPED_COSMETICS),
             pursuitSetId: null,
+            // Durable proof of earned-coin Blueprint purchases. Ownership can
+            // come from other routes (including cases), so only this atomic
+            // transaction is allowed to append a receipt.
+            blueprintClaims: [],
         },
         // Loadout gear (small buffs + chosen starting weapon).
         gear: {
@@ -377,6 +387,66 @@ function validateCosmeticLook(raw, fallback, ownedIds) {
     return out;
 }
 
+// Save data is deliberately plain serializable state, but a transaction draft
+// can temporarily contain values (notably the dev Infinity wallet) that JSON
+// cloning would silently coerce. Keep rollback snapshots exact without relying
+// on structuredClone availability in older web views.
+function cloneSaveTransactionValue(value, seen = new Map()) {
+    if (!value || typeof value !== 'object') return value;
+    if (seen.has(value)) return seen.get(value);
+    const copy = Array.isArray(value) ? [] : {};
+    seen.set(value, copy);
+    if (Array.isArray(value)) {
+        for (const entry of value) copy.push(cloneSaveTransactionValue(entry, seen));
+    } else {
+        for (const [key, entry] of Object.entries(value)) {
+            copy[key] = cloneSaveTransactionValue(entry, seen);
+        }
+    }
+    return copy;
+}
+
+// Exclusive transaction receipts cross the callback boundary back into UI
+// code. Accept only data-shaped graphs, clone every container, then recursively
+// freeze the clone so neither a retained draft nor the returned receipt can
+// become a post-commit mutation channel.
+function cloneTransactionReceiptValue(value, seen = new Map()) {
+    if (value === null || value === undefined) return value;
+    const type = typeof value;
+    if (type === 'string' || type === 'number' || type === 'boolean'
+        || type === 'bigint') return value;
+    if (type !== 'object') throw new TypeError('transaction receipt must be data-shaped');
+    if (seen.has(value)) return seen.get(value);
+    const isArray = Array.isArray(value);
+    const proto = Object.getPrototypeOf(value);
+    if (!isArray && proto !== Object.prototype && proto !== null) {
+        throw new TypeError('transaction receipt contains a non-plain object');
+    }
+    const copy = isArray ? [] : {};
+    seen.set(value, copy);
+    if (isArray) {
+        for (const entry of value) copy.push(cloneTransactionReceiptValue(entry, seen));
+    } else {
+        for (const [key, entry] of Object.entries(value)) {
+            copy[key] = cloneTransactionReceiptValue(entry, seen);
+        }
+    }
+    return copy;
+}
+
+function recursivelyFreezeTransactionValue(value, seen = new Set()) {
+    if (!value || typeof value !== 'object' || seen.has(value)) return value;
+    seen.add(value);
+    for (const entry of Object.values(value)) {
+        recursivelyFreezeTransactionValue(entry, seen);
+    }
+    return Object.freeze(value);
+}
+
+function immutableTransactionReceipt(value) {
+    return recursivelyFreezeTransactionValue(cloneTransactionReceiptValue(value));
+}
+
 export class SaveSystem {
     constructor() {
         // QA map access is intentionally session-only. It must never contaminate
@@ -386,14 +456,235 @@ export class SaveSystem {
         // sufficient authority to pay a receipt. Reloading creates a new
         // SaveSystem with no in-memory authority and therefore forfeits escrow.
         this._guidedObjectiveSessionSerial = 0;
+        // Exact last storage payload observed or successfully written by this
+        // instance. Synchronous whole-save writes reject an external change
+        // already present at comparison time; this is a stale-authority guard,
+        // not an atomic mutex between two simultaneous ordinary writers. Paid
+        // and once-only browser flows use the exclusive boundary below.
+        this._lastPersistedRaw = null;
+        this._lastSaveFailureReason = null;
+        this._saveParticipationRequired = false;
+        this._saveParticipationState = 'unsupported';
+        this._saveParticipationReady = Promise.resolve(false);
+        this._saveParticipationRequest = Promise.resolve();
+        this._releaseSaveParticipation = null;
+        this._saveParticipationGeneration = 0;
+        this._saveParticipationHasGranted = false;
+        this._saveParticipationDisposeRequested = false;
+        this._saveParticipationTransactionDone = null;
         this.available = this._probe();
         this.data = this._loadOrDefault();
-        const interrupted = normalizeGuidedObjectives(this.data.guidedObjectives);
-        if (interrupted.activeRunSerial > 0) {
-            interrupted.activeRunSerial = 0;
-            this.data.guidedObjectives = interrupted;
-            this.save();
+        this._beginSaveParticipation();
+        const retireInterruptedRun = () => {
+            const current = normalizeGuidedObjectives(this.data.guidedObjectives);
+            if (current.activeRunSerial <= 0) return false;
+            return this._commitMutation(() => {
+                const latest = normalizeGuidedObjectives(this.data.guidedObjectives);
+                if (latest.activeRunSerial <= 0) return false;
+                latest.activeRunSerial = 0;
+                this.data.guidedObjectives = latest;
+                return true;
+            }).committed;
+        };
+        if (this._saveParticipationRequired) {
+            // Web Locks enter their callback asynchronously. Defer this one
+            // constructor-owned repair until the shared participant lock is
+            // genuinely held instead of treating startup as a write failure.
+            // The lock-grant refresh below runs before this continuation.
+            this._saveParticipationReady.then((ready) => {
+                if (ready) retireInterruptedRun();
+            });
+        } else {
+            retireInterruptedRun();
         }
+    }
+
+    // Browser SaveSystem instances hold a shared participant lock for their
+    // lifetime. Ordinary synchronous writes are permitted only while that lock
+    // is held. A Blueprint temporarily releases its own share and asks for an
+    // exclusive non-waiting lock; any other live tab therefore makes the
+    // purchase fail closed instead of allowing it to overwrite that tab's
+    // ordinary save. Node validators and non-browser workers keep the explicit
+    // injected-lock seam used by the deterministic test suite.
+    _beginSaveParticipation() {
+        const manager = globalThis.navigator?.locks;
+        const browserRuntime = typeof globalThis.window !== 'undefined';
+        if (!browserRuntime || !manager || typeof manager.request !== 'function') {
+            this._saveParticipationRequired = false;
+            this._saveParticipationState = 'unsupported';
+            this._saveParticipationReady = Promise.resolve(false);
+            return this._saveParticipationReady;
+        }
+
+        this._saveParticipationRequired = true;
+        this._saveParticipationState = 'pending';
+        this._releaseSaveParticipation = null;
+        const generation = ++this._saveParticipationGeneration;
+        let settleReady;
+        this._saveParticipationReady = new Promise((resolve) => { settleReady = resolve; });
+        try {
+            this._saveParticipationRequest = Promise.resolve(manager.request(
+                SAVE_PARTICIPATION_LOCK_NAME,
+                { mode: 'shared' },
+                (lock) => {
+                    if (!lock) {
+                        if (generation === this._saveParticipationGeneration) {
+                            this._saveParticipationState = 'failed';
+                        }
+                        settleReady(false);
+                        return undefined;
+                    }
+                    if (generation !== this._saveParticipationGeneration) {
+                        settleReady(false);
+                        return undefined;
+                    }
+                    // Loading happens before the asynchronous Web Lock callback.
+                    // Another tab may have committed while this request waited;
+                    // refresh under the newly granted shared boundary before a
+                    // single mutator is allowed to treat the old payload as its
+                    // authority.
+                    if (!this._refreshAuthorityOnParticipationGrant()) {
+                        this._saveParticipationState = 'failed';
+                        settleReady(false);
+                        return undefined;
+                    }
+                    this._saveParticipationHasGranted = true;
+                    this._saveParticipationState = 'held';
+                    settleReady(true);
+                    return new Promise((release) => {
+                        this._releaseSaveParticipation = release;
+                    });
+                },
+            )).then(() => {
+                if (generation === this._saveParticipationGeneration
+                    && this._saveParticipationState === 'releasing') {
+                    this._saveParticipationState = 'released';
+                }
+            }).catch(() => {
+                if (generation === this._saveParticipationGeneration) {
+                    this._saveParticipationState = 'failed';
+                }
+                settleReady(false);
+            });
+        } catch (e) {
+            this._saveParticipationState = 'failed';
+            this._saveParticipationRequest = Promise.resolve();
+            settleReady(false);
+        }
+        return this._saveParticipationReady;
+    }
+
+    _refreshAuthorityOnParticipationGrant() {
+        if (!this.available) return false;
+        let raw;
+        try {
+            raw = localStorage.getItem(SAVE_KEY);
+        } catch (e) {
+            console.warn('[SaveSystem] participation refresh failed', e);
+            this._lastSaveFailureReason = 'persistence-unavailable';
+            return false;
+        }
+        if (raw === this._lastPersistedRaw) return true;
+        this._lastPersistedRaw = raw;
+        if (!raw) {
+            this.data = freshDefaultData();
+            this._lastSaveFailureReason = null;
+            return true;
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            this.data = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                ? this._validate(parsed)
+                : freshDefaultData();
+            this._lastSaveFailureReason = null;
+            return true;
+        } catch (e) {
+            console.warn('[SaveSystem] corrupted save during participation refresh', e);
+            this.data = freshDefaultData();
+            this._lastSaveFailureReason = null;
+            return true;
+        }
+    }
+
+    _saveParticipationAllowsWrite() {
+        return !this._saveParticipationRequired
+            || this._saveParticipationState === 'held'
+            || this._saveParticipationState === 'exclusive';
+    }
+
+    whenSaveParticipationReady() {
+        return this._saveParticipationRequired
+            ? this._saveParticipationReady.then((ready) => ready === true)
+            : Promise.resolve(true);
+    }
+
+    // Temporary bootstrap/QA SaveSystem instances must release their lifetime
+    // share before constructing the real game instance. A disposed instance is
+    // permanently write-disabled; callers cannot accidentally resume unsafe
+    // persistence after giving up participation.
+    async releaseSaveParticipation() {
+        if (!this._saveParticipationRequired) return true;
+        if (this._saveParticipationState === 'disposed') return true;
+        this._saveParticipationDisposeRequested = true;
+        if (['releasing', 'released', 'exclusive'].includes(this._saveParticipationState)) {
+            return this._saveParticipationTransactionDone
+                ? this._saveParticipationTransactionDone.then(() => true, () => false)
+                : false;
+        }
+        const ready = await this._saveParticipationReady;
+        if (['releasing', 'released', 'exclusive'].includes(this._saveParticipationState)) {
+            return this._saveParticipationTransactionDone
+                ? this._saveParticipationTransactionDone.then(() => true, () => false)
+                : false;
+        }
+        if (!ready || this._saveParticipationState !== 'held'
+            || !this._releaseSaveParticipation) return false;
+        const heldRequest = this._saveParticipationRequest;
+        this._saveParticipationState = 'disposing';
+        const release = this._releaseSaveParticipation;
+        this._releaseSaveParticipation = null;
+        release();
+        try {
+            await heldRequest;
+        } catch (e) {
+            this._saveParticipationState = 'failed';
+            return false;
+        }
+        this._markSaveParticipationDisposed();
+        return true;
+    }
+
+    _markSaveParticipationDisposed() {
+        this._saveParticipationGeneration += 1;
+        this._saveParticipationState = 'disposed';
+        this._saveParticipationReady = Promise.resolve(false);
+        this._saveParticipationRequest = Promise.resolve();
+        this._releaseSaveParticipation = null;
+    }
+
+    dispose() {
+        return this.releaseSaveParticipation();
+    }
+
+    // One synchronous mutation boundary for every whole-save mutator. A stale,
+    // blocked, or failed write restores the exact pre-call data and session
+    // authority, and the caller receives an explicit non-success result.
+    _commitMutation(mutate) {
+        const dataBefore = this.data;
+        const objectiveSessionBefore = this._guidedObjectiveSessionSerial;
+        this.data = cloneSaveTransactionValue(dataBefore);
+        let value;
+        try {
+            value = mutate();
+        } catch (error) {
+            this.data = dataBefore;
+            this._guidedObjectiveSessionSerial = objectiveSessionBefore;
+            throw error;
+        }
+        if (this.save()) return { committed: true, value };
+        this.data = dataBefore;
+        this._guidedObjectiveSessionSerial = objectiveSessionBefore;
+        return { committed: false, value: undefined };
     }
 
     _probe() {
@@ -413,6 +704,7 @@ export class SaveSystem {
         let raw = null;
         try {
             raw = localStorage.getItem(SAVE_KEY);
+            this._lastPersistedRaw = raw;
         } catch (e) {
             console.warn('[SaveSystem] read failed', e);
             return freshDefaultData();
@@ -532,10 +824,10 @@ export class SaveSystem {
                 ? [...new Set(db.claimed.filter((n) => Number.isInteger(n) && n > 0 && n <= BP_MAX_LEVEL))]
                 : [],
         };
-        // Schema-2 adds one deterministic Last Light cosmetic beside each legacy
-        // gear milestone. A veteran who already claimed that level receives the
-        // new piece during normalization; their original gear remains owned.
-        for (const [levelText, id] of Object.entries(PASS_COSMETIC_MILESTONES)) {
+        // Every claimed cosmetic milestone remains authoritative during save
+        // repair. This includes the five legacy 5/15/.../45 rewards and the
+        // five Schema-2 Last Light pieces; veteran claims never lose cosmetics.
+        for (const [levelText, id] of Object.entries(ALL_PASS_COSMETIC_MILESTONES)) {
             if (battlePass.claimed.includes(Number(levelText)) && !cosmetics.unlocked.includes(id)) {
                 cosmetics.unlocked.push(id);
             }
@@ -544,6 +836,12 @@ export class SaveSystem {
         // Equipped ids must be known, owned, and belong to the slot they occupy.
         // Old/tampered values fall back without deleting valid unlock history.
         const ownedCosmeticIds = new Set(cosmetics.unlocked);
+        cosmetics.blueprintClaims = Array.isArray(dc.blueprintClaims)
+            ? [...new Set(dc.blueprintClaims.filter((id) =>
+                typeof id === 'string'
+                && COSMETIC_BLUEPRINT_ID_SET.has(id)
+                && ownedCosmeticIds.has(id)))]
+            : [];
         cosmetics.equipped = validateCosmeticLook(
             cosmetics.equipped,
             def.cosmetics.equipped,
@@ -754,12 +1052,51 @@ export class SaveSystem {
     }
 
     save() {
-        if (!this.available) return;
+        if (!this.available) {
+            this._lastSaveFailureReason = 'persistence-unavailable';
+            return false;
+        }
+        if (!this._saveParticipationAllowsWrite()) {
+            this._lastSaveFailureReason = 'persistence-unavailable';
+            return false;
+        }
+        const storageState = this._storageUnchangedSinceLastWrite();
+        if (!storageState.ok) {
+            this._lastSaveFailureReason = storageState.reason;
+            return false;
+        }
         try {
-            localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+            const serialized = JSON.stringify(this.data);
+            localStorage.setItem(SAVE_KEY, serialized);
+            this._lastPersistedRaw = serialized;
+            this._lastSaveFailureReason = null;
+            return true;
         } catch (e) {
             console.warn('[SaveSystem] write failed', e);
+            this._lastSaveFailureReason = 'persistence-failed';
+            return false;
         }
+    }
+
+    _storageUnchangedSinceLastWrite() {
+        if (!this.available) return { ok: false, reason: 'persistence-unavailable' };
+        if (!this._saveParticipationAllowsWrite()) {
+            return { ok: false, reason: 'persistence-unavailable' };
+        }
+        try {
+            return localStorage.getItem(SAVE_KEY) === this._lastPersistedRaw
+                ? { ok: true }
+                : { ok: false, reason: 'external-save-changed' };
+        } catch (e) {
+            console.warn('[SaveSystem] transaction read failed', e);
+            return { ok: false, reason: 'persistence-unavailable' };
+        }
+    }
+
+    getLastSaveFailureReason() {
+        return [
+            'persistence-unavailable', 'external-save-changed', 'persistence-failed',
+        ].includes(this._lastSaveFailureReason) ? this._lastSaveFailureReason : null;
     }
 
     _creditCoins(amount) {
@@ -777,31 +1114,34 @@ export class SaveSystem {
     }
 
     addCoins(amount) {
-        const credited = this._creditCoins(amount);
-        if (credited > 0) this.save();
+        if (!Number.isFinite(amount) || amount <= 0) return 0;
+        const commit = this._commitMutation(() => this._creditCoins(amount));
+        return commit.committed ? commit.value : 0;
     }
 
     // Reserve a globally stable id before a Run Path starts. Aborted/reloaded
     // runs consume an id but carry no persisted reward, preventing the old
     // first-task restart farm while keeping completed-run receipts unique.
     beginGuidedObjectiveRun() {
-        const ledger = normalizeGuidedObjectives(this.data.guidedObjectives);
-        let serial = ledger.nextRunId;
-        if (serial >= MAX_COIN_BALANCE) {
-            // Reaching this boundary would require quadrillions of runs. Reset
-            // the bounded history with the counter so ids remain unique within
-            // every retained receipt window instead of sticking at MAX_SAFE.
-            serial = 1;
-            ledger.nextRunId = 2;
-            ledger.receipts = [];
-        } else {
-            ledger.nextRunId = serial + 1;
-        }
-        ledger.activeRunSerial = serial;
-        this._guidedObjectiveSessionSerial = serial;
-        this.data.guidedObjectives = ledger;
-        this.save();
-        return `go${serial.toString(36)}`;
+        const commit = this._commitMutation(() => {
+            const ledger = normalizeGuidedObjectives(this.data.guidedObjectives);
+            let serial = ledger.nextRunId;
+            if (serial >= MAX_COIN_BALANCE) {
+                // Reaching this boundary would require quadrillions of runs. Reset
+                // the bounded history with the counter so ids remain unique within
+                // every retained receipt window instead of sticking at MAX_SAFE.
+                serial = 1;
+                ledger.nextRunId = 2;
+                ledger.receipts = [];
+            } else {
+                ledger.nextRunId = serial + 1;
+            }
+            ledger.activeRunSerial = serial;
+            this._guidedObjectiveSessionSerial = serial;
+            this.data.guidedObjectives = ledger;
+            return `go${serial.toString(36)}`;
+        });
+        return commit.committed ? commit.value : null;
     }
 
     // Explicitly retire a live objective run without paying it. The caller must
@@ -814,13 +1154,17 @@ export class SaveSystem {
         const sessionSerial = this._guidedObjectiveSessionSerial;
         if (!sessionSerial || requestedSerial !== sessionSerial) return false;
 
-        this._guidedObjectiveSessionSerial = 0;
         if (!this.available) {
             const ledger = normalizeGuidedObjectives(this.data.guidedObjectives);
             if (ledger.activeRunSerial !== sessionSerial) return false;
             ledger.activeRunSerial = 0;
             this.data.guidedObjectives = ledger;
+            this._guidedObjectiveSessionSerial = 0;
             return true;
+        }
+        if (!this._saveParticipationAllowsWrite()) {
+            this._lastSaveFailureReason = 'persistence-unavailable';
+            return false;
         }
 
         // Merge into the latest serialized save instead of writing this
@@ -833,10 +1177,18 @@ export class SaveSystem {
             if (ledger.activeRunSerial !== sessionSerial) return false;
             ledger.activeRunSerial = 0;
             persisted.guidedObjectives = ledger;
-            localStorage.setItem(SAVE_KEY, JSON.stringify(persisted));
-            this.data.guidedObjectives = ledger;
+            const serialized = JSON.stringify(persisted);
+            localStorage.setItem(SAVE_KEY, serialized);
+            this._lastPersistedRaw = serialized;
+            this._lastSaveFailureReason = null;
+            // This merge may have observed a newer tab. Synchronize the whole
+            // in-memory model to the exact merged authority before blessing its
+            // serialized payload for any later write.
+            this.data = this._validate(persisted);
+            this._guidedObjectiveSessionSerial = 0;
             return true;
         } catch (e) {
+            this._lastSaveFailureReason = 'persistence-failed';
             return false; // unreadable/newer authority fails closed without a stale write
         }
     }
@@ -855,6 +1207,9 @@ export class SaveSystem {
     // the same death/victory callback (or a stale receipt after reload) credits
     // zero; new receipt ids are appended and capped to a fixed history.
     claimGuidedObjectiveRewards(receipts) {
+        const dataBefore = this.data;
+        const objectiveSessionBefore = this._guidedObjectiveSessionSerial;
+        this.data = cloneSaveTransactionValue(dataBefore);
         const ledger = normalizeGuidedObjectives(this.data.guidedObjectives);
         // Re-read only the tiny persisted authority boundary. This makes a
         // second tab/instance that retires an interrupted run visible to an
@@ -912,13 +1267,27 @@ export class SaveSystem {
             ledger.activeRunSerial = 0;
             this._guidedObjectiveSessionSerial = 0;
         }
-        this.data.guidedObjectives = ledger;
-        if (accepted.length) this.save();
-        return {
+        const result = {
             credited,
             accepted,
             duplicates,
             receiptCount: ledger.receipts.length,
+        };
+        if (!accepted.length) {
+            this.data = dataBefore;
+            this._guidedObjectiveSessionSerial = objectiveSessionBefore;
+            return result;
+        }
+        this.data.guidedObjectives = ledger;
+        if (this.save()) return result;
+        this.data = dataBefore;
+        this._guidedObjectiveSessionSerial = objectiveSessionBefore;
+        return {
+            credited: 0,
+            accepted: [],
+            duplicates,
+            receiptCount: normalizeGuidedObjectives(this.data.guidedObjectives).receipts.length,
+            failureReason: this.getLastSaveFailureReason(),
         };
     }
 
@@ -930,20 +1299,23 @@ export class SaveSystem {
         const balance = raw === Infinity ? MAX_COIN_BALANCE
             : Number.isFinite(raw) && raw > 0 ? Math.min(MAX_COIN_BALANCE, Math.floor(raw)) : 0;
         if (balance < debit) return false;
-        this.data.totalCoins = balance - debit;
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.totalCoins = balance - debit;
+            return true;
+        }).committed;
     }
 
     // Wick Roads relic codex. Record a claimed relic id; returns true only the
     // FIRST time it's ever seen (so Game can fire a "new relic" discovery beat).
     discoverRelic(id) {
         if (typeof id !== 'string' || !id) return false;
-        if (!Array.isArray(this.data.discoveredRelics)) this.data.discoveredRelics = [];
-        if (this.data.discoveredRelics.includes(id)) return false;
-        this.data.discoveredRelics.push(id);
-        this.save();
-        return true;
+        if (Array.isArray(this.data.discoveredRelics)
+            && this.data.discoveredRelics.includes(id)) return false;
+        return this._commitMutation(() => {
+            if (!Array.isArray(this.data.discoveredRelics)) this.data.discoveredRelics = [];
+            this.data.discoveredRelics.push(id);
+            return true;
+        }).committed;
     }
 
     getDiscoveredRelics() {
@@ -976,10 +1348,15 @@ export class SaveSystem {
         const cur = levels[id] ?? 0;
         if (cur >= def.max) return false;
         const cost = attuneCost(def, cur);
-        if (!this.spendCoins(cost)) return false;   // spendCoins saves on success
-        levels[id] = cur + 1;
-        this.save();
-        return true;
+        const balance = Number.isFinite(this.data.totalCoins)
+            ? Math.max(0, Math.min(MAX_COIN_BALANCE, Math.floor(this.data.totalCoins)))
+            : this.data.totalCoins === Infinity ? MAX_COIN_BALANCE : 0;
+        if (balance < cost) return false;
+        return this._commitMutation(() => {
+            this.data.totalCoins = balance - cost;
+            this.getRelicAttunements()[id] = cur + 1;
+            return true;
+        }).committed;
     }
 
     // ── Hero Attunement (per-hero coin sink, KINDLED #3) ─────────────────
@@ -1007,10 +1384,15 @@ export class SaveSystem {
         const next = cur + 1;
         if (ritesCompletedCount(this.data, charId) < heroAttuneRiteGate(next)) return false;  // rite-gated rung
         const cost = heroAttuneCost(cur);
-        if (!this.spendCoins(cost)) return false;   // spendCoins saves on success
-        levels[charId] = next;
-        this.save();
-        return true;
+        const balance = Number.isFinite(this.data.totalCoins)
+            ? Math.max(0, Math.min(MAX_COIN_BALANCE, Math.floor(this.data.totalCoins)))
+            : this.data.totalCoins === Infinity ? MAX_COIN_BALANCE : 0;
+        if (balance < cost) return false;
+        return this._commitMutation(() => {
+            this.data.totalCoins = balance - cost;
+            this.getHeroAttunements()[charId] = next;
+            return true;
+        }).committed;
     }
 
     // ── Rites (per-hero mastery progress, KINDLED #3) ────────────────────
@@ -1023,9 +1405,11 @@ export class SaveSystem {
     // Persist a hero's rite-progress map (already validated/accrued by the caller —
     // accrueRites in rites.js). Sparse: a hero with no progress is simply absent.
     setHeroRites(charId, map) {
-        if (!CHARACTER_IDS.includes(charId) || !map || typeof map !== 'object') return;
-        this.getRites()[charId] = map;
-        this.save();
+        if (!CHARACTER_IDS.includes(charId) || !map || typeof map !== 'object') return false;
+        return this._commitMutation(() => {
+            this.getRites()[charId] = cloneSaveTransactionValue(map);
+            return true;
+        }).committed;
     }
 
     // ── Rite Trial best-of-day (mirrors recordDailyRoadScore) ────────────
@@ -1034,17 +1418,19 @@ export class SaveSystem {
     // Also lifts the lifetime stats.riteTrialBest. Returns { best, firstToday }.
     recordRiteTrial(day, score) {
         if (!Number.isInteger(day) || day <= 0) return { best: false, firstToday: false };
-        const old = this.data.riteTrial;
-        const firstToday = !old || typeof old !== 'object' || old.day !== day;
-        if (firstToday) {
-            this.data.riteTrial = { day, best: 0, prevBest: (old && old.day === day - 1) ? (old.best ?? 0) : 0 };
-        }
-        const v = Math.max(0, Math.floor(score || 0));
-        let best = false;
-        if (v > this.data.riteTrial.best) { this.data.riteTrial.best = v; best = true; }
-        if (this.data.stats && v > (this.data.stats.riteTrialBest ?? 0)) this.data.stats.riteTrialBest = v;
-        this.save();
-        return { best, firstToday };
+        const commit = this._commitMutation(() => {
+            const old = this.data.riteTrial;
+            const firstToday = !old || typeof old !== 'object' || old.day !== day;
+            if (firstToday) {
+                this.data.riteTrial = { day, best: 0, prevBest: (old && old.day === day - 1) ? (old.best ?? 0) : 0 };
+            }
+            const v = Math.max(0, Math.floor(score || 0));
+            let best = false;
+            if (v > this.data.riteTrial.best) { this.data.riteTrial.best = v; best = true; }
+            if (this.data.stats && v > (this.data.stats.riteTrialBest ?? 0)) this.data.stats.riteTrialBest = v;
+            return { best, firstToday };
+        });
+        return commit.committed ? commit.value : { best: false, firstToday: false };
     }
 
     // ── Boss Rush all-time best record (BOSSFORGE) ───────────────────────
@@ -1052,20 +1438,22 @@ export class SaveSystem {
     // FULL clear (seconds), and the best score. Returns which fields were newly
     // beaten so the end screen can flag them. Additive — safe on old saves.
     recordBossRush({ bossesDefeated = 0, timeSurvived = 0, score = 0, cleared = false } = {}) {
-        const br = this.data.bossRush || (this.data.bossRush = { bestBosses: 0, bestTime: 0, bestScore: 0 });
-        const beat = { bosses: false, time: false, score: false };
-        const b = Math.max(0, Math.floor(bossesDefeated));
-        if (b > (br.bestBosses ?? 0)) { br.bestBosses = b; beat.bosses = true; }
-        const s = Math.max(0, Math.floor(score));
-        if (s > (br.bestScore ?? 0)) { br.bestScore = s; beat.score = true; }
-        // Fastest time is meaningful only for a FULL clear (else a quick death
-        // would masquerade as the best time).
-        if (cleared) {
-            const tt = Math.max(0, Math.floor(timeSurvived));
-            if (!br.bestTime || tt < br.bestTime) { br.bestTime = tt; beat.time = true; }
-        }
-        this.save();
-        return beat;
+        const commit = this._commitMutation(() => {
+            const br = this.data.bossRush || (this.data.bossRush = { bestBosses: 0, bestTime: 0, bestScore: 0 });
+            const beat = { bosses: false, time: false, score: false };
+            const b = Math.max(0, Math.floor(bossesDefeated));
+            if (b > (br.bestBosses ?? 0)) { br.bestBosses = b; beat.bosses = true; }
+            const s = Math.max(0, Math.floor(score));
+            if (s > (br.bestScore ?? 0)) { br.bestScore = s; beat.score = true; }
+            // Fastest time is meaningful only for a FULL clear (else a quick death
+            // would masquerade as the best time).
+            if (cleared) {
+                const tt = Math.max(0, Math.floor(timeSurvived));
+                if (!br.bestTime || tt < br.bestTime) { br.bestTime = tt; beat.time = true; }
+            }
+            return beat;
+        });
+        return commit.committed ? commit.value : { bosses: false, time: false, score: false };
     }
 
     // ── Weekly Ember best-of-week (mirrors recordRiteTrial, keyed by UTC week) ──
@@ -1074,17 +1462,19 @@ export class SaveSystem {
     // week). Also lifts the lifetime stats.weeklyEmberBest. Returns { best, firstThisWeek }.
     recordWeeklyEmber(week, score) {
         if (!Number.isInteger(week) || week <= 0) return { best: false, firstThisWeek: false };
-        const old = this.data.weeklyEmber;
-        const firstThisWeek = !old || typeof old !== 'object' || old.week !== week;
-        if (firstThisWeek) {
-            this.data.weeklyEmber = { week, best: 0, prevBest: (old && old.week === week - 1) ? (old.best ?? 0) : 0 };
-        }
-        const v = Math.max(0, Math.floor(score || 0));
-        let best = false;
-        if (v > this.data.weeklyEmber.best) { this.data.weeklyEmber.best = v; best = true; }
-        if (this.data.stats && v > (this.data.stats.weeklyEmberBest ?? 0)) this.data.stats.weeklyEmberBest = v;
-        this.save();
-        return { best, firstThisWeek };
+        const commit = this._commitMutation(() => {
+            const old = this.data.weeklyEmber;
+            const firstThisWeek = !old || typeof old !== 'object' || old.week !== week;
+            if (firstThisWeek) {
+                this.data.weeklyEmber = { week, best: 0, prevBest: (old && old.week === week - 1) ? (old.best ?? 0) : 0 };
+            }
+            const v = Math.max(0, Math.floor(score || 0));
+            let best = false;
+            if (v > this.data.weeklyEmber.best) { this.data.weeklyEmber.best = v; best = true; }
+            if (this.data.stats && v > (this.data.stats.weeklyEmberBest ?? 0)) this.data.stats.weeklyEmberBest = v;
+            return { best, firstThisWeek };
+        });
+        return commit.committed ? commit.value : { best: false, firstThisWeek: false };
     }
 
     getUpgradeLevel(id) {
@@ -1098,51 +1488,53 @@ export class SaveSystem {
             : 0;
         const max = UPGRADE_MAX_BY_ID[id];
         if (Number.isFinite(max) && current >= max) return false;
-        this.data.upgrades[id] = current + 1;
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.upgrades[id] = current + 1;
+            return true;
+        }).committed;
     }
 
     // Fold a finished run into lifetime totals + best-run records. Returns
     // a record of which "best" fields were newly beaten this run so the
     // game-over screen can flag them with a NEW BEST banner.
     recordRun(summary) {
-        const s = this.data.stats || (this.data.stats = {
-            bestTime: 0, bestWave: 0, bestLevel: 0, bestKills: 0, bestBosses: 0,
-            runs: 0, totalKills: 0, totalBosses: 0, totalCoinsEarned: 0,
+        const commit = this._commitMutation(() => {
+            const s = this.data.stats || (this.data.stats = {
+                bestTime: 0, bestWave: 0, bestLevel: 0, bestKills: 0, bestBosses: 0,
+                runs: 0, totalKills: 0, totalBosses: 0, totalCoinsEarned: 0,
+            });
+            const beat = { time: false, wave: false, level: false, kills: false };
+
+            const time = Math.floor(summary.time ?? 0);
+            const wave = Math.floor(summary.finalWave ?? 0);
+            const level = Math.floor(summary.level ?? 0);
+            const kills = Math.floor(summary.kills ?? 0);
+            const bosses = Math.floor(summary.bossesDefeated ?? 0);
+            const coins = Math.floor(summary.coinsEarned ?? 0);
+
+            if (time > s.bestTime) { s.bestTime = time; beat.time = true; }
+            if (wave > s.bestWave) { s.bestWave = wave; beat.wave = true; }
+            if (level > s.bestLevel) { s.bestLevel = level; beat.level = true; }
+            if (kills > s.bestKills) { s.bestKills = kills; beat.kills = true; }
+            if (bosses > s.bestBosses) s.bestBosses = bosses;
+
+            s.runs += 1;
+            s.totalKills += kills;
+            s.totalBosses += bosses;
+            s.totalCoinsEarned += Math.max(0, coins);
+            s.vigilSitesActivated = (s.vigilSitesActivated || 0)
+                + Math.max(0, Math.floor(summary.vigilSitesActivated ?? 0));
+            s.vigilSiteKindsMastered = Math.min(4, Math.max(
+                s.vigilSiteKindsMastered || 0,
+                Math.max(0, Math.floor(summary.vigilSiteKindsMastered ?? 0)),
+            ));
+            s.encountersCleared = (s.encountersCleared || 0)
+                + Math.max(0, Math.floor(summary.encountersCleared ?? 0));
+            s.guardianPacksDefeated = (s.guardianPacksDefeated || 0)
+                + Math.max(0, Math.floor(summary.guardianPacksDefeated ?? 0));
+            return beat;
         });
-        const beat = { time: false, wave: false, level: false, kills: false };
-
-        const time = Math.floor(summary.time ?? 0);
-        const wave = Math.floor(summary.finalWave ?? 0);
-        const level = Math.floor(summary.level ?? 0);
-        const kills = Math.floor(summary.kills ?? 0);
-        const bosses = Math.floor(summary.bossesDefeated ?? 0);
-        const coins = Math.floor(summary.coinsEarned ?? 0);
-
-        if (time > s.bestTime) { s.bestTime = time; beat.time = true; }
-        if (wave > s.bestWave) { s.bestWave = wave; beat.wave = true; }
-        if (level > s.bestLevel) { s.bestLevel = level; beat.level = true; }
-        if (kills > s.bestKills) { s.bestKills = kills; beat.kills = true; }
-        if (bosses > s.bestBosses) s.bestBosses = bosses;
-
-        s.runs += 1;
-        s.totalKills += kills;
-        s.totalBosses += bosses;
-        s.totalCoinsEarned += Math.max(0, coins);
-        s.vigilSitesActivated = (s.vigilSitesActivated || 0)
-            + Math.max(0, Math.floor(summary.vigilSitesActivated ?? 0));
-        s.vigilSiteKindsMastered = Math.min(4, Math.max(
-            s.vigilSiteKindsMastered || 0,
-            Math.max(0, Math.floor(summary.vigilSiteKindsMastered ?? 0)),
-        ));
-        s.encountersCleared = (s.encountersCleared || 0)
-            + Math.max(0, Math.floor(summary.encountersCleared ?? 0));
-        s.guardianPacksDefeated = (s.guardianPacksDefeated || 0)
-            + Math.max(0, Math.floor(summary.guardianPacksDefeated ?? 0));
-
-        this.save();
-        return beat;
+        return commit.committed ? commit.value : null;
     }
 
     getSetting(key) {
@@ -1157,7 +1549,6 @@ export class SaveSystem {
             if (!enabled) this._session.selectedMap = null;
             return enabled;
         }
-        if (!this.data.settings) this.data.settings = {};
         const normalized = key === 'uiScale'
             ? normalizeUiScale(value)
             : key === 'highContrast'
@@ -1171,9 +1562,12 @@ export class SaveSystem {
                             : key === 'vibration'
                                 ? normalizeVibrationStrength(value)
                                 : value;
-        this.data.settings[key] = normalized;
-        this.save();
-        return normalized;
+        const commit = this._commitMutation(() => {
+            if (!this.data.settings) this.data.settings = {};
+            this.data.settings[key] = normalized;
+            return normalized;
+        });
+        return commit.committed ? commit.value : undefined;
     }
 
     // ── Cosmetics ──────────────────────────────────────────────────────
@@ -1200,9 +1594,382 @@ export class SaveSystem {
     unlockCosmetic(id) {
         if (!cosmeticById(id)) return false;
         if (this.isCosmeticUnlocked(id)) return false;
-        this.data.cosmetics.unlocked.push(id);
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.cosmetics.unlocked.push(id);
+            return true;
+        }).committed;
+    }
+
+    // Earned-coin Blueprint purchase. The UI's displayed quote is treated as
+    // untrusted input and must exactly match the catalog. All validation occurs
+    // before the three-field commit so every rejection is mutation- and
+    // write-free; ownership from cases or cheats never fabricates a claim.
+    purchaseCosmeticBlueprint(id, quotedCost) {
+        if (typeof id !== 'string' || !id) {
+            return Object.freeze({ ok: false, reason: 'invalid-id' });
+        }
+        const item = cosmeticById(id);
+        if (!item) return Object.freeze({ ok: false, reason: 'unknown-cosmetic' });
+        if (!COSMETIC_BLUEPRINT_ID_SET.has(id)) {
+            return Object.freeze({ ok: false, reason: 'not-blueprint' });
+        }
+        if (!Number.isSafeInteger(quotedCost) || quotedCost <= 0) {
+            return Object.freeze({ ok: false, reason: 'invalid-quote' });
+        }
+        const cost = cosmeticBlueprintCost(item);
+        if (!Number.isSafeInteger(cost) || cost <= 0 || cost > MAX_COIN_BALANCE) {
+            return Object.freeze({ ok: false, reason: 'invalid-catalog-cost' });
+        }
+        if (quotedCost !== cost) {
+            return Object.freeze({ ok: false, reason: 'quote-mismatch' });
+        }
+
+        const storageState = this._storageUnchangedSinceLastWrite();
+        if (!storageState.ok) {
+            return Object.freeze({ ok: false, reason: storageState.reason });
+        }
+
+        const cosmetics = this.data?.cosmetics;
+        if (!cosmetics || typeof cosmetics !== 'object' || Array.isArray(cosmetics)
+            || !Array.isArray(cosmetics.unlocked)
+            || !Array.isArray(cosmetics.blueprintClaims)) {
+            return Object.freeze({ ok: false, reason: 'invalid-state' });
+        }
+        if (cosmetics.unlocked.includes(id)) {
+            return Object.freeze({ ok: false, reason: 'already-owned' });
+        }
+        if (cosmetics.blueprintClaims.includes(id)) {
+            return Object.freeze({ ok: false, reason: 'replay' });
+        }
+
+        const rawBalance = this.data.totalCoins;
+        const balance = rawBalance === Infinity ? MAX_COIN_BALANCE
+            : Number.isSafeInteger(rawBalance) && rawBalance >= 0
+                ? rawBalance : null;
+        if (balance === null) {
+            return Object.freeze({ ok: false, reason: 'invalid-balance' });
+        }
+        if (balance < cost) {
+            return Object.freeze({ ok: false, reason: 'insufficient-coins' });
+        }
+
+        const ownedBefore = new Set(cosmetics.unlocked
+            .filter((ownedId) => cosmeticById(ownedId)));
+        const set = COSMETIC_SETS.find((candidate) =>
+            Object.values(candidate.pieces).includes(id)) || null;
+        const setBefore = set
+            ? Object.values(set.pieces).filter((pieceId) => ownedBefore.has(pieceId)).length
+            : 0;
+        const collectionBefore = ownedBefore.size;
+        const balanceAfter = balance - cost;
+
+        this.data.totalCoins = balanceAfter;
+        cosmetics.unlocked.push(id);
+        cosmetics.blueprintClaims.push(id);
+        if (!this.save()) {
+            // Restore the exact in-memory pre-transaction state. The write did
+            // not commit, so reporting success would create a reload reversal.
+            this.data.totalCoins = rawBalance;
+            cosmetics.unlocked.pop();
+            cosmetics.blueprintClaims.pop();
+            const failureReason = this._lastSaveFailureReason;
+            return Object.freeze({
+                ok: false,
+                reason: failureReason === 'external-save-changed'
+                    || failureReason === 'persistence-unavailable'
+                    ? failureReason : 'persistence-failed',
+            });
+        }
+
+        return Object.freeze({
+            ok: true,
+            id,
+            name: item.name,
+            cost,
+            balanceBefore: balance,
+            balanceAfter,
+            collectionBefore,
+            collectionAfter: collectionBefore + 1,
+            setId: set?.id ?? null,
+            setBefore,
+            setAfter: set ? setBefore + 1 : 0,
+        });
+    }
+
+    // Browser-facing Blueprint entrypoint. In a real window every SaveSystem
+    // first holds the shared participant lock used by ordinary writes. This
+    // instance releases its own share, then the exclusive non-waiting request
+    // succeeds only when no other tab can be writing. Unsupported/contended lock
+    // managers fail closed before any mutation. Headless validators retain the
+    // directly injected exclusive-lock seam.
+    purchaseCosmeticBlueprintAtomic(id, quotedCost) {
+        const manager = globalThis.navigator?.locks;
+        if (!manager || typeof manager.request !== 'function') {
+            return Promise.resolve(Object.freeze({
+                ok: false, reason: 'transaction-lock-unavailable',
+            }));
+        }
+        const lockFailure = (reason) => Object.freeze({ ok: false, reason });
+        if (this._saveParticipationRequired) {
+            return this.runExclusiveSaveTransaction((draft) =>
+                draft.purchaseCosmeticBlueprint(id, quotedCost)).then((result) =>
+                this._normalizeBlueprintTransactionResult(result, id, lockFailure));
+        }
+        try {
+            return Promise.resolve(manager.request(
+                SAVE_TRANSACTION_LOCK_NAME,
+                { mode: 'exclusive', ifAvailable: true },
+                (lock) => lock
+                    ? this.purchaseCosmeticBlueprint(id, quotedCost)
+                    : lockFailure('transaction-busy'),
+            )).then((result) => this._normalizeBlueprintTransactionResult(
+                result, id, lockFailure,
+            ))
+                .catch(() => lockFailure('transaction-lock-failed'));
+        } catch (e) {
+            return Promise.resolve(lockFailure('transaction-lock-failed'));
+        }
+    }
+
+    _normalizeBlueprintTransactionResult(result, id, lockFailure) {
+        const validFailure = result?.ok === false
+            && typeof result.reason === 'string' && result.reason.length > 0;
+        const validSuccess = result?.ok === true
+            && result.id === id && Number.isSafeInteger(result.cost)
+            && Number.isSafeInteger(result.balanceBefore)
+            && Number.isSafeInteger(result.balanceAfter)
+            && Number.isSafeInteger(result.collectionBefore)
+            && Number.isSafeInteger(result.collectionAfter)
+            && Number.isSafeInteger(result.setBefore)
+            && Number.isSafeInteger(result.setAfter);
+        return result && typeof result === 'object' && !Array.isArray(result)
+            && Object.isFrozen(result) && (validFailure || validSuccess)
+            ? result : lockFailure('transaction-lock-failed');
+    }
+
+    // Reusable browser economy boundary. The callback receives a detached
+    // SaveSystem draft whose eager save() calls are absorbed. It must finish
+    // synchronously and return an { ok: true, ... } receipt; the live instance
+    // then performs exactly one final save while both origin-wide exclusive
+    // locks are held. A rejection, throw, Promise callback, or failed final save
+    // leaves the live object and durable payload unchanged.
+    _createExclusiveTransactionDraft(liveData, lockFailure) {
+        // Use the prototype directly, never the live instance as a prototype.
+        // Every mutable authority field is an own detached value, so session
+        // toggles and helper assignments cannot walk the prototype chain into
+        // the live SaveSystem.
+        const draft = Object.create(SaveSystem.prototype);
+        Object.defineProperties(draft, {
+            data: { configurable: true, enumerable: true, writable: true,
+                value: cloneSaveTransactionValue(liveData) },
+            available: { configurable: true, writable: true, value: this.available },
+            _session: { configurable: true, writable: true,
+                value: cloneSaveTransactionValue(this._session) },
+            _guidedObjectiveSessionSerial: { configurable: true, writable: true,
+                value: this._guidedObjectiveSessionSerial },
+            _lastPersistedRaw: { configurable: true, writable: true,
+                value: this._lastPersistedRaw },
+            _lastSaveFailureReason: { configurable: true, writable: true,
+                value: this._lastSaveFailureReason },
+            _saveParticipationRequired: { configurable: true, writable: true, value: false },
+            _saveParticipationState: { configurable: true, writable: true, value: 'draft' },
+            _saveParticipationReady: { configurable: true, writable: true,
+                value: Promise.resolve(false) },
+            _saveParticipationRequest: { configurable: true, writable: true,
+                value: Promise.resolve() },
+            _releaseSaveParticipation: { configurable: true, writable: true, value: null },
+            _saveParticipationGeneration: { configurable: true, writable: true, value: 0 },
+            _saveParticipationHasGranted: { configurable: true, writable: true, value: true },
+            _saveParticipationDisposeRequested: {
+                configurable: true, writable: true, value: false,
+            },
+            _saveParticipationTransactionDone: {
+                configurable: true, writable: true, value: null,
+            },
+            _transactionDraftViolation: { configurable: true, writable: true, value: null },
+            // Eager SaveSystem helpers can compose freely against the detached
+            // draft. The live instance still owns the sole final save below.
+            save: { configurable: true, writable: false, value: () => true },
+        });
+
+        const taint = (method) => {
+            if (!draft._transactionDraftViolation) draft._transactionDraftViolation = method;
+        };
+        const blockSync = (method, value = false) => () => {
+            taint(method);
+            return value;
+        };
+        const blockAsync = (method) => () => {
+            taint(method);
+            return Promise.resolve(lockFailure('transaction-draft-operation-blocked'));
+        };
+        Object.defineProperties(draft, {
+            _probe: { configurable: true, value: blockSync('_probe') },
+            _loadOrDefault: { configurable: true, value: blockSync('_loadOrDefault', null) },
+            _refreshAuthorityOnParticipationGrant: {
+                configurable: true,
+                value: blockSync('_refreshAuthorityOnParticipationGrant'),
+            },
+            _beginSaveParticipation: {
+                configurable: true,
+                value: blockAsync('_beginSaveParticipation'),
+            },
+            whenSaveParticipationReady: {
+                configurable: true,
+                value: blockAsync('whenSaveParticipationReady'),
+            },
+            releaseSaveParticipation: {
+                configurable: true,
+                value: blockAsync('releaseSaveParticipation'),
+            },
+            _markSaveParticipationDisposed: {
+                configurable: true,
+                value: blockSync('_markSaveParticipationDisposed'),
+            },
+            dispose: { configurable: true, value: blockAsync('dispose') },
+            runExclusiveSaveTransaction: {
+                configurable: true,
+                value: blockAsync('runExclusiveSaveTransaction'),
+            },
+            purchaseCosmeticBlueprintAtomic: {
+                configurable: true,
+                value: blockAsync('purchaseCosmeticBlueprintAtomic'),
+            },
+            _runExclusiveSaveParticipation: {
+                configurable: true,
+                value: blockAsync('_runExclusiveSaveParticipation'),
+            },
+            closeGuidedObjectiveRun: {
+                configurable: true,
+                value: blockSync('closeGuidedObjectiveRun'),
+            },
+        });
+        return draft;
+    }
+
+    runExclusiveSaveTransaction(callback) {
+        const manager = globalThis.navigator?.locks;
+        const lockFailure = (reason) => immutableTransactionReceipt({ ok: false, reason });
+        if (typeof callback !== 'function') {
+            return Promise.resolve(lockFailure('transaction-callback-invalid'));
+        }
+        if (!this._saveParticipationRequired || !manager
+            || typeof manager.request !== 'function') {
+            return Promise.resolve(lockFailure('transaction-lock-unavailable'));
+        }
+        return this._saveParticipationReady.then((ready) => {
+            if (!ready) return lockFailure('transaction-lock-unavailable');
+            return this._runExclusiveSaveParticipation(manager, () => {
+                const liveData = this.data;
+                const draft = this._createExclusiveTransactionDraft(liveData, lockFailure);
+
+                let result;
+                try {
+                    result = callback(draft);
+                } catch (e) {
+                    return lockFailure('transaction-callback-failed');
+                }
+                if (result && typeof result.then === 'function') {
+                    return lockFailure('transaction-callback-async');
+                }
+                if (draft._transactionDraftViolation) {
+                    return lockFailure('transaction-draft-operation-blocked');
+                }
+                if (!result || typeof result !== 'object' || Array.isArray(result)
+                    || result.ok !== true) {
+                    if (result?.ok === false && typeof result.reason === 'string') {
+                        try {
+                            return immutableTransactionReceipt(result);
+                        } catch (e) {
+                            return lockFailure('transaction-receipt-invalid');
+                        }
+                    }
+                    return lockFailure('transaction-callback-failed');
+                }
+
+                let commitCandidate;
+                let settledReceipt;
+                try {
+                    // Clone these graphs independently. Even when the callback
+                    // returns a nested reference into draft.data, neither the
+                    // published save nor the receipt shares a container with
+                    // the retained draft or with each other.
+                    commitCandidate = cloneTransactionReceiptValue(draft.data);
+                    settledReceipt = immutableTransactionReceipt(result);
+                } catch (e) {
+                    return lockFailure('transaction-receipt-invalid');
+                }
+                this.data = commitCandidate;
+                let committed = false;
+                try {
+                    committed = this.save() === true;
+                } catch (e) {
+                    this._lastSaveFailureReason = 'persistence-failed';
+                }
+                if (!committed) {
+                    this.data = liveData;
+                    const reason = this.getLastSaveFailureReason();
+                    return lockFailure(reason === 'external-save-changed'
+                        || reason === 'persistence-unavailable'
+                        ? reason : 'persistence-failed');
+                }
+                return settledReceipt;
+            }, lockFailure);
+        }).catch(() => lockFailure('transaction-lock-failed'));
+    }
+
+    async _runExclusiveSaveParticipation(manager, action, lockFailure) {
+        if (this._saveParticipationState !== 'held'
+            || !this._releaseSaveParticipation) {
+            return lockFailure('transaction-busy');
+        }
+        let settleTransactionDone;
+        const transactionDone = new Promise((resolve) => {
+            settleTransactionDone = resolve;
+        });
+        this._saveParticipationTransactionDone = transactionDone;
+        const heldRequest = this._saveParticipationRequest;
+        this._saveParticipationState = 'releasing';
+        const release = this._releaseSaveParticipation;
+        this._releaseSaveParticipation = null;
+        release();
+        let result = lockFailure('transaction-lock-failed');
+        try {
+            await heldRequest;
+            result = await Promise.resolve(manager.request(
+                SAVE_PARTICIPATION_LOCK_NAME,
+                { mode: 'exclusive', ifAvailable: true },
+                async (lock) => {
+                    if (!lock) return lockFailure('transaction-busy');
+                    this._saveParticipationState = 'exclusive';
+                    // Keep the long-standing Blueprint-to-Blueprint mutex as a
+                    // nested contract while the participant-exclusive barrier
+                    // excludes every ordinary writer in every other live tab.
+                    return Promise.resolve(manager.request(
+                        SAVE_TRANSACTION_LOCK_NAME,
+                        { mode: 'exclusive', ifAvailable: true },
+                        (transactionLock) => transactionLock
+                            ? action()
+                            : lockFailure('transaction-busy'),
+                    ));
+                },
+            ));
+        } catch (e) {
+            result = lockFailure('transaction-lock-failed');
+        } finally {
+            if (this._saveParticipationDisposeRequested) {
+                this._markSaveParticipationDisposed();
+            } else {
+                this._beginSaveParticipation();
+                await this._saveParticipationReady;
+            }
+            settleTransactionDone(true);
+            if (this._saveParticipationTransactionDone === transactionDone) {
+                this._saveParticipationTransactionDone = null;
+            }
+        }
+
+        return result;
     }
 
     equipCosmetic(category, id, characterId = this.getSelectedCharacter()) {
@@ -1212,13 +1979,14 @@ export class SaveSystem {
             const item = COSMETIC_LIST.find((entry) => entry.id === id);
             if (!item || item.category !== category || !this.isCosmeticUnlocked(id)) return false;
         }
-        const presets = this._ensureCosmeticPresets();
-        presets[characterId] = { ...presets[characterId], [category]: id };
-        if (characterId === this.getSelectedCharacter()) {
-            this.data.cosmetics.equipped = copyCosmeticLook(presets[characterId]);
-        }
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            const presets = this._ensureCosmeticPresets();
+            presets[characterId] = { ...presets[characterId], [category]: id };
+            if (characterId === this.getSelectedCharacter()) {
+                this.data.cosmetics.equipped = copyCosmeticLook(presets[characterId]);
+            }
+            return true;
+        }).committed;
     }
 
     // Atomic all-or-nothing full-look equip. Every slot must be present, known,
@@ -1238,13 +2006,14 @@ export class SaveSystem {
             if (!item || item.category !== category || !this.isCosmeticUnlocked(id)) return false;
             next[category] = id;
         }
-        const presets = this._ensureCosmeticPresets();
-        presets[characterId] = next;
-        if (characterId === this.getSelectedCharacter()) {
-            this.data.cosmetics.equipped = copyCosmeticLook(next);
-        }
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            const presets = this._ensureCosmeticPresets();
+            presets[characterId] = next;
+            if (characterId === this.getSelectedCharacter()) {
+                this.data.cosmetics.equipped = copyCosmeticLook(next);
+            }
+            return true;
+        }).committed;
     }
 
     // One-save Boutique transaction: validate the charged ids, exact shared
@@ -1286,22 +2055,24 @@ export class SaveSystem {
             next[category] = id;
         }
 
-        this.data.totalCoins = balance - totalCost;
-        this.data.cosmetics.unlocked.push(...uniqueIds);
-        const presets = this._ensureCosmeticPresets();
-        presets[characterId] = next;
-        if (characterId === this.getSelectedCharacter()) {
-            this.data.cosmetics.equipped = copyCosmeticLook(next);
-        }
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.totalCoins = balance - totalCost;
+            this.data.cosmetics.unlocked.push(...uniqueIds);
+            const presets = this._ensureCosmeticPresets();
+            presets[characterId] = next;
+            if (characterId === this.getSelectedCharacter()) {
+                this.data.cosmetics.equipped = copyCosmeticLook(next);
+            }
+            return true;
+        }).committed;
     }
 
     setCosmeticPursuit(setId) {
         if (setId !== null && !COSMETIC_SETS.some((set) => set.id === setId)) return false;
-        this.data.cosmetics.pursuitSetId = setId;
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.cosmetics.pursuitSetId = setId;
+            return true;
+        }).committed;
     }
 
     // Zero arguments preserve the historical global-equipment API. Supplying a
@@ -1326,9 +2097,10 @@ export class SaveSystem {
 
     unlockGear(id) {
         if (this.isGearUnlocked(id)) return false;
-        this.data.gear.unlocked.push(id);
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.gear.unlocked.push(id);
+            return true;
+        }).committed;
     }
 
     equipGear(category, id) {
@@ -1337,9 +2109,10 @@ export class SaveSystem {
             const item = GEAR_LIST.find((entry) => entry.id === id);
             if (!item || item.category !== category || !this.isGearUnlocked(id)) return false;
         }
-        this.data.gear.equipped[category] = id;
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.gear.equipped[category] = id;
+            return true;
+        }).committed;
     }
 
     getEquippedGear() {
@@ -1353,11 +2126,12 @@ export class SaveSystem {
 
     setSelectedCharacter(id) {
         if (!CHARACTER_IDS.includes(id)) return false;
-        const presets = this._ensureCosmeticPresets();
-        this.data.selectedCharacter = id;
-        this.data.cosmetics.equipped = copyCosmeticLook(presets[id]);
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            const presets = this._ensureCosmeticPresets();
+            this.data.selectedCharacter = id;
+            this.data.cosmetics.equipped = copyCosmeticLook(presets[id]);
+            return true;
+        }).committed;
     }
 
     // ── Map selection (unlock-gated by exact predecessor bosses) ────────
@@ -1412,9 +2186,10 @@ export class SaveSystem {
             return true;
         }
         if (!this.campaignMapUnlocked(id)) return false;
-        this.data.selectedMap = id;
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.selectedMap = id;
+            return true;
+        }).committed;
     }
 
     recordCampaignBossDefeat(inputOrMapId, bossIdArg, eligibleArg = false) {
@@ -1428,8 +2203,21 @@ export class SaveSystem {
             eligible: input.eligible === true && !this.getMapBypassActive(),
         });
         if (receipt.changed) {
-            this.data.campaignProgress = receipt.progress;
-            this.save();
+            const commit = this._commitMutation(() => {
+                this.data.campaignProgress = receipt.progress;
+                return receipt;
+            });
+            if (!commit.committed) {
+                return {
+                    ...receipt,
+                    accepted: false,
+                    changed: false,
+                    reason: this.getLastSaveFailureReason() || 'persistence-failed',
+                    newlyUnlockedMapId: null,
+                    progress: this.data.campaignProgress,
+                    status: this.getMapUnlockStatus(input.mapId),
+                };
+            }
         }
         return receipt;
     }
@@ -1441,15 +2229,21 @@ export class SaveSystem {
 
     addBattlePassXp(amount) {
         if (!Number.isFinite(amount) || amount <= 0) return { added: 0, everflameCaches: 0, everflameCoins: 0 };
-        const before = bpProgress(this.data.battlePass.xp);
-        const added = Math.floor(amount);
-        this.data.battlePass.xp = Math.min(Number.MAX_SAFE_INTEGER, this.data.battlePass.xp + added);
-        const after = bpProgress(this.data.battlePass.xp);
-        const everflameCaches = Math.max(0, after.everflameRank - before.everflameRank);
-        const everflameCoins = everflameCaches * BP_EVERFLAME_COINS;
-        if (everflameCoins > 0) this.data.totalCoins += everflameCoins;
-        this.save();
-        return { added, everflameCaches, everflameCoins };
+        const commit = this._commitMutation(() => {
+            const before = bpProgress(this.data.battlePass.xp);
+            const added = Math.floor(amount);
+            this.data.battlePass.xp = Math.min(Number.MAX_SAFE_INTEGER, this.data.battlePass.xp + added);
+            const after = bpProgress(this.data.battlePass.xp);
+            const everflameCaches = Math.max(0, after.everflameRank - before.everflameRank);
+            const everflameCoins = everflameCaches * BP_EVERFLAME_COINS;
+            if (everflameCoins > 0) this.data.totalCoins = Math.min(
+                MAX_COIN_BALANCE, this.data.totalCoins + everflameCoins,
+            );
+            return { added, everflameCaches, everflameCoins };
+        });
+        return commit.committed
+            ? commit.value
+            : { added: 0, everflameCaches: 0, everflameCoins: 0 };
     }
 
     isLevelClaimed(level) {
@@ -1458,15 +2252,18 @@ export class SaveSystem {
 
     claimLevel(level) {
         if (this.isLevelClaimed(level)) return false;
-        this.data.battlePass.claimed.push(level);
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.battlePass.claimed.push(level);
+            return true;
+        }).committed;
     }
 
     incrementStat(key, amount = 1) {
-        if (!this.data.stats) return;
-        this.data.stats[key] = (this.data.stats[key] ?? 0) + amount;
-        this.save();
+        if (!this.data.stats) return false;
+        return this._commitMutation(() => {
+            this.data.stats[key] = (this.data.stats[key] ?? 0) + amount;
+            return true;
+        }).committed;
     }
 
     // ── Difficulty tier ──────────────────────────────────────────────────
@@ -1476,9 +2273,10 @@ export class SaveSystem {
 
     setDifficulty(id) {
         if (!DIFFICULTIES.includes(id)) return false;
-        this.data.difficulty = id;
-        this.save();
-        return true;
+        return this._commitMutation(() => {
+            this.data.difficulty = id;
+            return true;
+        }).committed;
     }
 
     // ── Achievements (one-time milestone claims) ─────────────────────────
@@ -1488,11 +2286,12 @@ export class SaveSystem {
 
     // Marks an achievement claimed. Returns true if this call NEWLY claimed it.
     claimAchievement(id) {
-        if (!this.data.achievements) this.data.achievements = { claimed: [] };
-        if (this.data.achievements.claimed.includes(id)) return false;
-        this.data.achievements.claimed.push(id);
-        this.save();
-        return true;
+        if (this.data.achievements?.claimed?.includes(id)) return false;
+        return this._commitMutation(() => {
+            if (!this.data.achievements) this.data.achievements = { claimed: [] };
+            this.data.achievements.claimed.push(id);
+            return true;
+        }).committed;
     }
 
     // ── Daily challenges ─────────────────────────────────────────────────
@@ -1501,11 +2300,13 @@ export class SaveSystem {
     // in (computed from the clock by the caller / content helper) so this stays
     // testable without touching Date here.
     getDailyState(day) {
-        if (!this.data.daily) this.data.daily = { day: 0, completed: [] };
-        if (this.data.daily.day !== day) {
-            this.data.daily.day = day;
-            this.data.daily.completed = [];
-            this.save();
+        if (!this.data.daily || this.data.daily.day !== day) {
+            this._commitMutation(() => {
+                if (!this.data.daily) this.data.daily = { day: 0, completed: [] };
+                this.data.daily.day = day;
+                this.data.daily.completed = [];
+                return true;
+            });
         }
         return this.data.daily;
     }
@@ -1516,11 +2317,16 @@ export class SaveSystem {
 
     // Marks a daily challenge complete for `day`. Returns true if NEWLY done.
     markDailyComplete(day, id) {
-        const d = this.getDailyState(day);
-        if (d.completed.includes(id)) return false;
-        d.completed.push(id);
-        this.save();
-        return true;
+        const current = this.data.daily;
+        if (current?.day === day && current.completed?.includes(id)) return false;
+        return this._commitMutation(() => {
+            if (!this.data.daily || this.data.daily.day !== day) {
+                this.data.daily = { day, completed: [] };
+            }
+            if (this.data.daily.completed.includes(id)) return false;
+            this.data.daily.completed.push(id);
+            return true;
+        }).committed;
     }
 
     // ── Pact Mastery (per-character highest cleared Pact tier) ───────────
@@ -1534,13 +2340,15 @@ export class SaveSystem {
     // caller can pay a one-time bounty per notch climbed.
     recordPactClear(characterId, tier) {
         if (!characterId || !Number.isFinite(tier) || tier <= 0) return 0;
-        if (!this.data.pactMastery) this.data.pactMastery = {};
-        const prev = this.data.pactMastery[characterId] ?? 0;
+        const prev = this.data.pactMastery?.[characterId] ?? 0;
         const t = Math.floor(tier);
         if (t <= prev) return 0;
-        this.data.pactMastery[characterId] = t;
-        this.save();
-        return t - prev;
+        const commit = this._commitMutation(() => {
+            if (!this.data.pactMastery) this.data.pactMastery = {};
+            this.data.pactMastery[characterId] = t;
+            return t - prev;
+        });
+        return commit.committed ? commit.value : 0;
     }
 
     // ── Gauntlet (endless) score ─────────────────────────────────────────
@@ -1549,12 +2357,15 @@ export class SaveSystem {
     recordGauntletScore(score) {
         const s = this.data.stats;
         if (!s) return false;
-        const v = Math.max(0, Math.floor(score || 0));
-        s.gauntletRuns = (s.gauntletRuns ?? 0) + 1;
-        let best = false;
-        if (v > (s.bestGauntletScore ?? 0)) { s.bestGauntletScore = v; best = true; }
-        this.save();
-        return best;
+        const commit = this._commitMutation(() => {
+            const stats = this.data.stats;
+            const v = Math.max(0, Math.floor(score || 0));
+            stats.gauntletRuns = (stats.gauntletRuns ?? 0) + 1;
+            let best = false;
+            if (v > (stats.bestGauntletScore ?? 0)) { stats.bestGauntletScore = v; best = true; }
+            return best;
+        });
+        return commit.committed ? commit.value : false;
     }
 
     // ── Daily Road best-of-day ───────────────────────────────────────────
@@ -1565,20 +2376,22 @@ export class SaveSystem {
     // past day's latch can never match today, so it's harmless). Returns
     // { best: new-best-today?, firstToday: first daily score of this day? }.
     recordDailyRoadScore(day, score) {
-        const old = this.data.dailyRoad;
-        const firstToday = !old || typeof old !== 'object' || old.day !== day;
-        if (firstToday) {
-            this.data.dailyRoad = {
-                day, best: 0,
-                prevBest: (old && old.day === day - 1) ? (old.best ?? 0) : 0,
-                caseDay: (old && old.caseDay) || 0,
-            };
-        }
-        const v = Math.max(0, Math.floor(score || 0));
-        let best = false;
-        if (v > this.data.dailyRoad.best) { this.data.dailyRoad.best = v; best = true; }
-        this.save();
-        return { best, firstToday };
+        const commit = this._commitMutation(() => {
+            const old = this.data.dailyRoad;
+            const firstToday = !old || typeof old !== 'object' || old.day !== day;
+            if (firstToday) {
+                this.data.dailyRoad = {
+                    day, best: 0,
+                    prevBest: (old && old.day === day - 1) ? (old.best ?? 0) : 0,
+                    caseDay: (old && old.caseDay) || 0,
+                };
+            }
+            const v = Math.max(0, Math.floor(score || 0));
+            let best = false;
+            if (v > this.data.dailyRoad.best) { this.data.dailyRoad.best = v; best = true; }
+            return { best, firstToday };
+        });
+        return commit.committed ? commit.value : { best: false, firstToday: false };
     }
 
     // Once-a-day Daily Road free-case latch: returns true only the FIRST call
@@ -1587,13 +2400,14 @@ export class SaveSystem {
     // before the clear never burns the day's case.
     claimDailyRoadCase(day) {
         if (!Number.isInteger(day) || day <= 0) return false;
-        if (!this.data.dailyRoad || typeof this.data.dailyRoad !== 'object') {
-            this.data.dailyRoad = { day: 0, best: 0, prevBest: 0, caseDay: 0 };
-        }
-        if (this.data.dailyRoad.caseDay === day) return false;
-        this.data.dailyRoad.caseDay = day;
-        this.save();
-        return true;
+        if (this.data.dailyRoad?.caseDay === day) return false;
+        return this._commitMutation(() => {
+            if (!this.data.dailyRoad || typeof this.data.dailyRoad !== 'object') {
+                this.data.dailyRoad = { day: 0, best: 0, prevBest: 0, caseDay: 0 };
+            }
+            this.data.dailyRoad.caseDay = day;
+            return true;
+        }).committed;
     }
 
     // ── Day streak (celebratory only — never punishes) ───────────────────
@@ -1601,26 +2415,31 @@ export class SaveSystem {
     // extend it; a gap restarts at 1; same-day calls are idempotent.
     recordDayStreak(day) {
         if (!Number.isInteger(day) || day <= 0) return 0;
-        if (!this.data.streak || typeof this.data.streak !== 'object') this.data.streak = { day: 0, count: 0 };
-        const st = this.data.streak;
-        if (st.day === day) return st.count;
-        st.count = st.day === day - 1 ? (st.count ?? 0) + 1 : 1;
-        st.day = day;
-        this.save();
-        return st.count;
+        if (this.data.streak?.day === day) return this.data.streak.count;
+        const commit = this._commitMutation(() => {
+            if (!this.data.streak || typeof this.data.streak !== 'object') {
+                this.data.streak = { day: 0, count: 0 };
+            }
+            const st = this.data.streak;
+            st.count = st.day === day - 1 ? (st.count ?? 0) + 1 : 1;
+            st.day = day;
+            return st.count;
+        });
+        return commit.committed ? commit.value : 0;
     }
 
     // ── Staged menu tabs ─────────────────────────────────────────────────
     // Acknowledge a tab's one-time "NEW" badge (recorded on first open).
     markTabSeen(id) {
-        if (typeof id !== 'string' || !id) return;
-        if (!this.data.onboarding || typeof this.data.onboarding !== 'object') {
-            this.data.onboarding = { tabsSeen: [], tourDone: false };
-        }
-        const seen = this.data.onboarding.tabsSeen;
-        if (seen.includes(id)) return;
-        seen.push(id);
-        this.save();
+        if (typeof id !== 'string' || !id) return false;
+        if (this.data.onboarding?.tabsSeen?.includes(id)) return false;
+        return this._commitMutation(() => {
+            if (!this.data.onboarding || typeof this.data.onboarding !== 'object') {
+                this.data.onboarding = { tabsSeen: [], tourDone: false };
+            }
+            this.data.onboarding.tabsSeen.push(id);
+            return true;
+        }).committed;
     }
 
     // ── Guided menu tour ─────────────────────────────────────────────────
@@ -1631,11 +2450,13 @@ export class SaveSystem {
     }
 
     setTourDone(done) {
-        if (!this.data.onboarding || typeof this.data.onboarding !== 'object') {
-            this.data.onboarding = { tabsSeen: [], tourDone: false };
-        }
-        this.data.onboarding.tourDone = !!done;
-        this.save();
+        return this._commitMutation(() => {
+            if (!this.data.onboarding || typeof this.data.onboarding !== 'object') {
+                this.data.onboarding = { tabsSeen: [], tourDone: false };
+            }
+            this.data.onboarding.tourDone = !!done;
+            return true;
+        }).committed;
     }
 
     // ── Gamble quota: 5 plays per rolling hour ───────────────────────────
@@ -1653,24 +2474,29 @@ export class SaveSystem {
     // lapses). Returns true if a play was consumed, false if none remain.
     consumeGamblePlay() {
         const max = 5, windowMs = 3600000;
-        if (!this.data.gamble) this.data.gamble = { windowStart: 0, count: 0 };
-        const g = this.data.gamble;
         const now = Date.now();
-        if (now - g.windowStart >= windowMs) { g.windowStart = now; g.count = 0; }
-        if (g.count >= max) return false;
-        g.count += 1;
-        this.save();
-        return true;
+        const current = this.data.gamble || { windowStart: 0, count: 0 };
+        const count = now - current.windowStart >= windowMs ? 0 : current.count;
+        if (count >= max) return false;
+        return this._commitMutation(() => {
+            if (!this.data.gamble) this.data.gamble = { windowStart: 0, count: 0 };
+            const g = this.data.gamble;
+            if (now - g.windowStart >= windowMs) { g.windowStart = now; g.count = 0; }
+            g.count += 1;
+            return true;
+        }).committed;
     }
 
     // Testing cheat: unlock every gear + cosmetic at once. Returns how many
     // were newly unlocked.
     cheatUnlockAll() {
-        let n = 0;
-        for (const g of GEAR_LIST) if (this.unlockGearSilent(g.id)) n++;
-        for (const c of COSMETIC_LIST) if (this.unlockCosmeticSilent(c.id)) n++;
-        this.save();
-        return n;
+        const commit = this._commitMutation(() => {
+            let n = 0;
+            for (const g of GEAR_LIST) if (this.unlockGearSilent(g.id)) n++;
+            for (const c of COSMETIC_LIST) if (this.unlockCosmeticSilent(c.id)) n++;
+            return n;
+        });
+        return commit.committed ? commit.value : 0;
     }
 
     // Internal unlock helpers that don't save per-call (cheatUnlockAll saves once).
@@ -1685,9 +2511,20 @@ export class SaveSystem {
     }
 
     reset() {
+        const dataBefore = this.data;
+        const sessionBefore = this._session;
+        const objectiveSessionBefore = this._guidedObjectiveSessionSerial;
         this._session = { unlockMaps: false, selectedMap: null };
         this._guidedObjectiveSessionSerial = 0;
         this.data = freshDefaultData();
-        this.save();
+        if (!this.available) {
+            this.save();
+            return false;
+        }
+        if (this.save()) return true;
+        this.data = dataBefore;
+        this._session = sessionBefore;
+        this._guidedObjectiveSessionSerial = objectiveSessionBefore;
+        return false;
     }
 }

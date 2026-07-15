@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import {
-    BATTLE_PASS_LEVELS, BP_EVERFLAME_COINS, BP_EVERFLAME_XP, BP_MAX_LEVEL,
+    ALL_PASS_COSMETIC_MILESTONES, BATTLE_PASS_LEVELS, BP_EVERFLAME_COINS, BP_EVERFLAME_XP, BP_MAX_LEVEL,
     PASS_COSMETIC_MILESTONES, bpProgress, bpThreshold, bpXpForLevel,
     migrateBattlePassXpV1,
 } from '../src/content/battlePass.js';
@@ -15,10 +15,13 @@ import { ACHIEVEMENTS } from '../src/content/achievements.js';
 import {
     COSMETICS,
     COSMETIC_ACQUISITION_ROUTES,
+    COSMETIC_BLUEPRINT_COST,
+    COSMETIC_BLUEPRINT_IDS,
     COSMETIC_CATEGORIES,
     COSMETIC_LIST,
     COSMETIC_SETS,
     cosmeticById,
+    cosmeticBlueprintCost,
     cosmeticCoinCost,
     cosmeticsForAchievement,
     getCosmeticAcquisitionRoutes,
@@ -107,6 +110,24 @@ for (const [levelText, id] of Object.entries(PASS_COSMETIC_MILESTONES)) {
     check(item.caseExcluded === true, `${id} can leak into cases`);
     check(Object.values(lastLight.pieces).includes(id), `${id} is absent from Last Light Regalia`);
 }
+const expectedAllPassCosmetics = {
+    5: 'trail_sparks', 10: 'fur_vigil', 15: 'fur_ember', 20: 'cloak_vigil',
+    25: 'aura_frost', 30: 'hat_vigil', 35: 'cloak_crimson', 40: 'trail_vigil',
+    45: 'fur_frost', 50: 'aura_mythic',
+};
+check(Object.isFrozen(ALL_PASS_COSMETIC_MILESTONES), 'all-pass cosmetic milestone map is mutable');
+check(JSON.stringify(ALL_PASS_COSMETIC_MILESTONES) === JSON.stringify(expectedAllPassCosmetics),
+    'all-pass cosmetic milestone map no longer covers the exact ten authored rewards');
+for (const [levelText, id] of Object.entries(ALL_PASS_COSMETIC_MILESTONES)) {
+    const level = Number(levelText);
+    const item = COSMETICS[id];
+    check(item?.passLevel === level, `${id} does not disclose its real Vigil level ${level}`);
+    const reward = BATTLE_PASS_LEVELS[level - 1]?.reward;
+    const rewardIds = reward?.type === 'bundle'
+        ? reward.rewards.filter((part) => part.type === 'cosmetic').map((part) => part.itemId)
+        : reward?.type === 'cosmetic' ? [reward.itemId] : [];
+    check(rewardIds.includes(id), `Vigil level ${level} does not actually award ${id}`);
+}
 
 // Content ids and dictionary keys are persistence contracts. Duplicate or
 // mismatched ids make old saves ambiguous, so validate them before route-level
@@ -148,7 +169,7 @@ for (const category of COSMETIC_CATEGORIES) {
 }
 check(COSMETIC_SETS.length === 15, 'Collection Growth I-B must contain exactly fifteen complete sets');
 check(JSON.stringify(COSMETIC_ACQUISITION_ROUTES)
-    === JSON.stringify(['starter', 'boutique', 'case', 'achievement', 'vigil']),
+    === JSON.stringify(['starter', 'boutique', 'blueprint', 'case', 'achievement', 'vigil']),
 'cosmetic acquisition-route ids/order changed');
 check(Object.isFrozen(COSMETIC_ACQUISITION_ROUTES), 'cosmetic acquisition routes are mutable');
 for (const item of COSMETIC_LIST) {
@@ -183,6 +204,18 @@ check(getCosmeticSourceLabel('fur_void') === 'Achievement · Case',
 check(JSON.stringify(getCosmeticAcquisitionRoutes('fur_vigil')) === JSON.stringify(['vigil'])
     && getCosmeticSourceLabel('fur_vigil') === 'Vigil Path',
 'Vigil Path cosmetic acquisition copy changed');
+check(COSMETIC_BLUEPRINT_COST === 72000, 'fixed Blueprint price changed');
+check(Object.isFrozen(COSMETIC_BLUEPRINT_IDS)
+    && JSON.stringify(COSMETIC_BLUEPRINT_IDS) === JSON.stringify(['aura_gloam_moths', 'aura_requiem']),
+'Blueprint allowlist is mutable or no longer the exact two authored Mythics');
+for (const id of COSMETIC_BLUEPRINT_IDS) {
+    check(cosmeticBlueprintCost(id) === COSMETIC_BLUEPRINT_COST, `${id} has the wrong Blueprint price`);
+    check(JSON.stringify(getCosmeticAcquisitionRoutes(id)) === JSON.stringify(['blueprint', 'case']),
+        `${id} lost its fixed Blueprint plus random Case routes`);
+    check(getCosmeticSourceLabel(id) === 'Blueprint · Case', `${id} has misleading acquisition copy`);
+}
+check(cosmeticBlueprintCost('fur_galaxy') === 0 && cosmeticBlueprintCost('__unknown__') === 0,
+    'non-Blueprint cosmetics expose a Blueprint price');
 
 const collectionGrowthCoinPieces = {
     cloak_splitwatch: { category: 'cloak', rarity: 'rare', rawCoinCost: 900, displayCost: 1800, key: 'cloakStyle', value: 'splitwatch' },
@@ -193,7 +226,6 @@ const collectionGrowthCoinPieces = {
 const collectionGrowthCasePieces = {
     cloak_mothwing: { category: 'cloak', rarity: 'legendary', key: 'cloakStyle', value: 'mothwing' },
     hat_mothmask: { category: 'hat', rarity: 'epic', key: 'shape', value: 'mothmask' },
-    aura_gloam_moths: { category: 'aura', rarity: 'mythic', key: 'fx', value: 'gloam_moths' },
     trail_gloam_wisps: { category: 'trail', rarity: 'rare', key: 'fx', value: 'gloam_wisps' },
 };
 for (const [id, contract] of Object.entries(collectionGrowthCoinPieces)) {
@@ -344,8 +376,9 @@ for (const [setId, contract] of Object.entries(collectionGrowthIbSets)) {
             check(JSON.stringify(routes) === JSON.stringify(['boutique']) && item.caseExcluded === true,
                 `${id} is not honestly Boutique-only`);
         } else if (contract.route === 'case') {
-            check(JSON.stringify(routes) === JSON.stringify(['case']) && item.coinCost == null,
-                `${id} is not honestly case-only`);
+            const expectedRoutes = item.blueprintCost > 0 ? ['blueprint', 'case'] : ['case'];
+            check(JSON.stringify(routes) === JSON.stringify(expectedRoutes) && item.coinCost == null,
+                `${id} does not disclose its exact Case${item.blueprintCost > 0 ? ' + Blueprint' : '-only'} routes`);
         } else {
             check(JSON.stringify(routes) === JSON.stringify(['boutique', 'case'])
                 && item.coinCost > 0 && item.caseExcluded !== true,
@@ -489,6 +522,15 @@ check(award.gained === award.breakdown.total, 'award receipt total does not matc
 const visibleAward = battlePassRunReceipt(award);
 check(visibleAward.reconciles && visibleAward.additiveTotal === visibleAward.gained,
     'visible battle-pass additive buckets do not reconcile to the displayed total');
+const failedAwardSave = {
+    xp: 250,
+    getBattlePassXp() { return this.xp; },
+    addBattlePassXp() { return { added: 0, everflameCaches: 0, everflameCoins: 0 }; },
+};
+const failedAward = awardRun(failedAwardSave, normalRun, { bonus: 0.5 });
+check(failedAward.gained === 0 && failedAward.attempted === failedAward.breakdown.total
+    && failedAward.persisted === false && failedAward.levelBefore === failedAward.levelAfter,
+    'failed Battle Pass persistence still reports authored XP as durably gained');
 const visibleWaylight = battlePassRunReceipt({ gained: livingVigilRun.total, breakdown: livingVigilRun });
 check(visibleWaylight.waylightWithinDeeds === livingVigilRun.livingVigil
     && visibleWaylight.additiveTotal === visibleWaylight.gained,
@@ -562,34 +604,40 @@ for (const key of ['vigilSitesActivated', 'vigilSiteKindsMastered', 'encountersC
 }
 check(save._validate({ stats: { vigilSiteKindsMastered: 999 } }).stats.vigilSiteKindsMastered === 4,
     'tampered site-kind mastery was not clamped during load');
-save.data = save._validate({ stats: {} });
-save.recordRun({ time: 80, vigilSitesActivated: 3, vigilSiteKindsMastered: 3, encountersCleared: 2, guardianPacksDefeated: 1 });
-save.recordRun({ time: 90, vigilSitesActivated: 2, vigilSiteKindsMastered: 99, encountersCleared: 4, guardianPacksDefeated: 2 });
-check(save.data.stats.vigilSitesActivated === 5, 'site activations did not accumulate exactly');
-check(save.data.stats.vigilSiteKindsMastered === 4, 'site-kind mastery did not clamp to four');
-check(save.data.stats.encountersCleared === 6, 'encounter clears did not accumulate exactly');
-check(save.data.stats.guardianPacksDefeated === 3, 'guardian packs did not accumulate exactly');
-save.recordRun({ vigilSitesActivated: -5, encountersCleared: -5, guardianPacksDefeated: -5 });
-check(save.data.stats.vigilSitesActivated === 5 && save.data.stats.encountersCleared === 6
-    && save.data.stats.guardianPacksDefeated === 3, 'negative Living Vigil summary values reduced lifetime totals');
+// Use a fresh authority instance. Earlier fixtures intentionally advance the
+// shared localStorage payload; reusing `save` here would now (correctly) trip
+// the stale-writer rollback guard instead of proving run-summary arithmetic.
+const vigilSave = new SaveSystem();
+vigilSave.data = vigilSave._validate({ stats: {} });
+check(vigilSave.save(), 'Living Vigil fixture could not seed durable authority');
+vigilSave.recordRun({ time: 80, vigilSitesActivated: 3, vigilSiteKindsMastered: 3, encountersCleared: 2, guardianPacksDefeated: 1 });
+vigilSave.recordRun({ time: 90, vigilSitesActivated: 2, vigilSiteKindsMastered: 99, encountersCleared: 4, guardianPacksDefeated: 2 });
+check(vigilSave.data.stats.vigilSitesActivated === 5, 'site activations did not accumulate exactly');
+check(vigilSave.data.stats.vigilSiteKindsMastered === 4, 'site-kind mastery did not clamp to four');
+check(vigilSave.data.stats.encountersCleared === 6, 'encounter clears did not accumulate exactly');
+check(vigilSave.data.stats.guardianPacksDefeated === 3, 'guardian packs did not accumulate exactly');
+vigilSave.recordRun({ vigilSitesActivated: -5, encountersCleared: -5, guardianPacksDefeated: -5 });
+check(vigilSave.data.stats.vigilSitesActivated === 5 && vigilSave.data.stats.encountersCleared === 6
+    && vigilSave.data.stats.guardianPacksDefeated === 3, 'negative Living Vigil summary values reduced lifetime totals');
 
 // Save normalization enforces authored upgrade caps, and live increments cannot
 // step past them even if a caller bypasses the shop UI.
-const overcapped = save._validate({ upgrades: Object.fromEntries(PERMANENT_UPGRADES.map((u) => [u.id, 999999])) });
+const catalogSave = new SaveSystem();
+const overcapped = catalogSave._validate({ upgrades: Object.fromEntries(PERMANENT_UPGRADES.map((u) => [u.id, 999999])) });
 for (const u of PERMANENT_UPGRADES) {
     check(overcapped.upgrades[u.id] === u.maxLevel, `${u.id} was not clamped to its authored max`);
 }
 const maxHpUpgrade = PERMANENT_UPGRADES.find((u) => u.id === 'maxHp');
-save.data.upgrades.maxHp = maxHpUpgrade.maxLevel;
-check(save.incrementUpgrade('maxHp') === false && save.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
+catalogSave.data.upgrades.maxHp = maxHpUpgrade.maxLevel;
+check(catalogSave.incrementUpgrade('maxHp') === false && catalogSave.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
     'a permanent upgrade incremented past its cap');
-save.data.upgrades.maxHp = maxHpUpgrade.maxLevel - 1;
-check(save.incrementUpgrade('maxHp') === true && save.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
+catalogSave.data.upgrades.maxHp = maxHpUpgrade.maxLevel - 1;
+check(catalogSave.incrementUpgrade('maxHp') === true && catalogSave.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
     'a valid final permanent-upgrade increment was rejected');
 
 // Equipment APIs reject cross-slot ids immediately, and the run-start bridge
 // independently ignores a malformed raw loadout instead of applying its buffs.
-const validLegacyCosmetics = save._validate({ cosmetics: {
+const validLegacyCosmetics = catalogSave._validate({ cosmetics: {
     unlocked: ['hat_wool', 'cloak_crimson'],
     equipped: { hat: 'hat_wool', cloak: 'cloak_crimson' },
 } });
@@ -598,43 +646,43 @@ check(validLegacyCosmetics.cosmetics.unlocked.includes('hat_wool')
     && validLegacyCosmetics.cosmetics.equipped.hat === 'hat_wool'
     && validLegacyCosmetics.cosmetics.equipped.cloak === 'cloak_crimson',
 'valid pre-growth cosmetic saves no longer round-trip');
-const invalidEquippedCosmetic = save._validate({ cosmetics: {
+const invalidEquippedCosmetic = catalogSave._validate({ cosmetics: {
     unlocked: ['hat_wool', 'not_a_cosmetic'],
     equipped: { hat: 'not_a_cosmetic' },
 } });
 check(invalidEquippedCosmetic.cosmetics.equipped.hat === 'hat_none',
     'unknown equipped cosmetic escaped the existing slot fallback');
-const unlockedBeforeUnknownGrant = [...save.data.cosmetics.unlocked];
-check(save.unlockCosmetic('not_a_cosmetic') === false
-    && save.unlockCosmetic('__proto__') === false
-    && save.unlockCosmetic(null) === false,
+const unlockedBeforeUnknownGrant = [...catalogSave.data.cosmetics.unlocked];
+check(catalogSave.unlockCosmetic('not_a_cosmetic') === false
+    && catalogSave.unlockCosmetic('__proto__') === false
+    && catalogSave.unlockCosmetic(null) === false,
 'public cosmetic grant accepted an unknown/prototype/non-string id');
-check(save.unlockCosmeticSilent('not_a_cosmetic') === false
-    && save.unlockCosmeticSilent('constructor') === false,
+check(catalogSave.unlockCosmeticSilent('not_a_cosmetic') === false
+    && catalogSave.unlockCosmeticSilent('constructor') === false,
 'silent cosmetic grant accepted an unknown/prototype id');
-check(JSON.stringify(save.data.cosmetics.unlocked) === JSON.stringify(unlockedBeforeUnknownGrant),
+check(JSON.stringify(catalogSave.data.cosmetics.unlocked) === JSON.stringify(unlockedBeforeUnknownGrant),
     'rejected cosmetic grant mutated the owned catalog');
-check(save.unlockCosmetic('cloak_splitwatch') === true
-    && save.unlockCosmetic('cloak_splitwatch') === false,
+check(catalogSave.unlockCosmetic('cloak_splitwatch') === true
+    && catalogSave.unlockCosmetic('cloak_splitwatch') === false,
 'valid Collection Growth cosmetic grant is not new-once idempotent');
-check(save.unlockCosmeticSilent('hat_waylantern') === true
-    && save.unlockCosmeticSilent('hat_waylantern') === false,
+check(catalogSave.unlockCosmeticSilent('hat_waylantern') === true
+    && catalogSave.unlockCosmeticSilent('hat_waylantern') === false,
 'valid silent Collection Growth grant is not new-once idempotent');
-save.unlockGear('t_emberband');
-const armorBefore = save.data.gear.equipped.armor;
-check(save.equipGear('armor', 't_emberband') === false && save.data.gear.equipped.armor === armorBefore,
+catalogSave.unlockGear('t_emberband');
+const armorBefore = catalogSave.data.gear.equipped.armor;
+check(catalogSave.equipGear('armor', 't_emberband') === false && catalogSave.data.gear.equipped.armor === armorBefore,
     'wrong-slot gear was equipped');
-check(save.equipGear('trinket', 't_emberband') === true, 'valid trinket equip was rejected');
-save.unlockCosmetic('hat_wool');
-const cloakBefore = save.data.cosmetics.equipped.cloak;
-check(save.equipCosmetic('cloak', 'hat_wool') === false && save.data.cosmetics.equipped.cloak === cloakBefore,
+check(catalogSave.equipGear('trinket', 't_emberband') === true, 'valid trinket equip was rejected');
+catalogSave.unlockCosmetic('hat_wool');
+const cloakBefore = catalogSave.data.cosmetics.equipped.cloak;
+check(catalogSave.equipCosmetic('cloak', 'hat_wool') === false && catalogSave.data.cosmetics.equipped.cloak === cloakBefore,
     'wrong-slot cosmetic was equipped');
-check(save.equipCosmetic('hat', 'hat_wool') === true, 'valid hat equip was rejected');
+check(catalogSave.equipCosmetic('hat', 'hat_wool') === true, 'valid hat equip was rejected');
 
 // I-B per-hero looks are additive and preserve the old global equipped map as
 // the selected hero's compatibility mirror. Legacy looks seed every hero;
 // malformed presets/pursuits fail closed without deleting valid ownership.
-const migratedPresetSave = save._validate({
+const migratedPresetSave = catalogSave._validate({
     selectedCharacter: 'elf',
     cosmetics: {
         unlocked: ['hat_wool', 'cloak_crimson'],
@@ -650,9 +698,9 @@ for (const heroId of CHARACTER_IDS) {
 }
 check(migratedPresetSave.cosmetics.equipped.hat === 'hat_wool',
     'selected-hero compatibility mirror changed during preset migration');
-check(save._validate({ cosmetics: { pursuitSetId: '__unknown__' } }).cosmetics.pursuitSetId === null,
+check(catalogSave._validate({ cosmetics: { pursuitSetId: '__unknown__' } }).cosmetics.pursuitSetId === null,
     'unknown cosmetic pursuit escaped save validation');
-check(save._validate({ cosmetics: { pursuitSetId: 'stormglass' } }).cosmetics.pursuitSetId === 'stormglass',
+check(catalogSave._validate({ cosmetics: { pursuitSetId: 'stormglass' } }).cosmetics.pursuitSetId === 'stormglass',
     'valid cosmetic pursuit did not survive save validation');
 
 storage.clear();

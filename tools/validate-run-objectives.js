@@ -437,6 +437,13 @@ check(gameOverSource.indexOf('this._checkObjectives();') >= 0
 'game over does not flush lethal-frame objective progress before settlement');
 check((gameSource.match(/objectivesCompleted: this\._objectiveRewardsEligible/g) || []).length === 2,
     'practice Run Path completions can leak into Battle Pass objective XP');
+const beginObjectiveSource = gameSource.slice(
+    gameSource.indexOf('    _beginRunObjectives() {'),
+    gameSource.indexOf('    _announceCurrentObjective(', gameSource.indexOf('    _beginRunObjectives() {')),
+);
+check(/beginGuidedObjectiveRun\(\);[\s\S]*?if \(!this\._objectiveRunId && rewardsRequested\)[\s\S]*?_objectiveRewardsEligible = false;/.test(beginObjectiveSource)
+    && /Run Path coin rewards are paused/.test(beginObjectiveSource),
+    'failed Run Path reservation can still promise or accrue unbankable rewards');
 const taintSource = gameSource.slice(
     gameSource.indexOf('    _taintCampaignRun('),
     gameSource.indexOf('    _debugSkipTime(', gameSource.indexOf('    _taintCampaignRun(')),

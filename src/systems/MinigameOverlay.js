@@ -7,15 +7,44 @@
 
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
 import {
-    openCase, buildCaseReel, MINES, WAGER_BETS, rollMines, minesPayoutQuote,
+    openCaseAtomic, caseOpenPreflight, buildCaseReel,
+    MINES, WAGER_BETS, rollMines, minesPayoutQuote,
 } from './CaseSystem.js';
+import { MAX_COIN_BALANCE } from './SaveSystem.js';
 import { getGlowSprite } from '../assets/ProceduralSprites.js';
 import { roundRectPath, clamp01, easeOutCubic, easeOutBack } from '../render/DrawUtils.js';
+
+// Headless validators do not have a browser Web Locks manager. Keep their
+// deterministic Mines seam all-or-nothing without JSON's Infinity coercion;
+// the actual browser path below always uses SaveSystem's exclusive boundary.
+function cloneMinigameTransactionValue(value, seen = new Map()) {
+    if (!value || typeof value !== 'object') return value;
+    if (seen.has(value)) return seen.get(value);
+    const copy = Array.isArray(value) ? [] : {};
+    seen.set(value, copy);
+    if (Array.isArray(value)) {
+        for (const entry of value) copy.push(cloneMinigameTransactionValue(entry, seen));
+    } else {
+        for (const [key, entry] of Object.entries(value)) {
+            copy[key] = cloneMinigameTransactionValue(entry, seen);
+        }
+    }
+    return copy;
+}
 
 export class MinigameOverlay {
     constructor(game) {
         this.game = game;
         this.caseAnim = null;
+        // Exact Promise for the sole in-flight paid-case transaction. Keeping
+        // the task observable avoids a second boolean drifting from reality.
+        this._caseOpenTask = null;
+        // Exact Promise for the only in-flight Mines entry transaction. The
+        // board itself remains null until stake + quota are durably committed.
+        this._minesStartTask = null;
+        // Exact Promise for the sole in-flight browser cashout. While present,
+        // the live board stays open but cannot reveal, dismiss, or settle twice.
+        this._minesCashoutTask = null;
         // Mines mini-game overlay (coin gamble): state object while open, null
         // otherwise. See openMines.
         this.mines = null;
@@ -87,9 +116,35 @@ export class MinigameOverlay {
         if (this.mines && this.mines.stopped) this.mines.age += dt;
     }
 
-    openCaseFlow(caseType) {
-        const res = openCase(this.game.saveSystem, caseType);
-        if (!res.ok) { this.game._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
+    _caseFailureMessage(reason) {
+        if (reason === 'cost') return 'Not enough coins';
+        if (reason === 'save-changed' || reason === 'external-save-changed') {
+            return 'Save changed — reload to continue';
+        }
+        if (reason === 'transaction-busy') {
+            return 'Another tab is saving — try the case again';
+        }
+        if (reason === 'transaction-lock-unavailable') {
+            return 'Secure case opening unavailable — no coins charged';
+        }
+        if (reason === 'transaction-lock-failed') {
+            return 'Case save lock failed — no coins charged';
+        }
+        if (reason === 'save-unavailable' || reason === 'persistence-unavailable'
+            || reason === 'persistence-failed') {
+            return 'Case not saved — no coins charged';
+        }
+        return 'Case unavailable — no coins charged';
+    }
+
+    _rejectCaseOpen(reason) {
+        const message = this._caseFailureMessage(reason);
+        this.game._setToast(message, false);
+        this.game.accessibility?.announce?.(message);
+        return Object.freeze({ ok: false, reason });
+    }
+
+    _presentCaseResult(caseType, res) {
         // The reward is already applied to the save; the overlay presents it
         // with a scrolling reel that decelerates onto the won item.
         this.game.audio.caseOpen();
@@ -110,6 +165,58 @@ export class MinigameOverlay {
             reducedEffects, _revealPlayed: reducedEffects,
         };
         if (reducedEffects) this.game.audio.reveal(res.rarity);
+    }
+
+    openCaseFlow(caseType) {
+        if (this._caseOpenTask) {
+            const message = 'Case opening in progress — please wait';
+            this.game._setToast(message, false);
+            this.game.accessibility?.announce?.(message);
+            return this._caseOpenTask;
+        }
+        if (this.caseAnim) {
+            return Promise.resolve(this._rejectCaseOpen('case-reveal-active'));
+        }
+
+        // Preserve immediate, RNG-free feedback for malformed, unaffordable,
+        // unavailable, or already-stale requests. This is not the authority
+        // check: openCaseAtomic repeats it only after origin-wide exclusion.
+        const preflight = caseOpenPreflight(this.game.saveSystem, caseType);
+        if (!preflight.ok) {
+            return Promise.resolve(this._rejectCaseOpen(preflight.reason));
+        }
+
+        let atomicTask;
+        try {
+            atomicTask = openCaseAtomic(this.game.saveSystem, caseType);
+        } catch (error) {
+            atomicTask = Promise.resolve(Object.freeze({
+                ok: false,
+                reason: 'transaction-lock-failed',
+            }));
+        }
+
+        const task = Promise.resolve(atomicTask).then((res) => {
+            if (!res?.ok) return this._rejectCaseOpen(
+                typeof res?.reason === 'string' ? res.reason : 'transaction-lock-failed',
+            );
+            // No reel, reward cue, or reveal audio exists before the exclusive
+            // transaction returns its durable success receipt. A renderer/audio
+            // fault after that point must never relabel a committed reward as
+            // "no coins charged"; preserve the truthful durable receipt.
+            try {
+                this._presentCaseResult(caseType, res);
+            } catch (error) {
+                const message = 'Case reward saved — presentation unavailable';
+                this.game._setToast(message, false);
+                this.game.accessibility?.announce?.(message);
+            }
+            return res;
+        }, () => this._rejectCaseOpen('transaction-lock-failed')).finally(() => {
+            if (this._caseOpenTask === task) this._caseOpenTask = null;
+        });
+        this._caseOpenTask = task;
+        return task;
     }
 
     dismissCase() { this.caseAnim = null; }
@@ -151,29 +258,99 @@ export class MinigameOverlay {
     // Stake coins on a 5×5 grid hiding mines. Reveal safe tiles to ratchet the
     // multiplier up; cash out to bank stake × multiplier, or hit a mine and
     // lose it. Gated by the hourly gamble quota (5 plays / rolling hour).
-    openMines(bet) {
-        if (this.caseAnim || this.mines) return;
-        // UI dispatches authored integer presets. Do not coerce fractional or
-        // string-shaped external input into a valid wager at this trust seam.
-        const stake = Number.isSafeInteger(bet) ? bet : 0;
-        if (!WAGER_BETS.includes(stake)) { this.game._setToast('Unavailable wager'); return; }
-        if (this.game.saveSystem.data.totalCoins < stake) { this.game._setToast('Not enough coins'); return; }
-        const info = this.game.saveSystem.gamblePlaysInfo();
+    _minesStartPreflight(save, stake) {
+        if (!WAGER_BETS.includes(stake)) return { ok: false, reason: 'wager' };
+        if (!save?.data || typeof save.save !== 'function'
+            || typeof save.gamblePlaysInfo !== 'function'
+            || typeof save.spendCoins !== 'function'
+            || typeof save.consumeGamblePlay !== 'function') {
+            return { ok: false, reason: 'save-unavailable' };
+        }
+        if (save.data.totalCoins < stake) return { ok: false, reason: 'cost' };
+        const info = save.gamblePlaysInfo();
         if (info.remaining <= 0) {
-            this.game._setToast(`No plays left — resets in ${Math.ceil(info.resetInMs / 60000)}m`);
-            return;
+            return { ok: false, reason: 'quota', resetInMs: info.resetInMs };
         }
-        if (!this.game.saveSystem.spendCoins(stake)) { this.game._setToast('Not enough coins'); return; }
-        // The read above and this consume are synchronous. Refund defensively if
-        // malformed external state ever makes the quota change between them.
-        if (!this.game.saveSystem.consumeGamblePlay()) {
-            this.game.saveSystem.addCoins(stake);
-            this.game._setToast('Wager window changed — stake refunded');
-            return;
+        if (typeof save._storageUnchangedSinceLastWrite === 'function') {
+            const storageState = save._storageUnchangedSinceLastWrite();
+            if (!storageState?.ok) {
+                return {
+                    ok: false,
+                    reason: storageState?.reason === 'external-save-changed'
+                        ? 'save-changed' : 'save-unavailable',
+                };
+            }
+        } else if (save.available === false) {
+            return { ok: false, reason: 'save-unavailable' };
         }
+        return { ok: true };
+    }
+
+    _resolveMinesStart(save, stake) {
+        const preflight = this._minesStartPreflight(save, stake);
+        if (!preflight.ok) return preflight;
+        if (!save.spendCoins(stake)) {
+            const failure = save.getLastSaveFailureReason?.();
+            return {
+                ok: false,
+                reason: failure === 'external-save-changed'
+                    ? 'save-changed' : failure || 'cost',
+            };
+        }
+        // Both eager saves are absorbed by the detached transaction draft. If
+        // quota consumption rejects, the outer boundary discards the debited
+        // draft instead of attempting an observable refund transaction.
+        if (!save.consumeGamblePlay()) {
+            return { ok: false, reason: 'quota-changed' };
+        }
+        const quota = save.gamblePlaysInfo();
+        return {
+            ok: true,
+            bet: stake,
+            mineSet: Object.freeze(rollMines()),
+            playsRemaining: quota.remaining,
+            resetInMs: quota.resetInMs,
+        };
+    }
+
+    _minesStartFailureMessage(result) {
+        const reason = result?.reason;
+        if (reason === 'wager') return 'Unavailable wager';
+        if (reason === 'cost') return 'Not enough coins';
+        if (reason === 'quota') {
+            return `No plays left — resets in ${Math.ceil((result.resetInMs || 0) / 60000)}m`;
+        }
+        if (reason === 'quota-changed') return 'Wager window changed — no wager charged';
+        if (reason === 'save-changed' || reason === 'external-save-changed') {
+            return 'Save changed — reload to continue';
+        }
+        if (reason === 'transaction-busy') {
+            return 'Another tab is saving — try Mines again';
+        }
+        if (reason === 'transaction-lock-unavailable') {
+            return 'Secure Mines entry unavailable — wager not charged';
+        }
+        if (reason === 'transaction-lock-failed') {
+            return 'Mines save lock failed — wager not charged';
+        }
+        return 'Mines entry not saved — wager not charged';
+    }
+
+    _rejectMinesStart(result) {
+        const receipt = result && typeof result === 'object'
+            ? result : { ok: false, reason: 'transaction-lock-failed' };
+        const message = this._minesStartFailureMessage(receipt);
+        this.game._setToast(message, false);
+        this.game.accessibility?.announce?.(message);
+        return Object.isFrozen(receipt) ? receipt : Object.freeze({ ...receipt, ok: false });
+    }
+
+    _presentMinesStart(receipt) {
         this.mines = {
-            bet: stake, mineSet: rollMines(), revealed: [], safeRevealed: 0, mul: 1,
+            bet: receipt.bet, mineSet: receipt.mineSet,
+            revealed: [], safeRevealed: 0, mul: 1,
             stopped: false, busted: false, cashed: false, result: null, age: 0,
+            settlementFailed: false, settlementFailureReason: null,
             // Overhaul juice (all keyed off this._menuClock):
             revealTimes: {}, // idx → clock stamp (per-tile reveal pop)
             bustIdx: null,   // which tile detonated (shock ring)
@@ -181,13 +358,125 @@ export class MinigameOverlay {
             mulPrev: 1,      // multiplier before the last safe reveal (+Nx float)
             mulPopT: 0,      // clock stamp of the last safe reveal (multiplier pop)
         };
-        this.game.audio.forge();
+        try {
+            this.game.audio.forge();
+        } catch (error) {
+            const message = 'Mines entry saved — audio unavailable';
+            this.game._setToast(message, false);
+            this.game.accessibility?.announce?.(message);
+        }
+    }
+
+    _openMinesHeadless(save, stake) {
+        const liveData = save.data;
+        const draft = Object.create(save);
+        Object.defineProperties(draft, {
+            data: {
+                configurable: true,
+                enumerable: true,
+                writable: true,
+                value: cloneMinigameTransactionValue(liveData),
+            },
+            save: {
+                configurable: true,
+                writable: false,
+                value: () => true,
+            },
+        });
+        let result;
+        try {
+            result = this._resolveMinesStart(draft, stake);
+        } catch (error) {
+            return { ok: false, reason: 'persistence-failed' };
+        }
+        if (!result?.ok) return result;
+        save.data = draft.data;
+        let committed = false;
+        try {
+            committed = save.save() === true;
+        } catch (error) {
+            committed = false;
+        }
+        if (!committed) {
+            save.data = liveData;
+            return {
+                ok: false,
+                reason: save.getLastSaveFailureReason?.() || 'persistence-failed',
+            };
+        }
+        return Object.freeze(result);
+    }
+
+    openMines(bet) {
+        if (this._minesStartTask) {
+            const message = 'Mines entry in progress — please wait';
+            this.game._setToast(message, false);
+            this.game.accessibility?.announce?.(message);
+            return this._minesStartTask;
+        }
+        if (this._caseOpenTask || this.caseAnim || this.mines) return null;
+        // UI dispatches authored integer presets. Do not coerce fractional or
+        // string-shaped external input into a valid wager at this trust seam.
+        const stake = Number.isSafeInteger(bet) ? bet : 0;
+        const save = this.game.saveSystem;
+        const preflight = this._minesStartPreflight(save, stake);
+        if (!preflight.ok) return this._rejectMinesStart(preflight);
+
+        // Node-only deterministic seam for the existing math/cashout validators.
+        // A real window, including a browser without Web Locks, always takes the
+        // exclusive fail-closed path below.
+        if (typeof globalThis.window === 'undefined') {
+            const result = this._openMinesHeadless(save, stake);
+            if (!result?.ok) return this._rejectMinesStart(result);
+            this._presentMinesStart(result);
+            return result;
+        }
+
+        let exclusiveTask;
+        if (typeof save.runExclusiveSaveTransaction !== 'function') {
+            exclusiveTask = Promise.resolve(Object.freeze({
+                ok: false,
+                reason: 'transaction-lock-unavailable',
+            }));
+        } else {
+            try {
+                exclusiveTask = save.runExclusiveSaveTransaction((draft) =>
+                    this._resolveMinesStart(draft, stake));
+            } catch (error) {
+                exclusiveTask = Promise.resolve(Object.freeze({
+                    ok: false,
+                    reason: 'transaction-lock-failed',
+                }));
+            }
+        }
+        const task = Promise.resolve(exclusiveTask).then((result) => {
+            if (!result?.ok) return this._rejectMinesStart(result);
+            try {
+                // Board state and the forge cue become visible only after the
+                // outer transaction has durably committed stake + quota.
+                this._presentMinesStart(result);
+            } catch (error) {
+                const message = 'Mines entry saved — presentation unavailable';
+                this.game._setToast(message, false);
+                this.game.accessibility?.announce?.(message);
+            }
+            return result;
+        }, () => this._rejectMinesStart({
+            ok: false,
+            reason: 'transaction-lock-failed',
+        })).finally(() => {
+            if (this._minesStartTask === task) this._minesStartTask = null;
+        });
+        this._minesStartTask = task;
+        return task;
     }
 
     // Reveal one tile. Safe → ratchet the multiplier; mine → bust + lose stake.
     minesReveal(i) {
         const m = this.mines;
-        if (!m || m.stopped || !Number.isInteger(i) || i < 0 || i >= MINES.tiles || m.revealed.includes(i)) return;
+        if (!m || m.stopped || this._minesCashoutTask
+            || !Number.isInteger(i) || i < 0 || i >= MINES.tiles
+            || m.revealed.includes(i)) return;
         m.revealed.push(i);
         if (m.mineSet.includes(i)) {
             m.busted = true; m.stopped = true;
@@ -205,20 +494,184 @@ export class MinigameOverlay {
         if (m.safeRevealed >= MINES.tiles - MINES.mines) this.minesCashOut();
     }
 
-    // Cash out the live multiplier (needs at least one safe reveal).
-    minesCashOut() {
-        const m = this.mines;
-        if (!m || m.stopped || m.safeRevealed <= 0) return;
-        m.stopped = true; m.cashed = true; m.stopFxT = this._menuClock;
-        const quote = minesPayoutQuote(m.bet, m.safeRevealed);
-        const payout = quote.payout;
-        m.mul = quote.multiplier;
-        m.result = { mul: quote.multiplier, payout, net: quote.net };
-        if (payout > 0) this.game.saveSystem.addCoins(payout);
-        this.game.audio.reveal(m.mul >= 8 ? 'mythic' : m.mul >= 4 ? 'legendary' : m.mul >= 2 ? 'epic' : 'rare');
+    _resolveMinesCashout(save, payout) {
+        if (!save?.data || typeof save.save !== 'function') {
+            return { ok: false, reason: 'persistence-unavailable' };
+        }
+        const rawBalance = save.data.totalCoins;
+        const balance = rawBalance === Infinity ? MAX_COIN_BALANCE
+            : Number.isFinite(rawBalance) && rawBalance > 0
+                ? Math.min(MAX_COIN_BALANCE, Math.floor(rawBalance)) : 0;
+        const credit = Number.isFinite(payout) && payout > 0
+            ? Math.min(MAX_COIN_BALANCE, Math.floor(payout)) : 0;
+        if (credit <= 0) return { ok: false, reason: 'cashout-invalid' };
+        const balanceAfter = credit > MAX_COIN_BALANCE - balance
+            ? MAX_COIN_BALANCE : balance + credit;
+        save.data.totalCoins = balanceAfter;
+        return {
+            ok: true,
+            payout: credit,
+            balanceBefore: balance,
+            balanceAfter,
+        };
     }
 
-    dismissMines() { this.mines = null; }
+    _minesCashoutFailureMessage(result) {
+        const reason = result?.reason;
+        if (reason === 'transaction-busy') {
+            return 'Cashout paused — another tab is saving. Try again.';
+        }
+        if (reason === 'external-save-changed') {
+            return 'Cashout paused — save changed. Try again.';
+        }
+        if (reason === 'transaction-lock-unavailable') {
+            return 'Secure cashout unavailable — board kept open. Try again.';
+        }
+        if (reason === 'transaction-lock-failed') {
+            return 'Cashout lock failed — board kept open. Try again.';
+        }
+        return 'Cashout not saved — board kept open. Try again.';
+    }
+
+    _rejectMinesCashout(result) {
+        const receipt = result && typeof result === 'object'
+            ? result : { ok: false, reason: 'transaction-lock-failed' };
+        const message = this._minesCashoutFailureMessage(receipt);
+        this.game?._setToast?.(message, false);
+        this.game?.accessibility?.announce?.(message);
+        return Object.isFrozen(receipt)
+            ? receipt : Object.freeze({ ...receipt, ok: false });
+    }
+
+    _publishMinesCashout(m, quote) {
+        m.stopped = true;
+        m.cashed = true;
+        m.settlementFailed = false;
+        m.settlementFailureReason = null;
+        m.stopFxT = this._menuClock;
+        m.mul = quote.multiplier;
+        m.result = { mul: quote.multiplier, payout: quote.payout, net: quote.net };
+        try {
+            this.game.audio.reveal(
+                m.mul >= 8 ? 'mythic' : m.mul >= 4 ? 'legendary' : m.mul >= 2 ? 'epic' : 'rare',
+            );
+        } catch (error) {
+            const message = 'Cashout saved — audio unavailable';
+            this.game?._setToast?.(message, false);
+            this.game?.accessibility?.announce?.(message);
+        }
+    }
+
+    _cashoutMinesHeadless(save, payout) {
+        const liveData = save?.data;
+        if (!liveData) return { ok: false, reason: 'persistence-unavailable' };
+        const draft = Object.create(save);
+        Object.defineProperties(draft, {
+            data: {
+                configurable: true,
+                enumerable: true,
+                writable: true,
+                value: cloneMinigameTransactionValue(liveData),
+            },
+            save: {
+                configurable: true,
+                writable: false,
+                value: () => true,
+            },
+        });
+        const result = this._resolveMinesCashout(draft, payout);
+        if (!result.ok) return result;
+        save.data = draft.data;
+        let committed = false;
+        try {
+            committed = save.save() === true;
+        } catch (error) {
+            committed = false;
+        }
+        if (!committed) {
+            save.data = liveData;
+            return {
+                ok: false,
+                reason: save.getLastSaveFailureReason?.() || 'persistence-failed',
+            };
+        }
+        return Object.freeze(result);
+    }
+
+    // Cash out the live multiplier (needs at least one safe reveal). Browsers
+    // settle through the same origin-wide exclusive boundary as paid entry;
+    // the headless math/cashout seam stays synchronous for deterministic tests.
+    minesCashOut() {
+        if (this._minesCashoutTask) {
+            const message = 'Cashout in progress — please wait';
+            this.game?._setToast?.(message, false);
+            this.game?.accessibility?.announce?.(message);
+            return this._minesCashoutTask;
+        }
+        const m = this.mines;
+        if (!m || m.stopped || m.safeRevealed <= 0) return false;
+        const quote = minesPayoutQuote(m.bet, m.safeRevealed);
+        const save = this.game?.saveSystem;
+
+        if (typeof globalThis.window === 'undefined') {
+            const result = this._cashoutMinesHeadless(save, quote.payout);
+            if (!result?.ok) {
+                this._rejectMinesCashout(result);
+                return false;
+            }
+            this._publishMinesCashout(m, quote);
+            return true;
+        }
+
+        let exclusiveTask;
+        if (typeof save?.runExclusiveSaveTransaction !== 'function') {
+            exclusiveTask = Promise.resolve(Object.freeze({
+                ok: false,
+                reason: 'transaction-lock-unavailable',
+            }));
+        } else {
+            try {
+                exclusiveTask = save.runExclusiveSaveTransaction((draft) =>
+                    this._resolveMinesCashout(draft, quote.payout));
+            } catch (error) {
+                exclusiveTask = Promise.resolve(Object.freeze({
+                    ok: false,
+                    reason: 'transaction-lock-failed',
+                }));
+            }
+        }
+        const task = Promise.resolve(exclusiveTask).then((result) => {
+            if (!result?.ok) return this._rejectMinesCashout(result);
+            try {
+                // BANKED/result/reveal publish only after the payout write is
+                // durable. Until this line the board remains live and retryable.
+                this._publishMinesCashout(m, quote);
+            } catch (error) {
+                const message = 'Cashout saved — presentation unavailable';
+                this.game?._setToast?.(message, false);
+                this.game?.accessibility?.announce?.(message);
+            }
+            return result;
+        }, () => this._rejectMinesCashout({
+            ok: false,
+            reason: 'transaction-lock-failed',
+        })).finally(() => {
+            if (this._minesCashoutTask === task) this._minesCashoutTask = null;
+        });
+        this._minesCashoutTask = task;
+        return task;
+    }
+
+    dismissMines() {
+        if (this._minesCashoutTask) {
+            const message = 'Cashout in progress — please wait';
+            this.game?._setToast?.(message, false);
+            this.game?.accessibility?.announce?.(message);
+            return false;
+        }
+        this.mines = null;
+        return true;
+    }
 
     // Grid tile rects (internal coords) — shared by render + hit-testing. A
     // fixed stacked layout: a header band (multiplier) above, the board here,
@@ -479,7 +932,8 @@ export class MinigameOverlay {
         } else {
             ctx.textBaseline = 'alphabetic';
             ctx.font = `800 46px ${FONT}`;
-            this._mText(ctx, m.busted ? 'FORGE COOLED' : 'BANKED!', cx, cb.y + 28, m.busted ? '#ff5a4a' : '#74e890');
+            this._mText(ctx, m.busted ? 'FORGE COOLED' : 'BANKED!', cx, cb.y + 28,
+                m.busted ? '#ff8a4a' : '#74e890');
             ctx.font = `800 30px ${FONT}`;
             this._mText(ctx, m.busted ? `Lost ◎ ${m.bet}`
                 : `Won ◎ ${m.result.payout}   (${m.result.net >= 0 ? '+' : ''}${m.result.net})`, cx, cb.y + 70, '#fff');

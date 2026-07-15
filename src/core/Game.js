@@ -66,7 +66,7 @@ import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { getBorderStrip, getBorderPattern } from '../assets/ObstacleSprites.js';
 import { awardRun as awardBattlePassRun } from '../systems/BattlePassSystem.js';
-import { openCase } from '../systems/CaseSystem.js';
+import { claimFreeCaseEntitlementAtomic } from '../systems/EntitlementTransaction.js';
 import { resolveAppearance, cosmeticsForAchievement, COSMETICS } from '../content/cosmetics.js';
 import { WEAPONS, computePlayerAura } from '../content/weapons.js';
 import { applyPermanentUpgrades } from '../content/permanentUpgrades.js';
@@ -96,7 +96,12 @@ import { RunStateMethods } from './RunState.js';           // run-state creation
 import { GameUpdateMethods, gemLightColor } from './GameUpdate.js';   // gameplay update pipeline split out; spliced onto the prototype below (gemLightColor still used by render() here)
 import { GameRenderMethods } from './GameRender.js';       // render pipeline split out; spliced onto the prototype below
 import { CombatResolverMethods } from './CombatResolver.js';   // combat resolution + kill/drop flow split out; spliced onto the prototype below
-import { consumeRepeatedDiscreteKey, GameInputActionMethods } from './GameInputActions.js';   // pointer/key/menu action routing split out; spliced onto the prototype below
+import {
+    consumeRepeatedDiscreteKey,
+    GameInputActionMethods,
+    hasPendingSecureMenuSave,
+    resetCollectionCompletionFlow,
+} from './GameInputActions.js';   // pointer/key/menu action routing split out; spliced onto the prototype below
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
@@ -209,6 +214,31 @@ export class Game {
         // Character's phone-only HERO RITES drill-in is session UI state, not
         // progression. Desktop always renders its combined Character surface.
         this.characterPhonePane = 'collection';
+        // Completion Truth is a nested Character surface. Browsing, confirmation,
+        // and the explanatory receipt are all session-only; SaveSystem owns only
+        // the resulting Blueprint claim/unlock after an atomic purchase.
+        this.collectionCompletion = {
+            open: false,
+            section: 'overview',
+            page: 1,
+            blueprintId: 'aura_requiem',
+        };
+        this.blueprintConfirm = null;
+        this.blueprintReceipt = null;
+        this.blueprintPurchasePending = null;
+        this._blueprintPurchaseSerial = 0;
+        // Reward claims use the same cross-tab exclusive save boundary as
+        // Blueprints. These fields are session-only operation ownership, never
+        // progression, and expose the exact tasks to lifecycle/QA callers.
+        this.battlePassClaimPending = null;
+        this._battlePassClaimSerial = 0;
+        this._battlePassClaimTask = null;
+        this._dailyRoadCasePending = null;
+        this._dailyRoadCaseSerial = 0;
+        this._dailyRoadCaseTask = null;
+        this.shopPurchasePending = null;
+        this._shopPurchaseSerial = 0;
+        this._shopPurchaseTask = null;
         this.boutiqueView = {
             category: 'fur', page: 1, setPage: 1,
         };
@@ -332,6 +362,16 @@ export class Game {
                 return;
             }
             if (this.screen === 'start') {
+                // A paid/reward transaction cannot be cancelled once its
+                // origin-wide exclusive save begins. Keep keyboard shortcuts,
+                // Escape, focus travel, and dev launch keys inside the same
+                // brief modal boundary as pointer menu actions. Backquote/F2
+                // remain global above so ?dev=1 diagnostics stay available.
+                if (hasPendingSecureMenuSave(this)) {
+                    e.preventDefault();
+                    this._setToast('Finishing secure save — please wait');
+                    return;
+                }
                 // BOSSFORGE — dev shortcut: launch Boss Rush straight from the menu
                 // (skips finding the CTA), gated by DEV_MODE like the other cheats.
                 if (DEV_MODE && e.code === 'KeyG' && !this.minigame.mines && !this.minigame.caseAnim && !this.menuTour) {
@@ -397,6 +437,17 @@ export class Game {
                     return;
                 }
 
+                // Collection Completion is a nested Character history stack on
+                // every viewport. It owns Escape before Settings, phone Rites,
+                // or the global HOME route: Case â†’ Blueprint â†’ Sources â†’
+                // Overview â†’ catalog. The central action also cancels an armed
+                // Blueprint before changing panes.
+                if (e.code === 'Escape' && this.collectionCompletion?.open === true) {
+                    e.preventDefault();
+                    this._menuAction('collectionCompletionBack', null);
+                    return;
+                }
+
                 // Accessibility is nested inside Settings: the first Escape
                 // returns to General, and a second Escape follows the normal
                 // section-to-HOME path below.
@@ -428,6 +479,7 @@ export class Game {
                 // chip's keyboard twin). A fresh focus traversal starts there.
                 if (e.code === 'Escape' && this.menuTab !== 'home') {
                     e.preventDefault();
+                    resetCollectionCompletionFlow(this);
                     this.menuTab = 'home';
                     this._resetMenuFocus();
                     this.accessibility?.setScreen?.('start', 'Home.');
@@ -438,6 +490,7 @@ export class Game {
                 if (e.code === 'Tab' || e.code === 'ArrowRight' || e.code === 'ArrowDown'
                     || e.code === 'ArrowLeft' || e.code === 'ArrowUp') {
                     e.preventDefault();
+                    this.blueprintConfirm = null;
                     const backwards = (e.code === 'Tab' && e.shiftKey)
                         || e.code === 'ArrowLeft' || e.code === 'ArrowUp';
                     this._menuMoveFocus(backwards ? -1 : 1);
@@ -895,6 +948,7 @@ export class Game {
     _startRun({ campaignEligible = false } = {}) {
         // A confirmed pause exit can never bleed into the new run it creates.
         this.pauseExitConfirm = null;
+        resetCollectionCompletionFlow(this);
         // Daily Road: resolve the day's curated setup BEFORE _initRunState reads the
         // map (BossDirector/tier). Overrides map + Trials locally; the forced road is
         // applied at the end of _startRun. Never touches the persisted selections.
@@ -1184,6 +1238,7 @@ export class Game {
 
     returnToShop() {
         this.pauseExitConfirm = null;
+        resetCollectionCompletionFlow(this);
         this._abandonGuidedObjectiveRewards();
         this._bankRunCoins();
         this.audio.playMusic('menu');
@@ -1214,6 +1269,8 @@ export class Game {
     // to it + acknowledging its NEW badge, which is also what permanently
     // unlocks the staged menu). While active, only Next/Skip are honored.
     _armMenuTour() {
+        resetCollectionCompletionFlow(this);
+        this.characterPhonePane = 'collection';
         this.menuTour = { idx: 0 };
         this._resetMenuFocus();
         this._applyTourStep();
@@ -1222,6 +1279,7 @@ export class Game {
     _applyTourStep() {
         const step = TOUR_STEPS[this.menuTour?.idx];
         if (!step) return;
+        resetCollectionCompletionFlow(this);
         this.menuTab = step.tab;
         // Tour steps may target a nested Settings pane. Resetting this on every
         // step prevents a replay or skipped tour from leaving Settings parked
@@ -1234,6 +1292,7 @@ export class Game {
     }
 
     _endMenuTour() {
+        resetCollectionCompletionFlow(this);
         this.menuTour = null;
         this.saveSystem.setTourDone(true);
         this.menuTab = 'home';   // land back on the title screen after the tour
@@ -1634,6 +1693,72 @@ export class Game {
         return earned;
     }
 
+    _queueDailyRoadCaseEntitlement(day, summary) {
+        if (!Number.isInteger(day) || day <= 0) return null;
+        if (this._dailyRoadCasePending && this._dailyRoadCaseTask) {
+            // A run can finish only once, but retain deterministic ownership if
+            // two lifecycle paths observe the same already-started operation.
+            if (this._dailyRoadCasePending.day === day && summary) {
+                this._dailyRoadCaseTask.then((result) => {
+                    if (result?.ok) summary.dailyRoadCase = result.label;
+                    summary.dailyRoadCasePending = false;
+                });
+            }
+            return this._dailyRoadCaseTask;
+        }
+
+        const serial = (Number.isSafeInteger(this._dailyRoadCaseSerial)
+            ? this._dailyRoadCaseSerial : 0) + 1;
+        this._dailyRoadCaseSerial = serial;
+        this._dailyRoadCasePending = Object.freeze({ day, serial });
+        if (summary) summary.dailyRoadCasePending = true;
+
+        let operation;
+        try {
+            operation = claimFreeCaseEntitlementAtomic(
+                this.saveSystem,
+                'basic',
+                (draft) => draft.claimDailyRoadCase(day),
+            );
+        } catch (error) {
+            operation = { ok: false, reason: 'transaction-lock-failed' };
+        }
+
+        const settle = (rawResult) => {
+            const result = rawResult && typeof rawResult === 'object'
+                ? rawResult : { ok: false, reason: 'transaction-lock-failed' };
+            if (summary) {
+                summary.dailyRoadCasePending = false;
+                if (result.ok) summary.dailyRoadCase = result.label;
+            }
+            if (this._dailyRoadCasePending?.serial === serial) {
+                this._dailyRoadCasePending = null;
+            }
+            if (result.ok) {
+                this.accessibility?.announce?.(`Daily Road case secured: ${result.label}.`);
+            } else if (result.reason !== 'claimed') {
+                const detail = result.reason === 'transaction-busy'
+                    ? 'Another game tab is active.'
+                    : result.reason === 'external-save-changed'
+                        ? 'The save changed in another tab.'
+                        : 'Secure save access is unavailable.';
+                this.accessibility?.announce?.(
+                    `${detail} The Daily Road case remains unclaimed and can be retried on a later clear.`,
+                );
+            }
+            return result;
+        };
+        const task = Promise.resolve(operation).then(
+            settle,
+            () => settle({ ok: false, reason: 'transaction-lock-failed' }),
+        );
+        this._dailyRoadCaseTask = task;
+        task.finally(() => {
+            if (this._dailyRoadCaseTask === task) this._dailyRoadCaseTask = null;
+        });
+        return task;
+    }
+
     // Bank the Daily Road result, exactly once per run (shared by game-over
     // and victory-leave, latched by _dailyRoadRecorded). Beyond the best-of-day
     // record, the daily PAYS: score-band coins every run, plus a free Ember
@@ -1653,14 +1778,13 @@ export class Game {
         this.saveSystem.addCoins(coins);
         this.saveSystem.incrementStat('totalCoinsEarned', coins);
         // First CLEAR of the UTC day (3rd boss down — never a mere attempt, so
-        // launch-and-die can't farm it): one free Ember (basic) case — applied
-        // to the save immediately; the label rides the summary. The once-a-day
-        // latch lives in the save (claimDailyRoadCase), NOT on firstToday, so a
-        // failed first attempt doesn't burn the day's case.
+        // launch-and-die can't farm it): one free Ember (basic) case. Its daily
+        // latch and complete randomized reward share one whole-save commit; a
+        // failed/stale write leaves both absent and retryable on a later clear.
         let caseLabel = null;
-        if (this.bossesDefeated >= 3 && this.saveSystem.claimDailyRoadCase(currentDayNumber())) {
-            const r = openCase(this.saveSystem, 'basic', { free: true });
-            if (r.ok) caseLabel = r.label;
+        if (this.bossesDefeated >= 3) {
+            const day = currentDayNumber();
+            this._queueDailyRoadCaseEntitlement(day, this.runSummary);
         }
         if (this.runSummary) {
             this.runSummary.dailyRoadScore = dscore;
@@ -1814,10 +1938,10 @@ export class Game {
         });
     }
 
-    _setToast(msg) {
+    _setToast(msg, announce = true) {
         this.menuToast = msg;
         this.menuToastTimer = 2.5;
-        this.accessibility?.announce?.(msg);
+        if (announce) this.accessibility?.announce?.(msg);
     }
 
     setUpgradeChoices(choices) {
@@ -1919,7 +2043,21 @@ export class Game {
                 siteKinds: vigilKinds,
             },
         });
+        const rewardsRequested = this._objectiveRewardsEligible !== false;
         this._objectiveRunId = this.saveSystem.beginGuidedObjectiveRun();
+        if (!this._objectiveRunId && rewardsRequested) {
+            // A run-path id is the durable authority for every held coin
+            // receipt. If reserving it fails, keep the objectives as guidance
+            // but disable their wallet rewards immediately; otherwise the HUD
+            // can promise coins that settlement is unable to identify or bank.
+            this._objectiveRewardsEligible = false;
+            const message = 'Run Path rewards paused — reload to restore save access';
+            this._setToast?.(message);
+            this.waveDirector?.announce?.(message, 3.5);
+            this.accessibility?.announce?.(
+                'Run Path coin rewards are paused because the save could not be secured. Reload before the next run to restore rewards.',
+            );
+        }
         const mapId = this.campaignRun?.mapId ?? this._effectiveMapId();
         const seed = `${this._objectiveRunId}:${this._livingVigilSeed ?? 0}:${modeId}:${mapId}:${this._heroId}`;
         this.runObjectiveDirector = new RunObjectiveDirector({
