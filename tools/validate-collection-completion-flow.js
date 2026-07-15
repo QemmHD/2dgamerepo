@@ -768,6 +768,7 @@ const uiStateSource = fs.readFileSync(path.join(ROOT, 'src/systems/UIStateBuilde
 const rendererSource = fs.readFileSync(path.join(ROOT, 'src/systems/MenuRenderer.js'), 'utf8');
 const saveSource = fs.readFileSync(path.join(ROOT, 'src/systems/SaveSystem.js'), 'utf8');
 const harnessSource = fs.readFileSync(path.join(ROOT, 'tools/artshot/harness.html'), 'utf8');
+const exactFrameSource = fs.readFileSync(path.join(ROOT, 'tools/artshot/exact-frame.html'), 'utf8');
 const ciSource = fs.readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf8');
 for (const action of [
     'openCollectionCompletion',
@@ -836,6 +837,12 @@ ok(harnessSource.includes('while (game.blueprintPurchasePending')
     && harnessSource.includes('performance.now() < purchaseDeadline')
     && harnessSource.includes('production Web Lock purchase did not settle within 3 seconds'),
 'harness waits boundedly for the real asynchronous Web Lock receipt before asserting it');
+ok(exactFrameSource.includes("target.startsWith('/tools/artshot/harness.html?')")
+    && exactFrameSource.includes('root.setAttribute(name, childRoot.getAttribute(name)')
+    && exactFrameSource.includes('root.dataset.qaFrameViewport')
+    && ciSource.includes('tools/artshot/exact-frame.html?width=${COMPLETION_TARGET_WIDTH}')
+    && ciSource.includes('data-qa-frame-viewport='),
+'CI bypasses Chromium\'s sub-500 top-level clamp with an exact same-origin compact frame');
 ok(harnessSource.includes('completionTextSafe: game.ui?.menu?._lastCollectionCompletionTextSafe === true')
     && harnessSource.includes('qaRoot.dataset.qaCompletionTextSafe')
     && harnessSource.includes('qaRoot.dataset.qaCompletionCaseTruth'),

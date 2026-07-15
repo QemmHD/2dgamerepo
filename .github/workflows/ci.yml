@@ -853,13 +853,22 @@ jobs:
             for ((COMPLETION_ATTEMPT=1; COMPLETION_ATTEMPT<=COMPLETION_ATTEMPTS; COMPLETION_ATTEMPT++)); do
               COMPLETION_PROFILE=$(mktemp -d)
               COMPLETION_WINDOW="${COMPLETION_WINDOW_WIDTH},${COMPLETION_WINDOW_HEIGHT}"
+              COMPLETION_URL="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}"
+              # Chromium clamps a top-level headless window below 500 CSS px on
+              # this runner. For the committed 480x270 acceptance tier, host the
+              # unchanged production harness in an exact same-origin iframe and
+              # mirror its inert QA receipt to the outer document. The game,
+              # renderer, Canvas backing, and persisted PNG all see 480x270.
+              if (( COMPLETION_TARGET_WIDTH < 500 )); then
+                COMPLETION_WINDOW="800,600"
+                COMPLETION_URL="http://127.0.0.1:8909/tools/artshot/exact-frame.html?width=${COMPLETION_TARGET_WIDTH}&height=${COMPLETION_TARGET_HEIGHT}#/tools/artshot/harness.html?seconds=0&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}"
+              fi
               timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
                 --autoplay-policy=no-user-gesture-required \
                 --disable-background-networking --disable-component-update \
                 --force-device-scale-factor=1 --window-size="$COMPLETION_WINDOW" \
                 --virtual-time-budget=7000 --user-data-dir="$COMPLETION_PROFILE" \
-                --dump-dom \
-                "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}" \
+                --dump-dom "$COMPLETION_URL" \
                 > "$COMPLETION_DOM"
               COMPLETION_VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$COMPLETION_DOM" | head -1 | cut -d'"' -f2)
               COMPLETION_VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$COMPLETION_DOM" | head -1 | cut -d'"' -f2)
@@ -872,6 +881,7 @@ jobs:
             done
             COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$COMPLETION_DOM" | head -1)
             echo "Collection Completion ${COMPLETION_NAME}: $COMPLETION_TITLE"
+            echo "Completion viewport ${COMPLETION_VIEWPORT_WIDTH}x${COMPLETION_VIEWPORT_HEIGHT}; target ${COMPLETION_TARGET_WIDTH}x${COMPLETION_TARGET_HEIGHT}"
             echo "$COMPLETION_TITLE" | grep -q 'DONE EXC:0 ' \
               && grep -q 'data-qa-ready="1"' "$COMPLETION_DOM" \
               && grep -q "data-qa-output=\"${COMPLETION_NAME}.png\"" "$COMPLETION_DOM" \
@@ -897,6 +907,11 @@ jobs:
                 && grep -q "data-qa-canvas-backing=\"${COMPLETION_TARGET_WIDTH}x${COMPLETION_TARGET_HEIGHT}\"" "$COMPLETION_DOM" || {
                   echo "FAIL: ${COMPLETION_NAME} is not an exact touch-safe phone receipt"; exit 1;
                 }
+            fi
+            if [[ "$COMPLETION_KIND" == *-compact ]]; then
+              grep -q "data-qa-frame-viewport=\"${COMPLETION_TARGET_WIDTH}x${COMPLETION_TARGET_HEIGHT}\"" "$COMPLETION_DOM" || {
+                echo "FAIL: ${COMPLETION_NAME} did not run inside the exact compact frame"; exit 1;
+              }
             fi
             case "$COMPLETION_KIND" in
               overview-keyboard)
