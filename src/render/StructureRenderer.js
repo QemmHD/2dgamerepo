@@ -6,6 +6,12 @@
 // anchors without changing collision, LOS, spawn clearance, or enemy routing.
 
 import { getWallPattern } from '../assets/ObstacleSprites.js';
+import {
+    houseDoorActive,
+    houseStateDefinition,
+    houseWallActive,
+    worldRoomAt,
+} from '../content/houseBlueprints.js';
 
 const STYLE = {
     cabin: {
@@ -74,9 +80,19 @@ function materialFor(structure) {
     return STYLE[structure.styleType] || DEFAULT_STYLE;
 }
 
+function entryShade(edge) {
+    return edge === 'west' ? 0.20 : 0.11;
+}
+
 export class StructureRenderer {
     _roofAlpha(structure, player) {
-        if (!player) return 0.88;
+        const cutaway = structure.blueprint?.roofCutaway;
+        const exteriorAlpha = cutaway?.exteriorAlpha ?? 0.88;
+        const interiorAlpha = cutaway?.interiorAlpha ?? 0.14;
+        if (!player) return exteriorAlpha;
+        if (structure.blueprint && worldRoomAt(structure, player.x, player.y, true)) {
+            return interiorAlpha;
+        }
         const dx = Math.max(0, Math.abs(player.x - structure.x) - structure.interiorW / 2);
         const dy = Math.max(0, Math.abs(player.y - structure.y) - structure.interiorH / 2);
         const distance = Math.hypot(dx, dy);
@@ -85,7 +101,16 @@ export class StructureRenderer {
         // Only the actual interior and immediate threshold become a cutaway.
         // At the standard exterior showcase/approach distance the roof is fully
         // authored and opaque enough to establish a strong house silhouette.
-        return 0.14 + smoothstep(8, 100, distance) * 0.74;
+        return interiorAlpha + smoothstep(8, cutaway?.nearDistance ?? 100, distance)
+            * (exteriorAlpha - interiorAlpha);
+    }
+
+    _doorFor(structure, kind) {
+        if (!structure.blueprint) return null;
+        return structure.blueprint.doors.find((entry) =>
+            entry.kind === 'exterior'
+            && houseDoorActive(entry, structure.state)
+            && (kind === 'north' ? entry.normal.y < 0 : entry.normal.y > 0)) || null;
     }
 
     drawGround(ctx, structure) {
@@ -125,7 +150,11 @@ export class StructureRenderer {
         // the previous opaque ramp + bars read as a giant ladder.
         const frontY = structure.interiorH / 2 + structure.wall;
         const bend = mirror * (10 + unit(structure.visualSeed, 22) * 18);
+        const frontDoor = this._doorFor(structure, 'south');
+        ctx.save();
+        if (frontDoor) ctx.translate(frontDoor.x, 0);
         this._drawApproach(ctx, structure, m, frontY, bend);
+        ctx.restore();
 
         ctx.restore();
     }
@@ -226,7 +255,7 @@ export class StructureRenderer {
         // Rear wall has the real north doorway/breach. Both halves are drawn in
         // one translated context, so texture courses align across the opening.
         this._drawSplitWall(ctx, structure, m, backY, false);
-        this._drawDoorFrame(ctx, structure, m, backY, false);
+        this._drawDoorFrame(ctx, structure, m, backY, false, this._doorFor(structure, 'north'));
         this._drawRearDetails(ctx, structure, m, backY);
 
         // A thin roof ridge stays opaque in cutaway mode.
@@ -254,18 +283,24 @@ export class StructureRenderer {
         // Side faces belong to the front depth plane. Sorting this whole shell
         // at the front collision baseline makes it occlude actors inside/behind
         // the house while actors south of it paint over the shell exactly once.
-        this._drawSideFace(ctx, structure, m, -iHW - T, backY, frontY, H, true);
-        this._drawSideFace(ctx, structure, m, iHW, backY, frontY, H, false);
+        if (structure.blueprint) this._drawBlueprintSides(ctx, structure, m);
+        else {
+            this._drawSideFace(ctx, structure, m, -iHW - T, backY, frontY, H, true);
+            this._drawSideFace(ctx, structure, m, iHW, backY, frontY, H, false);
+        }
         this._drawSplitWall(ctx, structure, m, frontY, true);
-        this._drawDoorFrame(ctx, structure, m, frontY, true);
+        const frontDoor = this._doorFor(structure, 'south');
+        this._drawDoorFrame(ctx, structure, m, frontY, true, frontDoor);
         this._drawFrontDetails(ctx, structure, m, frontY);
 
         // Bright threshold exactly spans the actual opening and makes the safe
         // route legible during a swarm.
         ctx.fillStyle = m.trim;
-        ctx.fillRect(-structure.door * 0.43, frontY - 3, structure.door * 0.86, 7);
+        const thresholdX = frontDoor?.x || 0;
+        const thresholdW = frontDoor?.width || structure.door;
+        ctx.fillRect(thresholdX - thresholdW * 0.43, frontY - 3, thresholdW * 0.86, 7);
         ctx.fillStyle = 'rgba(255, 235, 185, 0.26)';
-        ctx.fillRect(-structure.door * 0.34, frontY - 2, structure.door * 0.68, 2);
+        ctx.fillRect(thresholdX - thresholdW * 0.34, frontY - 2, thresholdW * 0.68, 2);
 
         ctx.restore();
     }
@@ -277,12 +312,13 @@ export class StructureRenderer {
         const mirror = structure.mirror || 1;
         // Priority 2 is intentionally below the player, projectiles, bosses,
         // candles, and pickups. Houses add mood but can never starve combat cues.
+        const stateLight = houseStateDefinition(structure.blueprint, structure.state)?.light ?? 0.46;
         lighting.addLight(
             structure.x + mirror * structure.interiorW * 0.18,
             structure.y - iHH + 26,
             m.glowRadius,
             m.glow,
-            structure.styleType === 'ruin' ? 0.30 : 0.46,
+            structure.styleType === 'ruin' ? 0.30 : stateLight,
             2,
         );
         // One restrained window glow gives the facade a readable warm point.
@@ -294,6 +330,17 @@ export class StructureRenderer {
             0.24,
             2,
         );
+        if (structure.blueprint && structure.state === 'lit') {
+            const bell = structure.blueprint.furniture.find((entry) => entry.id === 'ruin-bell');
+            if (bell) lighting.addLight(
+                structure.x + bell.x,
+                structure.y + bell.y - 26,
+                154,
+                '#ff8b42',
+                0.56,
+                2,
+            );
+        }
     }
 
     _fillMaterialRect(ctx, structure, m, x, y, w, h, shade = 0) {
@@ -317,6 +364,27 @@ export class StructureRenderer {
     }
 
     _drawSplitWall(ctx, s, m, baseY, front) {
+        if (s.blueprint) {
+            const edge = front ? 'south' : 'north';
+            const parts = s.blueprint.walls.filter((entry) =>
+                entry.kind === 'shell' && entry.edge === edge
+                && houseWallActive(s.blueprint, entry, s.state));
+            for (const part of parts) {
+                this._fillMaterialRect(
+                    ctx,
+                    s,
+                    m,
+                    part.x - part.hw,
+                    baseY - s.wallH,
+                    part.hw * 2,
+                    s.wallH,
+                    front ? 0.03 : 0.13,
+                );
+                ctx.fillStyle = s.palette?.top || m.trim;
+                ctx.fillRect(part.x - part.hw, baseY - s.wallH, part.hw * 2, 8);
+            }
+            return;
+        }
         const outHW = s.interiorW / 2 + s.wall;
         const gapHalf = s.door / 2;
         const H = s.wallH;
@@ -342,12 +410,32 @@ export class StructureRenderer {
         ctx.fillRect(left ? x + 2 : x + T - 5, backY - H + 8, 3, frontY - backY + H - 12);
     }
 
-    _drawDoorFrame(ctx, s, m, baseY, front) {
-        const gapHalf = s.door / 2;
+    _drawBlueprintSides(ctx, s, m) {
+        const parts = s.blueprint.walls.filter((entry) =>
+            entry.kind === 'shell'
+            && (entry.edge === 'west' || entry.edge === 'east')
+            && houseWallActive(s.blueprint, entry, s.state));
+        for (const part of parts) {
+            const x = part.x - part.hw;
+            const y = part.y - part.hh - s.wallH;
+            const w = part.hw * 2;
+            const h = part.hh * 2 + s.wallH;
+            this._fillMaterialRect(ctx, s, m, x, y, w, h, entryShade(part.edge));
+            ctx.fillStyle = s.palette?.top || m.trim;
+            ctx.fillRect(x, y, w, 7);
+            ctx.fillStyle = 'rgba(255,255,255,0.10)';
+            ctx.fillRect(part.edge === 'west' ? x + 2 : x + w - 5, y + 8, 3, h - 12);
+        }
+    }
+
+    _drawDoorFrame(ctx, s, m, baseY, front, door = null) {
+        const gapHalf = (door?.width || s.door) / 2;
         const H = s.wallH;
         const frameH = H * (front ? 0.76 : 0.68);
         const post = Math.max(7, s.wall * 0.34);
         const y = baseY - frameH;
+        ctx.save();
+        if (door) ctx.translate(door.x, 0);
         ctx.fillStyle = m.trimDark;
         ctx.fillRect(-gapHalf - post, y, post, frameH);
         ctx.fillRect(gapHalf, y, post, frameH);
@@ -368,6 +456,7 @@ export class StructureRenderer {
             ctx.lineTo(-gapHalf * 0.42, y + 10);
             ctx.stroke();
         }
+        ctx.restore();
     }
 
     _drawWindow(ctx, m, x, y, w, h, kind = 'square') {
@@ -401,6 +490,55 @@ export class StructureRenderer {
         if (s.styleType === 'cabin') {
             const peakX = mirror * (variant === 1 ? outHW * 0.18 : 0);
             const rise = 72 + variant * 10;
+            if (s.blueprint && s.state === 'ruined') {
+                // Exposed rafters replace the roof mass; the east breach below
+                // is simultaneously absent from collision/nav/LOS.
+                ctx.strokeStyle = m.roofDark;
+                ctx.lineWidth = 11;
+                ctx.lineCap = 'square';
+                ctx.beginPath();
+                ctx.moveTo(-outHW - 12, top + 20);
+                ctx.lineTo(peakX, top - rise + 8);
+                ctx.lineTo(outHW * 0.22, top + 18);
+                ctx.moveTo(-outHW * 0.64, top + 8);
+                ctx.lineTo(outHW * 0.46, top + 8);
+                ctx.stroke();
+                ctx.strokeStyle = m.roofLight;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(-outHW - 12, top + 17);
+                ctx.lineTo(peakX, top - rise + 5);
+                ctx.lineTo(outHW * 0.22, top + 15);
+                ctx.stroke();
+                return;
+            }
+            if (s.blueprint && s.state === 'damaged') {
+                // A missing east lean-to wedge changes the silhouette while
+                // retaining both authored escape doors.
+                ctx.fillStyle = m.roofDark;
+                ctx.beginPath();
+                ctx.moveTo(-outHW - 22, top + 14);
+                ctx.lineTo(peakX, top - rise);
+                ctx.lineTo(outHW * 0.48, top + 8);
+                ctx.lineTo(outHW * 0.30, top + 34);
+                ctx.lineTo(-outHW - 10, top + 34);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = m.roof;
+                ctx.beginPath();
+                ctx.moveTo(-outHW - 10, top + 10);
+                ctx.lineTo(peakX, top - rise + 8);
+                ctx.lineTo(peakX, top + 27);
+                ctx.lineTo(-outHW, top + 27);
+                ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = m.roofLight;
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(outHW * 0.33, top + 13);
+                ctx.lineTo(outHW * 0.54, top - 4);
+                ctx.lineTo(outHW * 0.43, top + 26);
+                ctx.stroke();
+                return;
+            }
             ctx.fillStyle = m.roofDark;
             ctx.beginPath();
             ctx.moveTo(-outHW - 22, top + 12);

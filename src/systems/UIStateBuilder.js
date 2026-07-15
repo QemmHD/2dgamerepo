@@ -191,6 +191,73 @@ export function pauseExitConfirmSnapshot(game, now = Date.now()) {
     };
 }
 
+// The Ruin Bell temporarily borrows the existing single guidance card; it
+// never creates a competing HUD panel. Away from the cabin, the normal Run
+// Path remains visible. Near/engaged/retry states expose the encounter's pure
+// director snapshot through the same visual and accessibility language.
+export function ruinBellObjectiveSnapshot(game, providedGuidance = undefined) {
+    if (game?.screen !== 'gameplay') return null;
+    const director = game?.ruinBellDirector;
+    const guidance = providedGuidance === undefined
+        ? director?.getGuidanceSnapshot?.() : providedGuidance;
+    if (!guidance?.visible) return null;
+    const phase = guidance.phase;
+    // Completion keeps the cabin and bell visibly lit, but the single Run Path
+    // card must return to its normal owner once either authored reward is taken.
+    if (phase === 'cleared' && guidance.rewardClaimed === true) return null;
+    const near = guidance.inActivationRange === true;
+    const ownsCard = guidance.urgent === true
+        || near
+        || (phase === 'cleared' && guidance.rewardClaimed !== true)
+        || phase === 'retry-cooldown'
+        || phase === 'technical-defer';
+    if (!ownsCard) return null;
+
+    const labels = {
+        locked: 'UNLOCK',
+        dormant: guidance.attempt > 1 ? 'RING AGAIN' : 'RING',
+        arming: 'HOLD',
+        warning: 'BRACE',
+        active: 'DEFEND',
+        'technical-defer': 'RESET',
+        'retry-cooldown': 'RECOVER',
+        cleared: 'REWARD',
+        spent: 'RESULT',
+    };
+    const countdown = Number.isFinite(guidance.countdown)
+        ? Math.max(0, guidance.countdown) : null;
+    const current = Number.isFinite(guidance.current) ? guidance.current : 0;
+    const target = Math.max(1, Number.isFinite(guidance.target) ? guidance.target : 1);
+    const progressLabel = phase === 'arming'
+        ? `${current.toFixed(1)} / ${target.toFixed(2)}s`
+        : countdown == null
+            ? `${Math.round(current)} / ${Math.round(target)}`
+            : `${Math.ceil(countdown)}s · ${Math.round(current)}/${Math.round(target)}`;
+    return {
+        owner: 'ruin-bell',
+        id: `ruin-bell:${phase}:${guidance.attempt}:${guidance.stageId || 'none'}`,
+        phaseLabel: 'HOUSE CONTRACT',
+        phaseNumeral: guidance.symbol || 'BELL',
+        headerLabel: `RUIN BELL · ${guidance.attemptLabel}`,
+        title: guidance.title,
+        nextAction: guidance.nextAction,
+        bodyLabel: labels[phase] || 'NEXT',
+        current,
+        target,
+        progress: Math.max(0, Math.min(1, Number(guidance.progress) || 0)),
+        progressLabel,
+        reward: { amount: 0 },
+        rewardLabel: guidance.rewardLabel,
+        rewardColor: phase === 'spent' ? '#a9a1b5' : '#7fe0a0',
+        contextText: countdown == null
+            ? (game.input?.isTouchMode?.() ? 'HOUSE CONTRACT' : 'O · HEAR CONTRACT')
+            : `${guidance.countdownLabel || 'TIMER'} · ${Math.ceil(countdown)}s`,
+        accent: guidance.accent,
+        complete: guidance.complete === true,
+        accessibilityText: guidance.accessibilityText,
+    };
+}
+
 export function buildUIState(game) {
     // Fields every screen needs. Press/feedback animation state is
     // always included so flashes can play across transitions.
@@ -308,6 +375,8 @@ export function buildUIState(game) {
         directorObjective,
         base.vigilTracker?.prompt ?? null,
     ) ?? directorObjective;
+    base.ruinBellGuidance = game.ruinBellDirector?.getGuidanceSnapshot?.() ?? null;
+    base.runObjective = ruinBellObjectiveSnapshot(game, base.ruinBellGuidance) ?? base.runObjective;
     base.runPathSummary = game.runObjectiveDirector?.getSummary?.() ?? {
         completedPhases: base.objectivesDone,
         totalPhases: OBJECTIVE_COUNT,

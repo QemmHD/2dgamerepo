@@ -108,6 +108,15 @@ export class MapRenderer {
     _insideStructureExclusion(x, y, padding = 0, entranceReach = 0) {
         for (const s of this.structureExclusions) {
             if (!s) continue;
+            if (s.blueprint && Array.isArray(s.spawnExclusions)) {
+                for (const zone of s.spawnExclusions) {
+                    const dx = Math.abs(x - (s.x + zone.x));
+                    const dy = Math.abs(y - (s.y + zone.y));
+                    const approach = /approach/.test(zone.id || '') ? entranceReach : 0;
+                    if (dx <= zone.hw + padding && dy <= zone.hh + padding + approach) return true;
+                }
+                continue;
+            }
             const outHW = s.interiorW / 2 + s.wall;
             const outHH = s.interiorH / 2 + s.wall;
             const dx = Math.abs(x - s.x);

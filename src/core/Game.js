@@ -82,11 +82,13 @@ import { HazardSystem } from '../systems/HazardSystem.js';
 import { MinigameOverlay } from '../systems/MinigameOverlay.js';
 import { VigilSiteSystem, livingVigilRunSeed } from '../systems/VigilSiteSystem.js';
 import { EncounterDirector, retireEncounterEnemyTags } from '../systems/EncounterDirector.js';
+import { RuinBellDirector } from '../systems/RuinBellDirector.js';
 import { VigilTracker } from '../systems/VigilTracker.js';
+import { EMBERWOOD_RUIN_BELL_CABIN } from '../content/houseBlueprints.js';
 import { AccessibilityBridge } from '../systems/AccessibilityBridge.js';
 import { CaptionSystem } from '../systems/CaptionSystem.js';
 import { HapticsSystem } from '../systems/HapticsSystem.js';
-import { buildUIState } from '../systems/UIStateBuilder.js';
+import { buildUIState, ruinBellObjectiveSnapshot } from '../systems/UIStateBuilder.js';
 import { isPhoneLandscapeViewport } from '../systems/ResponsiveLayout.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { getCardCompositor } from '../systems/CardCompositor.js';
@@ -1167,6 +1169,26 @@ export class Game {
             dailyMode: this.dailyMode,
             riteTrialMode: this.riteTrialMode,
         });
+        // HOUSE V2: the featured Emberwood cabin owns one deterministic Ruin
+        // Bell setpiece. Reusing the cached obstacle board across same-map runs
+        // must still restore its transient damage state before the new director
+        // snapshots the shared blueprint/structure truth.
+        const ruinBellStructure = !this._bossRushConfig
+            ? this.obstacleSystem.getStructureByBlueprint?.(EMBERWOOD_RUIN_BELL_CABIN.id)
+            : null;
+        if (ruinBellStructure) {
+            this.obstacleSystem.setStructureState?.(ruinBellStructure.id, 'intact');
+            this.ruinBellStructure = ruinBellStructure;
+            this.ruinBellDirector = new RuinBellDirector({
+                runSeed: `${this._livingVigilSeed}:${biome.id}:ruin-bell`,
+                structure: ruinBellStructure,
+                blueprint: EMBERWOOD_RUIN_BELL_CABIN,
+                waveIndex: this.waveState?.index ?? 0,
+            });
+        } else {
+            this.ruinBellStructure = null;
+            this.ruinBellDirector = null;
+        }
         if (!this._bossRushConfig) {
             this.vigilSiteSystem = new VigilSiteSystem();
             this.vigilSiteSystem.initialize(this.obstacleSystem, biome.id, { seed: this._livingVigilSeed });
@@ -2072,11 +2094,15 @@ export class Game {
     }
 
     _announceCurrentObjective(force = false, suppliedSnapshot = null) {
-        const snapshot = suppliedSnapshot ?? this._currentRunObjectiveSnapshot();
+        const snapshot = ruinBellObjectiveSnapshot(this)
+            ?? suppliedSnapshot
+            ?? this._currentRunObjectiveSnapshot();
         this.accessibility?.setObjective?.(snapshot);
         if (!snapshot || (!force && this._objA11yId === snapshot.id)) return false;
         this._objA11yId = snapshot.id;
-        return this.accessibility?.announce?.(runObjectiveAccessibilityText(snapshot)) ?? false;
+        const description = snapshot.accessibilityText
+            || runObjectiveAccessibilityText(snapshot);
+        return this.accessibility?.announce?.(description) ?? false;
     }
 
     _guidedObjectiveHeldCoins() {
@@ -2136,7 +2162,7 @@ export class Game {
                 ? (this.player.coinMul ?? 1) : 0,
         });
         const active = this._currentRunObjectiveSnapshot();
-        this.accessibility?.setObjective?.(active);
+        this.accessibility?.setObjective?.(ruinBellObjectiveSnapshot(this) ?? active);
         if (!event) {
             this._announceCurrentObjective(false, active);
             return;

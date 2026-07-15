@@ -165,8 +165,8 @@ sourceCheck(updateSource, /overlayActive:[\s\S]*?vigilSiteSystem\?\.hasActiveCha
     'active beacon guardians block overlapping tactical-pack scheduling');
 sourceCheck(updateSource, /const siteChallengeActive = !!this\.vigilSiteSystem\?\.hasActiveChallenge\?\.\(\)/,
     'director frame takes one authoritative Beacon-stage snapshot');
-sourceCheck(updateSource, /else if \(!bossAlive && !this\.bossWarning && !siteChallengeActive && !pendingEncounterLifecycle\)/,
-    'normal boss scheduling waits for Beacon ownership and queued tactical lifecycle');
+sourceCheck(updateSource, /const ruinBellStageOwned = !!this\.ruinBellDirector\?\.ownsStage\?\.\(\)[\s\S]*?else if \(!bossAlive && !this\.bossWarning && !siteChallengeActive[\s\S]*?!pendingEncounterLifecycle && !ruinBellStageOwned\)/,
+    'normal boss scheduling waits for Beacon, Ruin Bell, and queued tactical lifecycle ownership');
 sourceCheck(updateSource, /const pendingEncounterLifecycle = encounterPhase === 'active'[\s\S]*?_encounterDefeatedIds[\s\S]*?!pendingEncounterLifecycle/,
     'boss scheduling yields one frame to queued tactical guardian deaths');
 sourceCheck(updateSource, /const bossActiveForLieutenant =[\s\S]*?this\.enemies\.some\([\s\S]*?const authoredChallengeActive = siteChallengeActive[\s\S]*?encounterPhase !== 'idle'[\s\S]*?!lieutenantAlive && !authoredChallengeActive/,

@@ -10,7 +10,13 @@
 // keeps the art data-driven via the archetype palette.
 
 import { footprintDepth } from '../content/mapObjects.js';
-import { getObstacleSprite, getWallPattern, getFloorDecal } from '../assets/ObstacleSprites.js';
+import {
+    getObstacleSprite,
+    getWallPattern,
+    getFloorDecal,
+    getHousePropSprite,
+} from '../assets/ObstacleSprites.js';
+import { getHouseBlueprint } from '../content/houseBlueprints.js';
 
 export class Obstacle {
     constructor(def, x, y) {
@@ -38,7 +44,7 @@ export class Obstacle {
         // Keeping these Obstacle instances invisible preserves every physical
         // wall/LOS/nav query while removing six shadows, seams, caps, and outlines
         // that previously made one house look like unrelated slabs.
-        if (this.type === 'buildingWall' && this.structureId) return;
+        if (this.type === 'buildingWall' && this.structureId && !this.partition) return;
         const size = this.def.size;
         // Per-instance palette wins (biome tinting / building walls set it);
         // otherwise fall back to the archetype's own palette.
@@ -51,6 +57,12 @@ export class Obstacle {
         // drawn centered with NO grounding shadow (it lies ON the ground).
         if (this.type === 'buildingFloor') {
             this._drawBuildingFloor(ctx, w, h, palette);
+            ctx.restore();
+            return;
+        }
+
+        if (this.type === 'buildingFurnishing') {
+            this._drawBuildingFurnishing(ctx, w, h, palette);
             ctx.restore();
             return;
         }
@@ -439,6 +451,44 @@ export class Obstacle {
     // lived-in. Drawn centered (origin = interior center); never collides.
     _drawBuildingFloor(ctx, w, h, p) {
         const hw = w / 2, hh = h / 2;
+        const blueprint = getHouseBlueprint(this.def.blueprintId);
+        if (blueprint) {
+            const pattern = getWallPattern(blueprint.floor?.materialStyle || this.def.styleType, ctx);
+            ctx.fillStyle = pattern || '#4b3829';
+            ctx.fillRect(-hw, -hh, w, h);
+
+            // Each authored room gets a restrained material grade. These are
+            // gameplay zones from the shared blueprint, not a second visual
+            // layout, and the Wick Hall overlay makes the clear circulation
+            // spine readable without labels or placeholder art.
+            for (const room of blueprint.rooms || []) {
+                if (!room.floorTone) continue;
+                ctx.save();
+                ctx.globalAlpha = room.overlay ? 0.22 : 0.16;
+                ctx.fillStyle = room.floorTone;
+                ctx.fillRect(room.x - room.w / 2, room.y - room.h / 2, room.w, room.h);
+                ctx.restore();
+            }
+            const decalDef = blueprint.floor?.decal;
+            const decal = getFloorDecal(blueprint.floor?.materialStyle || this.def.styleType);
+            if (decal && decalDef) {
+                ctx.drawImage(
+                    decal,
+                    decalDef.x - decalDef.w / 2,
+                    decalDef.y - decalDef.h / 2,
+                    decalDef.w,
+                    decalDef.h,
+                );
+            }
+            if (this.tint && this.tint.amt > 0.01) {
+                ctx.save();
+                ctx.globalAlpha = Math.min(0.16, this.tint.amt * 0.45);
+                ctx.fillStyle = this.tint.color;
+                ctx.fillRect(-hw, -hh, w, h);
+                ctx.restore();
+            }
+            return;
+        }
         // AI interior decal for this building style (plank+rug+hearth etc.),
         // scaled to the interior; procedural floor below is the fallback.
         const decal = getFloorDecal(this.def.styleType);
@@ -493,5 +543,19 @@ export class Obstacle {
         ctx.fillRect(tx - 22, ty - 14, 44, 6);
         ctx.fillStyle = '#5a4632';
         ctx.beginPath(); ctx.arc(tx - 36, ty + 6, 9, 0, Math.PI * 2); ctx.fill();
+    }
+
+    _drawBuildingFurnishing(ctx, w, h, p) {
+        const key = this.def.sprite;
+        const sprite = key === 'crate' || key === 'barrel'
+            ? getObstacleSprite(key, this.tint)
+            : getHousePropSprite(key);
+        if (sprite) {
+            ctx.drawImage(sprite, -w / 2, -h, w, h);
+            return;
+        }
+        // Never-rejecting raster loaders keep this material fallback as the
+        // resilience tier; it is deliberately generic and collision-faithful.
+        this._drawBlock(ctx, w, h, p || { base: '#5c4430', top: '#86643f', edge: '#2d2118' });
     }
 }

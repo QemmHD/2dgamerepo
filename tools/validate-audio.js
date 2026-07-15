@@ -12,8 +12,11 @@ import {
     BIOME_COMPOSITIONS,
     MENU_COMPOSITIONS,
     MUSIC_BY_ID,
+    RUIN_BELL_EVENT,
+    RUIN_BELL_MUSIC_EVENTS,
     TRACKER_COMPOSITIONS,
     VOICE_STINGERS,
+    resolveRuinBellMusicCue,
 } from '../src/content/music.js';
 import { MAP_ORDER } from '../src/content/maps.js';
 import { BOSS_RUSH_APEX_ORDER } from '../src/content/bossRush.js';
@@ -128,6 +131,80 @@ state = nextMusicState(state, {}, 1 / 60);
 ok(state.intensity < beforeRelease && state.intensity > beforeRelease * 0.95, 'pressure release should be slow, not snap down');
 const lastStand = nextMusicState({ intensity: 0.85, scene: MUSIC_SCENES.ONSLAUGHT }, { nearbyEnemies: 40, activeEnemies: 90, playerHpFraction: 0.1 }, 1 / 60);
 ok(lastStand.lastStand && lastStand.intensity > 0.8, 'last stand must color rather than collapse intensity');
+
+// Ruin Bell phrases are short semantic layers over the current Emberwood
+// tracker. They must be deterministic, quantized, bounded, and still produce
+// an immediate caption/fallback when Web Audio is unavailable.
+const ruinBellEvents = Object.values(RUIN_BELL_EVENT);
+ok(ruinBellEvents.length === 4 && new Set(ruinBellEvents).size === 4,
+    'Ruin Bell requires four distinct music events');
+ok(Object.isFrozen(RUIN_BELL_MUSIC_EVENTS), 'Ruin Bell music registry is mutable');
+for (const eventName of ruinBellEvents) {
+    const definition = RUIN_BELL_MUSIC_EVENTS[eventName];
+    ok(!!definition, `missing Ruin Bell music event ${eventName}`);
+    ok(definition?.quantize?.unit === 'bar' && definition?.quantize?.edge === 'next'
+        && definition?.quantize?.interrupt === false,
+    `${eventName}: phrase is not a non-interrupting next-bar event`);
+    ok(typeof definition?.caption === 'string' && definition.caption.length >= 24,
+        `${eventName}: caption is not descriptive`);
+    ok(typeof definition?.announcement === 'string' && definition.announcement.length >= 32,
+        `${eventName}: announcement is not descriptive`);
+    ok(typeof definition?.fallbackSfx === 'string' && definition.fallbackSfx.length > 0,
+        `${eventName}: missing silent-context fallback`);
+    ok(Number.isFinite(definition?.combat?.intensity)
+        && definition.combat.intensity >= 0 && definition.combat.intensity <= 1,
+    `${eventName}: invalid combat intensity`);
+    ok(Array.isArray(definition?.variants) && definition.variants.length >= 2,
+        `${eventName}: needs at least two authored variants`);
+    for (const variant of definition?.variants || []) {
+        ok(Object.isFrozen(variant), `${eventName}/${variant.id}: variant is mutable`);
+        ok((variant.notes?.length || 0) + (variant.hits?.length || 0) > 0,
+            `${eventName}/${variant.id}: phrase is silent`);
+        for (const note of variant.notes || []) {
+            ok(Number.isInteger(note.step) && note.step >= 0 && note.step <= 15,
+                `${eventName}/${variant.id}: note outside one bar`);
+            ok(Number.isFinite(note.gain) && note.gain > 0 && note.gain <= 0.12,
+                `${eventName}/${variant.id}: unsafe note gain`);
+        }
+        for (const hit of variant.hits || []) {
+            ok(Number.isInteger(hit.step) && hit.step >= 0 && hit.step <= 15,
+                `${eventName}/${variant.id}: hit outside one bar`);
+        }
+    }
+    const first = resolveRuinBellMusicCue(eventName, 'seed-a', 2);
+    const replay = resolveRuinBellMusicCue(eventName, 'seed-a', 2);
+    ok(JSON.stringify(first) === JSON.stringify(replay),
+        `${eventName}: seeded cue is not deterministic`);
+    ok(first?.variant === definition?.variants[first.variantIndex],
+        `${eventName}: cue did not resolve a canonical variant`);
+}
+ok(resolveRuinBellMusicCue('unknown', 0, 0) === null,
+    'unknown Ruin Bell event did not fail closed');
+
+const queuedBellAudio = new AudioSystem();
+queuedBellAudio.ctx = {};
+queuedBellAudio.theme = 'gameplay';
+queuedBellAudio._activeScore = trackerMenus[0];
+let bellCombatState = null;
+queuedBellAudio.setCombatState = (value) => { bellCombatState = value; };
+const queuedCue = resolveRuinBellMusicCue(RUIN_BELL_EVENT.ESCALATION, 'queue', 1);
+ok(queuedBellAudio.musicEvent('ruinBell', queuedCue) === queuedCue.caption,
+    'Ruin Bell musicEvent did not return its semantic caption');
+ok(queuedBellAudio._pendingRuinBellCues.length === 1
+    && queuedBellAudio._pendingRuinBellCues[0] === queuedCue,
+    'Ruin Bell tracker cue was not queued exactly once');
+ok(bellCombatState === queuedCue.combat,
+    'Ruin Bell musicEvent did not apply its authored combat target');
+
+const fallbackBellAudio = new AudioSystem();
+let fallbackTolls = 0;
+fallbackBellAudio.bossTelegraph = () => { fallbackTolls++; };
+const fallbackCue = resolveRuinBellMusicCue(RUIN_BELL_EVENT.WARNING, 'fallback', 0);
+fallbackBellAudio.musicEvent('ruinBell', fallbackCue);
+ok(fallbackTolls === 1, 'Ruin Bell silent-context fallback did not fire exactly once');
+ok(audioSource.includes('if (step === 0 && this._pendingRuinBellCues.length)')
+    && audioSource.includes('if (step === 15) this._activeRuinBellPhrase = null'),
+'Ruin Bell phrase is not promoted and retired on one tracker bar');
 
 // Headless API/rotation smoke: no window, Audio, or AudioContext is required.
 const audio = new AudioSystem();

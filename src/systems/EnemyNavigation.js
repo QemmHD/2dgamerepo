@@ -7,6 +7,19 @@
 
 const TURN_ANGLES = [0.36, 0.7, 1.05, 1.4, Math.PI / 2, 1.9, 2.28, 2.68];
 const WALL_FOLLOW_HOLD = 1.15;
+const STUCK_RECOVERY_SECONDS = 0.72;
+const RECOVERY_HOLD_SECONDS = 0.46;
+
+export function enemyNavigationRole(enemy) {
+    if (!enemy) return 'frontline';
+    if ((enemy.radius || 0) >= 70 || enemy.boss || enemy.type === 'dreadhulk'
+        || enemy.type === 'juggernaut') return 'siege';
+    if (enemy.behavior === 'support') return 'support';
+    if (enemy.behavior === 'spitter' || enemy.behavior === 'summoner') return 'ranged';
+    if (enemy.behavior === 'charger' || enemy.behavior === 'bomber'
+        || enemy.behavior === 'teleporter' || enemy.type === 'speedDemon') return 'flanker';
+    return 'frontline';
+}
 
 // Writes a unit movement heading to enemy._navMoveX/Y. Navigation state is
 // stored on the enemy so a body keeps the same side of a wall instead of
@@ -14,7 +27,14 @@ const WALL_FOLLOW_HOLD = 1.15;
 //
 // Returns true when obstacle avoidance changed (or confirmed) the heading.
 // The caller can otherwise retain its original behavior vector.
-export function steerEnemyMovement(enemy, dx, dy, speed, obstacles, dt) {
+export function steerEnemyMovement(enemy, dx, dy, speed, obstacles, dt, targetX = NaN, targetY = NaN) {
+    const role = enemyNavigationRole(enemy);
+    if (Number.isFinite(targetX) && Number.isFinite(targetY)
+        && obstacles?.applyHouseNavigationGoal?.(enemy, targetX, targetY, role)) {
+        dx = enemy._houseNavX - enemy.x;
+        dy = enemy._houseNavY - enemy.y;
+        enemy._navReason = enemy._houseNavReason;
+    }
     const len = Math.hypot(dx, dy);
     if (!obstacles || len < 1e-6) return false;
 
@@ -29,11 +49,49 @@ export function steerEnemyMovement(enemy, dx, dy, speed, obstacles, dt) {
     const hold = Math.max(0, (enemy._navHold || 0) - Math.max(0, dt || 0));
     enemy._navHold = hold;
 
+    const lastX = Number.isFinite(enemy._navLastX) ? enemy._navLastX : enemy.x;
+    const lastY = Number.isFinite(enemy._navLastY) ? enemy._navLastY : enemy.y;
+    const moved = Math.hypot(enemy.x - lastX, enemy.y - lastY);
+    enemy._navLastX = enemy.x;
+    enemy._navLastY = enemy.y;
+
     const directBlocked = obstacles.movementBlocked(
         enemy.x, enemy.y,
         enemy.x + nx * look, enemy.y + ny * look,
         clearance,
     );
+
+    if (directBlocked && moved < 0.35) {
+        enemy._navStuckTime = Math.min(2, (enemy._navStuckTime || 0) + Math.max(0, dt || 0));
+    } else {
+        enemy._navStuckTime = Math.max(0, (enemy._navStuckTime || 0) - Math.max(0, dt || 0) * 2);
+    }
+
+    // Bounded, deterministic recovery: no teleport and no global search. A
+    // stalled body probes eight headings once, latches one for <0.5s, and then
+    // returns to the normal portal/wall-follow contract.
+    if (enemy._navStuckTime >= STUCK_RECOVERY_SECONDS) {
+        const serial = ((enemy._navRecoverySerial || 0) + 1) >>> 0;
+        enemy._navRecoverySerial = serial;
+        enemy._navStuckTime = 0;
+        const base = Math.atan2(ny, nx) + (enemy._navSide === -1 ? -1 : 1) * Math.PI / 2;
+        const probe = Math.min(190, radius + 110);
+        for (let i = 0; i < 8; i++) {
+            const index = (i + serial) & 7;
+            const a = base + index * Math.PI / 4;
+            const rx = Math.cos(a), ry = Math.sin(a);
+            if (obstacles.movementBlocked(
+                enemy.x, enemy.y,
+                enemy.x + rx * probe, enemy.y + ry * probe,
+                clearance,
+            )) continue;
+            enemy._navMoveX = rx;
+            enemy._navMoveY = ry;
+            enemy._navHold = RECOVERY_HOLD_SECONDS;
+            enemy._navReason = 'house-stuck-recovery';
+            return true;
+        }
+    }
 
     if (!directBlocked) {
         // While rounding a corner, do one longer probe before dropping the
@@ -48,6 +106,7 @@ export function steerEnemyMovement(enemy, dx, dy, speed, obstacles, dt) {
             enemy._navHold = 0;
             enemy._navMoveX = nx;
             enemy._navMoveY = ny;
+            if (!String(enemy._navReason || '').startsWith('house-')) enemy._navReason = 'direct-clear';
             return true;
         }
     } else {
@@ -72,6 +131,7 @@ export function steerEnemyMovement(enemy, dx, dy, speed, obstacles, dt) {
             enemy._navSide = side;
             enemy._navMoveX = rx;
             enemy._navMoveY = ry;
+            if (!String(enemy._navReason || '').startsWith('house-door:')) enemy._navReason = 'wall-follow';
             return true;
         }
         side = -side;
@@ -84,5 +144,6 @@ export function steerEnemyMovement(enemy, dx, dy, speed, obstacles, dt) {
     enemy._navHold = WALL_FOLLOW_HOLD;
     enemy._navMoveX = -nx;
     enemy._navMoveY = -ny;
+    enemy._navReason = 'fan-exhausted-reverse';
     return true;
 }

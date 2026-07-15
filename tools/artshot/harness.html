@@ -51,6 +51,9 @@
     vibrationcap force the QA capability receipt: "1" available or "0" unavailable
     caption  stage a gameplay caption fixture: "voice" or "danger" (run only)
     bosswarning "1" stages the real Emberwood boss-warning integration (run only)
+    ruinbell deterministic House V2 contract state: "arming", "warning",
+             "crossfire", "breach", "technical", "cleared", "failed", or
+             "ruined" (Emberwood run only; uses the production director/spawner)
     statuses "all" stages all seven combat-status cues on one enemy (run only)
     pause    "1" opens the production pause overlay after all run fixtures
     gameover "1" settles the staged run through the production death summary
@@ -137,6 +140,7 @@ import { DamageNumber } from '../../src/entities/DamageNumber.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 import { photoFilterIndexById } from '../../src/content/photoFilters.js';
 import { isPhoneLandscapeViewport } from '../../src/systems/ResponsiveLayout.js';
+import { buildUIState } from '../../src/systems/UIStateBuilder.js';
 
 const ERR = [];
 window.__ERR = ERR;
@@ -277,6 +281,17 @@ const CAPTION_REQUEST = params.has('caption') ? params.get('caption') : null;
 const QA_CAPTION = ['voice', 'danger'].includes(CAPTION_REQUEST) ? CAPTION_REQUEST : null;
 const BOSS_WARNING_REQUEST = params.has('bosswarning') ? params.get('bosswarning') : null;
 const QA_BOSS_WARNING = BOSS_WARNING_REQUEST === '1';
+const RUIN_BELL_REQUEST = params.has('ruinbell') ? params.get('ruinbell') : null;
+const RUIN_BELL_STATES = [
+    'arming', 'warning', 'crossfire', 'breach',
+    'technical', 'cleared', 'failed', 'ruined',
+];
+const QA_RUIN_BELL = RUIN_BELL_STATES.includes(RUIN_BELL_REQUEST)
+    ? RUIN_BELL_REQUEST
+    : null;
+if (RUIN_BELL_REQUEST != null && !QA_RUIN_BELL) {
+    ERR.push(`param: invalid ruinbell '${RUIN_BELL_REQUEST}'`);
+}
 const STATUSES_REQUEST = params.has('statuses') ? params.get('statuses') : null;
 const QA_STATUSES = STATUSES_REQUEST === 'all' ? 'all' : null;
 const QA_PAUSED = params.get('pause') === '1';
@@ -748,6 +763,129 @@ async function boot() {
                 break;
             }
         }
+        // House V2 / Ruin Bell visual contract. Every state below is reached
+        // through the production RuinBellDirector -> GameUpdate spawn/result
+        // handshake. The harness only removes unrelated run noise, advances the
+        // authored clocks, and records real member deaths between stages.
+        if (QA_RUIN_BELL) {
+            try {
+                if ((MAP || game._obstacleBiome) !== 'emberwood') {
+                    throw new Error('ruinbell states are Emberwood-only');
+                }
+                const director = game.ruinBellDirector;
+                const structure = game.ruinBellStructure;
+                const anchor = director?.anchor;
+                if (!director || !structure || !anchor) {
+                    throw new Error('production Ruin Bell placement is unavailable');
+                }
+
+                // Start every receipt with one clean production run board. These
+                // arrays remain the authoritative Game arrays; no encounter body
+                // or reward is fabricated by the harness.
+                for (const list of [
+                    game.enemies, game.projectiles, game.enemyProjectiles,
+                    game.hazards, game.gems, game.coins, game.healthOrbs,
+                    game.chests, game.shrines, game.damageNumbers, game.rings,
+                ]) if (Array.isArray(list)) list.length = 0;
+                game.bossSummons.length = 0;
+                game._selfDetonated.length = 0;
+                game._hazardKilled.length = 0;
+                game.arena = null;
+                game.bossWarning = null;
+                game.lieutenantWarning = null;
+                game.activeLieutenantRef = null;
+                game.upgradeChoices = null;
+                game.chestReward = null;
+                game.altar = null;
+                game.player.damageTakenMul = 0;
+                game.player.damageMul = 0;
+                game.player.hp = game.player.maxHp;
+
+                // Unlock after displayed Vigil 3 while the player is away, then
+                // enter the authored focus ring through the live GameUpdate lane.
+                game._applyRuinBellOutput(director.update(0, {
+                    screen: 'gameplay',
+                    waveIndex: 3,
+                    playerPosition: { x: anchor.x + 4096, y: anchor.y + 4096 },
+                }));
+                game.player.x = anchor.x + 60;
+                game.player.y = anchor.y + 60;
+                game._updateRuinBell(QA_RUIN_BELL === 'arming' ? 0.62 : 0);
+
+                const beginAttempt = () => game._updateRuinBell(1.25);
+                const advanceFirstStage = () => game._updateRuinBell(3.5);
+                const advanceCrossfire = () => game._updateRuinBell(13.5);
+                const defeatActiveBellMembers = () => {
+                    const ids = [];
+                    for (const enemy of game.enemies) {
+                        if (!enemy.active || !enemy.ruinBellMemberId
+                            || enemy.ruinBellInstanceId !== director.instanceId) continue;
+                        enemy.active = false;
+                        ids.push(enemy.ruinBellMemberId);
+                    }
+                    game._ruinBellDefeatedIds.push(...ids);
+                    game._updateRuinBell(0);
+                    return ids;
+                };
+                const advanceLastBreach = () => {
+                    const retired = defeatActiveBellMembers();
+                    if (retired.length !== 7) {
+                        throw new Error(`expected seven crossfire members, got ${retired.length}`);
+                    }
+                    game._updateRuinBell(16);
+                };
+
+                if (QA_RUIN_BELL !== 'arming') beginAttempt();
+                if (QA_RUIN_BELL === 'technical') {
+                    const liveWaveState = game.waveState;
+                    try {
+                        game.waveState = { ...liveWaveState, maxAlive: 0 };
+                        advanceFirstStage();
+                    } finally {
+                        game.waveState = liveWaveState;
+                    }
+                } else if (['crossfire', 'breach', 'cleared', 'failed', 'ruined'].includes(QA_RUIN_BELL)) {
+                    advanceFirstStage();
+                    advanceCrossfire();
+                    if (['breach', 'cleared', 'failed', 'ruined'].includes(QA_RUIN_BELL)) {
+                        advanceLastBreach();
+                    }
+                    if (QA_RUIN_BELL === 'cleared') {
+                        const retired = defeatActiveBellMembers();
+                        if (retired.length !== 4) {
+                            throw new Error(`expected four breach members, got ${retired.length}`);
+                        }
+                        game._updateRuinBell(12);
+                    } else if (QA_RUIN_BELL === 'failed' || QA_RUIN_BELL === 'ruined') {
+                        game._updateRuinBell(27);
+                        if (QA_RUIN_BELL === 'ruined') {
+                            // Cooldown -> final activation. Stable defeated IDs
+                            // make the first seven members skip on retry; only the
+                            // four-body Last Breach is allowed to reform.
+                            game._updateRuinBell(8);
+                            game._updateRuinBell(1.25);
+                            game._updateRuinBell(3.5);
+                            game._updateRuinBell(13.5);
+                            game._updateRuinBell(16);
+                            game._updateRuinBell(27);
+                        }
+                    }
+                }
+
+                // Keep the final frame centered and expose the encounter through
+                // the existing single objective card + non-live accessibility
+                // node. Announcements are still recorded in the live region, but
+                // the transient banner is cleared so it cannot cover the HUD.
+                game.player.x = anchor.x + 60;
+                game.player.y = anchor.y + 60;
+                if (game.waveDirector) game.waveDirector.announcement = null;
+                game.camera.trauma = 0;
+                game.camera.update(0);
+                game.accessibility?.setObjective?.(buildUIState(game).runObjective);
+            } catch (e) {
+                ERR.push('ruinbell: ' + String(e && e.stack || e));
+            }
+        }
         // Teleport for close-ups (buildings live far from spawn), then settle
         // a few frames so the camera catches up before the final render.
         const TP = params.get('tp');
@@ -1123,6 +1261,20 @@ async function boot() {
     const qaCompletionCaseTruth = game.ui?.menu?._lastCollectionCompletionCaseTruth || null;
     const qaCompletionMythic = qaCompletionCaseTruth?.rarities
         ?.find((row) => row.id === 'mythic') || null;
+    const qaRuinBellSnapshot = game.ruinBellDirector?.getSnapshot?.() || null;
+    const qaRuinBellUi = QA_RUIN_BELL ? buildUIState(game).runObjective : null;
+    const qaRuinBellReceipt = game._ruinBellReceipt || null;
+    const qaRuinBellEnemies = (game.enemies || []).filter((enemy) =>
+        enemy.active && enemy.ruinBellMemberId
+        && enemy.ruinBellInstanceId === qaRuinBellSnapshot?.instanceId);
+    const qaRuinBellRoles = [...new Set(qaRuinBellEnemies.map((enemy) =>
+        enemy.ruinBellRole || 'threshold'))].sort().join(',');
+    const qaRuinBellBlocked = qaRuinBellEnemies.filter((enemy) =>
+        game.obstacleSystem.isSpawnBlocked?.(
+            enemy.x,
+            enemy.y,
+            Math.max(8, Number(enemy.radius) || 0) + 6,
+        ) === true).length;
     const qaState = {
         inputModality: input.getModality(),
         menuFocusKey: game.menuFocusKey || null,
@@ -1227,6 +1379,40 @@ async function boot() {
         objectiveVariant: game.ui?._lastDrawReceipt?.objectiveVariant || 'hidden',
         objectiveTextComplete: game.ui?._lastDrawReceipt?.objectiveTextComplete === true,
         objectiveA11y: document.getElementById('game-objective')?.textContent || '',
+        ruinBellRequest: QA_RUIN_BELL || '',
+        ruinBellPhase: qaRuinBellSnapshot?.phase || '',
+        ruinBellHouseState: qaRuinBellSnapshot?.houseState || '',
+        ruinBellStructureState: game.ruinBellStructure?.state || '',
+        ruinBellAttempt: qaRuinBellSnapshot?.attempt ?? null,
+        ruinBellMaxAttempts: qaRuinBellSnapshot?.maxAttempts ?? null,
+        ruinBellAttemptsFailed: qaRuinBellSnapshot?.attemptsFailed ?? null,
+        ruinBellEventElapsed: qaRuinBellSnapshot?.eventElapsed ?? null,
+        ruinBellMembersDefeated: qaRuinBellSnapshot?.members?.defeated ?? null,
+        ruinBellMembersTotal: qaRuinBellSnapshot?.members?.total ?? null,
+        ruinBellMembersAlive: qaRuinBellSnapshot?.members?.alive ?? null,
+        ruinBellActiveTagged: qaRuinBellEnemies.length,
+        ruinBellUniqueTagged: new Set(qaRuinBellEnemies.map((enemy) =>
+            enemy.ruinBellMemberId)).size,
+        ruinBellActiveRoles: qaRuinBellRoles,
+        ruinBellBlockedActive: qaRuinBellBlocked,
+        ruinBellPending: !!qaRuinBellSnapshot?.pendingRequest,
+        ruinBellTechnicalDefers: qaRuinBellSnapshot?.technicalDefers ?? null,
+        ruinBellRewardEmitted: qaRuinBellSnapshot?.rewardEmitted === true,
+        ruinBellReceiptOk: qaRuinBellReceipt == null ? '' : String(qaRuinBellReceipt.ok === true),
+        ruinBellReceiptAttempt: qaRuinBellReceipt?.attempt ?? null,
+        ruinBellReceiptXp: qaRuinBellReceipt?.xp ?? null,
+        ruinBellReceiptChoice: qaRuinBellReceipt?.choice || '',
+        ruinBellReceiptRetry: qaRuinBellReceipt == null
+            ? '' : String(qaRuinBellReceipt.retryAvailable === true),
+        ruinBellReceiptText: qaRuinBellReceipt?.receipt || '',
+        ruinBellChestCount: game.chests?.length ?? 0,
+        ruinBellShrineCount: game.shrines?.length ?? 0,
+        ruinBellCoinCount: game.coins?.length ?? 0,
+        ruinBellObjectiveOwner: qaRuinBellUi?.owner || '',
+        ruinBellObjectiveRendered: game.ui?._lastDrawReceipt?.objective === true,
+        ruinBellObjectiveTextComplete: game.ui?._lastDrawReceipt?.objectiveTextComplete === true,
+        ruinBellObjectiveA11y: QA_RUIN_BELL
+            ? (document.getElementById('game-objective')?.textContent || '') : '',
         activeBossId: qaActiveBoss?.type || '',
         runMode: game._runObjectiveModeId?.() || '',
         bossRushActive: !!game.bossRush,
@@ -1427,6 +1613,95 @@ async function boot() {
     if (QA_OBJECTIVE_PHASE && qaState.objectiveProgress !== qaState.objectiveExpectedProgress) {
         ERR.push(`receipt: objective progress expected ${qaState.objectiveExpectedProgress}, got ${qaState.objectiveProgress}`);
     }
+    if (QA_RUIN_BELL) {
+        const expected = {
+            arming: {
+                phase: 'arming', house: 'intact', attempt: 1,
+                attemptsFailed: 0, defeated: 0, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+            warning: {
+                phase: 'warning', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 0, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+            crossfire: {
+                phase: 'active', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 0, alive: 7, tagged: 7, defers: 0,
+                roles: 'door-runner,marksman,support,threshold',
+            },
+            breach: {
+                phase: 'active', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 7, alive: 4, tagged: 4, defers: 0,
+                roles: 'bomber,charger,threshold',
+            },
+            technical: {
+                phase: 'technical-defer', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 0, alive: 0, tagged: 0, defers: 1, roles: '',
+            },
+            cleared: {
+                phase: 'cleared', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 11, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+            failed: {
+                phase: 'retry-cooldown', house: 'damaged', attempt: 1,
+                attemptsFailed: 1, defeated: 7, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+            ruined: {
+                phase: 'spent', house: 'ruined', attempt: 2,
+                attemptsFailed: 2, defeated: 7, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+        }[QA_RUIN_BELL];
+        const exactState = qaState.ruinBellPhase === expected.phase
+            && qaState.ruinBellHouseState === expected.house
+            && qaState.ruinBellStructureState === expected.house
+            && qaState.ruinBellAttempt === expected.attempt
+            && qaState.ruinBellMaxAttempts === 2
+            && qaState.ruinBellAttemptsFailed === expected.attemptsFailed
+            && qaState.ruinBellMembersDefeated === expected.defeated
+            && qaState.ruinBellMembersTotal === 11
+            && qaState.ruinBellMembersAlive === expected.alive
+            && qaState.ruinBellActiveTagged === expected.tagged
+            && qaState.ruinBellUniqueTagged === expected.tagged
+            && qaState.ruinBellActiveRoles === expected.roles
+            && qaState.ruinBellTechnicalDefers === expected.defers;
+        if (!exactState) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} state drifted (${qaState.ruinBellPhase}/${qaState.ruinBellHouseState}, attempt ${qaState.ruinBellAttempt}, members ${qaState.ruinBellMembersDefeated}/${qaState.ruinBellMembersTotal}/${qaState.ruinBellMembersAlive}, tagged ${qaState.ruinBellActiveTagged}, roles ${qaState.ruinBellActiveRoles}, defers ${qaState.ruinBellTechnicalDefers})`);
+        }
+        if (qaState.ruinBellPending || qaState.ruinBellBlockedActive !== 0) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} left a pending wave or blocked active spawn`);
+        }
+        if (qaState.ruinBellObjectiveOwner !== 'ruin-bell'
+            || !qaState.ruinBellObjectiveRendered
+            || !qaState.ruinBellObjectiveTextComplete
+            || !qaState.ruinBellObjectiveA11y) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} omitted its complete HUD/accessibility receipt`);
+        }
+        const cleanRewardBoard = qaState.ruinBellCoinCount === 0
+            && qaState.ruinBellChestCount === (QA_RUIN_BELL === 'cleared' ? 1 : 0)
+            && qaState.ruinBellShrineCount === (QA_RUIN_BELL === 'cleared' ? 1 : 0);
+        if (!cleanRewardBoard) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} reward board drifted (${qaState.ruinBellChestCount} chests, ${qaState.ruinBellShrineCount} shrines, ${qaState.ruinBellCoinCount} coins)`);
+        }
+        if (QA_RUIN_BELL === 'cleared') {
+            if (!qaState.ruinBellRewardEmitted
+                || qaState.ruinBellReceiptOk !== 'true'
+                || qaState.ruinBellReceiptAttempt !== 1
+                || qaState.ruinBellReceiptXp !== 32
+                || qaState.ruinBellReceiptChoice !== 'chest-or-wick-shrine') {
+                ERR.push('ruinbell: cleared reward was not exactly +32 XP and Chest or Wick Shrine');
+            }
+        } else if (QA_RUIN_BELL === 'failed' || QA_RUIN_BELL === 'ruined') {
+            const expectedRetry = QA_RUIN_BELL === 'failed' ? 'true' : 'false';
+            if (qaState.ruinBellRewardEmitted
+                || qaState.ruinBellReceiptOk !== 'false'
+                || qaState.ruinBellReceiptAttempt !== expected.attempt
+                || qaState.ruinBellReceiptRetry !== expectedRetry
+                || !qaState.ruinBellReceiptText.includes('NO COMPLETION REWARD')) {
+                ERR.push(`ruinbell: ${QA_RUIN_BELL} failure receipt drifted`);
+            }
+        } else if (qaState.ruinBellReceiptOk !== '' || qaState.ruinBellRewardEmitted) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} emitted an early completion receipt`);
+        }
+    }
     if (QA_OBJECTIVE_PHASE && !(QA_PAUSED || QA_GAME_OVER || QA_VICTORY)
         && !qaState.objectiveRendered) {
         ERR.push('render: active Run Path card did not complete its draw call');
@@ -1587,6 +1862,47 @@ async function boot() {
     qaRoot.dataset.qaObjectiveVariant = window.__qaState.objectiveVariant;
     qaRoot.dataset.qaObjectiveTextComplete = String(window.__qaState.objectiveTextComplete);
     qaRoot.dataset.qaObjectiveA11y = window.__qaState.objectiveA11y;
+    qaRoot.dataset.qaRuinBellRequest = window.__qaState.ruinBellRequest;
+    qaRoot.dataset.qaRuinBellPhase = window.__qaState.ruinBellPhase;
+    qaRoot.dataset.qaRuinBellHouseState = window.__qaState.ruinBellHouseState;
+    qaRoot.dataset.qaRuinBellStructureState = window.__qaState.ruinBellStructureState;
+    qaRoot.dataset.qaRuinBellAttempt = window.__qaState.ruinBellAttempt == null
+        ? '' : String(window.__qaState.ruinBellAttempt);
+    qaRoot.dataset.qaRuinBellMaxAttempts = window.__qaState.ruinBellMaxAttempts == null
+        ? '' : String(window.__qaState.ruinBellMaxAttempts);
+    qaRoot.dataset.qaRuinBellAttemptsFailed = window.__qaState.ruinBellAttemptsFailed == null
+        ? '' : String(window.__qaState.ruinBellAttemptsFailed);
+    qaRoot.dataset.qaRuinBellEventElapsed = window.__qaState.ruinBellEventElapsed == null
+        ? '' : String(window.__qaState.ruinBellEventElapsed);
+    qaRoot.dataset.qaRuinBellMembersDefeated = window.__qaState.ruinBellMembersDefeated == null
+        ? '' : String(window.__qaState.ruinBellMembersDefeated);
+    qaRoot.dataset.qaRuinBellMembersTotal = window.__qaState.ruinBellMembersTotal == null
+        ? '' : String(window.__qaState.ruinBellMembersTotal);
+    qaRoot.dataset.qaRuinBellMembersAlive = window.__qaState.ruinBellMembersAlive == null
+        ? '' : String(window.__qaState.ruinBellMembersAlive);
+    qaRoot.dataset.qaRuinBellActiveTagged = String(window.__qaState.ruinBellActiveTagged);
+    qaRoot.dataset.qaRuinBellUniqueTagged = String(window.__qaState.ruinBellUniqueTagged);
+    qaRoot.dataset.qaRuinBellActiveRoles = window.__qaState.ruinBellActiveRoles;
+    qaRoot.dataset.qaRuinBellBlockedActive = String(window.__qaState.ruinBellBlockedActive);
+    qaRoot.dataset.qaRuinBellPending = String(window.__qaState.ruinBellPending);
+    qaRoot.dataset.qaRuinBellTechnicalDefers = window.__qaState.ruinBellTechnicalDefers == null
+        ? '' : String(window.__qaState.ruinBellTechnicalDefers);
+    qaRoot.dataset.qaRuinBellRewardEmitted = String(window.__qaState.ruinBellRewardEmitted);
+    qaRoot.dataset.qaRuinBellReceiptOk = window.__qaState.ruinBellReceiptOk;
+    qaRoot.dataset.qaRuinBellReceiptAttempt = window.__qaState.ruinBellReceiptAttempt == null
+        ? '' : String(window.__qaState.ruinBellReceiptAttempt);
+    qaRoot.dataset.qaRuinBellReceiptXp = window.__qaState.ruinBellReceiptXp == null
+        ? '' : String(window.__qaState.ruinBellReceiptXp);
+    qaRoot.dataset.qaRuinBellReceiptChoice = window.__qaState.ruinBellReceiptChoice;
+    qaRoot.dataset.qaRuinBellReceiptRetry = window.__qaState.ruinBellReceiptRetry;
+    qaRoot.dataset.qaRuinBellReceiptText = window.__qaState.ruinBellReceiptText;
+    qaRoot.dataset.qaRuinBellChestCount = String(window.__qaState.ruinBellChestCount);
+    qaRoot.dataset.qaRuinBellShrineCount = String(window.__qaState.ruinBellShrineCount);
+    qaRoot.dataset.qaRuinBellCoinCount = String(window.__qaState.ruinBellCoinCount);
+    qaRoot.dataset.qaRuinBellObjectiveOwner = window.__qaState.ruinBellObjectiveOwner;
+    qaRoot.dataset.qaRuinBellObjectiveRendered = String(window.__qaState.ruinBellObjectiveRendered);
+    qaRoot.dataset.qaRuinBellObjectiveTextComplete = String(window.__qaState.ruinBellObjectiveTextComplete);
+    qaRoot.dataset.qaRuinBellObjectiveA11y = window.__qaState.ruinBellObjectiveA11y;
     qaRoot.dataset.qaActiveBossId = window.__qaState.activeBossId;
     qaRoot.dataset.qaRunMode = window.__qaState.runMode;
     qaRoot.dataset.qaBossRushActive = String(window.__qaState.bossRushActive);

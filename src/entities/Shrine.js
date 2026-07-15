@@ -13,11 +13,13 @@ const GLOW = '#ff9ecf';   // relic-pink ember
 const FLAME = '#ffd3ec';
 
 export class Shrine {
-    constructor(x, y) {
+    constructor(x, y, options = {}) {
         this.x = x;
         this.y = y;
         this.radius = WICK_ROADS.shrinePickupRadius;
         this.active = true;
+        this.pickupDelay = Math.max(0, Number(options.pickupDelay) || 0);
+        this.requiresExitBeforePickup = options.requiresExitBeforePickup === true;
         this.bobTimer = Math.random() * TWO_PI;
         // The sibling reward (a Chest) offered alongside this shrine on a boss
         // kill; claiming either despawns the other so the player picks ONE.
@@ -26,7 +28,14 @@ export class Shrine {
 
     update(dt, player) {
         this.bobTimer += dt;
-        if (circleOverlap(this.x, this.y, this.radius, player.x, player.y, player.radius)) {
+        this.pickupDelay = Math.max(0, this.pickupDelay - Math.max(0, dt));
+        const overlapping = circleOverlap(this.x, this.y, this.radius, player.x, player.y, player.radius);
+        if (this.requiresExitBeforePickup) {
+            if (overlapping) return false;
+            this.requiresExitBeforePickup = false;
+        }
+        if (this.pickupDelay > 0) return false;
+        if (overlapping) {
             this.active = false;
             return true;
         }

@@ -158,6 +158,11 @@ export class AudioSystem {
         this._combatScene = 'calm';
         this._activeScore = null;
         this._pendingScore = null;
+        // Short authored encounter phrases wait for the next tracker bar. They
+        // remain data-only until _scheduleStep consumes them, so gameplay event
+        // timing never starts an off-grid oscillator or mutates the score form.
+        this._pendingRuinBellCues = [];
+        this._activeRuinBellPhrase = null;
         this._formCycles = 0;
         this._menuBag = [];
         this._lastMenuId = null;
@@ -579,6 +584,10 @@ export class AudioSystem {
         if (!score) { this.stopMusic(); return; }
 
         this.theme = theme;
+        if (theme !== 'gameplay') {
+            this._pendingRuinBellCues.length = 0;
+            this._activeRuinBellPhrase = null;
+        }
         // A menu visit is an authored release, never a continuation of the last
         // boss-final/last-stand mix. Reset both policy state and layer targets.
         if (theme === 'menu') this.setCombatState({ intensity: 0, scene: 'calm', lastStand: false });
@@ -593,6 +602,8 @@ export class AudioSystem {
         this.theme = null;
         this._pendingScore = null;
         this._activeScore = null;
+        this._pendingRuinBellCues.length = 0;
+        this._activeRuinBellPhrase = null;
         this._stopRecorded(true);
         this.setPaused(false);
         if (this.ctx) this._nextTime = this.ctx.currentTime + 0.08;
@@ -752,7 +763,26 @@ export class AudioSystem {
     musicEvent(name, detail = null) {
         if (detail?.bossId) this.setBossProfile(detail.bossId);
         let caption = false;
-        if (name === 'phase2' || name === 'bossFinal') {
+        if (name === 'ruinBell') {
+            caption = typeof detail?.caption === 'string' ? detail.caption : false;
+            if (detail?.combat) this.setCombatState(detail.combat);
+            const trackerReady = this.ctx
+                && this.theme === 'gameplay'
+                && this._activeScore?.kind === 'tracker'
+                && Array.isArray(detail?.variant?.notes)
+                && Array.isArray(detail?.variant?.hits);
+            if (trackerReady) {
+                // Bound the queue so a backgrounded tab or malformed caller
+                // cannot accumulate an unbounded burst of old encounter cues.
+                if (this._pendingRuinBellCues.length >= 4) this._pendingRuinBellCues.shift();
+                this._pendingRuinBellCues.push(detail);
+            } else {
+                const fallback = detail?.fallbackSfx;
+                if (typeof fallback === 'string' && typeof this[fallback] === 'function') {
+                    this[fallback]();
+                }
+            }
+        } else if (name === 'phase2' || name === 'bossFinal') {
             this.setCombatState({ intensity: 1, scene: 'bossFinal', lastStand: this._lastStand });
             if (this.ctx && this._activeScore?.kind === 'tracker') {
                 const t = this.ctx.currentTime + 0.02;
@@ -845,6 +875,17 @@ export class AudioSystem {
         const breath = (bar === 0 && step === 0) ? 0.55 : 1;
         const ix = this._intensity;
 
+        // Ruin Bell phrases are promoted exactly on the next downbeat, then
+        // scheduled a sixteenth at a time so their priority notes receive a
+        // fresh per-step voice budget. The encounter never replaces, restarts,
+        // or desynchronizes the current biome composition.
+        if (step === 0 && this._pendingRuinBellCues.length) {
+            this._activeRuinBellPhrase = this._pendingRuinBellCues.shift();
+        }
+        this._scheduleRuinBellPhraseStep(step, t, def, root, beatDur, {
+            bed, motion, swarm, apex,
+        });
+
         if (groove.kick.includes(step)) this._kick(t, e * 0.72 * secGain, bed);
         if (groove.snare.includes(step)) this._snare(t, e * 0.72, motion, def.groove);
         if (groove.hat.includes(step)) this._hat(t, e * (step % 4 === 0 ? 0.55 : 0.78), swarm, def.groove);
@@ -887,6 +928,31 @@ export class AudioSystem {
         if (this._lastStand && (step === 0 || step === 8)) {
             this._playInstrument(def.instruments.bass, degToMidi(root, def.scale, 0) - 12,
                 t, beatDur * 2.3, 0.055, apex);
+        }
+        if (step === 15) this._activeRuinBellPhrase = null;
+    }
+
+    _scheduleRuinBellPhraseStep(step, t, def, root, stepDuration, buses) {
+        const phrase = this._activeRuinBellPhrase?.variant;
+        if (!phrase) return;
+        const bus = buses[phrase.layer] || buses.apex || this.musicDuck;
+        for (const note of phrase.notes || []) {
+            if (note.step !== step) continue;
+            const instrument = INSTRUMENTS[note.instrument]
+                ? note.instrument
+                : def.instruments.lead;
+            const midi = degToMidi(root, def.scale, Number(note.degree) || 0)
+                + (Number(note.register) || 0);
+            const duration = stepDuration * Math.max(1, Number(note.durationSteps) || 1);
+            const gain = Math.max(0, Math.min(0.12, Number(note.gain) || 0));
+            this._playInstrument(instrument, midi, t, duration, gain, bus);
+        }
+        for (const hit of phrase.hits || []) {
+            if (hit.step !== step) continue;
+            const gain = Math.max(0, Math.min(0.8, Number(hit.gain) || 0));
+            if (hit.voice === 'kick') this._kick(t, gain, bus);
+            else if (hit.voice === 'hat') this._hat(t, gain, bus, def.groove);
+            else this._snare(t, gain, bus, def.groove);
         }
     }
 

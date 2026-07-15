@@ -122,6 +122,12 @@ jobs:
       - name: Validate biome dressing and structure cohesion
         run: node tools/validate-world.js
 
+      - name: Validate House V2 authored structure contract
+        run: node tools/validate-house-v2.js
+
+      - name: Validate Ruin Bell encounter contract
+        run: node tools/validate-ruin-bell.js
+
       - name: Validate HUD layout contracts
         run: node tools/validate-hud-layout.js
 
@@ -201,6 +207,9 @@ jobs:
           # Fast render-branch matrix: every biome, both house camera branches,
           # Living Vigil rewards, touch HUD, progression receipt and Mines must
           # render exception-free in the same real-game harness used locally.
+          RUIN_BELL_RECEIPTS=/tmp/ruin-bell-visual-receipts
+          rm -rf "$RUIN_BELL_RECEIPTS" __out
+          mkdir -p "$RUIN_BELL_RECEIPTS" __out
           MATRIX_INDEX=0
           while IFS='|' read -r EXPECTED_MAP QUERY; do
             MATRIX_INDEX=$((MATRIX_INDEX + 1))
@@ -502,7 +511,117 @@ jobs:
                 grep -q 'data-qa-boss-rush-active="true"' "$MATRIX_DOM" \
                   && grep -q 'data-qa-gauntlet-metric-safe="true"' "$MATRIX_DOM" || {
                     echo "FAIL: gauntlet scenario '${QUERY}' lacks its controller or selected an unsafe metric"; exit 1;
+                }
+              fi
+            fi
+            if [[ "$QUERY" =~ ruinbell=(arming|warning|crossfire|breach|technical|cleared|failed|ruined) ]]; then
+              EXPECTED_RUIN_BELL="${BASH_REMATCH[1]}"
+              EXPECTED_RUIN_PHASE=''
+              EXPECTED_RUIN_HOUSE=''
+              EXPECTED_RUIN_ATTEMPT=1
+              EXPECTED_RUIN_ATTEMPTS_FAILED=0
+              EXPECTED_RUIN_DEFEATED=0
+              EXPECTED_RUIN_ALIVE=0
+              EXPECTED_RUIN_TAGGED=0
+              EXPECTED_RUIN_DEFERS=0
+              EXPECTED_RUIN_ROLES=''
+              case "$EXPECTED_RUIN_BELL" in
+                arming) EXPECTED_RUIN_PHASE=arming; EXPECTED_RUIN_HOUSE=intact ;;
+                warning) EXPECTED_RUIN_PHASE=warning; EXPECTED_RUIN_HOUSE=lit ;;
+                crossfire)
+                  EXPECTED_RUIN_PHASE=active; EXPECTED_RUIN_HOUSE=lit
+                  EXPECTED_RUIN_ALIVE=7; EXPECTED_RUIN_TAGGED=7
+                  EXPECTED_RUIN_ROLES='door-runner,marksman,support,threshold'
+                  ;;
+                breach)
+                  EXPECTED_RUIN_PHASE=active; EXPECTED_RUIN_HOUSE=lit
+                  EXPECTED_RUIN_DEFEATED=7; EXPECTED_RUIN_ALIVE=4; EXPECTED_RUIN_TAGGED=4
+                  EXPECTED_RUIN_ROLES='bomber,charger,threshold'
+                  ;;
+                technical)
+                  EXPECTED_RUIN_PHASE=technical-defer; EXPECTED_RUIN_HOUSE=lit
+                  EXPECTED_RUIN_DEFERS=1
+                  ;;
+                cleared)
+                  EXPECTED_RUIN_PHASE=cleared; EXPECTED_RUIN_HOUSE=lit
+                  EXPECTED_RUIN_DEFEATED=11
+                  ;;
+                failed)
+                  EXPECTED_RUIN_PHASE=retry-cooldown; EXPECTED_RUIN_HOUSE=damaged
+                  EXPECTED_RUIN_ATTEMPTS_FAILED=1; EXPECTED_RUIN_DEFEATED=7
+                  ;;
+                ruined)
+                  EXPECTED_RUIN_PHASE=spent; EXPECTED_RUIN_HOUSE=ruined
+                  EXPECTED_RUIN_ATTEMPT=2; EXPECTED_RUIN_ATTEMPTS_FAILED=2; EXPECTED_RUIN_DEFEATED=7
+                  ;;
+              esac
+              grep -q "data-qa-ruin-bell-request=\"${EXPECTED_RUIN_BELL}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-phase=\"${EXPECTED_RUIN_PHASE}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-house-state=\"${EXPECTED_RUIN_HOUSE}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-structure-state=\"${EXPECTED_RUIN_HOUSE}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-attempt=\"${EXPECTED_RUIN_ATTEMPT}\"" "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-max-attempts="2"' "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-attempts-failed=\"${EXPECTED_RUIN_ATTEMPTS_FAILED}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-members-defeated=\"${EXPECTED_RUIN_DEFEATED}\"" "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-members-total="11"' "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-members-alive=\"${EXPECTED_RUIN_ALIVE}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-active-tagged=\"${EXPECTED_RUIN_TAGGED}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-unique-tagged=\"${EXPECTED_RUIN_TAGGED}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-active-roles=\"${EXPECTED_RUIN_ROLES}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-ruin-bell-technical-defers=\"${EXPECTED_RUIN_DEFERS}\"" "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-blocked-active="0"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-pending="false"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-objective-owner="ruin-bell"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-objective-rendered="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-objective-text-complete="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-objective-a11y="[^"]\+"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-ruin-bell-coin-count="0"' "$MATRIX_DOM" || {
+                  echo "FAIL: Ruin Bell '${EXPECTED_RUIN_BELL}' omitted its exact encounter/HUD/placement receipt"; exit 1;
+                }
+              if [[ "$EXPECTED_RUIN_BELL" == cleared ]]; then
+                grep -q 'data-qa-ruin-bell-reward-emitted="true"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-receipt-ok="true"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-receipt-attempt="1"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-receipt-xp="32"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-receipt-choice="chest-or-wick-shrine"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-chest-count="1"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-shrine-count="1"' "$MATRIX_DOM" || {
+                    echo 'FAIL: cleared Ruin Bell lost its one-shot +32 XP / choice reward'; exit 1;
                   }
+              elif [[ "$EXPECTED_RUIN_BELL" == failed || "$EXPECTED_RUIN_BELL" == ruined ]]; then
+                EXPECTED_RUIN_RETRY=false
+                if [[ "$EXPECTED_RUIN_BELL" == failed ]]; then EXPECTED_RUIN_RETRY=true; fi
+                grep -q 'data-qa-ruin-bell-reward-emitted="false"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-receipt-ok="false"' "$MATRIX_DOM" \
+                  && grep -q "data-qa-ruin-bell-receipt-attempt=\"${EXPECTED_RUIN_ATTEMPT}\"" "$MATRIX_DOM" \
+                  && grep -q "data-qa-ruin-bell-receipt-retry=\"${EXPECTED_RUIN_RETRY}\"" "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-chest-count="0"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-shrine-count="0"' "$MATRIX_DOM" || {
+                    echo "FAIL: ${EXPECTED_RUIN_BELL} Ruin Bell granted a reward or lost retry truth"; exit 1;
+                  }
+              else
+                grep -q 'data-qa-ruin-bell-reward-emitted="false"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-receipt-ok=""' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-chest-count="0"' "$MATRIX_DOM" \
+                  && grep -q 'data-qa-ruin-bell-shrine-count="0"' "$MATRIX_DOM" || {
+                    echo "FAIL: ${EXPECTED_RUIN_BELL} Ruin Bell emitted an early reward"; exit 1;
+                  }
+              fi
+              if [[ "$QUERY" =~ out=([A-Za-z0-9._-]+) ]]; then
+                RUIN_BELL_OUTPUT="${BASH_REMATCH[1]}"
+                grep -q "data-qa-output=\"${RUIN_BELL_OUTPUT}\"" "$MATRIX_DOM" \
+                  && test -s "__out/${RUIN_BELL_OUTPUT}" || {
+                    echo "FAIL: Ruin Bell '${EXPECTED_RUIN_BELL}' visual receipt was not saved"; exit 1;
+                }
+                cp "__out/${RUIN_BELL_OUTPUT}" "$RUIN_BELL_RECEIPTS/${RUIN_BELL_OUTPUT}"
+                RUIN_BELL_BACKING=$(grep -o 'data-qa-canvas-backing="[0-9]*x[0-9]*"' "$MATRIX_DOM" \
+                  | head -1 | cut -d'"' -f2)
+                [[ "$RUIN_BELL_BACKING" =~ ^([0-9]+)x([0-9]+)$ ]] || {
+                  echo "FAIL: Ruin Bell '${EXPECTED_RUIN_BELL}' omitted its canvas backing receipt"; exit 1;
+                }
+                node tools/artshot/validate-receipt-png.mjs \
+                  "$RUIN_BELL_RECEIPTS/${RUIN_BELL_OUTPUT}" \
+                  --width="${BASH_REMATCH[1]}" --height="${BASH_REMATCH[2]}"
               fi
             fi
           done <<'MATRIX'
@@ -530,9 +649,21 @@ jobs:
           emberwood|objectivephase=tactic&objectiveprogress=0.5&runmode=standard&victory=1
           emberwood|objectivephase=climax&objectiveprogress=0.65&runmode=weekly&touch=1&uiscale=130&reduced=1&contrast=1
           emberwood|objectivephase=climax&objectiveprogress=0.65&runmode=weekly&touch=1&uiscale=130&reduced=1&contrast=1&boss=1&bossid=stormwingAlpha&bossframes=1
+          emberwood|map=emberwood&ruinbell=arming&out=ruin-bell-arming-1280x720.png
+          emberwood|map=emberwood&ruinbell=warning&captions=1&captiondetail=full&out=ruin-bell-warning-1280x720.png
+          emberwood|map=emberwood&ruinbell=crossfire&touch=1&uiscale=130&reduced=1&out=ruin-bell-crossfire-667x375.png
+          emberwood|map=emberwood&ruinbell=breach&uiscale=130&contrast=1&out=ruin-bell-breach-high-contrast-1280x720.png
+          emberwood|map=emberwood&ruinbell=technical&out=ruin-bell-technical-1280x720.png
+          emberwood|map=emberwood&ruinbell=cleared&out=ruin-bell-cleared-1280x720.png
+          emberwood|map=emberwood&ruinbell=failed&out=ruin-bell-failed-1280x720.png
+          emberwood|map=emberwood&ruinbell=ruined&out=ruin-bell-ruined-1280x720.png
           emberwood|screen=menu&tab=battlepass&bpxp=12600&bpclaimthrough=12&bpreceipt=1
           emberwood|screen=menu&tab=shop&mines=250&minessafe=3&input=keyboard&minesFocus=7&reduced=1
           MATRIX
+          [ "$(find "$RUIN_BELL_RECEIPTS" -maxdepth 1 -type f -name '*.png' | wc -l)" -eq 8 ] \
+            && [ "$(sha256sum "$RUIN_BELL_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 8 ] || {
+              echo 'FAIL: Ruin Bell visual receipt set is incomplete or contains duplicate states'; exit 1;
+            }
 
           # Real Chromium/Web Audio graph gate: three independent player buses,
           # stereo->mono->stereo graph continuity, and muted-voice duck safety.
@@ -585,10 +716,10 @@ jobs:
           node tools/artshot/capture-harness.mjs \
             --chrome="$CHROME" --window=1280,720 --timeout=30000 \
             --profile="$INVALID_OBJECTIVE_PROFILE" --dom="$INVALID_OBJECTIVE_DOM" \
-            --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&runmode=chaos&objectivephase=middle&objectiveprogress=&pause=yes"
+            --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&runmode=chaos&objectivephase=middle&objectiveprogress=&pause=yes&ruinbell=almost"
           INVALID_OBJECTIVE_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_OBJECTIVE_DOM" | head -1)
           echo "Invalid Run Path controls: $INVALID_OBJECTIVE_TITLE"
-          echo "$INVALID_OBJECTIVE_TITLE" | grep -q 'DONE EXC:4 ' \
+          echo "$INVALID_OBJECTIVE_TITLE" | grep -q 'DONE EXC:5 ' \
             && grep -q 'data-qa-error-keys="param"' "$INVALID_OBJECTIVE_DOM" || {
               echo 'FAIL: invalid Run Path controls did not fail closed'; exit 1;
             }
@@ -1015,7 +1146,7 @@ jobs:
           [ "$(sha256sum "$COMPLETION_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 10 ] || {
             echo 'FAIL: Collection Completion visual receipts were not ten distinct frames'; exit 1;
           }
-          echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, Collection, Boutique, menus, Mines)"
+          echo "Harness render matrix OK (4 biomes, house branches, Ruin Bell lifecycle, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, Collection, Boutique, menus, Mines)"
 
       - name: Upload Collection Growth I-A visual receipts
         uses: actions/upload-artifact@v4
@@ -1038,5 +1169,13 @@ jobs:
         with:
           name: collection-completion-truth-visual-receipts
           path: /tmp/collection-completion-truth/*.png
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Ruin Bell visual receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruin-bell-visual-receipts
+          path: /tmp/ruin-bell-visual-receipts/*.png
           if-no-files-found: error
           retention-days: 30

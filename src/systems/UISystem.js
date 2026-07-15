@@ -583,14 +583,15 @@ export class UISystem {
         const bodyPx = Math.max(12, Math.floor(r.bodyPx || 16 * scale));
         const progressPx = Math.max(12, Math.floor(r.progressPx || 15 * scale));
         const immediate = objective.vigilPrompt ?? null;
-        const bodyLabel = 'NEXT';
+        const ruinBellObjective = objective.owner === 'ruin-bell';
+        const bodyLabel = objective.bodyLabel || 'NEXT';
         const body = objective.nextAction;
         const vigil = state.vigilTracker;
-        const contextText = immediate?.title
+        const contextText = objective.contextText || (immediate?.title
             ? `NOW · ${immediate.title}`
             : vigil
                 ? `SITES ${vigil.activatedSites}/${vigil.siteKindTotal} · PACKS ${vigil.encountersCleared}`
-                : state.touchMode ? 'PATH ACTIVE' : 'O · HEAR TASK';
+                : state.touchMode ? 'PATH ACTIVE' : 'O · HEAR TASK');
         const contextColor = immediate?.color
             || (highContrast ? '#ffffff' : 'rgba(225,216,203,0.62)');
 
@@ -615,12 +616,12 @@ export class UISystem {
 
         const headerY = lanes.headerY ?? (r.y + pad + metaPx * 0.52);
         const phaseSuffix = objective.substitution ? ' · SAFE ROUTE' : '';
-        const phaseText = lanes.compactPhase
+        const phaseText = objective.headerLabel || (lanes.compactPhase
             ? `${objective.phaseNumeral} · ${objective.phaseLabel}${phaseSuffix}`
-            : `${objective.phaseNumeral} / III · ${objective.phaseLabel}${phaseSuffix}`;
-        const progressText = lanes.compactPhase
+            : `${objective.phaseNumeral} / III · ${objective.phaseLabel}${phaseSuffix}`);
+        const progressText = objective.progressLabel || (lanes.compactPhase
             ? `${objective.current}/${objective.target}`
-            : `${objective.current} / ${objective.target}`;
+            : `${objective.current} / ${objective.target}`);
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
         ctx.font = `850 ${metaPx}px ${MONO}`;
@@ -673,9 +674,13 @@ export class UISystem {
             showContext = true,
             minRewardSize = progressPx,
         }) => {
-            const rewardText = state.objectiveRewardsEligible === false
-                ? 'NO COIN REWARD'
-                : `+${objective.reward.amount} COINS`;
+            const authoredReward = typeof objective.rewardLabel === 'string'
+                && objective.rewardLabel.length > 0;
+            const rewardText = authoredReward
+                ? objective.rewardLabel
+                : state.objectiveRewardsEligible === false
+                    ? 'NO COIN REWARD'
+                    : `+${objective.reward.amount} COINS`;
             const rewardFit = fitHudLabel(ctx, rewardText, rewardMaxW, {
                 weight: 800,
                 size: progressPx,
@@ -685,7 +690,8 @@ export class UISystem {
             ctx.font = `800 ${rewardFit.fontSize}px ${MONO}`;
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'left';
-            ctx.fillStyle = state.objectiveRewardsEligible === false ? '#a9a1b5' : '#7fe0a0';
+            ctx.fillStyle = objective.rewardColor
+                || (!authoredReward && state.objectiveRewardsEligible === false ? '#a9a1b5' : '#7fe0a0');
             ctx.fillText(rewardFit.text, r.x + pad, footerY);
             if (showContext) {
                 const contextFit = fitHudLabel(ctx, contextText, contextMaxW, {
@@ -735,12 +741,14 @@ export class UISystem {
             drawProgressBar();
 
             const showContext = lanes.showContext !== false
-                && state.objectiveRewardsEligible !== false;
+                && state.objectiveRewardsEligible !== false
+                && !ruinBellObjective;
             const rewardFit = drawFooter({
                 footerY: lanes.footerY,
                 rewardMaxW: showContext ? r.w * 0.44 : r.w - pad * 2,
                 contextMaxW: r.w * 0.44,
                 showContext,
+                minRewardSize: ruinBellObjective ? 12 : progressPx,
             });
             this._lastDrawReceipt.objectiveVariant = r.edgeCompact ? 'edge' : 'phone';
             this._lastDrawReceipt.objectiveTextComplete = actionWrap?.truncated !== true
@@ -775,8 +783,10 @@ export class UISystem {
             );
             const rewardFit = drawFooter({
                 footerY: lanes.footerY ?? (r.y + r.h - progressPx - 15 * scale),
-                rewardMaxW: r.w * 0.45,
+                rewardMaxW: ruinBellObjective ? r.w - pad * 2 : r.w * 0.45,
                 contextMaxW: r.w * 0.45,
+                showContext: !ruinBellObjective,
+                minRewardSize: ruinBellObjective ? 12 : progressPx,
             });
             drawProgressBar();
             this._lastDrawReceipt.objectiveVariant = 'dense';
@@ -834,11 +844,13 @@ export class UISystem {
 
         const denseFooter = r.dense || state.touchMode;
         const compressedFooter = lanes.compressed === true;
-        const showFooterContext = !compressedFooter
-            || state.objectiveRewardsEligible !== false;
+        const showFooterContext = !ruinBellObjective && (!compressedFooter
+            || state.objectiveRewardsEligible !== false);
         const rewardFit = drawFooter({
             footerY: lanes.footerY ?? (r.y + r.h - pad - progressPx * 0.42),
-            rewardMaxW: compressedFooter
+            rewardMaxW: ruinBellObjective
+                ? r.w - pad * 2
+                : compressedFooter
                 ? showFooterContext ? r.w * 0.43 : r.w - pad * 2
                 : r.w * (state.objectiveRewardsEligible === false
                     ? 0.43 : denseFooter ? 0.38 : 0.30),
@@ -847,9 +859,11 @@ export class UISystem {
                 : r.w * (state.objectiveRewardsEligible === false
                     ? 0.43 : denseFooter ? 0.50 : 0.56),
             showContext: showFooterContext,
-            minRewardSize: compressedFooter
-                ? progressPx
-                : denseFooter ? Math.max(12, progressPx - 3) : progressPx,
+            minRewardSize: ruinBellObjective
+                ? 12
+                : compressedFooter
+                    ? progressPx
+                    : denseFooter ? Math.max(12, progressPx - 3) : progressPx,
         });
         this._lastDrawReceipt.objectiveVariant = 'standard';
         this._lastDrawReceipt.objectiveTextComplete = actionWrap?.truncated !== true
@@ -2659,18 +2673,36 @@ export class UISystem {
         const heldCoins = Math.max(0, Math.floor(state.objectiveCoinsHeld ?? 0));
         const objective = state.runObjective;
         if (objective) {
-            const reward = state.objectiveRewardsEligible === false
-                ? 'PRACTICE' : `+${objective.reward.amount} COIN REWARD`;
-            const line = `${objective.phaseLabel} ${objective.phaseIndex + 1}/3 · `
-                + `${objective.title} ${objective.current}/${objective.target} · ${reward}`;
-            ctx.font = `750 26px ${MONO}`;
-            ctx.fillStyle = objective.accent || '#ffd166';
-            const fit = fitHudLabel(ctx, line, 920, {
-                weight: 750, size: 26, minSize: 20, family: MONO,
-            });
-            ctx.font = `750 ${fit.fontSize}px ${MONO}`;
-            ctx.fillText(fit.text, INTERNAL_WIDTH / 2,
-                INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 126 : 108));
+            if (objective.owner === 'ruin-bell') {
+                const status = `${objective.headerLabel} · ${objective.progressLabel}`;
+                const statusFit = fitHudLabel(ctx, status, 1040, {
+                    weight: 750, size: 26, minSize: 20, family: MONO,
+                });
+                ctx.font = `750 ${statusFit.fontSize}px ${MONO}`;
+                ctx.fillStyle = objective.accent || '#ffd166';
+                ctx.fillText(statusFit.text, INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 142 : 126));
+                const rewardFit = fitHudLabel(ctx, objective.rewardLabel, 1040, {
+                    weight: 800, size: 24, minSize: 18, family: MONO,
+                });
+                ctx.font = `800 ${rewardFit.fontSize}px ${MONO}`;
+                ctx.fillStyle = objective.rewardColor || '#7fe0a0';
+                ctx.fillText(rewardFit.text, INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 106 : 90));
+            } else {
+                const reward = state.objectiveRewardsEligible === false
+                    ? 'PRACTICE' : `+${objective.reward.amount} COIN REWARD`;
+                const line = `${objective.phaseLabel} ${objective.phaseIndex + 1}/3 · `
+                    + `${objective.title} ${objective.current}/${objective.target} · ${reward}`;
+                ctx.font = `750 26px ${MONO}`;
+                ctx.fillStyle = objective.accent || '#ffd166';
+                const fit = fitHudLabel(ctx, line, 920, {
+                    weight: 750, size: 26, minSize: 20, family: MONO,
+                });
+                ctx.font = `750 ${fit.fontSize}px ${MONO}`;
+                ctx.fillText(fit.text, INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 126 : 108));
+            }
         }
         if (heldCoins > 0) {
             const armed = confirm?.action === 'restart' || confirm?.action === 'menu';
@@ -2679,7 +2711,7 @@ export class UISystem {
             ctx.fillText(
                 `${heldCoins} COINS HELD · RESTART OR LEAVE FORFEITS THEM`,
                 INTERNAL_WIDTH / 2,
-                INTERNAL_HEIGHT / 2 - 88,
+                INTERNAL_HEIGHT / 2 - (objective?.owner === 'ruin-bell' ? 70 : 88),
             );
         }
 

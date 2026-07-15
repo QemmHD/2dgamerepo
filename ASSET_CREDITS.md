@@ -259,6 +259,8 @@ until it loads.
 | `src/assets/obstacles/wall_keep.png` | Generated | higgsfield (Nano Banana 2) | Seamless ashlar-brick wall texture (keep). |
 | `src/assets/obstacles/wall_adobe.png` | Generated | higgsfield (Nano Banana 2) | Seamless adobe-clay wall texture. |
 | `src/assets/obstacles/floor_cabin.png` | Generated | higgsfield (Nano Banana 2) | Cabin interior floor decal (planks, rug, hearth). |
+| `src/assets/obstacles/cabin_bed.png` | Generated | Blender 5.1 (deterministic `bpy` + Eevee) | Original House V2 sleeping-nook furnishing, rendered by `tools/blender/render_house_v2_props.py` as a transparent 256×256 PNG. Uses no external meshes or textures; a missing raster falls back to the runtime code-drawn furnishing. |
+| `src/assets/obstacles/ruin_bell.png` | Generated | Blender 5.1 (deterministic `bpy` + Eevee) | Original House V2 Ruin Bell encounter prop, rendered by `tools/blender/render_house_v2_props.py` as a transparent 256×256 PNG. Uses no external meshes or textures; a missing raster falls back to the runtime code-drawn furnishing. |
 | `src/assets/obstacles/floor_ruin.png` | Generated | higgsfield (Nano Banana 2) | Ruin interior floor decal (cracked tiles, moss). |
 | `src/assets/obstacles/floor_keep.png` | Generated | higgsfield (Nano Banana 2) | Keep interior floor decal (flagstone, carpet, brazier). |
 | `src/assets/obstacles/floor_adobe.png` | Generated | higgsfield (Nano Banana 2) | Adobe interior floor decal (terracotta, mat, pots). |

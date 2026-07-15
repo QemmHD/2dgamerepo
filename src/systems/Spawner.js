@@ -73,7 +73,8 @@ export class Spawner {
             const y = clamp(player.y + Math.sin(angle) * dist, -halfH, halfH);
             if (distanceSq(x, y, player.x, player.y) < minDistSq) continue;
             // Never spawn an enemy inside a wall/building — retry another spot.
-            if (obstacleSystem && obstacleSystem.isBlocked(x, y, spawnRadius)) continue;
+            if (obstacleSystem && (obstacleSystem.isSpawnBlocked?.(x, y, spawnRadius)
+                ?? obstacleSystem.isBlocked(x, y, spawnRadius))) continue;
             enemies.push(new Enemy(type, x, y, {
                 healthMul: waveState.healthMul,
                 speedMul: waveState.speedMul,

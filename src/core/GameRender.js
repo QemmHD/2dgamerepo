@@ -39,6 +39,7 @@ import { HazardSystem } from '../systems/HazardSystem.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
 import { gemLightColor } from './GameUpdate.js';
 import { structureRenderer } from '../render/StructureRenderer.js';
+import { ruinBellRenderer } from '../render/RuinBellRenderer.js';
 import {
     combatStatusCueSize,
     FULL_STATUS_CUE_LIMIT,
@@ -106,6 +107,11 @@ export const GameRenderMethods = {
         // render path. Unknown/legacy saves naturally resolve to false.
         const highContrast = this.saveSystem?.getSetting?.('highContrast') === true;
         const uiScale = this.saveSystem?.getSetting?.('uiScale') ?? 100;
+        const ruinBellRender = this._buildRuinBellRenderSnapshot();
+        const ruinBellPresentation = {
+            highContrast,
+            reducedEffects: this.reducedEffects === true,
+        };
 
         // "Emberlight" pipeline. The world draws fully lit; emitters
         // register lights into the darkness buffer as they're drawn; the
@@ -198,6 +204,7 @@ export const GameRenderMethods = {
         // Hazard ground decals (boss telegraphs, delayed zones, lingering
         // pools) — below entities so the boss paints over them.
         this.hazardSystem.drawGround(ctx, this, L);
+        ruinBellRenderer.drawGround(ctx, ruinBellRender, ruinBellPresentation);
         // House-bound Waylights are low standing props. Actors remain above
         // their plinths while house rear/front planes keep normal occlusion.
         this.vigilSiteSystem?.draw?.(ctx, this.camera, viewW, viewH, null);
@@ -240,7 +247,8 @@ export const GameRenderMethods = {
                 ob, ob.baseY, 0, standingSerial++),
             // Structure walls keep their collision/LOS authority but cohesive
             // shell art owns their pixels. Decorative floors already drew.
-            (ob) => !ob.def.decorative && !(ob.type === 'buildingWall' && ob.structureId),
+            (ob) => !ob.def.decorative
+                && !(ob.type === 'buildingWall' && ob.structureId && !ob.partition),
         );
         for (const g of this.gems) {
             if (!cull(g)) continue;
@@ -351,6 +359,9 @@ export const GameRenderMethods = {
         this.hazardSystem.drawAbove(ctx, this, L);
 
         this.weaponSystem.drawEffects(ctx);
+        if (!highContrast) {
+            ruinBellRenderer.drawAbove(ctx, ruinBellRender, ruinBellPresentation);
+        }
         // Weapon effects (pulse/lightning) are bright emitters — carve light
         // holes so the veil doesn't dim them.
         if (L) {
@@ -368,6 +379,7 @@ export const GameRenderMethods = {
             this.vigilSiteSystem?.forVisible?.(this.camera, viewW, viewH, (site) => {
                 if (site.state !== 'spent') L.addLight(site.x, site.y - 18, 104, site.def.accent, 0.48, 2);
             });
+            ruinBellRenderer.registerLights(L, ruinBellRender, ruinBellPresentation);
         }
 
         // Expanding shockwave rings (kills / boss death / level-up) — additive
@@ -460,6 +472,7 @@ export const GameRenderMethods = {
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1;
         if (highContrast) this.hazardSystem.drawContrastOverlay(ctx, this);
+        if (highContrast) ruinBellRenderer.drawAbove(ctx, ruinBellRender, ruinBellPresentation);
         const statusSize = combatStatusCueSize(
             uiScale,
             this.renderer?.cssWidth,
@@ -469,6 +482,7 @@ export const GameRenderMethods = {
         for (const enemy of this.enemies) {
             if (!enemy.active || !cull(enemy)) continue;
             const fullStatus = enemy.boss || enemy.lieutenant || enemy.encounterGuardian
+                || !!enemy.ruinBellMemberId
                 || enemy === this.focusTarget;
             enemy.drawCombatCueOverlay(
                 ctx,
@@ -564,6 +578,29 @@ export const GameRenderMethods = {
     // Expanding shockwave rings — additive stroked circles that grow via an
     // ease and thin + fade as they reach their max radius. World-space (called
     // inside the camera transform).
+    _buildRuinBellRenderSnapshot() {
+        const source = this.ruinBellDirector?.getRenderSnapshot?.();
+        if (!source || !Array.isArray(source.roleMarks) || source.roleMarks.length === 0) {
+            return source || null;
+        }
+        const live = new Map();
+        for (const enemy of this.enemies) {
+            if (enemy.active && enemy.ruinBellMemberId) live.set(enemy.ruinBellMemberId, enemy);
+        }
+        return {
+            ...source,
+            roleMarks: source.roleMarks.map((mark) => {
+                const enemy = live.get(mark.memberId);
+                return enemy ? {
+                    ...mark,
+                    x: enemy.x,
+                    y: enemy.y,
+                    radius: enemy.radius,
+                } : mark;
+            }),
+        };
+    },
+
     _drawEncounterGuardianMark(ctx, enemy) {
         const pulse = this.reducedEffects ? 0.72 : 0.62 + 0.18 * Math.sin(this.time * 5 + enemy.radius);
         const radius = enemy.radius + 12;

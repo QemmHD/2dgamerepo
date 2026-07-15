@@ -8,6 +8,7 @@ import { ObstacleSystem } from '../src/systems/ObstacleSystem.js';
 import { steerEnemyMovement } from '../src/systems/EnemyNavigation.js';
 import { Spawner } from '../src/systems/Spawner.js';
 import { MAP_STRUCTURES } from '../src/content/mapObjects.js';
+import { getHouseBlueprint } from '../src/content/houseBlueprints.js';
 import { ENEMY, ELITE } from '../src/config/GameConfig.js';
 
 const BIOMES = ['emberwood', 'hollowreach', 'crypts', 'dunes'];
@@ -30,7 +31,7 @@ function makeMover(x, y, radius = 44, speed = 150, side = 1) {
 
 function stepMover(obstacles, mover, target, dt = 1 / 60) {
     const dx = target.x - mover.x, dy = target.y - mover.y;
-    steerEnemyMovement(mover, dx, dy, mover.speed, obstacles, dt);
+    steerEnemyMovement(mover, dx, dy, mover.speed, obstacles, dt, target.x, target.y);
     const oldX = mover.x, oldY = mover.y;
     mover.x += mover._navMoveX * mover.speed * dt;
     mover.y += mover._navMoveY * mover.speed * dt;
@@ -41,9 +42,10 @@ function stepMover(obstacles, mover, target, dt = 1 / 60) {
 }
 
 function buildingStarts(floor, radius) {
-    const style = MAP_STRUCTURES[floor.def.styleType];
-    const outX = style.interiorW / 2 + style.wall;
-    const outY = style.interiorH / 2 + style.wall;
+    const blueprint = getHouseBlueprint(floor.def.blueprintId);
+    const dimensions = blueprint?.dimensions || MAP_STRUCTURES[floor.def.styleType];
+    const outX = dimensions.interiorW / 2 + dimensions.wall;
+    const outY = dimensions.interiorH / 2 + dimensions.wall;
     const gap = radius + 86;
     return [
         [floor.x + outX + gap, floor.y],
@@ -97,7 +99,14 @@ function validateEveryHouseApproach() {
         assert(floors.length === 11, `${biome}: expected 11 deterministic houses, got ${floors.length}`);
 
         for (const floor of floors) {
-            const target = { x: floor.x, y: floor.y };
+            const blueprint = getHouseBlueprint(floor.def.blueprintId);
+            const structure = blueprint
+                ? obstacles.structures.find((entry) => entry.id === floor.structureId)
+                : null;
+            const targetRoom = blueprint?.rooms.find((entry) => entry.id === 'dining-work');
+            const target = targetRoom && structure
+                ? { x: structure.x + targetRoom.x, y: structure.y + targetRoom.y }
+                : { x: floor.x, y: floor.y };
             const starts = buildingStarts(floor, 44);
             for (let i = 0; i < starts.length; i++) {
                 const mover = makeMover(starts[i][0], starts[i][1], 44, 150, i & 1 ? 1 : -1);
@@ -175,12 +184,78 @@ function validateSpawnerClearance() {
 
 function validateEnemyIntegrationGate() {
     const source = readFileSync(new URL('../src/entities/Enemy.js', import.meta.url), 'utf8');
-    assert(source.includes('steerEnemyMovement(this, moveX, moveY, spd, obstacleSystem, dt)'),
+    assert(source.includes('let navigationTargetX = player.x')
+        && source.includes('let navigationTargetY = player.y')
+        && source.includes('steerEnemyMovement(this, moveX, moveY, spd, obstacleSystem, dt,')
+        && source.includes('navigationTargetX, navigationTargetY))'),
         'Enemy.update is not wired to the local navigator');
     assert(!source.includes('this.bossDashTimer <= 0 && this.bossWindupTimer <= 0'),
         'boss-only undefined timer gate has returned');
     assert(source.includes("this.behavior === 'summoner' || this.behavior === 'support'"),
         'ranged/support cover repositioning is not wired');
+}
+
+function validateHouseV2BidirectionalRoutes() {
+    const obstacles = new ObstacleSystem();
+    obstacles.generate(7200, 4050, 'emberwood');
+    const structure = obstacles.structures.find((entry) => !!entry.blueprintId);
+    const blueprint = getHouseBlueprint(structure?.blueprintId);
+    assert(!!blueprint && !!structure, 'House V2 route fixture is missing');
+    if (!blueprint || !structure) return 0;
+
+    let routes = 0;
+    for (const state of ['intact', 'lit', 'damaged', 'ruined']) {
+        assert(obstacles.setStructureState(structure.id, state), `could not set House V2 ${state} state`);
+        for (const room of blueprint.rooms) {
+            for (const radius of [28, 44, 56]) {
+                const mover = makeMover(
+                    structure.x + room.x,
+                    structure.y + room.y,
+                    radius,
+                    160,
+                    radius === 44 ? -1 : 1,
+                );
+                const target = { x: structure.x - 110, y: structure.y + 760 };
+                let reached = false;
+                for (let frame = 0; frame < 20 * 60; frame++) {
+                    stepMover(obstacles, mover, target);
+                    assert(!obstacles.isBlocked(mover.x, mover.y, radius - 0.001),
+                        `${state}/${room.id}/r${radius}: exit route entered a wall`);
+                    if (!obstacles.findStructureAt(mover.x, mover.y)
+                        && Math.hypot(target.x - mover.x, target.y - mover.y) < 110) {
+                        reached = true;
+                        break;
+                    }
+                }
+                assert(reached, `${state}/${room.id}/r${radius}: enemy remained stuck inside House V2`);
+                routes++;
+            }
+        }
+    }
+
+    // Ordinary ranged/support units still hold an exterior firing socket, but
+    // Bellbound units with explicit interior sockets must traverse the portal.
+    assert(obstacles.setStructureState(structure.id, 'lit'), 'could not relight House V2 formation fixture');
+    for (const behavior of ['spitter', 'support']) {
+        const room = blueprint.rooms.find((entry) => entry.id === 'hearth-kitchen');
+        const target = { x: structure.x + room.x, y: structure.y + room.y };
+        const mover = makeMover(structure.x - 110, structure.y - 620, 34, 160);
+        mover.behavior = behavior;
+        mover.ruinBellCombatSocket = { ...target };
+        let reached = false;
+        for (let frame = 0; frame < 18 * 60; frame++) {
+            stepMover(obstacles, mover, target);
+            assert(!obstacles.isBlocked(mover.x, mover.y, mover.radius - 0.001),
+                `Bell ${behavior} formation route entered a wall`);
+            if (Math.hypot(target.x - mover.x, target.y - mover.y) < 70) {
+                reached = true;
+                break;
+            }
+        }
+        assert(reached, `Bell ${behavior} failed to occupy its authored interior socket`);
+        routes++;
+    }
+    return routes;
 }
 
 function validateAtEnemyCap() {
@@ -231,11 +306,13 @@ const routes = validateEveryHouseApproach();
 validateLargeBodySiege();
 validateSpawnerClearance();
 validateEnemyIntegrationGate();
+const bidirectionalRoutes = validateHouseV2BidirectionalRoutes();
 const stress = validateAtEnemyCap();
 const totalMs = performance.now() - started;
 
 console.log(
     `navigation validation: OK — ${checks.toLocaleString()} checks, ` +
-    `${routes} house routes, 180-body stress ${stress.probes.toLocaleString()} probes ` +
+    `${routes} approach + ${bidirectionalRoutes} House V2 exit/formation routes, ` +
+    `180-body stress ${stress.probes.toLocaleString()} probes ` +
     `in ${stress.elapsed.toFixed(1)}ms (${totalMs.toFixed(1)}ms total).`,
 );

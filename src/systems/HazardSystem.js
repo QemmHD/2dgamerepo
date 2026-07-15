@@ -244,7 +244,7 @@ export class HazardSystem {
     updateBiome(dt, game) {
         const bh = game.biomeHazard;
         if (!bh) return;
-        if (game.arena || game.bossWarning) return;
+        if (game.arena || game.bossWarning || game.ruinBellDirector?.ownsStage?.()) return;
         bh.timer -= dt;
         if (bh.timer > 0) return;
         const B = BIOME_HAZARD;

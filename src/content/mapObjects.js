@@ -17,6 +17,8 @@
 // Collision footprints are deliberately a bit smaller than the visual so the
 // player's feet can tuck behind a wall without snagging on the artwork.
 
+import { EMBERWOOD_RUIN_BELL_CABIN } from './houseBlueprints.js';
+
 export const MAP_OBJECTS = {
     ruinedWall: {
         type: 'ruinedWall', shape: 'rect', col: { hw: 92, hh: 24 }, size: { w: 200, h: 132 },
@@ -88,6 +90,18 @@ export const MAP_OBJECT_TYPES = Object.keys(MAP_OBJECTS);
 //   door         doorway gap width — sized so the player (r=50) fits but big
 //                brutes/bosses do NOT, making buildings a refuge.
 export const MAP_STRUCTURES = {
+    emberwoodCabinV2: {
+        id: 'emberwoodCabinV2',
+        type: 'cabin',
+        blueprintId: EMBERWOOD_RUIN_BELL_CABIN.id,
+        blueprint: EMBERWOOD_RUIN_BELL_CABIN,
+        interiorW: EMBERWOOD_RUIN_BELL_CABIN.dimensions.interiorW,
+        interiorH: EMBERWOOD_RUIN_BELL_CABIN.dimensions.interiorH,
+        wall: EMBERWOOD_RUIN_BELL_CABIN.dimensions.wall,
+        wallH: EMBERWOOD_RUIN_BELL_CABIN.dimensions.wallH,
+        door: EMBERWOOD_RUIN_BELL_CABIN.dimensions.mainDoor,
+        palette: { base: '#6a513a', top: '#86643f', edge: '#3c2c1d' },
+    },
     cabin: {
         type: 'cabin', interiorW: 250, interiorH: 200, wall: 28, wallH: 156, door: 140,
         palette: { base: '#6a513a', top: '#86643f', edge: '#3c2c1d' },
@@ -117,6 +131,7 @@ export const MAP_STRUCTURES = {
 export const BIOME_THEME = {
     emberwood: {
         tint: { color: '#ffce7a', amt: 0.12 },
+        featuredStructure: 'emberwoodCabinV2',
         structures: ['cabin', 'ruin'],
         props: { tree: 20, fence: 12, stoneBlock: 8, crate: 9, barrel: 6, well: 6, ruinedWall: 5 },
     },
