@@ -185,15 +185,12 @@ jobs:
               echo 'FAIL: browser hero matrix omitted its QA receipt'; exit 1;
             }
 
-          # --dump-dom serializes the page after the virtual-time budget, so
-          # the <title> carries the harness's final "DONE EXC:<n> enemies:<m>".
-          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-            --autoplay-policy=no-user-gesture-required \
-            --disable-background-networking --disable-component-update \
-            --force-device-scale-factor=1 --window-size=1600,900 \
-            --timeout=25000 --user-data-dir="$(mktemp -d)" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=20&blockboot=1&badge=1" \
-            > /tmp/harness-dom.html
+          # The CDP driver waits for the harness's own data-qa-ready receipt, so
+          # browser-process locks and final asset writes cannot race capture.
+          node tools/artshot/capture-harness.mjs \
+            --chrome="$CHROME" --window=1600,900 --timeout=30000 \
+            --profile="$(mktemp -d)" --dom=/tmp/harness-dom.html \
+            --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=20&blockboot=1&badge=1"
           TITLE=$(grep -o '<title>[^<]*</title>' /tmp/harness-dom.html | head -1)
           echo "Harness title: $TITLE"
           echo "$TITLE" | grep -q 'DONE EXC:0 ' || { echo 'FAIL: harness reported exceptions (or never finished)'; exit 1; }
@@ -225,13 +222,10 @@ jobs:
             for ((MATRIX_ATTEMPT=1; MATRIX_ATTEMPT<=MATRIX_ATTEMPTS; MATRIX_ATTEMPT++)); do
               MATRIX_PROFILE=$(mktemp -d)
               MATRIX_WINDOW="${MATRIX_WINDOW_WIDTH},${MATRIX_WINDOW_HEIGHT}"
-              timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-                --autoplay-policy=no-user-gesture-required \
-                --disable-background-networking --disable-component-update \
-                --force-device-scale-factor=1 --window-size="$MATRIX_WINDOW" \
-                --timeout=15000 --user-data-dir="$MATRIX_PROFILE" \
-                --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&blockboot=1&badge=1&${QUERY}" \
-                > "$MATRIX_DOM"
+              node tools/artshot/capture-harness.mjs \
+                --chrome="$CHROME" --window="$MATRIX_WINDOW" --timeout=30000 \
+                --profile="$MATRIX_PROFILE" --dom="$MATRIX_DOM" \
+                --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&blockboot=1&badge=1&${QUERY}"
               if [[ "$MATRIX_TOUCH" != true ]]; then break; fi
               VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
               VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
@@ -570,13 +564,10 @@ jobs:
           # coercing a screenshot into a different accessibility state.
           INVALID_DOM="/tmp/harness-invalid-controls.html"
           INVALID_PROFILE=$(mktemp -d)
-          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-            --autoplay-policy=no-user-gesture-required \
-            --disable-background-networking --disable-component-update \
-            --force-device-scale-factor=1 --window-size=1280,720 \
-            --timeout=15000 --user-data-dir="$INVALID_PROFILE" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=settings&uiscale=129&contrast=yes&settingspane=display&statuses=none&captions=yes&captiondetail=verbose&mono=maybe&voicevol=33&vibration=maximum&vibrationcap=yes&caption=speech" \
-            > "$INVALID_DOM"
+          node tools/artshot/capture-harness.mjs \
+            --chrome="$CHROME" --window=1280,720 --timeout=30000 \
+            --profile="$INVALID_PROFILE" --dom="$INVALID_DOM" \
+            --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=settings&uiscale=129&contrast=yes&settingspane=display&statuses=none&captions=yes&captiondetail=verbose&mono=maybe&voicevol=33&vibration=maximum&vibrationcap=yes&caption=speech"
           INVALID_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_DOM" | head -1)
           echo "Invalid-control receipt: $INVALID_TITLE"
           echo "$INVALID_TITLE" | grep -q 'DONE EXC:11 ' || {
@@ -591,12 +582,10 @@ jobs:
 
           INVALID_OBJECTIVE_DOM="/tmp/harness-invalid-objective-controls.html"
           INVALID_OBJECTIVE_PROFILE=$(mktemp -d)
-          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-            --disable-background-networking --disable-component-update \
-            --force-device-scale-factor=1 --window-size=1280,720 \
-            --timeout=15000 --user-data-dir="$INVALID_OBJECTIVE_PROFILE" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&runmode=chaos&objectivephase=middle&objectiveprogress=&pause=yes" \
-            > "$INVALID_OBJECTIVE_DOM"
+          node tools/artshot/capture-harness.mjs \
+            --chrome="$CHROME" --window=1280,720 --timeout=30000 \
+            --profile="$INVALID_OBJECTIVE_PROFILE" --dom="$INVALID_OBJECTIVE_DOM" \
+            --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&runmode=chaos&objectivephase=middle&objectiveprogress=&pause=yes"
           INVALID_OBJECTIVE_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_OBJECTIVE_DOM" | head -1)
           echo "Invalid Run Path controls: $INVALID_OBJECTIVE_TITLE"
           echo "$INVALID_OBJECTIVE_TITLE" | grep -q 'DONE EXC:4 ' \
@@ -608,12 +597,10 @@ jobs:
           # voicevol value as zero. The allowlist must reject that exact spelling.
           EMPTY_VOICE_DOM="/tmp/harness-invalid-empty-voice.html"
           EMPTY_VOICE_PROFILE=$(mktemp -d)
-          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-            --disable-background-networking --disable-component-update \
-            --force-device-scale-factor=1 --window-size=1280,720 \
-            --timeout=15000 --user-data-dir="$EMPTY_VOICE_PROFILE" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=settings&settingspane=accessibility&voicevol=" \
-            > "$EMPTY_VOICE_DOM"
+          node tools/artshot/capture-harness.mjs \
+            --chrome="$CHROME" --window=1280,720 --timeout=30000 \
+            --profile="$EMPTY_VOICE_PROFILE" --dom="$EMPTY_VOICE_DOM" \
+            --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=settings&settingspane=accessibility&voicevol="
           EMPTY_VOICE_TITLE=$(grep -o '<title>[^<]*</title>' "$EMPTY_VOICE_DOM" | head -1)
           echo "Empty voice-volume receipt: $EMPTY_VOICE_TITLE"
           echo "$EMPTY_VOICE_TITLE" | grep -q 'DONE EXC:1 ' \
@@ -623,13 +610,10 @@ jobs:
 
           INVALID_COLLECTION_DOM="/tmp/harness-invalid-collection-controls.html"
           INVALID_COLLECTION_PROFILE=$(mktemp -d)
-          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-            --disable-background-networking --disable-component-update \
-            --force-device-scale-factor=1 --window-size=1280,720 \
-            --timeout=15000 --user-data-dir="$INVALID_COLLECTION_PROFILE" \
-            --dump-dom \
-            "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=boutique&collectioncat=weapon&collectionpage=0&pursuit=missing-set" \
-            > "$INVALID_COLLECTION_DOM"
+          node tools/artshot/capture-harness.mjs \
+            --chrome="$CHROME" --window=1280,720 --timeout=30000 \
+            --profile="$INVALID_COLLECTION_PROFILE" --dom="$INVALID_COLLECTION_DOM" \
+            --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=boutique&collectioncat=weapon&collectionpage=0&pursuit=missing-set"
           INVALID_COLLECTION_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_COLLECTION_DOM" | head -1)
           echo "Invalid Collection controls: $INVALID_COLLECTION_TITLE"
           echo "$INVALID_COLLECTION_TITLE" | grep -q 'DONE EXC:4 ' \
@@ -639,13 +623,10 @@ jobs:
 
           INVALID_COMPLETION_DOM="/tmp/harness-invalid-completion-controls.html"
           INVALID_COMPLETION_PROFILE=$(mktemp -d)
-          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-            --disable-background-networking --disable-component-update \
-            --force-device-scale-factor=1 --window-size=1280,720 \
-            --timeout=15000 --user-data-dir="$INVALID_COMPLETION_PROFILE" \
-            --dump-dom \
-            "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=character&completion=bogus&blueprint=bogus&completionfixture=bogus&wallet=-1&blueprintbuy=2" \
-            > "$INVALID_COMPLETION_DOM"
+          node tools/artshot/capture-harness.mjs \
+            --chrome="$CHROME" --window=1280,720 --timeout=30000 \
+            --profile="$INVALID_COMPLETION_PROFILE" --dom="$INVALID_COMPLETION_DOM" \
+            --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=character&completion=bogus&blueprint=bogus&completionfixture=bogus&wallet=-1&blueprintbuy=2"
           INVALID_COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_COMPLETION_DOM" | head -1)
           echo "Invalid Completion controls: $INVALID_COMPLETION_TITLE"
           echo "$INVALID_COMPLETION_TITLE" | grep -q 'DONE EXC:6 ' \
@@ -675,14 +656,10 @@ jobs:
                 COLLECTION_EXPECTED_FOCUS='boutiqueCategory:aura#0'
                 ;;
             esac
-            timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-              --autoplay-policy=no-user-gesture-required \
-              --disable-background-networking --disable-component-update \
-              --force-device-scale-factor=1 --window-size=1600,900 \
-              --timeout=15000 --user-data-dir="$COLLECTION_PROFILE" \
-              --dump-dom \
-              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&screen=menu&tab=${COLLECTION_TAB}&input=keyboard&focus=${COLLECTION_FOCUS}&out=${COLLECTION_NAME}${COLLECTION_EXTRA}" \
-              > "$COLLECTION_DOM"
+            node tools/artshot/capture-harness.mjs \
+              --chrome="$CHROME" --window=1600,900 --timeout=30000 \
+              --profile="$COLLECTION_PROFILE" --dom="$COLLECTION_DOM" \
+              --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&screen=menu&tab=${COLLECTION_TAB}&input=keyboard&focus=${COLLECTION_FOCUS}&out=${COLLECTION_NAME}${COLLECTION_EXTRA}"
             COLLECTION_TITLE=$(grep -o '<title>[^<]*</title>' "$COLLECTION_DOM" | head -1)
             echo "Collection visual ${COLLECTION_TAB}: $COLLECTION_TITLE"
             echo "$COLLECTION_TITLE" | grep -q 'DONE EXC:0 ' \
@@ -733,14 +710,10 @@ jobs:
             for ((COLLECTION_IB_ATTEMPT=1; COLLECTION_IB_ATTEMPT<=COLLECTION_IB_ATTEMPTS; COLLECTION_IB_ATTEMPT++)); do
               COLLECTION_IB_PROFILE=$(mktemp -d)
               COLLECTION_IB_WINDOW="${COLLECTION_IB_WINDOW_WIDTH},${COLLECTION_IB_WINDOW_HEIGHT}"
-              timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-                --autoplay-policy=no-user-gesture-required \
-                --disable-background-networking --disable-component-update \
-                --force-device-scale-factor=1 --window-size="$COLLECTION_IB_WINDOW" \
-                --timeout=15000 --user-data-dir="$COLLECTION_IB_PROFILE" \
-                --dump-dom \
-                "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&out=${COLLECTION_IB_NAME}.png&${COLLECTION_IB_QUERY}" \
-                > "$COLLECTION_IB_DOM"
+              node tools/artshot/capture-harness.mjs \
+                --chrome="$CHROME" --window="$COLLECTION_IB_WINDOW" --timeout=30000 \
+                --profile="$COLLECTION_IB_PROFILE" --dom="$COLLECTION_IB_DOM" \
+                --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&out=${COLLECTION_IB_NAME}.png&${COLLECTION_IB_QUERY}"
               if [[ "$COLLECTION_IB_KIND" != *-touch ]]; then break; fi
               COLLECTION_IB_VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$COLLECTION_IB_DOM" | head -1 | cut -d'"' -f2)
               COLLECTION_IB_VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$COLLECTION_IB_DOM" | head -1 | cut -d'"' -f2)
@@ -881,13 +854,10 @@ jobs:
                 COMPLETION_WINDOW="800,600"
                 COMPLETION_URL="http://127.0.0.1:8909/tools/artshot/exact-frame.html?width=${COMPLETION_TARGET_WIDTH}&height=${COMPLETION_TARGET_HEIGHT}#/tools/artshot/harness.html?seconds=0&blockboot=1&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}"
               fi
-              timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-                --autoplay-policy=no-user-gesture-required \
-                --disable-background-networking --disable-component-update \
-                --force-device-scale-factor=1 --window-size="$COMPLETION_WINDOW" \
-                --timeout=15000 --user-data-dir="$COMPLETION_PROFILE" \
-                --dump-dom "$COMPLETION_URL" \
-                > "$COMPLETION_DOM"
+              node tools/artshot/capture-harness.mjs \
+                --chrome="$CHROME" --window="$COMPLETION_WINDOW" --timeout=30000 \
+                --profile="$COMPLETION_PROFILE" --dom="$COMPLETION_DOM" \
+                --url="$COMPLETION_URL"
               COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$COMPLETION_DOM" | head -1 || true)
               COMPLETION_QA_DIAGNOSTICS=$(grep -oE 'data-qa-(ready|error-keys|completion-blueprint-(pending|receipt)|completion-wallet|output)="[^"]*"' "$COMPLETION_DOM" \
                 | sort -u | tr '\n' ' ' || true)
