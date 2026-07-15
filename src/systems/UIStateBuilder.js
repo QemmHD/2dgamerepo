@@ -13,7 +13,162 @@ import { keystoneBreadcrumbs } from '../content/keystones.js';
 import { comboDraftHints } from '../content/elements.js';
 import { findEligibleEvolutions } from '../content/evolutions.js';
 import { getRelic } from '../content/relics.js';
+import {
+    COSMETIC_BLUEPRINT_IDS,
+    COSMETIC_SETS,
+    cosmeticBlueprintCost,
+    cosmeticById,
+} from '../content/cosmetics.js';
 import { bossAttackLabel } from './BossChoreographer.js';
+
+export const COLLECTION_COMPLETION_SECTIONS = Object.freeze([
+    'overview', 'sets', 'sources', 'blueprint', 'case',
+]);
+export const COLLECTION_COMPLETION_DEFAULT_BLUEPRINT_ID = 'aura_requiem';
+export const COLLECTION_BLUEPRINT_CONFIRM_MS = 3000;
+
+const COLLECTION_COMPLETION_SECTION_SET = new Set(COLLECTION_COMPLETION_SECTIONS);
+const COSMETIC_BLUEPRINT_ID_SET = new Set(COSMETIC_BLUEPRINT_IDS);
+const BLUEPRINT_RECEIPT_REASON_SET = new Set([
+    'invalid-id', 'unknown-cosmetic', 'not-blueprint', 'invalid-quote',
+    'invalid-catalog-cost', 'quote-mismatch', 'invalid-state', 'replay',
+    'already-owned', 'invalid-balance', 'insufficient-coins',
+    'persistence-unavailable', 'external-save-changed', 'persistence-failed',
+    'transaction-busy', 'transaction-lock-unavailable', 'transaction-lock-failed',
+    'purchase-unavailable', 'invalid-purchase-receipt',
+]);
+
+// The browser performance clock is monotonic and unaffected by wall-clock or
+// timezone corrections. Tests may inject an equivalent monotonic source on the
+// Game-like object; malformed/throwing injections fail closed.
+export function blueprintClockNow(game = null) {
+    if (typeof game?._blueprintClockNow === 'function') {
+        try {
+            const injected = game._blueprintClockNow();
+            if (Number.isFinite(injected) && injected >= 0) return Math.floor(injected);
+        } catch (e) { /* fail closed below */ }
+        return null;
+    }
+    const performanceNow = globalThis.performance?.now;
+    if (typeof performanceNow === 'function') {
+        const value = globalThis.performance.now();
+        if (Number.isFinite(value) && value >= 0) return Math.floor(value);
+    }
+    // Do not fall back to adjustable wall time: a backward correction could
+    // lengthen a paid-action window. Unsupported runtimes fail closed instead.
+    return null;
+}
+
+// Collection Completion is navigation state, not progression. Keep the pure
+// snapshot strict so malformed integration input can never turn into an
+// invented pane, page, or Blueprint target, and return a fresh object so the
+// renderer cannot mutate Game by retaining a frame snapshot.
+export function collectionCompletionSnapshot(game) {
+    const raw = game?.collectionCompletion;
+    return {
+        open: raw?.open === true,
+        section: COLLECTION_COMPLETION_SECTION_SET.has(raw?.section)
+            ? raw.section : 'overview',
+        page: Number.isSafeInteger(raw?.page) && raw.page > 0 ? raw.page : 1,
+        blueprintId: COSMETIC_BLUEPRINT_ID_SET.has(raw?.blueprintId)
+            ? raw.blueprintId : COLLECTION_COMPLETION_DEFAULT_BLUEPRINT_ID,
+    };
+}
+
+// Expired, mismatched, or clock-anomalous confirmations are hidden without
+// mutating Game; the next purchase press safely re-arms through the action layer.
+export function blueprintConfirmSnapshot(game, now = blueprintClockNow(game)) {
+    const flow = collectionCompletionSnapshot(game);
+    const pending = game?.blueprintConfirm;
+    if (!flow.open || flow.section !== 'blueprint' || !pending
+        || pending.id !== flow.blueprintId
+        || !COSMETIC_BLUEPRINT_ID_SET.has(pending.id)
+        || !Number.isSafeInteger(pending.armedAt) || pending.armedAt < 0
+        || !Number.isSafeInteger(pending.expiresAt)
+        || pending.expiresAt - pending.armedAt !== COLLECTION_BLUEPRINT_CONFIRM_MS
+        || !Number.isFinite(now) || now < pending.armedAt
+        || !(pending.expiresAt > now)) return null;
+    return {
+        id: pending.id,
+        armedAt: pending.armedAt,
+        expiresAt: pending.expiresAt,
+        seconds: Math.max(1, Math.ceil((pending.expiresAt - now) / 1000)),
+    };
+}
+
+export function blueprintPurchasePendingSnapshot(game) {
+    const flow = collectionCompletionSnapshot(game);
+    const pending = game?.blueprintPurchasePending;
+    if (!flow.open || flow.section !== 'blueprint' || !pending
+        || pending.id !== flow.blueprintId
+        || !COSMETIC_BLUEPRINT_ID_SET.has(pending.id)
+        || !Number.isSafeInteger(pending.serial) || pending.serial <= 0) return null;
+    return { id: pending.id };
+}
+
+const receiptInt = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+// Receipts are copied and allowlisted before crossing the Game/UI boundary.
+// They are deliberately session-only: SaveSystem owns the durable unlock and
+// claim ledger, while this object only explains the latest attempt.
+export function blueprintReceiptSnapshot(game) {
+    const receipt = game?.blueprintReceipt;
+    if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)
+        || !COSMETIC_BLUEPRINT_ID_SET.has(receipt.id)) return null;
+    const item = cosmeticById(receipt.id);
+    const cost = cosmeticBlueprintCost(item);
+    if (!item || receipt.name !== item.name || receipt.cost !== cost) return null;
+
+    if (receipt.ok === true && receipt.kind === 'success') {
+        const balanceBefore = receiptInt(receipt.balanceBefore);
+        const balanceAfter = receiptInt(receipt.balanceAfter);
+        const collectionBefore = receiptInt(receipt.collectionBefore);
+        const collectionAfter = receiptInt(receipt.collectionAfter);
+        const setBefore = receiptInt(receipt.setBefore);
+        const setAfter = receiptInt(receipt.setAfter);
+        if ([balanceBefore, balanceAfter, collectionBefore, collectionAfter, setBefore, setAfter]
+            .some((value) => value === null)) return null;
+        const set = receipt.setId === null
+            ? null : COSMETIC_SETS.find((candidate) => candidate.id === receipt.setId) || null;
+        if (receipt.setId !== null && !set) return null;
+        if (balanceBefore - balanceAfter !== cost
+            || collectionAfter - collectionBefore !== 1
+            || (set ? setAfter - setBefore !== 1 : setBefore !== 0 || setAfter !== 0)) return null;
+        return {
+            ok: true,
+            kind: 'success',
+            id: receipt.id,
+            name: item.name,
+            cost,
+            balanceBefore,
+            balanceAfter,
+            collectionBefore,
+            collectionAfter,
+            setId: set?.id ?? null,
+            setName: set?.name ?? null,
+            setBefore,
+            setAfter,
+        };
+    }
+
+    if (receipt.ok !== false || !BLUEPRINT_RECEIPT_REASON_SET.has(receipt.reason)) return null;
+    const balance = receiptInt(receipt.balance);
+    const shortfall = receiptInt(receipt.shortfall);
+    if (balance === null || shortfall === null) return null;
+    if (receipt.reason === 'insufficient-coins') {
+        if (shortfall !== Math.max(0, cost - balance) || shortfall <= 0) return null;
+    } else if (shortfall !== 0) return null;
+    return {
+        ok: false,
+        kind: receipt.kind === 'insufficient' ? 'insufficient' : 'error',
+        reason: receipt.reason,
+        id: receipt.id,
+        name: item.name,
+        cost,
+        balance,
+        shortfall,
+    };
+}
 
 // The gameplay tutorial is world guidance, never modal content. Keeping this
 // gate pure and centralized prevents its banner/pointer from being painted
@@ -59,6 +214,10 @@ export function buildUIState(game) {
         base.menuTab = game.menuTab;
         base.settingsPane = game.settingsPane === 'accessibility' ? 'accessibility' : 'general';
         base.characterPhonePane = game.characterPhonePane === 'rites' ? 'rites' : 'collection';
+        base.collectionCompletion = collectionCompletionSnapshot(game);
+        base.blueprintConfirm = blueprintConfirmSnapshot(game);
+        base.blueprintPurchasePending = blueprintPurchasePendingSnapshot(game);
+        base.blueprintReceipt = blueprintReceiptSnapshot(game);
         // One campaign snapshot owns Home, Play, accessibility labels, launch
         // validation, and the session-only QA view. Renderers never infer map
         // access from lifetime stats or raw persisted selection again.

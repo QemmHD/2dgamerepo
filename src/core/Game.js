@@ -96,7 +96,11 @@ import { RunStateMethods } from './RunState.js';           // run-state creation
 import { GameUpdateMethods, gemLightColor } from './GameUpdate.js';   // gameplay update pipeline split out; spliced onto the prototype below (gemLightColor still used by render() here)
 import { GameRenderMethods } from './GameRender.js';       // render pipeline split out; spliced onto the prototype below
 import { CombatResolverMethods } from './CombatResolver.js';   // combat resolution + kill/drop flow split out; spliced onto the prototype below
-import { consumeRepeatedDiscreteKey, GameInputActionMethods } from './GameInputActions.js';   // pointer/key/menu action routing split out; spliced onto the prototype below
+import {
+    consumeRepeatedDiscreteKey,
+    GameInputActionMethods,
+    resetCollectionCompletionFlow,
+} from './GameInputActions.js';   // pointer/key/menu action routing split out; spliced onto the prototype below
 
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
@@ -209,6 +213,19 @@ export class Game {
         // Character's phone-only HERO RITES drill-in is session UI state, not
         // progression. Desktop always renders its combined Character surface.
         this.characterPhonePane = 'collection';
+        // Completion Truth is a nested Character surface. Browsing, confirmation,
+        // and the explanatory receipt are all session-only; SaveSystem owns only
+        // the resulting Blueprint claim/unlock after an atomic purchase.
+        this.collectionCompletion = {
+            open: false,
+            section: 'overview',
+            page: 1,
+            blueprintId: 'aura_requiem',
+        };
+        this.blueprintConfirm = null;
+        this.blueprintReceipt = null;
+        this.blueprintPurchasePending = null;
+        this._blueprintPurchaseSerial = 0;
         this.boutiqueView = {
             category: 'fur', page: 1, setPage: 1,
         };
@@ -397,6 +414,17 @@ export class Game {
                     return;
                 }
 
+                // Collection Completion is a nested Character history stack on
+                // every viewport. It owns Escape before Settings, phone Rites,
+                // or the global HOME route: Case â†’ Blueprint â†’ Sources â†’
+                // Overview â†’ catalog. The central action also cancels an armed
+                // Blueprint before changing panes.
+                if (e.code === 'Escape' && this.collectionCompletion?.open === true) {
+                    e.preventDefault();
+                    this._menuAction('collectionCompletionBack', null);
+                    return;
+                }
+
                 // Accessibility is nested inside Settings: the first Escape
                 // returns to General, and a second Escape follows the normal
                 // section-to-HOME path below.
@@ -428,6 +456,7 @@ export class Game {
                 // chip's keyboard twin). A fresh focus traversal starts there.
                 if (e.code === 'Escape' && this.menuTab !== 'home') {
                     e.preventDefault();
+                    resetCollectionCompletionFlow(this);
                     this.menuTab = 'home';
                     this._resetMenuFocus();
                     this.accessibility?.setScreen?.('start', 'Home.');
@@ -438,6 +467,7 @@ export class Game {
                 if (e.code === 'Tab' || e.code === 'ArrowRight' || e.code === 'ArrowDown'
                     || e.code === 'ArrowLeft' || e.code === 'ArrowUp') {
                     e.preventDefault();
+                    this.blueprintConfirm = null;
                     const backwards = (e.code === 'Tab' && e.shiftKey)
                         || e.code === 'ArrowLeft' || e.code === 'ArrowUp';
                     this._menuMoveFocus(backwards ? -1 : 1);
@@ -895,6 +925,7 @@ export class Game {
     _startRun({ campaignEligible = false } = {}) {
         // A confirmed pause exit can never bleed into the new run it creates.
         this.pauseExitConfirm = null;
+        resetCollectionCompletionFlow(this);
         // Daily Road: resolve the day's curated setup BEFORE _initRunState reads the
         // map (BossDirector/tier). Overrides map + Trials locally; the forced road is
         // applied at the end of _startRun. Never touches the persisted selections.
@@ -1184,6 +1215,7 @@ export class Game {
 
     returnToShop() {
         this.pauseExitConfirm = null;
+        resetCollectionCompletionFlow(this);
         this._abandonGuidedObjectiveRewards();
         this._bankRunCoins();
         this.audio.playMusic('menu');
@@ -1214,6 +1246,8 @@ export class Game {
     // to it + acknowledging its NEW badge, which is also what permanently
     // unlocks the staged menu). While active, only Next/Skip are honored.
     _armMenuTour() {
+        resetCollectionCompletionFlow(this);
+        this.characterPhonePane = 'collection';
         this.menuTour = { idx: 0 };
         this._resetMenuFocus();
         this._applyTourStep();
@@ -1222,6 +1256,7 @@ export class Game {
     _applyTourStep() {
         const step = TOUR_STEPS[this.menuTour?.idx];
         if (!step) return;
+        resetCollectionCompletionFlow(this);
         this.menuTab = step.tab;
         // Tour steps may target a nested Settings pane. Resetting this on every
         // step prevents a replay or skipped tour from leaving Settings parked
@@ -1234,6 +1269,7 @@ export class Game {
     }
 
     _endMenuTour() {
+        resetCollectionCompletionFlow(this);
         this.menuTour = null;
         this.saveSystem.setTourDone(true);
         this.menuTab = 'home';   // land back on the title screen after the tour

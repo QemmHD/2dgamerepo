@@ -14,11 +14,24 @@ import { DEV_MODE, SCREEN_SHAKE } from '../config/GameConfig.js';
 import { clamp } from './MathUtils.js';
 import { claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
 import { openCase, MINES } from '../systems/CaseSystem.js';
-import { COSMETICS, COSMETIC_SETS, cosmeticCoinCost } from '../content/cosmetics.js';
+import {
+    COSMETICS,
+    COSMETIC_BLUEPRINT_IDS,
+    COSMETIC_SETS,
+    cosmeticBlueprintCost,
+    cosmeticById,
+    cosmeticCoinCost,
+} from '../content/cosmetics.js';
 import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
 import { MAPS } from '../content/maps.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { menuHotspotLabel } from '../systems/AccessibilityBridge.js';
+import {
+    COLLECTION_BLUEPRINT_CONFIRM_MS,
+    COLLECTION_COMPLETION_SECTIONS,
+    blueprintClockNow,
+    collectionCompletionSnapshot,
+} from '../systems/UIStateBuilder.js';
 import {
     normalizeCaptionDetail,
     normalizeUiScale,
@@ -26,6 +39,165 @@ import {
 } from '../systems/AccessibilityPreferences.js';
 
 export const PAUSE_EXIT_CONFIRM_MS = 3000;
+export const BLUEPRINT_CONFIRM_MS = COLLECTION_BLUEPRINT_CONFIRM_MS;
+
+const COSMETIC_BLUEPRINT_ID_SET = new Set(COSMETIC_BLUEPRINT_IDS);
+const COLLECTION_COMPLETION_SECTION_SET = new Set(COLLECTION_COMPLETION_SECTIONS);
+const COMPLETION_SECTION_LABELS = Object.freeze({
+    overview: 'Overview',
+    sets: 'Sets',
+    sources: 'Sources',
+    blueprint: 'Blueprints',
+    case: 'Case truth',
+});
+
+// Navigation state and purchase explanations are session-only. This reset is
+// shared by tabs, run launch/return, reset, and guided-tour routes so none of
+// those boundaries can carry an armed Blueprint spend into another surface.
+export function resetCollectionCompletionFlow(game, { clearReceipt = true } = {}) {
+    if (!game || typeof game !== 'object') return false;
+    const current = collectionCompletionSnapshot(game);
+    game.collectionCompletion = {
+        ...current,
+        open: false,
+        section: 'overview',
+        page: 1,
+    };
+    game.blueprintConfirm = null;
+    if (clearReceipt) game.blueprintReceipt = null;
+    return true;
+}
+
+function completionRouteAllowed(game) {
+    return game?.menuTab === 'character';
+}
+
+function announceCompletionScreen(game, label, suffix = '') {
+    const detail = `Collection Completion: ${label}.${suffix ? ` ${suffix}` : ''}`;
+    game.accessibility?.setScreen?.('start', detail);
+    game.accessibility?.announce?.(detail);
+}
+
+function closeCompletionToCatalog(game) {
+    resetCollectionCompletionFlow(game);
+    game.characterPhonePane = 'collection';
+    game._resetMenuFocus?.();
+    game.accessibility?.setScreen?.('start', 'Character Collection.');
+    game.accessibility?.announce?.('Character Collection.');
+}
+
+function safeCoinBalance(game) {
+    const balance = game?.saveSystem?.data?.totalCoins;
+    return Number.isSafeInteger(balance) && balance >= 0 ? balance : 0;
+}
+
+function completeBlueprintPurchase(game, item, cost, result) {
+    const successInts = result?.ok === true ? [
+        result.balanceBefore,
+        result.balanceAfter,
+        result.collectionBefore,
+        result.collectionAfter,
+        result.setBefore,
+        result.setAfter,
+    ] : [];
+    const set = result?.setId === null
+        ? null : COSMETIC_SETS.find((candidate) => candidate.id === result?.setId) || null;
+    const validSuccess = result?.ok === true
+        && result.id === item.id
+        && result.name === item.name
+        && result.cost === cost
+        && successInts.every((value) => Number.isSafeInteger(value) && value >= 0)
+        && result.balanceBefore - result.balanceAfter === cost
+        && result.collectionAfter - result.collectionBefore === 1
+        && (set
+            ? result.setAfter - result.setBefore === 1
+            : result.setId === null && result.setBefore === 0 && result.setAfter === 0);
+    if (validSuccess) {
+        game.blueprintReceipt = Object.freeze({
+            ok: true,
+            kind: 'success',
+            id: item.id,
+            name: item.name,
+            cost,
+            balanceBefore: result.balanceBefore,
+            balanceAfter: result.balanceAfter,
+            collectionBefore: result.collectionBefore,
+            collectionAfter: result.collectionAfter,
+            setId: set?.id ?? null,
+            setName: set?.name ?? null,
+            setBefore: result.setBefore,
+            setAfter: result.setAfter,
+        });
+        game.audio?.cosmeticReward?.();
+        game._pressFeedback?.(`blueprintOwned:${item.id}`);
+        game._resetMenuFocus?.();
+        const collectionDelta = result.collectionAfter - result.collectionBefore;
+        const setDelta = result.setAfter - result.setBefore;
+        const setLine = set
+            ? `${set.name} plus ${setDelta}, ${result.setAfter} of ${Object.keys(set.pieces).length}.`
+            : 'Set progress unchanged.';
+        game.accessibility?.announce?.(
+            `${item.name} Blueprint unlocked. Minus ${cost.toLocaleString('en-US')} coins. `
+            + `Wallet ${result.balanceAfter.toLocaleString('en-US')}. `
+            + `Collection plus ${collectionDelta}, ${result.collectionAfter} owned. ${setLine}`,
+        );
+        return true;
+    }
+
+    const reason = typeof result?.reason === 'string'
+        ? result.reason : 'invalid-purchase-receipt';
+    const balance = safeCoinBalance(game);
+    const shortfall = reason === 'insufficient-coins'
+        ? Math.max(0, cost - balance) : 0;
+    game.blueprintReceipt = Object.freeze({
+        ok: false,
+        kind: reason === 'insufficient-coins' ? 'insufficient' : 'error',
+        reason,
+        id: item.id,
+        name: item.name,
+        cost,
+        balance,
+        shortfall,
+    });
+    game.audio?.deny?.();
+    game._resetMenuFocus?.();
+    if (reason === 'insufficient-coins') {
+        game.accessibility?.announce?.(
+            `${item.name} Blueprint costs ${cost.toLocaleString('en-US')} coins. `
+            + `Short ${shortfall.toLocaleString('en-US')}. `
+            + `Wallet ${balance.toLocaleString('en-US')}.`,
+        );
+    } else if (reason === 'already-owned' || reason === 'replay') {
+        game.accessibility?.announce?.(`${item.name} is already in your collection.`);
+    } else if (reason === 'external-save-changed') {
+        game.accessibility?.announce?.(
+            'Save changed in another tab. You were not charged. Reload the game before buying.',
+        );
+    } else if (reason === 'persistence-unavailable') {
+        game.accessibility?.announce?.(
+            'Save storage is unavailable. You were not charged. Restore storage access and try again.',
+        );
+    } else if (reason === 'persistence-failed') {
+        game.accessibility?.announce?.(
+            'Save failed. You were not charged. Check storage and try again.',
+        );
+    } else if (reason === 'transaction-busy') {
+        game.accessibility?.announce?.(
+            'Another game tab is saving. You were not charged. Try the Blueprint again.',
+        );
+    } else if (reason === 'transaction-lock-unavailable') {
+        game.accessibility?.announce?.(
+            'Safe cross-tab saving is unavailable. You were not charged. Update the browser or disable Lockdown Mode before buying.',
+        );
+    } else if (reason === 'transaction-lock-failed') {
+        game.accessibility?.announce?.(
+            'Safe save lock failed. You were not charged. Try again.',
+        );
+    } else {
+        game.accessibility?.announce?.(`${item.name} Blueprint purchase was not completed.`);
+    }
+    return false;
+}
 
 // Commands routed by Game's keydown listener are edge-triggered. Browser
 // key-repeat must not turn one held press into two destructive confirmations,
@@ -79,7 +251,10 @@ export const GameInputActionMethods = {
         const hotspots = this._menuFocusableHotspots();
         if (!hotspots.length) return false;
         const current = hotspots.find((entry) => entry.key === this.menuFocusKey);
-        if (!current) return this._menuMoveFocus(1);
+        if (!current) {
+            this.blueprintConfirm = null;
+            return this._menuMoveFocus(1);
+        }
         // The action may claim/equip/max a control away or jump sections. Ask
         // the post-render reconciler to retain this key only if it still exists.
         this.menuFocusNeedsRefresh = true;
@@ -149,6 +324,7 @@ export const GameInputActionMethods = {
         // new local focus target, never leak through to starting a run.
         const tab = this.menuTab || 'home';
         if (tab !== 'home' && tab !== 'play') {
+            this.blueprintConfirm = null;
             this._menuMoveFocus(1);
             return 'focus';
         }
@@ -436,6 +612,8 @@ export const GameInputActionMethods = {
             this.haptics?.setStrength?.(this.saveSystem.getSetting('vibration'));
             this.resetConfirming = false;
             this.resetConfirmTimer = 0;
+            resetCollectionCompletionFlow(this);
+            this.characterPhonePane = 'collection';
             return true;
         }
         this.resetConfirming = true;
@@ -449,6 +627,12 @@ export const GameInputActionMethods = {
         // every interaction a click sound.
         this.audio.resume();
         this.audio.click();
+        const hadBlueprintConfirm = this.blueprintConfirm !== null
+            && this.blueprintConfirm !== undefined;
+        // Every menu route except the matching second purchase press cancels an
+        // armed Blueprint. The purchase case below performs its own strict
+        // id/deadline check; malformed or mismatched dispatches fail closed.
+        if (action !== 'purchaseCollectionBlueprint') this.blueprintConfirm = null;
         // Guided tour owns the menu while it's up: Next advances (finishing on
         // the last step), Skip ends it, and every other action is swallowed so
         // the player can't wander (or buy anything by accident) mid-lesson.
@@ -467,6 +651,7 @@ export const GameInputActionMethods = {
             // Opening a tab acknowledges its one-time "NEW" badge (staged
             // unlock — see MenuRenderer tabUnlocked + SaveSystem.markTabSeen).
             case 'tab':
+                resetCollectionCompletionFlow(this);
                 this.menuTab = arg;
                 this.saveSystem.markTabSeen(arg);
                 this.resetConfirming = false;
@@ -506,6 +691,7 @@ export const GameInputActionMethods = {
             case 'buyHeroAttune': this._pressFeedback(`heroAttune:${arg}`); this.buyHeroAttune(arg); break;
             case 'characterPhonePane': {
                 const pane = arg === 'rites' ? 'rites' : 'collection';
+                resetCollectionCompletionFlow(this);
                 this.characterPhonePane = pane;
                 this._resetMenuFocus();
                 const label = pane === 'rites'
@@ -513,6 +699,232 @@ export const GameInputActionMethods = {
                     : 'Character Collection';
                 this.accessibility?.setScreen?.('start', `${label}.`);
                 this.accessibility?.announce?.(`${label}.`);
+                break;
+            }
+            case 'openCollectionCompletion': {
+                if (!completionRouteAllowed(this)) break;
+                const current = collectionCompletionSnapshot(this);
+                this.collectionCompletion = {
+                    ...current,
+                    open: true,
+                    section: 'overview',
+                    page: 1,
+                };
+                this.characterPhonePane = 'collection';
+                this.blueprintConfirm = null;
+                this.blueprintReceipt = null;
+                this._resetMenuFocus?.();
+                announceCompletionScreen(this, 'Overview', 'Collection truth opened.');
+                break;
+            }
+            // Locked Blueprint cards may enter their exact detail directly.
+            // The allowlist is catalog-derived; an arbitrary cosmetic id can
+            // never become a purchase target through direct dispatch.
+            case 'openCollectionBlueprint': {
+                if (!completionRouteAllowed(this) || !COSMETIC_BLUEPRINT_ID_SET.has(arg)) break;
+                const item = cosmeticById(arg);
+                if (!item) break;
+                this.collectionCompletion = {
+                    ...collectionCompletionSnapshot(this),
+                    open: true,
+                    section: 'blueprint',
+                    page: 1,
+                    blueprintId: item.id,
+                };
+                this.characterPhonePane = 'collection';
+                this.blueprintConfirm = null;
+                this.blueprintReceipt = null;
+                this._resetMenuFocus?.();
+                announceCompletionScreen(this, 'Blueprints', `${item.name} Blueprint selected.`);
+                break;
+            }
+            case 'closeCollectionCompletion': {
+                const current = collectionCompletionSnapshot(this);
+                if (!completionRouteAllowed(this) || !current.open) break;
+                closeCompletionToCatalog(this);
+                break;
+            }
+            case 'collectionCompletionSection': {
+                const current = collectionCompletionSnapshot(this);
+                if (!completionRouteAllowed(this) || !current.open
+                    || !COLLECTION_COMPLETION_SECTION_SET.has(arg)) break;
+                this.collectionCompletion = {
+                    ...current,
+                    section: arg,
+                    page: 1,
+                };
+                this.blueprintConfirm = null;
+                this.blueprintReceipt = null;
+                this._resetMenuFocus?.();
+                announceCompletionScreen(this, COMPLETION_SECTION_LABELS[arg]);
+                break;
+            }
+            case 'collectionCompletionPage': {
+                const current = collectionCompletionSnapshot(this);
+                const page = arg;
+                if (!completionRouteAllowed(this) || !current.open
+                    || !Number.isSafeInteger(page) || page < 1) break;
+                this.collectionCompletion = { ...current, page };
+                this.blueprintConfirm = null;
+                this.blueprintReceipt = null;
+                this._resetMenuFocus?.();
+                announceCompletionScreen(
+                    this,
+                    COMPLETION_SECTION_LABELS[current.section],
+                    `Page ${page}.`,
+                );
+                break;
+            }
+            case 'collectionCompletionBlueprint': {
+                const current = collectionCompletionSnapshot(this);
+                if (!completionRouteAllowed(this) || !current.open
+                    || current.section !== 'blueprint'
+                    || !COSMETIC_BLUEPRINT_ID_SET.has(arg)) break;
+                const item = cosmeticById(arg);
+                if (!item) break;
+                this.collectionCompletion = {
+                    ...current,
+                    page: 1,
+                    blueprintId: item.id,
+                };
+                this.blueprintConfirm = null;
+                this.blueprintReceipt = null;
+                this._resetMenuFocus?.();
+                announceCompletionScreen(this, 'Blueprints', `${item.name} Blueprint selected.`);
+                break;
+            }
+            case 'purchaseCollectionBlueprint': {
+                const current = collectionCompletionSnapshot(this);
+                const item = typeof arg === 'string' ? cosmeticById(arg) : null;
+                const validTarget = completionRouteAllowed(this) && current.open
+                    && current.section === 'blueprint'
+                    && COSMETIC_BLUEPRINT_ID_SET.has(arg)
+                    && current.blueprintId === arg
+                    && item;
+                if (!validTarget) {
+                    this.blueprintConfirm = null;
+                    this.blueprintReceipt = null;
+                    break;
+                }
+                const cost = cosmeticBlueprintCost(item);
+                if (!Number.isSafeInteger(cost) || cost <= 0) {
+                    this.blueprintConfirm = null;
+                    this.blueprintReceipt = null;
+                    break;
+                }
+                if (this.blueprintPurchasePending?.id === item.id) {
+                    this.accessibility?.announce?.(
+                        `${item.name} Blueprint purchase is still securing the save.`,
+                    );
+                    break;
+                }
+
+                const now = blueprintClockNow(this);
+                if (!Number.isSafeInteger(now)
+                    || now < 0 || now > Number.MAX_SAFE_INTEGER - BLUEPRINT_CONFIRM_MS) {
+                    this.blueprintConfirm = null;
+                    this.blueprintReceipt = null;
+                    this.audio?.deny?.();
+                    this.accessibility?.announce?.(
+                        `${item.name} Blueprint confirmation is unavailable on this device. No coins were charged.`,
+                    );
+                    break;
+                }
+                const pending = this.blueprintConfirm;
+                if (!pending || pending.id !== item.id
+                    || !Number.isSafeInteger(pending.armedAt)
+                    || now < pending.armedAt
+                    || !Number.isSafeInteger(pending.expiresAt)
+                    || pending.expiresAt - pending.armedAt !== BLUEPRINT_CONFIRM_MS
+                    || !(pending.expiresAt > now)) {
+                    this.blueprintConfirm = Object.freeze({
+                        id: item.id,
+                        armedAt: now,
+                        expiresAt: now + BLUEPRINT_CONFIRM_MS,
+                    });
+                    this.blueprintReceipt = null;
+                    this._pressFeedback?.(`blueprint:${item.id}`);
+                    // Reconcile after the label changes to CONFIRM, but retain
+                    // the same key for keyboard users so the second press is
+                    // reachable without navigating (which intentionally cancels).
+                    this.menuFocusNeedsRefresh = true;
+                    this.accessibility?.announce?.(
+                        `Confirm ${item.name} Blueprint for ${cost.toLocaleString('en-US')} coins. `
+                        + 'Press purchase again within 3 seconds.',
+                    );
+                    break;
+                }
+
+                this.blueprintConfirm = null;
+                const atomicPurchase = this.saveSystem?.purchaseCosmeticBlueprintAtomic;
+                if (typeof atomicPurchase === 'function') {
+                    const serial = (Number.isSafeInteger(this._blueprintPurchaseSerial)
+                        ? this._blueprintPurchaseSerial : 0) + 1;
+                    this._blueprintPurchaseSerial = serial;
+                    this.blueprintPurchasePending = Object.freeze({ id: item.id, serial });
+                    this.blueprintReceipt = null;
+                    this.menuFocusNeedsRefresh = true;
+                    this.accessibility?.announce?.(
+                        `Securing ${item.name} Blueprint purchase across game tabs.`,
+                    );
+                    let operation;
+                    try {
+                        operation = atomicPurchase.call(this.saveSystem, item.id, cost);
+                    } catch (e) {
+                        operation = { ok: false, reason: 'transaction-lock-failed' };
+                    }
+                    Promise.resolve(operation).then((result) => {
+                        if (this.blueprintPurchasePending?.serial !== serial
+                            || this.blueprintPurchasePending?.id !== item.id) return;
+                        this.blueprintPurchasePending = null;
+                        completeBlueprintPurchase(this, item, cost, result);
+                        this.menuFocusNeedsRefresh = true;
+                    }).catch(() => {
+                        if (this.blueprintPurchasePending?.serial !== serial
+                            || this.blueprintPurchasePending?.id !== item.id) return;
+                        this.blueprintPurchasePending = null;
+                        completeBlueprintPurchase(this, item, cost, {
+                            ok: false, reason: 'transaction-lock-failed',
+                        });
+                        this.menuFocusNeedsRefresh = true;
+                    });
+                    break;
+                }
+                const result = typeof this.saveSystem?.purchaseCosmeticBlueprint === 'function'
+                    ? this.saveSystem.purchaseCosmeticBlueprint(item.id, cost)
+                    : { ok: false, reason: 'purchase-unavailable' };
+                completeBlueprintPurchase(this, item, cost, result);
+                break;
+            }
+            case 'cancelCollectionBlueprint': {
+                const current = collectionCompletionSnapshot(this);
+                if (!completionRouteAllowed(this) || !current.open
+                    || current.section !== 'blueprint' || !hadBlueprintConfirm) break;
+                this.blueprintConfirm = null;
+                this.blueprintReceipt = null;
+                this._resetMenuFocus?.();
+                this.accessibility?.announce?.('Blueprint purchase canceled.');
+                break;
+            }
+            case 'collectionCompletionBack': {
+                const current = collectionCompletionSnapshot(this);
+                if (!completionRouteAllowed(this) || !current.open) break;
+                this.blueprintConfirm = null;
+                this.blueprintReceipt = null;
+                if (current.section === 'overview') {
+                    closeCompletionToCatalog(this);
+                    break;
+                }
+                const section = current.section === 'case' ? 'blueprint'
+                    : current.section === 'blueprint' ? 'sources'
+                        : 'overview';
+                this.collectionCompletion = {
+                    ...current,
+                    section,
+                    page: 1,
+                };
+                this._resetMenuFocus?.();
+                announceCompletionScreen(this, COMPLETION_SECTION_LABELS[section]);
                 break;
             }
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
@@ -537,10 +949,12 @@ export const GameInputActionMethods = {
                 break;
             }
             case 'collectionSource': {
-                if (!['all', 'starter', 'boutique', 'case', 'achievement', 'vigil'].includes(arg)) break;
+                if (!['all', 'starter', 'boutique', 'blueprint', 'case', 'achievement', 'vigil'].includes(arg)) break;
                 this.collectionView = { ...(this.collectionView || {}), source: arg, page: 1 };
                 this._resetMenuFocus();
-                this.accessibility?.announce?.(`Collection source: ${arg === 'vigil' ? 'Vigil Path' : arg}.`);
+                const sourceLabel = arg === 'vigil' ? 'Vigil Path'
+                    : arg === 'blueprint' ? 'Blueprint' : arg;
+                this.accessibility?.announce?.(`Collection source: ${sourceLabel}.`);
                 break;
             }
             case 'collectionPage': {
@@ -609,6 +1023,7 @@ export const GameInputActionMethods = {
             case 'tryInBoutique': {
                 this._pressFeedback(`try:${arg && arg.id}`);
                 if (arg && arg.category) this.tryOn[arg.category] = arg.id;
+                resetCollectionCompletionFlow(this);
                 this.menuTab = 'boutique';
                 this.saveSystem.markTabSeen('boutique');
                 this.resetConfirming = false;

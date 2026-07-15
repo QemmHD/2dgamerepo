@@ -36,25 +36,29 @@
 //   description     short flavor
 //   defaultUnlocked owned from first launch
 //   passLevel         deterministic Vigil Path unlock level
+//   blueprintCost     fixed earned-coin Blueprint unlock price
 //   caseExcluded      never appears in a random cosmetic case
 //
-// Unlock sources (a cosmetic may carry one; otherwise it is case-only loot):
+// Unlock sources (a cosmetic may carry one or more; otherwise it is case-only loot):
 //   defaultUnlocked   free from the start
 //   coinCost          buy directly with coins in the customizer
+//   blueprintCost     unlock directly through a fixed-price Blueprint
 //   achievement       auto-unlocked when that achievement id is earned
-//   passLevel          deterministic Last Light Vigil milestone
+//   passLevel          deterministic Vigil Path milestone
 //   (none of the above) → earned only as a random case drop
-// Coin/achievement cosmetics remain eligible for cases as an alternate path
+// Coin/Blueprint/achievement cosmetics remain eligible for cases as an alternate path
 // unless they are explicitly marked caseExcluded. Vigil Path and authored
 // mastery-set pieces use that flag so their completed sets remain readable
 // prestige earned through their named progression route.
+
+export const COSMETIC_BLUEPRINT_COST = 72000;
 
 export const COSMETICS = {
     // ── Fur tint ────────────────────────────────────────────────────────
     fur_natural: { id: 'fur_natural', category: 'fur', name: 'Natural', rarity: 'common', color: null, description: 'As Pyra was born.', defaultUnlocked: true },
     fur_ashen:   { id: 'fur_ashen',   category: 'fur', name: 'Ashen',    rarity: 'common',    color: '#9aa3ab', coinCost: 150, description: 'Dusted with cold ash.' },
-    fur_ember:   { id: 'fur_ember',   category: 'fur', name: 'Ember',    rarity: 'uncommon',  color: '#ff8a3c', coinCost: 400, description: 'Lit from within.' },
-    fur_frost:   { id: 'fur_frost',   category: 'fur', name: 'Frost',    rarity: 'rare',      color: '#7fe0ff', description: 'Touched by the rime.' },
+    fur_ember:   { id: 'fur_ember',   category: 'fur', name: 'Ember',    rarity: 'uncommon',  color: '#ff8a3c', coinCost: 400, passLevel: 15, description: 'Lit from within.' },
+    fur_frost:   { id: 'fur_frost',   category: 'fur', name: 'Frost',    rarity: 'rare',      color: '#7fe0ff', passLevel: 45, description: 'Touched by the rime.' },
     fur_jade:    { id: 'fur_jade',    category: 'fur', name: 'Mossback',  rarity: 'uncommon',  color: '#6fcf7f', description: 'Green as deep wood.', defaultUnlocked: true },
     fur_rose:    { id: 'fur_rose',    category: 'fur', name: 'Roseate',   rarity: 'uncommon',  color: '#ff9ec4', description: 'Petal-soft and warm.', defaultUnlocked: true },
     fur_void:    { id: 'fur_void',    category: 'fur', name: 'Voidtouched', rarity: 'epic',   color: '#9a6cff', achievement: 'kills_10k', description: 'The Gloam left its mark.' },
@@ -73,7 +77,7 @@ export const COSMETICS = {
     // ── Cloak ───────────────────────────────────────────────────────────
     cloak_none:    { id: 'cloak_none',    category: 'cloak', name: 'No Cloak', rarity: 'common', color: null, description: 'Travel light.', defaultUnlocked: true },
     cloak_dusk:    { id: 'cloak_dusk',    category: 'cloak', name: 'Dusk Cloak',   rarity: 'uncommon',  color: '#3b4a6b', coinCost: 200, description: 'Woven from twilight.' },
-    cloak_crimson: { id: 'cloak_crimson', category: 'cloak', name: 'Crimson Cloak', rarity: 'rare',     color: '#b5384a', description: 'A keeper of the old order.' },
+    cloak_crimson: { id: 'cloak_crimson', category: 'cloak', name: 'Crimson Cloak', rarity: 'rare',     color: '#b5384a', passLevel: 35, description: 'A keeper of the old order.' },
     cloak_verdant: { id: 'cloak_verdant', category: 'cloak', name: 'Verdant Cloak', rarity: 'uncommon', color: '#2f7d4f', description: 'Mossy and well-worn.', defaultUnlocked: true },
     cloak_royal:   { id: 'cloak_royal',   category: 'cloak', name: 'Royal Cloak',  rarity: 'epic',      color: '#6a3fb5', achievement: 'bosses_25', description: 'Worn by the first vigil.' },
     cloak_frost:   { id: 'cloak_frost',   category: 'cloak', name: 'Frostweave Cloak', rarity: 'rare', color: '#6fb7d8', coinCost: 700, description: 'Stiff with rime.' },
@@ -118,7 +122,7 @@ export const COSMETICS = {
 
     // ── Aura (glow + light) — the prestige layer carries animated `fx` ───
     aura_ember:   { id: 'aura_ember',   category: 'aura', name: 'Ember Aura',  rarity: 'common', color: '#ff9a3c', description: 'A warm halo.', defaultUnlocked: true },
-    aura_frost:   { id: 'aura_frost',   category: 'aura', name: 'Frost Aura',  rarity: 'uncommon',  color: '#7fe0ff', coinCost: 300, description: 'A cold shimmer.' },
+    aura_frost:   { id: 'aura_frost',   category: 'aura', name: 'Frost Aura',  rarity: 'uncommon',  color: '#7fe0ff', coinCost: 300, passLevel: 25, description: 'A cold shimmer.' },
     aura_verdant: { id: 'aura_verdant', category: 'aura', name: 'Verdant Aura', rarity: 'rare',     color: '#5fd36a', description: 'Life clings to you.' },
     aura_rose:    { id: 'aura_rose',    category: 'aura', name: 'Rose Aura',   rarity: 'uncommon',  color: '#ff7eb0', description: 'A soft pink glow.', defaultUnlocked: true },
     aura_violet:  { id: 'aura_violet',  category: 'aura', name: 'Violet Aura', rarity: 'epic',      color: '#b15cff', fx: 'pulse', achievement: 'wave_master', description: 'The Gloam, tamed.' },
@@ -131,17 +135,17 @@ export const COSMETICS = {
     aura_waylight:{ id: 'aura_waylight', category: 'aura', name: 'Beacon Orbit', rarity: 'legendary', color: '#ffd27a', fx: 'spin', achievement: 'waylight_warden', caseExcluded: true, description: 'Every rekindled beacon turns in its glow.' },
     aura_prism:   { id: 'aura_prism',   category: 'aura', name: 'Prismatic Aura', rarity: 'mythic', color: '#ffffff', fx: 'rainbow', coinCost: 5000, description: 'Every colour at once — proof you ground for it.' },
     aura_oathwheel:{ id: 'aura_oathwheel', category: 'aura', name: 'Oathwheel Aura', rarity: 'legendary', color: '#ffc85a', fx: 'oathwheel', coinCost: 2400, caseExcluded: true, description: 'Four bright vows turn around a steady central flame.' },
-    aura_gloam_moths:{ id: 'aura_gloam_moths', category: 'aura', name: 'Gloam Mothwake', rarity: 'mythic', color: '#a779c5', fx: 'gloam_moths', description: 'Moonlit moths gather wherever the darkness thins.' },
+    aura_gloam_moths:{ id: 'aura_gloam_moths', category: 'aura', name: 'Gloam Mothwake', rarity: 'mythic', color: '#a779c5', fx: 'gloam_moths', blueprintCost: COSMETIC_BLUEPRINT_COST, description: 'Moonlit moths gather wherever the darkness thins.' },
     aura_forgehalo:{ id: 'aura_forgehalo', category: 'aura', name: 'Forgehalo', rarity: 'mythic', color: '#ff7545', fx: 'cinder_run', coinCost: 4200, caseExcluded: true, description: 'Segmented molten rings shed bright hammer-sparks without hiding the hero.' },
     aura_snowprism:{ id: 'aura_snowprism', category: 'aura', name: 'Snowprism Halo', rarity: 'epic', color: '#d9f7ff', fx: 'snow_orbit', description: 'Six refracted frost rays meet in a slow crystalline wheel.' },
     aura_brambleward:{ id: 'aura_brambleward', category: 'aura', name: 'Brambleward', rarity: 'legendary', color: '#91d057', fx: 'thorn_bloom', coinCost: 2300, caseExcluded: true, description: 'A thorn loop opens and closes around four drifting seed-lights.' },
     aura_tempestcage:{ id: 'aura_tempestcage', category: 'aura', name: 'Tempest Cage', rarity: 'mythic', color: '#73d7ff', fx: 'storm_arc', coinCost: 4300, description: 'Jagged lightning rails lock into a readable three-ring storm cage.' },
     aura_miragecrown:{ id: 'aura_miragecrown', category: 'aura', name: 'Mirage Crown', rarity: 'legendary', color: '#ffd06a', fx: 'sun_mirage', coinCost: 2700, caseExcluded: true, description: 'Heat-bent ellipses lift a sharp sun-diamond above the sand.' },
-    aura_requiem:{ id: 'aura_requiem', category: 'aura', name: 'Requiem Orbit', rarity: 'mythic', color: '#b7a7cf', fx: 'grave_bells', description: 'Bell-wave arcs carry four tiny grave markers around a quiet centre.' },
+    aura_requiem:{ id: 'aura_requiem', category: 'aura', name: 'Requiem Orbit', rarity: 'mythic', color: '#b7a7cf', fx: 'grave_bells', blueprintCost: COSMETIC_BLUEPRINT_COST, description: 'Bell-wave arcs carry four tiny grave markers around a quiet centre.' },
 
     // ── Trail ───────────────────────────────────────────────────────────
     trail_none:   { id: 'trail_none',   category: 'trail', name: 'No Trail', rarity: 'common', color: null, description: 'Leave no mark.', defaultUnlocked: true },
-    trail_sparks: { id: 'trail_sparks', category: 'trail', name: 'Spark Trail', rarity: 'uncommon', color: '#ffb24a', coinCost: 250, description: 'Embers in your wake.' },
+    trail_sparks: { id: 'trail_sparks', category: 'trail', name: 'Spark Trail', rarity: 'uncommon', color: '#ffb24a', coinCost: 250, passLevel: 5, description: 'Embers in your wake.' },
     trail_leaf:   { id: 'trail_leaf',   category: 'trail', name: 'Leaf Trail',  rarity: 'uncommon', color: '#7fd36a', description: 'Green motes drift behind.', defaultUnlocked: true },
     trail_ash:    { id: 'trail_ash',    category: 'trail', name: 'Ash Trail',   rarity: 'uncommon', color: '#b8b0a4', description: 'Soft grey cinders.', defaultUnlocked: true },
     trail_frost:  { id: 'trail_frost',  category: 'trail', name: 'Frost Trail', rarity: 'rare',     color: '#9fe8ff', coinCost: 600, description: 'A breath of winter.' },
@@ -168,6 +172,10 @@ export const COSMETIC_LIST = Object.values(COSMETICS);
 export const COSMETIC_CATEGORIES = ['fur', 'cloak', 'hat', 'aura', 'trail'];
 export const COSMETIC_CATEGORY_LABELS = { fur: 'Fur', cloak: 'Cloak', hat: 'Accessory', aura: 'Aura', trail: 'Trail' };
 
+export const COSMETIC_BLUEPRINT_IDS = Object.freeze(COSMETIC_LIST
+    .filter((item) => Number.isSafeInteger(item.blueprintCost) && item.blueprintCost > 0)
+    .map((item) => item.id));
+
 export const DEFAULT_UNLOCKED_COSMETICS = COSMETIC_LIST.filter((c) => c.defaultUnlocked).map((c) => c.id);
 export const DEFAULT_EQUIPPED_COSMETICS = { fur: 'fur_natural', cloak: 'cloak_none', hat: 'hat_none', aura: 'aura_ember', trail: 'trail_none' };
 
@@ -177,22 +185,30 @@ export function cosmeticById(id) {
         : null;
 }
 
+export function cosmeticBlueprintCost(itemOrId) {
+    const item = typeof itemOrId === 'string' ? cosmeticById(itemOrId) : itemOrId;
+    return item && Number.isSafeInteger(item.blueprintCost) && item.blueprintCost > 0
+        ? item.blueprintCost
+        : 0;
+}
+
 // Stable machine-facing acquisition routes. Keep this order fixed so filters,
 // save receipts, and validators never inherit an object's property order.
 export const COSMETIC_ACQUISITION_ROUTES = Object.freeze([
-    'starter', 'boutique', 'case', 'achievement', 'vigil',
+    'starter', 'boutique', 'blueprint', 'case', 'achievement', 'vigil',
 ]);
 
 const COSMETIC_ACQUISITION_LABELS = Object.freeze({
     starter: 'Starter',
     boutique: 'Boutique',
+    blueprint: 'Blueprint',
     case: 'Case',
     achievement: 'Achievement',
     vigil: 'Vigil Path',
 });
 
 const COSMETIC_SOURCE_LABEL_ORDER = Object.freeze([
-    'starter', 'boutique', 'achievement', 'vigil', 'case',
+    'starter', 'boutique', 'blueprint', 'achievement', 'vigil', 'case',
 ]);
 
 // Return every real acquisition route for an item. Starter pieces never enter
@@ -204,6 +220,7 @@ export function getCosmeticAcquisitionRoutes(itemOrId) {
     const routes = [];
     if (item.defaultUnlocked === true) routes.push('starter');
     if (Number.isFinite(item.coinCost) && item.coinCost > 0) routes.push('boutique');
+    if (cosmeticBlueprintCost(item) > 0) routes.push('blueprint');
     if (item.defaultUnlocked !== true && item.caseExcluded !== true) routes.push('case');
     if (typeof item.achievement === 'string' && item.achievement) routes.push('achievement');
     if (Number.isInteger(item.passLevel) && item.passLevel > 0) routes.push('vigil');

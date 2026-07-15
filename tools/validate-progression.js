@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import {
-    BATTLE_PASS_LEVELS, BP_EVERFLAME_COINS, BP_EVERFLAME_XP, BP_MAX_LEVEL,
+    ALL_PASS_COSMETIC_MILESTONES, BATTLE_PASS_LEVELS, BP_EVERFLAME_COINS, BP_EVERFLAME_XP, BP_MAX_LEVEL,
     PASS_COSMETIC_MILESTONES, bpProgress, bpThreshold, bpXpForLevel,
     migrateBattlePassXpV1,
 } from '../src/content/battlePass.js';
@@ -15,10 +15,13 @@ import { ACHIEVEMENTS } from '../src/content/achievements.js';
 import {
     COSMETICS,
     COSMETIC_ACQUISITION_ROUTES,
+    COSMETIC_BLUEPRINT_COST,
+    COSMETIC_BLUEPRINT_IDS,
     COSMETIC_CATEGORIES,
     COSMETIC_LIST,
     COSMETIC_SETS,
     cosmeticById,
+    cosmeticBlueprintCost,
     cosmeticCoinCost,
     cosmeticsForAchievement,
     getCosmeticAcquisitionRoutes,
@@ -107,6 +110,24 @@ for (const [levelText, id] of Object.entries(PASS_COSMETIC_MILESTONES)) {
     check(item.caseExcluded === true, `${id} can leak into cases`);
     check(Object.values(lastLight.pieces).includes(id), `${id} is absent from Last Light Regalia`);
 }
+const expectedAllPassCosmetics = {
+    5: 'trail_sparks', 10: 'fur_vigil', 15: 'fur_ember', 20: 'cloak_vigil',
+    25: 'aura_frost', 30: 'hat_vigil', 35: 'cloak_crimson', 40: 'trail_vigil',
+    45: 'fur_frost', 50: 'aura_mythic',
+};
+check(Object.isFrozen(ALL_PASS_COSMETIC_MILESTONES), 'all-pass cosmetic milestone map is mutable');
+check(JSON.stringify(ALL_PASS_COSMETIC_MILESTONES) === JSON.stringify(expectedAllPassCosmetics),
+    'all-pass cosmetic milestone map no longer covers the exact ten authored rewards');
+for (const [levelText, id] of Object.entries(ALL_PASS_COSMETIC_MILESTONES)) {
+    const level = Number(levelText);
+    const item = COSMETICS[id];
+    check(item?.passLevel === level, `${id} does not disclose its real Vigil level ${level}`);
+    const reward = BATTLE_PASS_LEVELS[level - 1]?.reward;
+    const rewardIds = reward?.type === 'bundle'
+        ? reward.rewards.filter((part) => part.type === 'cosmetic').map((part) => part.itemId)
+        : reward?.type === 'cosmetic' ? [reward.itemId] : [];
+    check(rewardIds.includes(id), `Vigil level ${level} does not actually award ${id}`);
+}
 
 // Content ids and dictionary keys are persistence contracts. Duplicate or
 // mismatched ids make old saves ambiguous, so validate them before route-level
@@ -148,7 +169,7 @@ for (const category of COSMETIC_CATEGORIES) {
 }
 check(COSMETIC_SETS.length === 15, 'Collection Growth I-B must contain exactly fifteen complete sets');
 check(JSON.stringify(COSMETIC_ACQUISITION_ROUTES)
-    === JSON.stringify(['starter', 'boutique', 'case', 'achievement', 'vigil']),
+    === JSON.stringify(['starter', 'boutique', 'blueprint', 'case', 'achievement', 'vigil']),
 'cosmetic acquisition-route ids/order changed');
 check(Object.isFrozen(COSMETIC_ACQUISITION_ROUTES), 'cosmetic acquisition routes are mutable');
 for (const item of COSMETIC_LIST) {
@@ -183,6 +204,18 @@ check(getCosmeticSourceLabel('fur_void') === 'Achievement · Case',
 check(JSON.stringify(getCosmeticAcquisitionRoutes('fur_vigil')) === JSON.stringify(['vigil'])
     && getCosmeticSourceLabel('fur_vigil') === 'Vigil Path',
 'Vigil Path cosmetic acquisition copy changed');
+check(COSMETIC_BLUEPRINT_COST === 72000, 'fixed Blueprint price changed');
+check(Object.isFrozen(COSMETIC_BLUEPRINT_IDS)
+    && JSON.stringify(COSMETIC_BLUEPRINT_IDS) === JSON.stringify(['aura_gloam_moths', 'aura_requiem']),
+'Blueprint allowlist is mutable or no longer the exact two authored Mythics');
+for (const id of COSMETIC_BLUEPRINT_IDS) {
+    check(cosmeticBlueprintCost(id) === COSMETIC_BLUEPRINT_COST, `${id} has the wrong Blueprint price`);
+    check(JSON.stringify(getCosmeticAcquisitionRoutes(id)) === JSON.stringify(['blueprint', 'case']),
+        `${id} lost its fixed Blueprint plus random Case routes`);
+    check(getCosmeticSourceLabel(id) === 'Blueprint · Case', `${id} has misleading acquisition copy`);
+}
+check(cosmeticBlueprintCost('fur_galaxy') === 0 && cosmeticBlueprintCost('__unknown__') === 0,
+    'non-Blueprint cosmetics expose a Blueprint price');
 
 const collectionGrowthCoinPieces = {
     cloak_splitwatch: { category: 'cloak', rarity: 'rare', rawCoinCost: 900, displayCost: 1800, key: 'cloakStyle', value: 'splitwatch' },
@@ -193,7 +226,6 @@ const collectionGrowthCoinPieces = {
 const collectionGrowthCasePieces = {
     cloak_mothwing: { category: 'cloak', rarity: 'legendary', key: 'cloakStyle', value: 'mothwing' },
     hat_mothmask: { category: 'hat', rarity: 'epic', key: 'shape', value: 'mothmask' },
-    aura_gloam_moths: { category: 'aura', rarity: 'mythic', key: 'fx', value: 'gloam_moths' },
     trail_gloam_wisps: { category: 'trail', rarity: 'rare', key: 'fx', value: 'gloam_wisps' },
 };
 for (const [id, contract] of Object.entries(collectionGrowthCoinPieces)) {
@@ -344,8 +376,9 @@ for (const [setId, contract] of Object.entries(collectionGrowthIbSets)) {
             check(JSON.stringify(routes) === JSON.stringify(['boutique']) && item.caseExcluded === true,
                 `${id} is not honestly Boutique-only`);
         } else if (contract.route === 'case') {
-            check(JSON.stringify(routes) === JSON.stringify(['case']) && item.coinCost == null,
-                `${id} is not honestly case-only`);
+            const expectedRoutes = item.blueprintCost > 0 ? ['blueprint', 'case'] : ['case'];
+            check(JSON.stringify(routes) === JSON.stringify(expectedRoutes) && item.coinCost == null,
+                `${id} does not disclose its exact Case${item.blueprintCost > 0 ? ' + Blueprint' : '-only'} routes`);
         } else {
             check(JSON.stringify(routes) === JSON.stringify(['boutique', 'case'])
                 && item.coinCost > 0 && item.caseExcluded !== true,

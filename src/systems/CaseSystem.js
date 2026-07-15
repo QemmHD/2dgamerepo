@@ -52,6 +52,13 @@ export const CASE_ORDER = ['basic', 'basicCosmetic', 'mystic', 'mysticCosmetic',
 // transparent (shown on the shop card) so it reads as a fair safety net.
 export const CASE_PITY = { basic: 16, basicCosmetic: 16, mystic: 12, mysticCosmetic: 12, royal: 10, royalCosmetic: 10 };
 
+// Public probability constants keep Collection Completion disclosures tied to
+// the exact branches used by openCase. The legacy branch name remains as an
+// alias for integrations that adopted the audit terminology first.
+export const CASE_ITEM_REWARD_CHANCE = 0.82;
+export const CASE_ITEM_BRANCH_CHANCE = CASE_ITEM_REWARD_CHANCE;
+export const CASE_COIN_CONSOLATION_CHANCE = 0.60;
+
 // ── Mines (coin gambling mini-game) ─────────────────────────────────────
 // A Stake-style MINES gamble: stake coins on a 5×5 grid hiding a few mines.
 // Reveal safe tiles one at a time — each safe pick ratchets the multiplier up
@@ -151,6 +158,247 @@ const ITEM_POOL = [
         .map((c) => ({ kind: 'cosmetic', id: c.id, rarity: c.rarity, name: c.name, category: c.category, description: c.description ?? '', color: c.color ?? null })),
 ];
 
+function deepFreezeSnapshot(value) {
+    if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+    for (const child of Object.values(value)) deepFreezeSnapshot(child);
+    return Object.freeze(value);
+}
+
+function poolEntrySnapshot(item) {
+    return {
+        kind: item.kind,
+        id: item.id,
+        rarity: item.rarity,
+        name: item.name,
+        category: item.category,
+        description: item.description,
+        color: item.color,
+    };
+}
+
+// Immutable, ordered pool truth for Collection Completion and validators.
+// This is deliberately read-only: openCase continues to consume ITEM_POOL
+// directly, so observing the pool cannot reorder or mutate live case RNG.
+export function casePoolSnapshot(kind = 'cosmetic') {
+    const normalizedKind = kind === null || kind === 'all' ? null : kind;
+    const valid = normalizedKind === null || normalizedKind === 'gear' || normalizedKind === 'cosmetic';
+    const entries = valid
+        ? ITEM_POOL.filter((item) => normalizedKind === null || item.kind === normalizedKind)
+            .map(poolEntrySnapshot)
+        : [];
+    const rarities = RARITY_ORDER.map((rarity) => {
+        const matching = entries.filter((item) => item.rarity === rarity);
+        return {
+            id: rarity,
+            label: rarityName(rarity),
+            total: matching.length,
+            ids: matching.map((item) => item.id),
+        };
+    });
+    return deepFreezeSnapshot({
+        valid,
+        kind: valid ? (normalizedKind ?? 'all') : null,
+        total: entries.length,
+        ids: entries.map((item) => item.id),
+        entries,
+        rarities,
+    });
+}
+
+function forcedRarityOdds(definition) {
+    const rareIndex = RARITY_ORDER.indexOf('rare');
+    const weights = new Map();
+    let total = 0;
+    for (let index = rareIndex; index < RARITY_ORDER.length; index += 1) {
+        const rarity = RARITY_ORDER[index];
+        if (!definition?.odds?.[rarity]) continue;
+        const weight = Math.max(1, Math.round(definition.odds[rarity] * 100));
+        weights.set(rarity, weight);
+        total += weight;
+    }
+    return Object.fromEntries(RARITY_ORDER.map((rarity) => [
+        rarity,
+        total > 0 ? (weights.get(rarity) ?? 0) / total : 0,
+    ]));
+}
+
+function probabilityBasisPoints(value) {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value * 10000) : 0;
+}
+
+function finiteProbabilityReciprocal(value) {
+    return Number.isFinite(value) && value > 0 ? 1 / value : null;
+}
+
+// Exact named-target disclosure for one case state. It mirrors the authored
+// rarity odds, forced Rare+ weighting, 82% item branch, and unowned-first
+// selection policy without consuming random numbers or changing save state.
+export function caseTargetSnapshot(options = {}) {
+    const source = options && typeof options === 'object' && !Array.isArray(options)
+        ? options
+        : null;
+    const caseType = source?.caseType ?? 'royalCosmetic';
+    const definition = CASES[caseType] ?? null;
+    const rawOwned = source?.ownedIds ?? [];
+    const ownershipValid = Array.isArray(rawOwned) || rawOwned instanceof Set;
+    const ownedValues = ownershipValid ? [...rawOwned] : [];
+    const malformedOwnedIds = ownedValues.filter((id) => typeof id !== 'string' || !id).length;
+    const rawPity = source?.pityCount ?? 0;
+    const pityValid = Number.isSafeInteger(rawPity) && rawPity >= 0;
+    const valid = !!source && !!definition && ownershipValid && malformedOwnedIds === 0 && pityValid;
+
+    if (!valid) {
+        return deepFreezeSnapshot({
+            valid: false,
+            caseType: definition ? caseType : null,
+            name: definition?.name ?? '',
+            cost: definition?.cost ?? 0,
+            kind: definition?.poolKind ?? null,
+            poolTotal: 0,
+            ids: [],
+            rarities: [],
+            pity: { cap: definition ? (CASE_PITY[caseType] ?? 12) : 0, count: 0, remaining: 0, forcedNext: false },
+            target: { valid: false, id: null, inPool: false },
+            branches: {
+                item: CASE_ITEM_REWARD_CHANCE,
+                itemBasisPoints: probabilityBasisPoints(CASE_ITEM_REWARD_CHANCE),
+                coin: (1 - CASE_ITEM_REWARD_CHANCE) * CASE_COIN_CONSOLATION_CHANCE,
+                coinBasisPoints: probabilityBasisPoints((1 - CASE_ITEM_REWARD_CHANCE) * CASE_COIN_CONSOLATION_CHANCE),
+                battlePassXp: (1 - CASE_ITEM_REWARD_CHANCE) * (1 - CASE_COIN_CONSOLATION_CHANCE),
+                battlePassXpBasisPoints: probabilityBasisPoints((1 - CASE_ITEM_REWARD_CHANCE) * (1 - CASE_COIN_CONSOLATION_CHANCE)),
+                coinConditionalOnConsolation: CASE_COIN_CONSOLATION_CHANCE,
+            },
+            duplicatePolicy: {
+                preferUnownedWithinRarity: true,
+                duplicatesOnlyAfterRarityCollected: true,
+                reward: 'coin-dust',
+            },
+            diagnostics: {
+                invalidOptions: !source,
+                unknownCase: !definition,
+                invalidOwnedIds: !ownershipValid || malformedOwnedIds > 0,
+                invalidPityCount: !pityValid,
+                unknownOwnedIds: 0,
+                ignoredOwnedIds: 0,
+            },
+        });
+    }
+
+    const allKindItems = definition.poolKind === 'gear' ? GEAR_LIST : COSMETIC_LIST;
+    const knownKindIds = new Set(allKindItems.map((item) => item.id));
+    const ownedIds = new Set(ownedValues.filter((id) => knownKindIds.has(id)));
+    const unknownOwnedIds = ownedValues.filter((id) => !knownKindIds.has(id)).length;
+    const eligible = ITEM_POOL.filter((item) => item.kind === definition.poolKind && definition.odds[item.rarity]);
+    const eligibleIds = new Set(eligible.map((item) => item.id));
+    const ignoredOwnedIds = [...ownedIds].filter((id) => !eligibleIds.has(id)).length;
+    const forcedOdds = forcedRarityOdds(definition);
+    const rarities = RARITY_ORDER.filter((rarity) => definition.odds[rarity]).map((rarity) => {
+        const entries = eligible.filter((item) => item.rarity === rarity);
+        const ownedEntries = entries.filter((item) => ownedIds.has(item.id));
+        const unownedEntries = entries.filter((item) => !ownedIds.has(item.id));
+        return {
+            id: rarity,
+            label: rarityName(rarity),
+            odds: definition.odds[rarity],
+            basisPoints: probabilityBasisPoints(definition.odds[rarity]),
+            forcedOdds: forcedOdds[rarity] ?? 0,
+            forcedBasisPoints: probabilityBasisPoints(forcedOdds[rarity] ?? 0),
+            total: entries.length,
+            owned: ownedEntries.length,
+            unowned: unownedEntries.length,
+            ids: entries.map((item) => item.id),
+            ownedIds: ownedEntries.map((item) => item.id),
+            unownedIds: unownedEntries.map((item) => item.id),
+        };
+    });
+
+    const cap = CASE_PITY[caseType] ?? 12;
+    const count = Math.min(cap - 1, rawPity);
+    const remaining = Math.max(1, cap - count);
+    const forcedNext = count + 1 >= cap;
+    const requestedTargetId = typeof source.targetId === 'string' && source.targetId
+        ? source.targetId
+        : null;
+    const targetItem = requestedTargetId
+        ? eligible.find((item) => item.id === requestedTargetId) ?? null
+        : null;
+    const targetRarity = targetItem?.rarity ?? null;
+    const targetRarityEntries = targetRarity
+        ? eligible.filter((item) => item.rarity === targetRarity)
+        : [];
+    const targetUnownedEntries = targetRarityEntries.filter((item) => !ownedIds.has(item.id));
+    const targetOwned = !!targetItem && ownedIds.has(targetItem.id);
+    const blockedByUnownedPreference = targetOwned && targetUnownedEntries.length > 0;
+    const selectionPoolSize = targetUnownedEntries.length || targetRarityEntries.length;
+    const targetSelectable = !!targetItem && !blockedByUnownedPreference;
+    const selectionProbability = targetSelectable && selectionPoolSize > 0 ? 1 / selectionPoolSize : 0;
+    const ordinaryRarityProbability = targetRarity ? (definition.odds[targetRarity] ?? 0) : 0;
+    const forcedRarityProbability = targetRarity ? (forcedOdds[targetRarity] ?? 0) : 0;
+    const ordinaryNamedProbability = ordinaryRarityProbability * CASE_ITEM_REWARD_CHANCE * selectionProbability;
+    const forcedNextNamedProbability = forcedRarityProbability * CASE_ITEM_REWARD_CHANCE * selectionProbability;
+    const nextNamedProbability = forcedNext ? forcedNextNamedProbability : ordinaryNamedProbability;
+
+    return deepFreezeSnapshot({
+        valid: true,
+        caseType,
+        name: definition.name,
+        cost: definition.cost,
+        kind: definition.poolKind,
+        poolTotal: eligible.length,
+        ids: eligible.map((item) => item.id),
+        rarities,
+        pity: { cap, count, remaining, forcedNext },
+        target: {
+            valid: !!targetItem,
+            id: targetItem?.id ?? requestedTargetId,
+            name: targetItem?.name ?? '',
+            rarity: targetRarity,
+            inPool: !!targetItem,
+            owned: targetOwned,
+            selectionPool: blockedByUnownedPreference
+                ? 'blocked-by-unowned'
+                : targetUnownedEntries.length > 0 ? 'unowned' : 'full',
+            selectionPoolSize,
+            blockedByUnownedPreference,
+            duplicateIfAwarded: targetOwned && targetSelectable,
+            ordinaryRarityProbability,
+            forcedRarityProbability,
+            selectionProbability,
+            ordinaryNamedProbability,
+            forcedNextNamedProbability,
+            nextNamedProbability,
+            ordinaryBasisPoints: probabilityBasisPoints(ordinaryNamedProbability),
+            forcedNextBasisPoints: probabilityBasisPoints(forcedNextNamedProbability),
+            nextBasisPoints: probabilityBasisPoints(nextNamedProbability),
+            ordinaryOneIn: finiteProbabilityReciprocal(ordinaryNamedProbability),
+            forcedNextOneIn: finiteProbabilityReciprocal(forcedNextNamedProbability),
+            nextOneIn: finiteProbabilityReciprocal(nextNamedProbability),
+        },
+        branches: {
+            item: CASE_ITEM_REWARD_CHANCE,
+            itemBasisPoints: probabilityBasisPoints(CASE_ITEM_REWARD_CHANCE),
+            coin: (1 - CASE_ITEM_REWARD_CHANCE) * CASE_COIN_CONSOLATION_CHANCE,
+            coinBasisPoints: probabilityBasisPoints((1 - CASE_ITEM_REWARD_CHANCE) * CASE_COIN_CONSOLATION_CHANCE),
+            battlePassXp: (1 - CASE_ITEM_REWARD_CHANCE) * (1 - CASE_COIN_CONSOLATION_CHANCE),
+            battlePassXpBasisPoints: probabilityBasisPoints((1 - CASE_ITEM_REWARD_CHANCE) * (1 - CASE_COIN_CONSOLATION_CHANCE)),
+            coinConditionalOnConsolation: CASE_COIN_CONSOLATION_CHANCE,
+        },
+        duplicatePolicy: {
+            preferUnownedWithinRarity: true,
+            duplicatesOnlyAfterRarityCollected: true,
+            reward: 'coin-dust',
+        },
+        diagnostics: {
+            invalidOptions: false,
+            unknownCase: false,
+            invalidOwnedIds: false,
+            invalidPityCount: false,
+            unknownOwnedIds,
+            ignoredOwnedIds,
+        },
+    });
+}
+
 // Pool filtered by rarity and (optionally) kind (null = any kind).
 function poolByRarity(rarity, kind = null) {
     return ITEM_POOL.filter((i) => i.rarity === rarity && (!kind || i.kind === kind));
@@ -213,7 +461,8 @@ function rollRarity(odds) {
 // Returns a reward descriptor (and applies its effects to the save):
 //   { ok, kind: 'gear'|'cosmetic'|'coins'|'duplicate', rarity, id?, name?,
 //     category?, amount?, label }
-// or { ok: false, reason: 'cost'|'unknown' } when it can't be opened.
+// or { ok: false, reason: 'cost'|'unknown'|'save-changed'|'save-unavailable' }
+// when it can't be opened. Failed paid entry is always mutation-free.
 export function openCase(save, caseType, opts = {}) {
     const def = CASES[caseType];
     if (!def) return { ok: false, reason: 'unknown' };
@@ -221,7 +470,14 @@ export function openCase(save, caseType, opts = {}) {
     const free = !!opts.free;
     if (!free) {
         if (save.data.totalCoins < def.cost) return { ok: false, reason: 'cost' };
-        save.spendCoins(def.cost);
+        if (!save.spendCoins(def.cost)) {
+            const failure = save.getLastSaveFailureReason?.();
+            return {
+                ok: false,
+                reason: failure === 'external-save-changed'
+                    ? 'save-changed' : failure ? 'save-unavailable' : 'cost',
+            };
+        }
     }
     save.incrementStat('casesOpened', 1);
 
@@ -251,7 +507,7 @@ export function openCase(save, caseType, opts = {}) {
 // coin / battle-pass consolation so a pull always pays out something.
 function grantRarityReward(save, rarity, kind = null) {
     const pool = poolByRarity(rarity, kind);
-    if (pool.length && Math.random() < 0.82) {
+    if (pool.length && Math.random() < CASE_ITEM_REWARD_CHANCE) {
         // Prefer something new within the rolled rarity. Duplicate dust only
         // enters the reel once that rarity's case pool has been collected.
         const unowned = pool.filter((item) => item.kind === 'gear'
@@ -275,7 +531,7 @@ function grantRarityReward(save, rarity, kind = null) {
             category: pick.category, description: pick.description, color: pick.color,
             label: `${rarityName(rarity)} ${pick.name}` };
     }
-    if (Math.random() < 0.6) {
+    if (Math.random() < CASE_COIN_CONSOLATION_CHANCE) {
         const amount = Math.round(rarityDust(rarity) * 1.5);
         save.addCoins(amount);
         return { ok: true, kind: 'coins', rarity, amount, label: `${amount} coins` };

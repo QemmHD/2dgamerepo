@@ -62,6 +62,11 @@
     collectioncat=<category>  stage a Collection category (character menu only)
     collectionpage=<n>  stage an exact positive Collection page (character menu only)
     pursuit=<set id>  stage a known tracked set in Collection (character menu only)
+    completion=<overview|sets|sources|blueprint|case>  open Collection Completion
+    blueprint=<id>  select one of the two authored Mythic Blueprints
+    completionfixture=gravebell4  own Gravebell's four non-Blueprint pieces
+    wallet=<n>  stage an exact earned-coin balance for Completion QA
+    blueprintbuy=1  perform the production two-press Blueprint confirmation/purchase
     boss=1 / bossid=<id> / bosshp=<0..1> / bossattack=<move id> / bosskill=1
              spawn a live apex directly and stage its choreography state
     tp       teleport before the shot: "building" (just south of the first
@@ -118,8 +123,10 @@ import { loadRenderedProps } from '../../src/assets/RenderedWeaponProps.js';
 import { getMenuImages } from '../../src/assets/MenuImages.js';
 import { PASS_COSMETIC_MILESTONES, bpProgress } from '../../src/content/battlePass.js';
 import {
+    COSMETICS,
     COSMETIC_CATEGORIES,
     COSMETIC_SETS,
+    COSMETIC_BLUEPRINT_IDS,
     cosmeticsByCategory,
 } from '../../src/content/cosmetics.js';
 import { Enemy } from '../../src/entities/Enemy.js';
@@ -158,6 +165,22 @@ const PURSUIT_SET_REQUEST = params.get('pursuit');
 const QA_PURSUIT_SET = PURSUIT_SET_REQUEST
     ? COSMETIC_SETS.find((set) => set.id === PURSUIT_SET_REQUEST) ?? null
     : null;
+const COMPLETION_REQUEST = params.has('completion') ? params.get('completion') : null;
+const QA_COMPLETION_SECTION = ['overview', 'sets', 'sources', 'blueprint', 'case']
+    .includes(COMPLETION_REQUEST) ? COMPLETION_REQUEST : null;
+const BLUEPRINT_REQUEST = params.has('blueprint') ? params.get('blueprint') : null;
+const QA_BLUEPRINT_ID = COSMETIC_BLUEPRINT_IDS.includes(BLUEPRINT_REQUEST)
+    ? BLUEPRINT_REQUEST : null;
+const COMPLETION_FIXTURE_REQUEST = params.has('completionfixture')
+    ? params.get('completionfixture') : null;
+const QA_COMPLETION_FIXTURE = COMPLETION_FIXTURE_REQUEST === 'gravebell4'
+    ? COMPLETION_FIXTURE_REQUEST : null;
+const WALLET_REQUEST = params.has('wallet') ? params.get('wallet') : null;
+const QA_WALLET = WALLET_REQUEST != null && /^(0|[1-9]\d*)$/.test(WALLET_REQUEST)
+    && Number.isSafeInteger(Number(WALLET_REQUEST))
+    ? Number(WALLET_REQUEST) : null;
+const BLUEPRINT_BUY_REQUEST = params.has('blueprintbuy') ? params.get('blueprintbuy') : null;
+const QA_BLUEPRINT_BUY = BLUEPRINT_BUY_REQUEST === '1';
 const QA_DEV = params.get('dev') === '1';
 const RESET_PROFILE = params.get('resetprofile') === '1';
 const CAMPAIGN_BOSS_REQUEST = params.get('campaignbosses');
@@ -477,6 +500,47 @@ async function boot() {
     if (PURSUIT_SET_REQUEST && !QA_PURSUIT_SET) {
         ERR.push(`pursuit: unknown cosmetic set '${PURSUIT_SET_REQUEST}'`);
     }
+    if (COMPLETION_REQUEST != null && !QA_COMPLETION_SECTION) {
+        ERR.push(`completion: unknown section '${COMPLETION_REQUEST}'`);
+    }
+    if (BLUEPRINT_REQUEST != null && !QA_BLUEPRINT_ID) {
+        ERR.push(`blueprint: unknown Mythic Blueprint '${BLUEPRINT_REQUEST}'`);
+    }
+    if (COMPLETION_FIXTURE_REQUEST != null && !QA_COMPLETION_FIXTURE) {
+        ERR.push(`completionfixture: unknown fixture '${COMPLETION_FIXTURE_REQUEST}'`);
+    }
+    if (WALLET_REQUEST != null && QA_WALLET == null) {
+        ERR.push(`wallet: expected an exact non-negative safe integer, got '${WALLET_REQUEST}'`);
+    }
+    if (BLUEPRINT_BUY_REQUEST != null && !QA_BLUEPRINT_BUY) {
+        ERR.push(`blueprintbuy: expected 1, got '${BLUEPRINT_BUY_REQUEST}'`);
+    }
+    const completionReceiptRequested = COMPLETION_REQUEST != null
+        || BLUEPRINT_REQUEST != null || COMPLETION_FIXTURE_REQUEST != null
+        || WALLET_REQUEST != null || BLUEPRINT_BUY_REQUEST != null;
+    const completionMutationRequested = COMPLETION_FIXTURE_REQUEST != null
+        || WALLET_REQUEST != null || BLUEPRINT_BUY_REQUEST != null;
+    const completionMutationAllowed = !completionMutationRequested || LOCAL_QA_ORIGIN;
+    if (completionReceiptRequested && (SCREEN !== 'menu' || TAB !== 'character')) {
+        ERR.push('completionqa: staging requires screen=menu and tab=character');
+    }
+    if (completionMutationRequested && !LOCAL_QA_ORIGIN) {
+        ERR.push('completionqa: fixture, wallet, and purchase controls are local-only');
+    }
+    if ((BLUEPRINT_REQUEST != null || COMPLETION_FIXTURE_REQUEST != null
+        || BLUEPRINT_BUY_REQUEST != null) && !QA_COMPLETION_SECTION) {
+        ERR.push('completionqa: Blueprint staging requires completion=<section>');
+    }
+    if (QA_BLUEPRINT_ID && !['blueprint', 'case'].includes(QA_COMPLETION_SECTION)) {
+        ERR.push('blueprint: selection requires completion=blueprint or completion=case');
+    }
+    if (QA_BLUEPRINT_BUY && (!QA_BLUEPRINT_ID || QA_COMPLETION_SECTION !== 'blueprint')) {
+        ERR.push('blueprintbuy: purchase requires completion=blueprint and a known blueprint id');
+    }
+    if (QA_BLUEPRINT_BUY && (QA_BLUEPRINT_ID !== 'aura_requiem'
+        || QA_COMPLETION_FIXTURE !== 'gravebell4' || QA_WALLET !== 80000)) {
+        ERR.push('blueprintbuy: receipt fixture requires Requiem, gravebell4, and wallet=80000');
+    }
     if (QA_COLLECTION_PAGE != null) {
         const category = QA_COLLECTION_CATEGORY || 'fur';
         const pageCount = Math.max(1, Math.ceil(cosmeticsByCategory(category).length / 8));
@@ -506,6 +570,35 @@ async function boot() {
             };
             if (QA_PURSUIT_SET) {
                 game.saveSystem.data.cosmetics.pursuitSetId = QA_PURSUIT_SET.id;
+            }
+        }
+        if (completionReceiptRequested && QA_COMPLETION_SECTION && completionMutationAllowed) {
+            if (QA_WALLET != null) game.saveSystem.data.totalCoins = QA_WALLET;
+            if (QA_COMPLETION_FIXTURE === 'gravebell4') {
+                const gravebell = COSMETIC_SETS.find((set) => set.id === 'gravebell');
+                if (!gravebell) ERR.push('completionfixture: Gravebell set is missing');
+                else {
+                    for (const id of Object.values(gravebell.pieces)) {
+                        if (id === 'aura_requiem') continue;
+                        if (!COSMETICS[id]) ERR.push(`completionfixture: unknown cosmetic '${id}'`);
+                        else if (!game.saveSystem.data.cosmetics.unlocked.includes(id)) {
+                            game.saveSystem.data.cosmetics.unlocked.push(id);
+                        }
+                    }
+                }
+            }
+            if (QA_BLUEPRINT_ID) game._menuAction('openCollectionBlueprint', QA_BLUEPRINT_ID);
+            else game._menuAction('openCollectionCompletion', null);
+            if (QA_COMPLETION_SECTION !== 'overview'
+                && QA_COMPLETION_SECTION !== 'blueprint') {
+                game._menuAction('collectionCompletionSection', QA_COMPLETION_SECTION);
+            }
+            if (QA_COMPLETION_SECTION === 'blueprint' && !QA_BLUEPRINT_ID) {
+                game._menuAction('collectionCompletionSection', 'blueprint');
+            }
+            if (QA_BLUEPRINT_BUY && QA_BLUEPRINT_ID) {
+                game._menuAction('purchaseCollectionBlueprint', QA_BLUEPRINT_ID);
+                game._menuAction('purchaseCollectionBlueprint', QA_BLUEPRINT_ID);
             }
         }
         if (BPXP != null) {
@@ -999,6 +1092,11 @@ async function boot() {
         && near(qaCollectionRuntime.dpr, renderer.dpr)
         && ['x', 'y', 'w', 'h'].every((key) =>
             near(qaCollectionRuntime.content?.[key], qaMenuContent[key]));
+    const qaCompletionModel = game.ui?.menu?._lastCollectionCompletionModel || null;
+    const qaCompletionSet = qaCompletionModel?.sets?.find((set) => set.id === 'gravebell') || null;
+    const qaCompletionCaseTruth = game.ui?.menu?._lastCollectionCompletionCaseTruth || null;
+    const qaCompletionMythic = qaCompletionCaseTruth?.rarities
+        ?.find((row) => row.id === 'mythic') || null;
     const qaState = {
         inputModality: input.getModality(),
         menuFocusKey: game.menuFocusKey || null,
@@ -1049,6 +1147,40 @@ async function boot() {
         collectionNavTouchSafe: game.ui?.menu?._lastCollectionNavTouchSafe === true,
         collectionNavMinTouchCss: Number(game.ui?.menu?._lastCollectionNavMinTouchCss) || 0,
         collectionRuntimeMatches: qaCollectionRuntimeMatches,
+        completionOpen: game.collectionCompletion?.open === true,
+        completionSection: game.collectionCompletion?.section || '',
+        completionRendered: game.ui?.menu?._lastCollectionCompletionRendered === true,
+        completionRenderedSection: game.ui?.menu?._lastCollectionCompletionSection || '',
+        completionTouchSafe: game.ui?.menu?._lastCollectionCompletionTouchSafe === true,
+        completionMinTouchCss: Number(game.ui?.menu?._lastCollectionCompletionMinTouchCss) || 0,
+        completionTextSafe: game.ui?.menu?._lastCollectionCompletionTextSafe === true,
+        completionOwned: Number(qaCompletionModel?.owned) || 0,
+        completionTotal: Number(qaCompletionModel?.total) || 0,
+        completionSetsComplete: qaCompletionModel?.sets?.filter((set) => set.complete).length || 0,
+        completionDeterministic: Number(qaCompletionModel?.deterministic?.total) || 0,
+        completionCaseOnly: Number(qaCompletionModel?.caseOnly?.total) || 0,
+        completionCaseOnlyMythic: Number(qaCompletionModel?.caseOnly?.mythicTotal) || 0,
+        completionSources: qaCompletionModel?.sources?.map((row) => `${row.id}:${row.total}`).join(',') || '',
+        completionCategories: qaCompletionModel?.categories?.map((row) => `${row.id}:${row.owned}/${row.total}`).join(',') || '',
+        completionBlueprintId: game.collectionCompletion?.blueprintId || '',
+        completionBlueprintClaims: (game.saveSystem.data.cosmetics.blueprintClaims || []).join(','),
+        completionBlueprintConfirm: game.blueprintConfirm?.id || '',
+        completionBlueprintPending: game.blueprintPurchasePending?.id || '',
+        completionBlueprintReceipt: game.blueprintReceipt?.ok === true
+            ? `${game.blueprintReceipt.id}:${game.blueprintReceipt.cost}:${game.blueprintReceipt.balanceAfter}` : '',
+        completionGravebell: qaCompletionSet ? `${qaCompletionSet.owned}/${qaCompletionSet.total}` : '',
+        completionWallet: game.saveSystem.data.totalCoins,
+        completionCaseTruth: qaCompletionCaseTruth?.valid === true
+            ? [
+                qaCompletionCaseTruth.poolTotal,
+                qaCompletionCaseTruth.branches.itemBasisPoints,
+                qaCompletionCaseTruth.branches.coinBasisPoints,
+                qaCompletionCaseTruth.branches.battlePassXpBasisPoints,
+                qaCompletionMythic?.basisPoints || 0,
+                qaCompletionCaseTruth.pity.cap,
+                qaCompletionCaseTruth.pity.count,
+                qaCompletionCaseTruth.pity.forcedNext,
+            ].join(':') : '',
         pursuitSet: game.saveSystem.data.cosmetics.pursuitSetId || '',
         boutiqueCategory: game.boutiqueView?.category || '',
         boutiqueSetPage: Number(game.boutiqueView?.setPage) || 0,
@@ -1191,6 +1323,60 @@ async function boot() {
         && !qaState.collectionPursuitGuidance) {
         ERR.push(`render: tracked ${QA_PURSUIT_SET.id} next-source guidance was not drawn`);
     }
+    if (QA_COMPLETION_SECTION) {
+        if (!qaState.completionOpen || !qaState.completionRendered
+            || qaState.completionSection !== QA_COMPLETION_SECTION
+            || qaState.completionRenderedSection !== QA_COMPLETION_SECTION) {
+            ERR.push(`completion: requested '${QA_COMPLETION_SECTION}' was not rendered`);
+        }
+        if (!qaState.completionTextSafe) {
+            ERR.push(`completion: '${QA_COMPLETION_SECTION}' painted text beneath reserved controls`);
+        }
+        if (qaState.completionTotal !== 103
+            || qaState.completionDeterministic !== 85
+            || qaState.completionCaseOnly !== 18
+            || qaState.completionCaseOnlyMythic !== 0) {
+            ERR.push(`completion: model truth drifted (${qaState.completionOwned}/${qaState.completionTotal}, known ${qaState.completionDeterministic}, random ${qaState.completionCaseOnly}, mythic ${qaState.completionCaseOnlyMythic})`);
+        }
+        if (qaState.completionSources !== 'starter:13,boutique:44,blueprint:2,case:61,achievement:19,vigil:10') {
+            ERR.push(`completion: source partition drifted '${qaState.completionSources}'`);
+        }
+        if (ACTIVE_INPUT_MODE === 'touch' && qaPhoneLandscape
+            && (!qaState.completionTouchSafe || qaState.completionMinTouchCss < 44
+                || !qaState.characterHotspotsTouchSafe)) {
+            ERR.push(`completion: phone hotspots are not touch-safe (${qaState.completionMinTouchCss} CSS px)`);
+        }
+        if (RESET_PROFILE && !QA_COMPLETION_FIXTURE && !QA_BLUEPRINT_BUY
+            && (qaState.completionOwned !== 13 || qaState.completionSetsComplete !== 0
+                || qaState.completionCategories !== 'fur:3/18,cloak:2/20,hat:3/22,aura:2/21,trail:3/22')) {
+            ERR.push(`completion: fresh profile truth drifted '${qaState.completionCategories}'`);
+        }
+        if (QA_COMPLETION_SECTION === 'case'
+            && qaState.completionCaseTruth !== '59:8200:1080:720:150:10:0:false') {
+            ERR.push(`completion: Royal Case truth drifted '${qaState.completionCaseTruth}'`);
+        }
+    }
+    if (QA_BLUEPRINT_ID && qaState.completionBlueprintId !== QA_BLUEPRINT_ID) {
+        ERR.push(`blueprint: expected '${QA_BLUEPRINT_ID}', got '${qaState.completionBlueprintId}'`);
+    }
+    if (QA_COMPLETION_FIXTURE === 'gravebell4' && !QA_BLUEPRINT_BUY
+        && (qaState.completionGravebell !== '4/5' || qaState.completionOwned !== 17)) {
+        ERR.push(`completionfixture: expected Gravebell 4/5 and collection 17/103, got ${qaState.completionGravebell} and ${qaState.completionOwned}/103`);
+    }
+    if (QA_WALLET != null && !QA_BLUEPRINT_BUY && qaState.completionWallet !== QA_WALLET) {
+        ERR.push(`wallet: expected ${QA_WALLET}, got ${qaState.completionWallet}`);
+    }
+    if (QA_BLUEPRINT_BUY) {
+        const expectedWallet = QA_WALLET - 72000;
+        if (qaState.completionBlueprintReceipt !== `${QA_BLUEPRINT_ID}:72000:${expectedWallet}`
+            || qaState.completionBlueprintClaims !== QA_BLUEPRINT_ID
+            || qaState.completionWallet !== expectedWallet
+            || qaState.completionOwned !== 18
+            || qaState.completionGravebell !== '5/5'
+            || qaState.completionSetsComplete !== 1) {
+            ERR.push(`blueprintbuy: production receipt drifted '${qaState.completionBlueprintReceipt}', wallet ${qaState.completionWallet}, owned ${qaState.completionOwned}, set ${qaState.completionGravebell}`);
+        }
+    }
     if (QA_TRY_SET && !qaState.boutiqueTrailPreview) {
         ERR.push(`render: ${QA_TRY_SET.id} fitting-room trail preview was not drawn`);
     }
@@ -1327,6 +1513,29 @@ async function boot() {
     qaRoot.dataset.qaCollectionNavTouchSafe = String(window.__qaState.collectionNavTouchSafe);
     qaRoot.dataset.qaCollectionNavMinTouchCss = String(window.__qaState.collectionNavMinTouchCss);
     qaRoot.dataset.qaCollectionRuntimeMatches = String(window.__qaState.collectionRuntimeMatches);
+    qaRoot.dataset.qaCompletionOpen = String(window.__qaState.completionOpen);
+    qaRoot.dataset.qaCompletionSection = window.__qaState.completionSection;
+    qaRoot.dataset.qaCompletionRendered = String(window.__qaState.completionRendered);
+    qaRoot.dataset.qaCompletionRenderedSection = window.__qaState.completionRenderedSection;
+    qaRoot.dataset.qaCompletionTouchSafe = String(window.__qaState.completionTouchSafe);
+    qaRoot.dataset.qaCompletionMinTouchCss = String(window.__qaState.completionMinTouchCss);
+    qaRoot.dataset.qaCompletionTextSafe = String(window.__qaState.completionTextSafe);
+    qaRoot.dataset.qaCompletionOwned = String(window.__qaState.completionOwned);
+    qaRoot.dataset.qaCompletionTotal = String(window.__qaState.completionTotal);
+    qaRoot.dataset.qaCompletionSetsComplete = String(window.__qaState.completionSetsComplete);
+    qaRoot.dataset.qaCompletionDeterministic = String(window.__qaState.completionDeterministic);
+    qaRoot.dataset.qaCompletionCaseOnly = String(window.__qaState.completionCaseOnly);
+    qaRoot.dataset.qaCompletionCaseOnlyMythic = String(window.__qaState.completionCaseOnlyMythic);
+    qaRoot.dataset.qaCompletionSources = window.__qaState.completionSources;
+    qaRoot.dataset.qaCompletionCategories = window.__qaState.completionCategories;
+    qaRoot.dataset.qaCompletionBlueprintId = window.__qaState.completionBlueprintId;
+    qaRoot.dataset.qaCompletionBlueprintClaims = window.__qaState.completionBlueprintClaims;
+    qaRoot.dataset.qaCompletionBlueprintConfirm = window.__qaState.completionBlueprintConfirm;
+    qaRoot.dataset.qaCompletionBlueprintPending = window.__qaState.completionBlueprintPending;
+    qaRoot.dataset.qaCompletionBlueprintReceipt = window.__qaState.completionBlueprintReceipt;
+    qaRoot.dataset.qaCompletionGravebell = window.__qaState.completionGravebell;
+    qaRoot.dataset.qaCompletionWallet = String(window.__qaState.completionWallet);
+    qaRoot.dataset.qaCompletionCaseTruth = window.__qaState.completionCaseTruth;
     qaRoot.dataset.qaPursuitSet = window.__qaState.pursuitSet;
     qaRoot.dataset.qaBoutiqueCategory = window.__qaState.boutiqueCategory;
     qaRoot.dataset.qaBoutiqueSetPage = String(window.__qaState.boutiqueSetPage);

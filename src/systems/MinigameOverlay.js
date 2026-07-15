@@ -89,7 +89,17 @@ export class MinigameOverlay {
 
     openCaseFlow(caseType) {
         const res = openCase(this.game.saveSystem, caseType);
-        if (!res.ok) { this.game._setToast(res.reason === 'cost' ? 'Not enough coins' : 'Unavailable'); return; }
+        if (!res.ok) {
+            const message = res.reason === 'cost' ? 'Not enough coins'
+                : res.reason === 'save-changed' ? 'Save changed — reload to continue'
+                    : res.reason === 'save-unavailable'
+                        ? 'Save unavailable — no coins charged' : 'Unavailable';
+            this.game._setToast(message);
+            if (res.reason === 'save-changed' || res.reason === 'save-unavailable') {
+                this.game.accessibility?.announce?.(message);
+            }
+            return;
+        }
         // The reward is already applied to the save; the overlay presents it
         // with a scrolling reel that decelerates onto the won item.
         this.game.audio.caseOpen();
@@ -163,7 +173,15 @@ export class MinigameOverlay {
             this.game._setToast(`No plays left — resets in ${Math.ceil(info.resetInMs / 60000)}m`);
             return;
         }
-        if (!this.game.saveSystem.spendCoins(stake)) { this.game._setToast('Not enough coins'); return; }
+        if (!this.game.saveSystem.spendCoins(stake)) {
+            const failure = this.game.saveSystem.getLastSaveFailureReason?.();
+            const message = failure === 'external-save-changed'
+                ? 'Save changed — reload to continue'
+                : failure ? 'Save unavailable — wager not charged' : 'Not enough coins';
+            this.game._setToast(message);
+            if (failure) this.game.accessibility?.announce?.(message);
+            return;
+        }
         // The read above and this consume are synchronous. Refund defensively if
         // malformed external state ever makes the quota change between them.
         if (!this.game.saveSystem.consumeGamblePlay()) {

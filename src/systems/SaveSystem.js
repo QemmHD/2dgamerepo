@@ -11,7 +11,9 @@ import {
     DEFAULT_EQUIPPED_COSMETICS,
     COSMETIC_LIST,
     COSMETIC_SETS,
+    COSMETIC_BLUEPRINT_IDS,
     cosmeticById,
+    cosmeticBlueprintCost,
     cosmeticCoinCost,
 } from '../content/cosmetics.js';
 import {
@@ -26,7 +28,8 @@ import { getAttunable, attuneCost } from '../content/relics.js';
 import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
 import { riteIdsFor, ritesCompletedCount } from '../content/rites.js';
 import {
-    BP_EVERFLAME_COINS, BP_MAX_LEVEL, BP_SCHEMA, PASS_COSMETIC_MILESTONES,
+    ALL_PASS_COSMETIC_MILESTONES,
+    BP_EVERFLAME_COINS, BP_MAX_LEVEL, BP_SCHEMA,
     bpProgress, migrateBattlePassXpV1,
 } from '../content/battlePass.js';
 import {
@@ -51,6 +54,7 @@ import {
 } from './CampaignProgression.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
+export const SAVE_TRANSACTION_LOCK_NAME = 'emberwake:save:v1:exclusive';
 export const MAX_COIN_BALANCE = Number.MAX_SAFE_INTEGER;
 export const GUIDED_OBJECTIVE_SCHEMA = 1;
 export const GUIDED_OBJECTIVE_RECEIPT_LIMIT = 96;
@@ -65,6 +69,7 @@ const UPGRADE_MAX_BY_ID = Object.freeze(Object.fromEntries(
     PERMANENT_UPGRADES.map((upgrade) => [upgrade.id, upgrade.maxLevel]),
 ));
 const COSMETIC_PRESET_SLOTS = Object.freeze(Object.keys(DEFAULT_EQUIPPED_COSMETICS));
+const COSMETIC_BLUEPRINT_ID_SET = new Set(COSMETIC_BLUEPRINT_IDS);
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -228,6 +233,10 @@ function defaultData({ reducedEffects = false } = {}) {
             // reading the same stable shape.
             presets: createCosmeticPresets(DEFAULT_EQUIPPED_COSMETICS),
             pursuitSetId: null,
+            // Durable proof of earned-coin Blueprint purchases. Ownership can
+            // come from other routes (including cases), so only this atomic
+            // transaction is allowed to append a receipt.
+            blueprintClaims: [],
         },
         // Loadout gear (small buffs + chosen starting weapon).
         gear: {
@@ -386,6 +395,11 @@ export class SaveSystem {
         // sufficient authority to pay a receipt. Reloading creates a new
         // SaveSystem with no in-memory authority and therefore forfeits escrow.
         this._guidedObjectiveSessionSerial = 0;
+        // Exact last storage payload observed or successfully written by this
+        // instance. Every whole-save write compares it immediately before commit
+        // so a stale second tab cannot erase a newer transaction.
+        this._lastPersistedRaw = null;
+        this._lastSaveFailureReason = null;
         this.available = this._probe();
         this.data = this._loadOrDefault();
         const interrupted = normalizeGuidedObjectives(this.data.guidedObjectives);
@@ -413,6 +427,7 @@ export class SaveSystem {
         let raw = null;
         try {
             raw = localStorage.getItem(SAVE_KEY);
+            this._lastPersistedRaw = raw;
         } catch (e) {
             console.warn('[SaveSystem] read failed', e);
             return freshDefaultData();
@@ -532,10 +547,10 @@ export class SaveSystem {
                 ? [...new Set(db.claimed.filter((n) => Number.isInteger(n) && n > 0 && n <= BP_MAX_LEVEL))]
                 : [],
         };
-        // Schema-2 adds one deterministic Last Light cosmetic beside each legacy
-        // gear milestone. A veteran who already claimed that level receives the
-        // new piece during normalization; their original gear remains owned.
-        for (const [levelText, id] of Object.entries(PASS_COSMETIC_MILESTONES)) {
+        // Every claimed cosmetic milestone remains authoritative during save
+        // repair. This includes the five legacy 5/15/.../45 rewards and the
+        // five Schema-2 Last Light pieces; veteran claims never lose cosmetics.
+        for (const [levelText, id] of Object.entries(ALL_PASS_COSMETIC_MILESTONES)) {
             if (battlePass.claimed.includes(Number(levelText)) && !cosmetics.unlocked.includes(id)) {
                 cosmetics.unlocked.push(id);
             }
@@ -544,6 +559,12 @@ export class SaveSystem {
         // Equipped ids must be known, owned, and belong to the slot they occupy.
         // Old/tampered values fall back without deleting valid unlock history.
         const ownedCosmeticIds = new Set(cosmetics.unlocked);
+        cosmetics.blueprintClaims = Array.isArray(dc.blueprintClaims)
+            ? [...new Set(dc.blueprintClaims.filter((id) =>
+                typeof id === 'string'
+                && COSMETIC_BLUEPRINT_ID_SET.has(id)
+                && ownedCosmeticIds.has(id)))]
+            : [];
         cosmetics.equipped = validateCosmeticLook(
             cosmetics.equipped,
             def.cosmetics.equipped,
@@ -754,12 +775,44 @@ export class SaveSystem {
     }
 
     save() {
-        if (!this.available) return;
+        if (!this.available) {
+            this._lastSaveFailureReason = 'persistence-unavailable';
+            return false;
+        }
+        const storageState = this._storageUnchangedSinceLastWrite();
+        if (!storageState.ok) {
+            this._lastSaveFailureReason = storageState.reason;
+            return false;
+        }
         try {
-            localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+            const serialized = JSON.stringify(this.data);
+            localStorage.setItem(SAVE_KEY, serialized);
+            this._lastPersistedRaw = serialized;
+            this._lastSaveFailureReason = null;
+            return true;
         } catch (e) {
             console.warn('[SaveSystem] write failed', e);
+            this._lastSaveFailureReason = 'persistence-failed';
+            return false;
         }
+    }
+
+    _storageUnchangedSinceLastWrite() {
+        if (!this.available) return { ok: false, reason: 'persistence-unavailable' };
+        try {
+            return localStorage.getItem(SAVE_KEY) === this._lastPersistedRaw
+                ? { ok: true }
+                : { ok: false, reason: 'external-save-changed' };
+        } catch (e) {
+            console.warn('[SaveSystem] transaction read failed', e);
+            return { ok: false, reason: 'persistence-unavailable' };
+        }
+    }
+
+    getLastSaveFailureReason() {
+        return [
+            'persistence-unavailable', 'external-save-changed', 'persistence-failed',
+        ].includes(this._lastSaveFailureReason) ? this._lastSaveFailureReason : null;
     }
 
     _creditCoins(amount) {
@@ -833,8 +886,14 @@ export class SaveSystem {
             if (ledger.activeRunSerial !== sessionSerial) return false;
             ledger.activeRunSerial = 0;
             persisted.guidedObjectives = ledger;
-            localStorage.setItem(SAVE_KEY, JSON.stringify(persisted));
-            this.data.guidedObjectives = ledger;
+            const serialized = JSON.stringify(persisted);
+            localStorage.setItem(SAVE_KEY, serialized);
+            this._lastPersistedRaw = serialized;
+            this._lastSaveFailureReason = null;
+            // This merge may have observed a newer tab. Synchronize the whole
+            // in-memory model to the exact merged authority before blessing its
+            // serialized payload for any later write.
+            this.data = this._validate(persisted);
             return true;
         } catch (e) {
             return false; // unreadable/newer authority fails closed without a stale write
@@ -931,7 +990,10 @@ export class SaveSystem {
             : Number.isFinite(raw) && raw > 0 ? Math.min(MAX_COIN_BALANCE, Math.floor(raw)) : 0;
         if (balance < debit) return false;
         this.data.totalCoins = balance - debit;
-        this.save();
+        if (!this.save()) {
+            this.data.totalCoins = raw;
+            return false;
+        }
         return true;
     }
 
@@ -1203,6 +1265,142 @@ export class SaveSystem {
         this.data.cosmetics.unlocked.push(id);
         this.save();
         return true;
+    }
+
+    // Earned-coin Blueprint purchase. The UI's displayed quote is treated as
+    // untrusted input and must exactly match the catalog. All validation occurs
+    // before the three-field commit so every rejection is mutation- and
+    // write-free; ownership from cases or cheats never fabricates a claim.
+    purchaseCosmeticBlueprint(id, quotedCost) {
+        if (typeof id !== 'string' || !id) {
+            return Object.freeze({ ok: false, reason: 'invalid-id' });
+        }
+        const item = cosmeticById(id);
+        if (!item) return Object.freeze({ ok: false, reason: 'unknown-cosmetic' });
+        if (!COSMETIC_BLUEPRINT_ID_SET.has(id)) {
+            return Object.freeze({ ok: false, reason: 'not-blueprint' });
+        }
+        if (!Number.isSafeInteger(quotedCost) || quotedCost <= 0) {
+            return Object.freeze({ ok: false, reason: 'invalid-quote' });
+        }
+        const cost = cosmeticBlueprintCost(item);
+        if (!Number.isSafeInteger(cost) || cost <= 0 || cost > MAX_COIN_BALANCE) {
+            return Object.freeze({ ok: false, reason: 'invalid-catalog-cost' });
+        }
+        if (quotedCost !== cost) {
+            return Object.freeze({ ok: false, reason: 'quote-mismatch' });
+        }
+
+        const storageState = this._storageUnchangedSinceLastWrite();
+        if (!storageState.ok) {
+            return Object.freeze({ ok: false, reason: storageState.reason });
+        }
+
+        const cosmetics = this.data?.cosmetics;
+        if (!cosmetics || typeof cosmetics !== 'object' || Array.isArray(cosmetics)
+            || !Array.isArray(cosmetics.unlocked)
+            || !Array.isArray(cosmetics.blueprintClaims)) {
+            return Object.freeze({ ok: false, reason: 'invalid-state' });
+        }
+        if (cosmetics.unlocked.includes(id)) {
+            return Object.freeze({ ok: false, reason: 'already-owned' });
+        }
+        if (cosmetics.blueprintClaims.includes(id)) {
+            return Object.freeze({ ok: false, reason: 'replay' });
+        }
+
+        const rawBalance = this.data.totalCoins;
+        const balance = rawBalance === Infinity ? MAX_COIN_BALANCE
+            : Number.isSafeInteger(rawBalance) && rawBalance >= 0
+                ? rawBalance : null;
+        if (balance === null) {
+            return Object.freeze({ ok: false, reason: 'invalid-balance' });
+        }
+        if (balance < cost) {
+            return Object.freeze({ ok: false, reason: 'insufficient-coins' });
+        }
+
+        const ownedBefore = new Set(cosmetics.unlocked
+            .filter((ownedId) => cosmeticById(ownedId)));
+        const set = COSMETIC_SETS.find((candidate) =>
+            Object.values(candidate.pieces).includes(id)) || null;
+        const setBefore = set
+            ? Object.values(set.pieces).filter((pieceId) => ownedBefore.has(pieceId)).length
+            : 0;
+        const collectionBefore = ownedBefore.size;
+        const balanceAfter = balance - cost;
+
+        this.data.totalCoins = balanceAfter;
+        cosmetics.unlocked.push(id);
+        cosmetics.blueprintClaims.push(id);
+        if (!this.save()) {
+            // Restore the exact in-memory pre-transaction state. The write did
+            // not commit, so reporting success would create a reload reversal.
+            this.data.totalCoins = rawBalance;
+            cosmetics.unlocked.pop();
+            cosmetics.blueprintClaims.pop();
+            const failureReason = this._lastSaveFailureReason;
+            return Object.freeze({
+                ok: false,
+                reason: failureReason === 'external-save-changed'
+                    || failureReason === 'persistence-unavailable'
+                    ? failureReason : 'persistence-failed',
+            });
+        }
+
+        return Object.freeze({
+            ok: true,
+            id,
+            name: item.name,
+            cost,
+            balanceBefore: balance,
+            balanceAfter,
+            collectionBefore,
+            collectionAfter: collectionBefore + 1,
+            setId: set?.id ?? null,
+            setBefore,
+            setAfter: set ? setBefore + 1 : 0,
+        });
+    }
+
+    // Browser-facing Blueprint entrypoint. Web Locks serializes the synchronous
+    // localStorage read/validate/write critical section across same-origin tabs,
+    // closing the check-then-write race that a payload comparison alone cannot.
+    // Unsupported/contended lock managers fail closed before any mutation.
+    purchaseCosmeticBlueprintAtomic(id, quotedCost) {
+        const manager = globalThis.navigator?.locks;
+        if (!manager || typeof manager.request !== 'function') {
+            return Promise.resolve(Object.freeze({
+                ok: false, reason: 'transaction-lock-unavailable',
+            }));
+        }
+        const lockFailure = (reason) => Object.freeze({ ok: false, reason });
+        try {
+            return Promise.resolve(manager.request(
+                SAVE_TRANSACTION_LOCK_NAME,
+                { mode: 'exclusive', ifAvailable: true },
+                (lock) => lock
+                    ? this.purchaseCosmeticBlueprint(id, quotedCost)
+                    : lockFailure('transaction-busy'),
+            )).then((result) => {
+                const validFailure = result?.ok === false
+                    && typeof result.reason === 'string' && result.reason.length > 0;
+                const validSuccess = result?.ok === true
+                    && result.id === id && Number.isSafeInteger(result.cost)
+                    && Number.isSafeInteger(result.balanceBefore)
+                    && Number.isSafeInteger(result.balanceAfter)
+                    && Number.isSafeInteger(result.collectionBefore)
+                    && Number.isSafeInteger(result.collectionAfter)
+                    && Number.isSafeInteger(result.setBefore)
+                    && Number.isSafeInteger(result.setAfter);
+                return result && typeof result === 'object' && !Array.isArray(result)
+                    && Object.isFrozen(result) && (validFailure || validSuccess)
+                    ? result : lockFailure('transaction-lock-failed');
+            })
+                .catch(() => lockFailure('transaction-lock-failed'));
+        } catch (e) {
+            return Promise.resolve(lockFailure('transaction-lock-failed'));
+        }
     }
 
     equipCosmetic(category, id, characterId = this.getSelectedCharacter()) {

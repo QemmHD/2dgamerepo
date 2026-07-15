@@ -19,9 +19,15 @@ import {
 import {
     COSMETICS, COSMETIC_LIST, COSMETIC_CATEGORIES, COSMETIC_CATEGORY_LABELS, cosmeticsByCategory, resolveAppearance, cosmeticsForAchievement, cosmeticCoinCost,
     COSMETIC_SETS, getCosmeticAcquisitionRoutes, getCosmeticSourceLabel,
+    cosmeticBlueprintCost,
 } from '../content/cosmetics.js';
 import { buildCosmeticCollectionPage } from './CosmeticCollection.js';
-import { CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining, CASE_PITY, WAGER_BETS } from './CaseSystem.js';
+import {
+    CASES, CASE_ORDER, caseOddsRows, caseTopRarity, casePityRemaining,
+    CASE_PITY, WAGER_BETS, CASE_ITEM_REWARD_CHANCE,
+    CASE_COIN_CONSOLATION_CHANCE, casePoolSnapshot, caseTargetSnapshot,
+} from './CaseSystem.js';
+import { buildCosmeticCompletionSnapshot } from './CollectionCompletion.js';
 import { MAPS, MAP_ORDER } from '../content/maps.js';
 import { BATTLE_PASS_LEVELS, BP_MAX_LEVEL, BP_EVERFLAME_COINS, bpProgress, bpThreshold } from '../content/battlePass.js';
 import { battlePassRunReceipt, rewardLabel } from './BattlePassSystem.js';
@@ -82,7 +88,7 @@ export function boutiquePreviewGuidance(routes) {
     const known = new Set();
     if (routes && typeof routes[Symbol.iterator] === 'function') {
         for (const route of routes) {
-            if (['case', 'achievement', 'vigil', 'boutique'].includes(route)) known.add(route);
+            if (['case', 'achievement', 'vigil', 'boutique', 'blueprint'].includes(route)) known.add(route);
         }
     }
     if (known.size === 1 && known.has('case')) {
@@ -94,10 +100,14 @@ export function boutiquePreviewGuidance(routes) {
     if (known.size === 1 && known.has('vigil')) {
         return 'Every piece unlocks on the Vigil Path';
     }
+    if (known.size === 1 && known.has('blueprint')) {
+        return 'Every piece has a guaranteed Mythic Blueprint route';
+    }
     if (known.size > 0) {
         const labels = [...known].map((route) => route === 'case'
             ? 'random cases' : route === 'achievement'
-                ? 'achievements' : route === 'vigil' ? 'Vigil Path' : 'the Boutique');
+                ? 'achievements' : route === 'vigil' ? 'Vigil Path'
+                    : route === 'blueprint' ? 'Mythic Blueprints' : 'the Boutique');
         return `Earn locked pieces through ${labels.join(' or ')}`;
     }
     return 'Earn this look outside the Boutique';
@@ -483,7 +493,7 @@ export function computePhoneCharacterCollectionLayout(content, options = {}) {
     };
     const rowGap = 6;
     const compactControls = compact
-        ? segmentedRects({ x: inner.x, y: inner.y, w: inner.w, h: touchH }, 4, 8)
+        ? segmentedRects({ x: inner.x, y: inner.y, w: inner.w, h: touchH }, 5, 8)
         : [];
     const categoryRow = compact ? compactControls[0]
         : { x: inner.x, y: inner.y, w: inner.w, h: touchH };
@@ -497,7 +507,8 @@ export function computePhoneCharacterCollectionLayout(content, options = {}) {
         x: inner.x + ownershipW + splitGap, y: filterY,
         w: inner.w - ownershipW - splitGap, h: touchH,
     };
-    const ritesButton = compact ? compactControls[3] : null;
+    const completionButton = compact ? compactControls[3] : null;
+    const ritesButton = compact ? compactControls[4] : null;
     const footer = {
         x: inner.x,
         y: collection.y + collection.h - edge - touchH,
@@ -532,10 +543,19 @@ export function computePhoneCharacterCollectionLayout(content, options = {}) {
         w: pagerW,
         h: touchH,
     };
-    const attuneButton = compact ? ritesButton : {
+    const previewButtonGap = 8;
+    const previewButtonW = compact ? 0
+        : (preview.w - edge * 2 - previewButtonGap) / 2;
+    const richCompletionButton = compact ? null : {
         x: preview.x + edge, y: preview.y + preview.h - edge - touchH,
-        w: preview.w - edge * 2, h: touchH,
+        w: previewButtonW, h: touchH,
     };
+    const attuneButton = compact ? ritesButton : {
+        x: richCompletionButton.x + richCompletionButton.w + previewButtonGap,
+        y: richCompletionButton.y,
+        w: previewButtonW, h: touchH,
+    };
+    const resolvedCompletionButton = compact ? completionButton : richCompletionButton;
     const avatarRadius = compact ? 0
         : Math.max(62, Math.min(92, preview.w * 0.29, preview.h * 0.13));
     const avatar = compact ? null : {
@@ -560,10 +580,10 @@ export function computePhoneCharacterCollectionLayout(content, options = {}) {
 
     const categorySegments = compact ? [categoryRow] : segmentedRects(categoryRow, 5, 8);
     const ownershipSegments = compact ? [ownershipRow] : segmentedRects(ownershipRow, 3, 8);
-    const sourceSegments = compact ? [sourceRow] : segmentedRects(sourceRow, 6, 8);
+    const sourceSegments = compact ? [sourceRow] : segmentedRects(sourceRow, 7, 8);
     const touchRects = [
         ...categorySegments, ...ownershipSegments, ...sourceSegments,
-        ...cards, previousButton, nextButton, attuneButton,
+        ...cards, previousButton, nextButton, resolvedCompletionButton, attuneButton,
     ];
     const rawMinTouchCss = Math.min(...touchRects.map((rect) =>
         Math.min(rect.w, rect.h) * cssScale));
@@ -599,6 +619,7 @@ export function computePhoneCharacterCollectionLayout(content, options = {}) {
         ownershipSegments,
         sourceSegments,
         compactControls,
+        completionButton: resolvedCompletionButton,
         ritesButton,
         grid,
         cards,
@@ -691,6 +712,137 @@ export function computePhoneHeroRitesLayout(content, options = {}) {
     };
 }
 
+// Collection Completion is a nested Character surface, not another global
+// menu tab. The same geometry authority drives its painted controls and its
+// touch receipts so every registered phone hotspot remains at least 44 CSS px.
+export function computePhoneCollectionCompletionLayout(content, options = {}) {
+    const cssScale = Number.isFinite(options.cssScale) && options.cssScale > 0
+        ? options.cssScale : 1;
+    const phone = options.phone !== false;
+    const section = ['overview', 'sets', 'sources', 'blueprint', 'case']
+        .includes(options.section) ? options.section : 'overview';
+    const touchH = phone ? Math.max(100, Math.ceil(44 / cssScale)) : 54;
+    const edge = phone ? 8 : 16;
+    const gap = phone ? 8 : 12;
+    const inner = {
+        x: content.x + edge, y: content.y + edge,
+        w: content.w - edge * 2, h: content.h - edge * 2,
+    };
+    const header = { x: inner.x, y: inner.y, w: inner.w, h: touchH };
+    const backButton = {
+        x: header.x, y: header.y,
+        w: Math.min(header.w, Math.max(phone ? 240 : 180, touchH * 1.5)), h: touchH,
+    };
+    const tabs = {
+        x: inner.x, y: header.y + header.h + gap, w: inner.w, h: touchH,
+    };
+    const tabRects = segmentedRects(tabs, 5, gap);
+    const body = {
+        x: inner.x, y: tabs.y + tabs.h + gap, w: inner.w,
+        h: Math.max(1, inner.y + inner.h - (tabs.y + tabs.h + gap)),
+    };
+
+    const pager = {
+        x: body.x, y: body.y + body.h - touchH, w: body.w, h: touchH,
+    };
+    const pagerW = Math.min(pager.w * 0.24, Math.max(220, touchH * 1.7));
+    const previousButton = { x: pager.x, y: pager.y, w: pagerW, h: touchH };
+    const nextButton = {
+        x: pager.x + pager.w - pagerW, y: pager.y, w: pagerW, h: touchH,
+    };
+    const setGrid = {
+        x: body.x, y: body.y, w: body.w,
+        h: Math.max(1, pager.y - gap - body.y),
+    };
+
+    const selectorW = Math.max(phone ? 330 : 360, Math.round(body.w * (phone ? 0.27 : 0.24)));
+    const blueprintSelectorGap = phone
+        ? Math.min(gap, Math.max(4, body.h - 88 / cssScale))
+        : gap;
+    const blueprintSelectors = Array.from({ length: 2 }, (_, index) => ({
+        x: body.x,
+        y: body.y + index * ((body.h - blueprintSelectorGap) / 2 + blueprintSelectorGap),
+        w: selectorW,
+        h: (body.h - blueprintSelectorGap) / 2,
+    }));
+    const blueprintDetail = {
+        x: body.x + selectorW + gap, y: body.y,
+        w: Math.max(1, body.w - selectorW - gap), h: body.h,
+    };
+    const detailActionY = blueprintDetail.y + blueprintDetail.h - touchH;
+    const caseTruthW = Math.max(phone ? 280 : 220, blueprintDetail.w * 0.29);
+    const caseTruthButton = {
+        x: blueprintDetail.x, y: detailActionY,
+        w: Math.min(blueprintDetail.w, caseTruthW), h: touchH,
+    };
+    const purchaseButton = {
+        x: caseTruthButton.x + caseTruthButton.w + gap, y: detailActionY,
+        w: Math.max(1, blueprintDetail.x + blueprintDetail.w
+            - (caseTruthButton.x + caseTruthButton.w + gap)),
+        h: touchH,
+    };
+    const blueprintCopy = {
+        x: blueprintDetail.x,
+        y: blueprintDetail.y,
+        w: blueprintDetail.w,
+        h: Math.max(1, detailActionY - gap - blueprintDetail.y),
+    };
+    const compactBlueprint = phone && blueprintCopy.h * cssScale < 72;
+
+    const touchRects = [backButton, ...tabRects];
+    if (section === 'sets') touchRects.push(previousButton, nextButton);
+    if (section === 'blueprint') {
+        touchRects.push(...blueprintSelectors, caseTruthButton, purchaseButton);
+    }
+    const rawMinTouchCss = Math.min(...touchRects.map((rect) =>
+        Math.min(rect.w, rect.h) * cssScale));
+    const contained = touchRects.every((rect) =>
+        Number.isFinite(rect.x + rect.y + rect.w + rect.h)
+        && rect.w > 0 && rect.h > 0
+        && rect.x >= content.x && rect.y >= content.y
+        && rect.x + rect.w <= content.x + content.w + 0.001
+        && rect.y + rect.h <= content.y + content.h + 0.001);
+    const nonOverlapping = touchRects.every((rect, index) => touchRects
+        .slice(index + 1).every((other) => rect.x + rect.w <= other.x + 0.001
+            || other.x + other.w <= rect.x + 0.001
+            || rect.y + rect.h <= other.y + 0.001
+            || other.y + other.h <= rect.y + 0.001));
+    const geometrySafe = inner.w > 0 && inner.h > 0 && body.w > 0
+        && body.h > touchH && contained && nonOverlapping;
+    return {
+        phone,
+        section,
+        cssScale,
+        touchH,
+        minTouchCss: Math.round(rawMinTouchCss * 10) / 10,
+        touchSafe: geometrySafe && (!phone || rawMinTouchCss >= 44),
+        geometrySafe,
+        contained,
+        nonOverlapping,
+        inner,
+        header,
+        backButton,
+        tabs,
+        tabRects,
+        body,
+        pager,
+        previousButton,
+        nextButton,
+        setGrid,
+        blueprintSelectors,
+        blueprintDetail,
+        blueprintCopy,
+        compactBlueprint,
+        caseTruthButton,
+        purchaseButton,
+        gap,
+        titleFontPx: phone ? Math.max(34, Math.ceil(14 / cssScale)) : 22,
+        bodyFontPx: phone ? Math.max(28, Math.ceil(11 / cssScale)) : 15,
+        smallFontPx: phone ? Math.max(24, Math.ceil(9 / cssScale)) : 12,
+        buttonFontPx: phone ? Math.max(30, Math.ceil(12 / cssScale)) : 14,
+    };
+}
+
 // A deterministic planted wake around the fitting-room pedestal. The points
 // are fed into the same drawTrailPoint renderer used by Player, so bespoke
 // trail silhouettes (candles, sparks, runes, paws, etc.) remain truthful.
@@ -718,6 +870,13 @@ export class MenuRenderer {
         this._lastCharacterPhonePane = null;
         this._lastCharacterPhonePaneTouchSafe = false;
         this._lastCharacterPhonePaneMinTouchCss = 0;
+        this._lastCollectionCompletionRendered = false;
+        this._lastCollectionCompletionSection = '';
+        this._lastCollectionCompletionTouchSafe = false;
+        this._lastCollectionCompletionMinTouchCss = 0;
+        this._lastCollectionCompletionModel = null;
+        this._lastCollectionCompletionTextSafe = false;
+        this._lastCollectionCompletionCaseTruth = null;
         this._lastBoutiqueTrailPreview = false;
     }
 
@@ -1105,6 +1264,13 @@ export class MenuRenderer {
         this._lastCharacterPhonePane = null;
         this._lastCharacterPhonePaneTouchSafe = false;
         this._lastCharacterPhonePaneMinTouchCss = 0;
+        this._lastCollectionCompletionRendered = false;
+        this._lastCollectionCompletionSection = '';
+        this._lastCollectionCompletionTouchSafe = false;
+        this._lastCollectionCompletionMinTouchCss = 0;
+        this._lastCollectionCompletionModel = null;
+        this._lastCollectionCompletionTextSafe = false;
+        this._lastCollectionCompletionCaseTruth = null;
         this._lastBoutiqueTrailPreview = false;
         // Kick off the display-font load (idempotent, guarded); canvas text using
         // HEAD picks up Cinzel once ready, staying on the system fallback until then.
@@ -3230,6 +3396,9 @@ export class MenuRenderer {
         } else if (owned && !equipped) {
             action = 'equipCosmetic'; arg = { category: item.category, id: item.id };
             label = `Equip ${item.name}`;
+        } else if (!owned && routes.includes('blueprint')) {
+            action = 'openCollectionBlueprint'; arg = item.id;
+            label = `Open guaranteed Mythic Blueprint details for ${item.name}`;
         } else if (!owned && routes.includes('boutique')) {
             action = 'tryInBoutique'; arg = { category: item.category, id: item.id };
             label = `Try ${item.name} in Boutique. ${cosmeticCoinCost(item)} coins.`;
@@ -3273,12 +3442,14 @@ export class MenuRenderer {
             { id: 'all', label: 'ALL', accessibleLabel: 'All sources' },
             { id: 'starter', label: 'STARTER' },
             { id: 'boutique', label: 'SHOP', accessibleLabel: 'Boutique source' },
+            { id: 'blueprint', label: 'BLUEPRINT', accessibleLabel: 'Mythic Blueprint source' },
             { id: 'case', label: 'CASES' },
             { id: 'achievement', label: 'ACHIEVE', accessibleLabel: 'Achievement source' },
             { id: 'vigil', label: 'VIGIL', accessibleLabel: 'Vigil Path source' },
         ] : [
             { id: 'all', label: 'ALL SOURCES' }, { id: 'starter', label: 'STARTER' },
-            { id: 'boutique', label: 'BOUTIQUE' }, { id: 'case', label: 'CASES' },
+            { id: 'boutique', label: 'BOUTIQUE' }, { id: 'blueprint', label: 'BLUEPRINT' },
+            { id: 'case', label: 'CASES' },
             { id: 'achievement', label: 'ACHIEVEMENT' }, { id: 'vigil', label: 'VIGIL PATH' },
         ];
         if (phone) {
@@ -3318,6 +3489,11 @@ export class MenuRenderer {
                         accent: 'rgba(112,62,28,0.95)', fontSize: presentation.filterFontPx,
                         accessibleLabel: `Source ${currentSource.label}. Change to ${nextSource.label}`,
                     });
+                this._button(ctx, presentation.completionButton, 'COMPLETION', {
+                    action: 'openCollectionCompletion',
+                    accent: 'rgba(36,86,70,0.96)', fontSize: presentation.filterFontPx,
+                    accessibleLabel: 'Open Collection Completion overview',
+                });
                 this._button(ctx, presentation.ritesButton, 'HERO RITES', {
                     action: 'characterPhonePane', arg: 'rites',
                     accent: 'rgba(88,48,118,0.95)', fontSize: presentation.filterFontPx,
@@ -3401,6 +3577,12 @@ export class MenuRenderer {
             ? presentation.previousButton : { x, y: fy + 5, w: 116, h: 38 };
         const nextButton = phone
             ? presentation.nextButton : { x: x + w - 116, y: fy + 5, w: 116, h: 38 };
+        const completionButton = phone ? null : {
+            x: previousButton.x + previousButton.w + 8,
+            y: fy + 5,
+            w: Math.min(168, Math.max(132, w * 0.16)),
+            h: 38,
+        };
         this._button(ctx, previousButton, '‹ PREV', {
             enabled: hasPrev, action: hasPrev ? 'collectionPage' : null,
             arg: page - 1, fontSize: phone ? presentation.buttonFontPx : 13,
@@ -3411,30 +3593,29 @@ export class MenuRenderer {
             arg: page + 1, fontSize: phone ? presentation.buttonFontPx : 13,
             accessibleLabel: `Next collection page, ${page + 1}`,
         });
+        if (completionButton) {
+            this._button(ctx, completionButton, 'COMPLETION', {
+                action: 'openCollectionCompletion', accent: 'rgba(36,86,70,0.96)',
+                fontSize: 12,
+                accessibleLabel: 'Open Collection Completion overview',
+            });
+        }
         const total = model.totalItems ?? model.totalCount ?? model.filteredCount
             ?? model.total ?? entries.length;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        // Unknown legacy ids are intentionally retained by SaveSystem for
-        // forward/backward compatibility, but they are not authored collection
-        // entries and must never inflate the visible completion count.
-        const unlockedIds = new Set(Array.isArray(save.cosmetics.unlocked)
-            ? save.cosmetics.unlocked : []);
-        const ownedIds = new Set(COSMETIC_LIST
-            .filter((item) => unlockedIds.has(item.id))
-            .map((item) => item.id));
-        const completedSets = COSMETIC_SETS.filter((set) => COSMETIC_CATEGORIES
-            .every((category) => ownedIds.has(set.pieces[category]))).length;
-        const pursued = COSMETIC_SETS.find((set) => set.id === save.cosmetics.pursuitSetId) || null;
-        let focusSet = pursued;
-        if (!focusSet) {
-            focusSet = COSMETIC_SETS.reduce((best, set) => {
-                const progress = COSMETIC_CATEGORIES.filter((category) => ownedIds.has(set.pieces[category])).length;
-                const bestProgress = best
-                    ? COSMETIC_CATEGORIES.filter((category) => ownedIds.has(best.pieces[category])).length : -1;
-                return progress > bestProgress && progress < COSMETIC_CATEGORIES.length ? set : best;
-            }, null);
-        }
-        const summary = `PAGE ${page}/${pageCount} · ${total} MATCHES  |  OWNED ${ownedIds.size}/${COSMETIC_LIST.length} · SETS ${completedSets}/${COSMETIC_SETS.length}`;
+        // Completion math has one authority. Unknown legacy ids stay in the
+        // save for compatibility but never inflate authored catalog progress.
+        const completion = buildCosmeticCompletionSnapshot({
+            ownedIds: save.cosmetics.unlocked,
+            blueprintClaims: save.cosmetics.blueprintClaims,
+            pursuitSetId: save.cosmetics.pursuitSetId,
+            coinBalance: save.totalCoins,
+            royalCosmeticPityCount: save.casePity?.royalCosmetic || 0,
+        });
+        const completedSets = completion.sets.filter((set) => set.complete).length;
+        const pursued = completion.trackedSet;
+        const focusSet = pursued || completion.closestSet;
+        const summary = `PAGE ${page}/${pageCount} · ${total} MATCHES  |  OWNED ${completion.owned}/${completion.total} · SETS ${completedSets}/${completion.sets.length}`;
         ctx.fillStyle = 'rgba(220,228,238,0.72)';
         ctx.font = `800 ${phone ? presentation.footerFontPx : 12}px ${FONT}`;
         const phoneSummaryLeft = phone ? previousButton.x + previousButton.w + 18 : 0;
@@ -3445,12 +3626,15 @@ export class MenuRenderer {
             (phoneSummaryLeft + phoneSummaryRight) / 2,
             presentation.footerSummaryY);
         } else {
-            ctx.fillText(summary, rect.x + rect.w / 2, fy + 12);
+            const summaryLeft = completionButton.x + completionButton.w + 12;
+            const summaryRight = nextButton.x - 12;
+            ctx.fillText(this._ellip(ctx, summary, Math.max(120, summaryRight - summaryLeft)),
+                (summaryLeft + summaryRight) / 2, fy + 12);
         }
         if (focusSet) {
-            const progress = COSMETIC_CATEGORIES.filter((category) => ownedIds.has(focusSet.pieces[category])).length;
-            const missingCategory = COSMETIC_CATEGORIES.find((category) => !ownedIds.has(focusSet.pieces[category]));
-            const missing = missingCategory ? COSMETICS[focusSet.pieces[missingCategory]] : null;
+            const progress = focusSet.owned;
+            const missing = focusSet.missingItems?.[0]
+                ? COSMETICS[focusSet.missingItems[0].id] : null;
             let next = 'COMPLETE · equip the full look in Boutique';
             if (missing) {
                 const routes = getCosmeticAcquisitionRoutes(missing);
@@ -3459,6 +3643,10 @@ export class MenuRenderer {
                         + (routes.includes('case') ? ' or RANDOM cosmetic case' : '');
                 } else if (routes.includes('achievement')) next = `NEXT ${missing.name}: Achievement`;
                 else if (routes.includes('vigil')) next = `NEXT ${missing.name}: Vigil Path Lv ${missing.passLevel}`;
+                else if (routes.includes('blueprint')) {
+                    next = `NEXT ${missing.name}: GUARANTEED Blueprint ${cosmeticBlueprintCost(missing).toLocaleString()} coins`
+                        + (routes.includes('case') ? ' or RANDOM Royal Cosmetic Case' : '');
+                }
                 else if (routes.includes('case')) next = `NEXT ${missing.name}: RANDOM cosmetic case drop`;
                 else next = `NEXT ${missing.name}: ${getCosmeticSourceLabel(missing)}`;
             }
@@ -3474,7 +3662,10 @@ export class MenuRenderer {
             } else {
                 ctx.fillStyle = focusSet.color; ctx.font = `800 11px ${FONT}`;
                 ctx.fillText(this._ellip(ctx, pursuitLine,
-                    Math.max(120, w - 260)), rect.x + rect.w / 2, fy + 33);
+                    Math.max(120, nextButton.x - 12
+                        - (completionButton.x + completionButton.w + 12))),
+                (completionButton.x + completionButton.w + 12 + nextButton.x - 12) / 2,
+                fy + 33);
             }
         }
     }
@@ -3698,9 +3889,761 @@ export class MenuRenderer {
         }
     }
 
+    _completionPercent(basisPoints) {
+        const value = Math.max(0, Math.min(10000,
+            Number.isFinite(basisPoints) ? Math.floor(basisPoints) : 0));
+        return `${(value / 100).toFixed(value % 100 === 0 ? 0 : value % 10 === 0 ? 1 : 2)}%`;
+    }
+
+    _completionRouteLabel(routes) {
+        const labels = {
+            starter: 'Starter', boutique: 'Boutique', blueprint: 'Blueprint',
+            case: 'Random Case', achievement: 'Achievement', vigil: 'Vigil Path',
+        };
+        return (Array.isArray(routes) ? routes : [])
+            .map((route) => labels[route] || route).join(' / ') || 'Unknown route';
+    }
+
+    // Completion screens are unusually dense at the supported 480×270 floor.
+    // Track the actual post-fit font size for each painted row and prove those
+    // rows stay inside their authored lane without touching one another.
+    _completionTextLaneSafe(rect, rows) {
+        if (!rect || !Array.isArray(rows) || !rows.length) return false;
+        const spans = rows.map((row) => ({
+            top: row.y - row.size * 0.52,
+            bottom: row.y + row.size * 0.52,
+        })).sort((a, b) => a.top - b.top);
+        if (spans.some((span) => !Number.isFinite(span.top + span.bottom)
+            || span.top < rect.y - 0.001
+            || span.bottom > rect.y + rect.h + 0.001)) return false;
+        return spans.every((span, index) => index === 0
+            || spans[index - 1].bottom <= span.top + 0.001);
+    }
+
+    _drawCompletionOverview(ctx, model, layout) {
+        const body = layout.body;
+        const gap = layout.phone ? 8 : 12;
+        const compact = layout.phone && body.h * layout.cssScale < 150;
+        let textSafe = true;
+        const completeSets = model.sets.filter((set) => set.complete).length;
+        const topH = compact
+            ? Math.max(96, layout.smallFontPx * 3.1)
+            : Math.max(100, body.h * 0.39);
+        const cards = segmentedRects({ x: body.x, y: body.y, w: body.w, h: topH }, 4, gap);
+        const summaries = [
+            { label: 'WHOLE COLLECTION', value: `${model.owned}/${model.total}`, meta: this._completionPercent(model.basisPoints), color: '#c08bff' },
+            { label: 'COMPLETE SETS', value: `${completeSets}/${model.sets.length}`, meta: completeSets ? 'full looks forged' : 'first full look ahead', color: '#ffce54' },
+            { label: 'WITH A KNOWN ROUTE', value: String(model.deterministic.total), meta: 'guaranteed path available', color: '#5fd36a' },
+            { label: 'RANDOM-ONLY', value: String(model.caseOnly.total), meta: `${model.caseOnly.mythicTotal} case-only Mythics`, color: '#ff9a4a' },
+        ];
+        for (let i = 0; i < cards.length; i++) {
+            const card = cards[i], summary = summaries[i];
+            this._panel(ctx, card.x, card.y, card.w, card.h,
+                'rgba(255,255,255,0.035)', `${summary.color}55`);
+            const cx = card.x + card.w / 2;
+            const rows = [];
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = summary.color;
+            const labelY = card.y + card.h * (compact ? 0.26 : 0.22);
+            const labelSize = this._fitFont(ctx, summary.label, card.w - 16, 800,
+                layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+            ctx.fillText(this._ellip(ctx, summary.label, card.w - 16), cx, labelY);
+            rows.push({ y: labelY, size: labelSize });
+            ctx.fillStyle = '#fff';
+            const valueY = card.y + card.h * (compact ? 0.72 : 0.55);
+            const valueSize = this._fitFont(ctx, summary.value, card.w - 16, 900,
+                layout.phone ? layout.titleFontPx * (compact ? 1 : 1.25) : 34,
+                FONT, Math.max(24, layout.titleFontPx - 8));
+            ctx.fillText(this._ellip(ctx, summary.value, card.w - 16), cx, valueY);
+            rows.push({ y: valueY, size: valueSize });
+            if (!compact) {
+                ctx.fillStyle = 'rgba(225,232,242,0.68)';
+                const metaY = card.y + card.h * 0.81;
+                const metaSize = this._fitFont(ctx, summary.meta, card.w - 20, 700,
+                    layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 8));
+                ctx.fillText(this._ellip(ctx, summary.meta, card.w - 20), cx, metaY);
+                rows.push({ y: metaY, size: metaSize });
+            }
+            textSafe = textSafe && this._completionTextLaneSafe(card, rows);
+        }
+
+        const disclosureH = compact
+            ? Math.max(52, layout.smallFontPx * 1.7)
+            : Math.max(34, layout.smallFontPx * 1.6);
+        const categoryY = body.y + topH + gap;
+        const categoryH = Math.max(1, body.y + body.h - disclosureH - gap - categoryY);
+        const categories = segmentedRects({
+            x: body.x, y: categoryY, w: body.w, h: categoryH,
+        }, 5, gap);
+        for (let i = 0; i < categories.length; i++) {
+            const rect = categories[i];
+            const row = model.categories[i];
+            if (!row) continue;
+            this._panel(ctx, rect.x, rect.y, rect.w, rect.h,
+                'rgba(14,22,30,0.84)', 'rgba(143,208,255,0.22)');
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            const rows = [];
+            const title = compact
+                ? `${row.label.toUpperCase()} · ${row.owned}/${row.total}`
+                : row.label.toUpperCase();
+            const titleY = rect.y + rect.h * (compact ? 0.32 : 0.22);
+            ctx.fillStyle = compact ? '#8fd0ff' : '#fff';
+            const titleSize = this._fitFont(ctx, title, rect.w - 20, 800,
+                layout.bodyFontPx, FONT, Math.max(20, layout.bodyFontPx - 12));
+            ctx.fillText(this._ellip(ctx, title, rect.w - 20), rect.x + 10, titleY);
+            rows.push({ y: titleY, size: titleSize });
+            if (compact) {
+                const missingY = rect.y + rect.h * 0.74;
+                ctx.fillStyle = 'rgba(225,232,242,0.74)';
+                const missingSize = this._fitFont(ctx, `${row.missing} MISSING`, rect.w - 20,
+                    700, layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+                ctx.fillText(this._ellip(ctx, `${row.missing} MISSING`, rect.w - 20),
+                    rect.x + 10, missingY);
+                rows.push({ y: missingY, size: missingSize });
+                textSafe = textSafe && this._completionTextLaneSafe(rect, rows);
+                continue;
+            }
+            ctx.fillStyle = '#8fd0ff';
+            const countY = rect.y + rect.h * 0.51;
+            const countSize = this._fitFont(ctx, `${row.owned}/${row.total}`, rect.w - 20,
+                900, layout.phone ? layout.titleFontPx : 27, FONT,
+                Math.max(22, layout.titleFontPx - 10));
+            ctx.fillText(`${row.owned}/${row.total}`, rect.x + 10, countY);
+            rows.push({ y: countY, size: countSize });
+            const bx = rect.x + 10, by = rect.y + rect.h * 0.71, bw = rect.w - 20;
+            roundRectPath(ctx, bx, by, bw, Math.max(8, layout.smallFontPx * 0.45), 5);
+            ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fill();
+            if (row.basisPoints > 0) {
+                roundRectPath(ctx, bx, by, bw * row.basisPoints / 10000,
+                    Math.max(8, layout.smallFontPx * 0.45), 5);
+                ctx.fillStyle = '#8fd0ff'; ctx.fill();
+            }
+            ctx.fillStyle = 'rgba(225,232,242,0.68)';
+            const missingY = rect.y + rect.h * 0.90;
+            const missingSize = this._fitFont(ctx, `${row.missing} missing`, rect.w - 20,
+                700, layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 8));
+            ctx.fillText(this._ellip(ctx, `${row.missing} missing`, rect.w - 20),
+                rect.x + 10, missingY);
+            rows.push({ y: missingY, size: missingSize });
+            textSafe = textSafe && this._completionTextLaneSafe(rect, rows);
+        }
+        const disclosure = {
+            x: body.x, y: body.y + body.h - disclosureH,
+            w: body.w, h: disclosureH,
+        };
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd8b0';
+        const disclosureText = `ROUTE COUNTS OVERLAP; THEY DO NOT ADD TO ${model.total}.`;
+        const disclosureSize = this._fitFont(ctx, disclosureText, disclosure.w - 16, 800,
+            layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+        const disclosureY = disclosure.y + disclosure.h / 2;
+        ctx.fillText(this._ellip(ctx, disclosureText, disclosure.w - 16),
+            disclosure.x + disclosure.w / 2, disclosureY);
+        textSafe = textSafe && this._completionTextLaneSafe(disclosure,
+            [{ y: disclosureY, size: disclosureSize }]);
+        this._lastCollectionCompletionTextSafe = this._lastCollectionCompletionTextSafe
+            && textSafe;
+    }
+
+    _drawCompletionSets(ctx, state, model, layout) {
+        const perPage = layout.phone ? 3 : 5;
+        const pageCount = Math.max(1, Math.ceil(model.sets.length / perPage));
+        const requested = Number(state.collectionCompletion?.page);
+        const page = Math.max(1, Math.min(pageCount,
+            Number.isInteger(requested) ? requested : 1));
+        const entries = model.sets.slice((page - 1) * perPage, page * perPage);
+        const gap = layout.phone ? 8 : 12;
+        const cards = segmentedRects(layout.setGrid, perPage, gap);
+        let textSafe = true;
+        for (let i = 0; i < entries.length; i++) {
+            const set = entries[i], rect = cards[i];
+            this._panel(ctx, rect.x, rect.y, rect.w, rect.h,
+                set.complete ? 'rgba(24,58,35,0.74)' : 'rgba(255,255,255,0.035)',
+                `${set.color || '#c08bff'}88`);
+            const pad = 12, textW = rect.w - pad * 2;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = set.complete ? '#8ff29a' : '#fff';
+            this._fitFont(ctx, `${set.tracked ? 'TRACKED · ' : ''}${set.name}`,
+                textW, 800, layout.bodyFontPx, FONT, layout.phone ? 22 : 11);
+            ctx.fillText(this._ellip(ctx, `${set.tracked ? 'TRACKED · ' : ''}${set.name}`, textW),
+                rect.x + pad, rect.y + rect.h * 0.11);
+            ctx.textAlign = 'right'; ctx.fillStyle = set.color || '#c08bff';
+            ctx.font = `900 ${layout.bodyFontPx}px ${FONT}`;
+            ctx.fillText(`${set.owned}/${set.total}`, rect.x + rect.w - pad, rect.y + rect.h * 0.11);
+            const bx = rect.x + pad, by = rect.y + rect.h * 0.19, bw = textW;
+            roundRectPath(ctx, bx, by, bw, Math.max(8, layout.smallFontPx * 0.42), 5);
+            ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fill();
+            if (set.basisPoints > 0) {
+                roundRectPath(ctx, bx, by, bw * set.basisPoints / 10000,
+                    Math.max(8, layout.smallFontPx * 0.42), 5);
+                ctx.fillStyle = set.complete ? '#5fd36a' : set.color; ctx.fill();
+            }
+            const missing = set.missingItems || [];
+            ctx.textAlign = 'left'; ctx.font = `700 ${layout.smallFontPx}px ${FONT}`;
+            if (!missing.length) {
+                ctx.fillStyle = '#8ff29a';
+                ctx.fillText('ALL FIVE OWNED · FULL LOOK READY', rect.x + pad, rect.y + rect.h * 0.52);
+            } else {
+                const startY = rect.y + rect.h * 0.34;
+                const lineH = Math.max(layout.smallFontPx * 1.25,
+                    (rect.h * 0.60) / Math.max(1, missing.length));
+                const lastSafeCenter = rect.y + rect.h - pad - layout.smallFontPx / 2;
+                const maxRows = Math.max(1,
+                    Math.floor((lastSafeCenter - startY) / lineH) + 1);
+                const clipped = missing.length > maxRows;
+                const itemRows = clipped ? Math.max(1, maxRows - 1) : missing.length;
+                for (let mi = 0; mi < itemRows; mi++) {
+                    const item = missing[mi];
+                    const line = `${String(item.category).toUpperCase()} · ${item.name} — ${this._completionRouteLabel(item.routes)}`;
+                    ctx.fillStyle = item.routes.includes('blueprint') ? '#ffd86b' : 'rgba(225,232,242,0.76)';
+                    ctx.fillText(this._ellip(ctx, line, textW), rect.x + pad, startY + lineH * mi);
+                }
+                if (clipped) {
+                    const remaining = missing.length - itemRows;
+                    const summaryY = startY + lineH * itemRows;
+                    ctx.fillStyle = '#ffd8b0';
+                    ctx.fillText(this._ellip(ctx,
+                        `+${remaining} MORE MISSING · OPEN SOURCES FOR ROUTE COUNTS`, textW),
+                    rect.x + pad, summaryY);
+                    textSafe = textSafe && summaryY <= lastSafeCenter + 0.001;
+                } else if (missing.length) {
+                    textSafe = textSafe
+                        && startY + lineH * (missing.length - 1) <= lastSafeCenter + 0.001;
+                }
+            }
+        }
+        this._lastCollectionCompletionTextSafe = textSafe;
+        const hasPrev = page > 1, hasNext = page < pageCount;
+        this._button(ctx, layout.previousButton, '‹ PREV SETS', {
+            enabled: hasPrev, action: hasPrev ? 'collectionCompletionPage' : null,
+            arg: page - 1, fontSize: layout.buttonFontPx,
+            accessibleLabel: `Previous Collection Completion set page, ${page - 1}`,
+        });
+        this._button(ctx, layout.nextButton, 'NEXT SETS ›', {
+            enabled: hasNext, action: hasNext ? 'collectionCompletionPage' : null,
+            arg: page + 1, fontSize: layout.buttonFontPx,
+            accessibleLabel: `Next Collection Completion set page, ${page + 1}`,
+        });
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(225,232,242,0.74)';
+        ctx.font = `800 ${layout.bodyFontPx}px ${FONT}`;
+        ctx.fillText(`ALL ${model.sets.length} SETS · PAGE ${page}/${pageCount}`,
+            layout.pager.x + layout.pager.w / 2, layout.pager.y + layout.pager.h / 2);
+    }
+
+    _drawCompletionSources(ctx, model, layout) {
+        const body = layout.body;
+        const gap = layout.phone ? 8 : 12;
+        const compact = layout.phone && body.h * layout.cssScale < 150;
+        let textSafe = true;
+        const disclosureH = compact
+            ? Math.max(84, layout.smallFontPx * 3.2)
+            : Math.max(58, layout.smallFontPx * 3.2);
+        const grid = { x: body.x, y: body.y, w: body.w, h: body.h - disclosureH - gap };
+        const cols = 3, rows = 2;
+        const cardW = (grid.w - gap * (cols - 1)) / cols;
+        const cardH = (grid.h - gap) / rows;
+        for (let i = 0; i < model.sources.length; i++) {
+            const row = model.sources[i];
+            const rect = {
+                x: grid.x + (i % cols) * (cardW + gap),
+                y: grid.y + Math.floor(i / cols) * (cardH + gap),
+                w: cardW, h: cardH,
+            };
+            const color = row.id === 'blueprint' ? '#ffd86b'
+                : row.id === 'case' ? '#ff9a4a' : row.deterministic ? '#5fd36a' : '#8fd0ff';
+            this._panel(ctx, rect.x, rect.y, rect.w, rect.h,
+                'rgba(255,255,255,0.035)', `${color}55`);
+            const rows = [];
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const cx = rect.x + rect.w / 2;
+            if (compact) {
+                const title = `${row.label.toUpperCase()} · ${row.total}`;
+                const titleY = rect.y + rect.h * 0.31;
+                ctx.fillStyle = color;
+                const titleSize = this._fitFont(ctx, title, rect.w - 16, 800,
+                    layout.bodyFontPx, FONT, Math.max(20, layout.bodyFontPx - 12));
+                ctx.fillText(this._ellip(ctx, title, rect.w - 16), cx, titleY);
+                rows.push({ y: titleY, size: titleSize });
+                const meta = `${row.owned} OWNED · ${row.missing} MISSING`;
+                const metaY = rect.y + rect.h * 0.73;
+                ctx.fillStyle = 'rgba(225,232,242,0.74)';
+                const metaSize = this._fitFont(ctx, meta, rect.w - 16, 700,
+                    layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+                ctx.fillText(this._ellip(ctx, meta, rect.w - 16), cx, metaY);
+                rows.push({ y: metaY, size: metaSize });
+            } else {
+                const titleY = rect.y + rect.h * 0.22;
+                ctx.fillStyle = color;
+                const titleSize = this._fitFont(ctx, row.label.toUpperCase(), rect.w - 16,
+                    800, layout.bodyFontPx, FONT, Math.max(20, layout.bodyFontPx - 10));
+                ctx.fillText(this._ellip(ctx, row.label.toUpperCase(), rect.w - 16), cx, titleY);
+                rows.push({ y: titleY, size: titleSize });
+                const valueY = rect.y + rect.h * 0.54;
+                ctx.fillStyle = '#fff';
+                const valueSize = this._fitFont(ctx, String(row.total), rect.w - 16, 900,
+                    layout.phone ? layout.titleFontPx * 1.2 : 34,
+                    FONT, Math.max(24, layout.titleFontPx - 8));
+                ctx.fillText(String(row.total), cx, valueY);
+                rows.push({ y: valueY, size: valueSize });
+                const meta = `${row.owned} owned · ${row.missing} missing`;
+                const metaY = rect.y + rect.h * 0.80;
+                ctx.fillStyle = 'rgba(225,232,242,0.68)';
+                const metaSize = this._fitFont(ctx, meta, rect.w - 16, 700,
+                    layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 8));
+                ctx.fillText(this._ellip(ctx, meta, rect.w - 16), cx, metaY);
+                rows.push({ y: metaY, size: metaSize });
+            }
+            textSafe = textSafe && this._completionTextLaneSafe(rect, rows);
+        }
+        const disclosure = {
+            x: body.x, y: body.y + body.h - disclosureH,
+            w: body.w, h: disclosureH,
+        };
+        const disclosureRows = [];
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const routeText = `${model.deterministic.total} WITH A KNOWN ROUTE · ${model.caseOnly.total} RANDOM-ONLY · ${model.caseOnly.mythicTotal} RANDOM-ONLY MYTHICS`;
+        const routeY = disclosure.y + disclosure.h * 0.30;
+        ctx.fillStyle = '#ffd8b0';
+        const routeSize = this._fitFont(ctx, routeText, disclosure.w - 16, 800,
+            layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+        ctx.fillText(this._ellip(ctx, routeText, disclosure.w - 16),
+            disclosure.x + disclosure.w / 2, routeY);
+        disclosureRows.push({ y: routeY, size: routeSize });
+        ctx.fillStyle = 'rgba(225,232,242,0.72)';
+        const overlapText = `ROUTE COUNTS OVERLAP; THEY DO NOT ADD TO ${model.total}.`;
+        const overlapY = disclosure.y + disclosure.h * 0.74;
+        const overlapSize = this._fitFont(ctx, overlapText, disclosure.w - 16, 800,
+            layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+        ctx.fillText(this._ellip(ctx, overlapText, disclosure.w - 16),
+            disclosure.x + disclosure.w / 2, overlapY);
+        disclosureRows.push({ y: overlapY, size: overlapSize });
+        textSafe = textSafe && this._completionTextLaneSafe(disclosure, disclosureRows);
+        this._lastCollectionCompletionTextSafe = this._lastCollectionCompletionTextSafe
+            && textSafe;
+    }
+
+    _drawCompletionBlueprint(ctx, state, model, layout) {
+        const save = state.saveData;
+        const selected = model.selectedBlueprint || model.blueprints[0];
+        let selectorTextSafe = true;
+        for (let i = 0; i < model.blueprints.length; i++) {
+            const entry = model.blueprints[i], rect = layout.blueprintSelectors[i];
+            const active = entry.id === selected?.id;
+            this._panel(ctx, rect.x, rect.y, rect.w, rect.h,
+                active ? 'rgba(82,57,24,0.54)' : 'rgba(255,255,255,0.035)',
+                active ? 'rgba(255,216,107,0.82)' : 'rgba(255,255,255,0.12)');
+            const swatch = Math.max(54, Math.min(rect.h - 22, rect.w * 0.24));
+            const item = COSMETICS[entry.id];
+            this._cosmeticSwatch(ctx, item.category, item,
+                rect.x + 12, rect.y + (rect.h - swatch) / 2, swatch);
+            const tx = rect.x + swatch + 24;
+            const textW = rect.x + rect.w - 12 - tx;
+            const rows = [];
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = active ? '#ffd86b' : '#fff';
+            const nameY = rect.y + rect.h * 0.27;
+            const nameSize = this._fitFont(ctx, entry.name, textW, 800,
+                layout.bodyFontPx, FONT, Math.max(20, layout.bodyFontPx - 14));
+            ctx.fillText(this._ellip(ctx, entry.name, textW), tx, nameY);
+            rows.push({ y: nameY, size: nameSize });
+            ctx.fillStyle = rarityColor(entry.rarity);
+            const quote = layout.compactBlueprint
+                ? 'MYTHIC · 72K' : 'MYTHIC · GUARANTEED 72,000';
+            const quoteY = rect.y + rect.h * 0.53;
+            const quoteSize = this._fitFont(ctx, quote, textW, 800,
+                layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 12));
+            ctx.fillText(this._ellip(ctx, quote, textW), tx, quoteY);
+            rows.push({ y: quoteY, size: quoteSize });
+            ctx.fillStyle = entry.owned ? '#8ff29a' : 'rgba(225,232,242,0.68)';
+            const status = entry.owned ? 'OWNED'
+                : layout.compactBlueprint ? 'FORGE OR CASE' : 'BLUEPRINT OR RANDOM CASE';
+            const statusY = rect.y + rect.h * 0.78;
+            const statusSize = this._fitFont(ctx, status, textW, 700,
+                layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 12));
+            ctx.fillText(this._ellip(ctx, status, textW), tx, statusY);
+            rows.push({ y: statusY, size: statusSize });
+            selectorTextSafe = selectorTextSafe && textW > 0
+                && this._completionTextLaneSafe(rect, rows);
+            if (!active) this._hot(rect.x, rect.y, rect.w, rect.h,
+                'collectionCompletionBlueprint', entry.id,
+                `Show ${entry.name} Mythic Blueprint details`);
+        }
+        if (!selected) return;
+        const rect = layout.blueprintDetail;
+        this._panel(ctx, rect.x, rect.y, rect.w, rect.h,
+            'rgba(32,25,16,0.88)', 'rgba(255,216,107,0.34)');
+        const target = selected.royalCase;
+        const set = model.sets.find((candidate) => candidate.pieces
+            .some((piece) => piece.id === selected.id)) || null;
+        // UIStateBuilder has already monotonic-clock validated this snapshot;
+        // the renderer must not reintroduce adjustable wall-time authority.
+        const pending = state.blueprintConfirm?.id === selected.id;
+        const saving = state.blueprintPurchasePending?.id === selected.id;
+        const receipt = state.blueprintReceipt?.id === selected.id
+            ? state.blueprintReceipt : null;
+        const balanceAfter = Math.max(0, (save.totalCoins || 0) - selected.cost);
+        const shortfall = Math.max(0, selected.cost - (save.totalCoins || 0));
+        const walletLine = selected.owned ? 'OWNED · NO CHARGE'
+            : shortfall ? `WALLET ${(save.totalCoins || 0).toLocaleString()} · NEED ${shortfall.toLocaleString()} MORE`
+                : `WALLET AFTER ${balanceAfter.toLocaleString()} COINS`;
+        const chance = target.target?.nextNamedProbability || 0;
+        const chanceKind = target.pity?.forcedNext ? 'FORCED RARE+ NEXT' : 'ORDINARY NEXT OPEN';
+        const setDelta = receipt?.ok && receipt.setId
+            ? ` · ${receipt.setName || receipt.setId} ${receipt.setBefore}/5→${receipt.setAfter}/5` : '';
+        let receiptLine = walletLine;
+        if (receipt?.ok) {
+            receiptLine = `FORGED · -${receipt.cost.toLocaleString()} · WALLET ${receipt.balanceBefore.toLocaleString()}→${receipt.balanceAfter.toLocaleString()} · COLLECTION ${receipt.collectionBefore}→${receipt.collectionAfter}${setDelta}`;
+        } else if (receipt?.reason === 'external-save-changed') {
+            receiptLine = 'SAVE CHANGED ELSEWHERE · NOT CHARGED · RELOAD TO CONTINUE';
+        } else if (receipt?.reason === 'persistence-unavailable') {
+            receiptLine = 'SAVE STORAGE UNAVAILABLE · NOT CHARGED · RESTORE ACCESS AND RETRY';
+        } else if (receipt?.reason === 'persistence-failed') {
+            receiptLine = 'SAVE FAILED · NOT CHARGED · CHECK STORAGE AND RETRY';
+        } else if (receipt?.reason === 'transaction-busy') {
+            receiptLine = 'ANOTHER TAB IS SAVING · NOT CHARGED · TRY AGAIN';
+        } else if (receipt?.reason === 'transaction-lock-unavailable') {
+            receiptLine = 'SAFE SAVE LOCK UNAVAILABLE · NOT CHARGED · UPDATE BROWSER';
+        } else if (receipt?.reason === 'transaction-lock-failed') {
+            receiptLine = 'SAFE SAVE LOCK FAILED · NOT CHARGED · TRY AGAIN';
+        } else if (receipt && !receipt.ok && receipt.reason !== 'insufficient-coins') {
+            receiptLine = receipt.reason === 'already-owned' || receipt.reason === 'replay'
+                ? 'ALREADY OWNED · NO CHARGE'
+                : 'PURCHASE NOT COMPLETED · CHECK SAVE AND TRY AGAIN';
+        }
+        const copy = layout.blueprintCopy || {
+            x: rect.x, y: rect.y, w: rect.w,
+            h: Math.max(1, layout.caseTruthButton.y - (layout.gap || 8) - rect.y),
+        };
+        const pad = 18, textX = copy.x + pad, textW = copy.w - pad * 2;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        if (layout.compactBlueprint) {
+            const compactLines = [
+                `GUARANTEED · KNOWN PRICE · ${selected.name.toUpperCase()}`,
+                `${set?.name || 'MYTHIC'} ${set ? `${set.owned}/${set.total}` : ''} · 72,000 = 80 ROYAL COSMETIC CASE ENTRY FEES`,
+                receipt
+                    ? receiptLine
+                    : `${walletLine} · MYTHIC 1.5% · ITEM BRANCH ${(CASE_ITEM_REWARD_CHANCE * 100).toFixed(0)}%`,
+                'RARE+ PITY IS NOT A MYTHIC GUARANTEE · CASES STAY RANDOM WITH SIDE ITEMS',
+            ];
+            const compactColors = ['#ffd86b', set?.color || '#c08bff',
+                receipt?.ok ? '#8ff29a' : receipt && !receipt.ok ? '#ffb0a0'
+                    : shortfall ? '#ffb0a0' : '#fff', '#ffb0a0'];
+            for (let index = 0; index < compactLines.length; index++) {
+                const y = copy.y + copy.h * ((index + 0.5) / compactLines.length);
+                ctx.fillStyle = compactColors[index];
+                this._fitFont(ctx, compactLines[index], textW, index === 0 ? 800 : 700,
+                    layout.smallFontPx, FONT, Math.max(28, layout.smallFontPx - 8));
+                ctx.fillText(this._ellip(ctx, compactLines[index], textW), textX, y);
+            }
+            this._lastCollectionCompletionTextSafe = selectorTextSafe
+                && copy.y + copy.h
+                    <= layout.caseTruthButton.y - (layout.gap || 8) + 0.001;
+        } else {
+            const rowY = (index) => copy.y + layout.smallFontPx / 2 + 4
+                + index * Math.max(1,
+                    (copy.h - layout.smallFontPx - 8) / 8);
+            ctx.fillStyle = '#ffd86b'; ctx.font = `800 ${layout.smallFontPx}px ${FONT}`;
+            ctx.fillText('GUARANTEED · KNOWN PRICE · EARNED COINS', textX, rowY(0));
+            ctx.fillStyle = '#fff';
+            ctx.font = `900 ${layout.phone ? layout.titleFontPx : 30}px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, selected.name, textW), textX, rowY(1));
+            ctx.fillStyle = set?.color || '#c08bff'; ctx.font = `800 ${layout.bodyFontPx}px ${FONT}`;
+            ctx.fillText(set ? `${set.name} · ${set.owned}/${set.total} OWNED` : 'MYTHIC COLLECTION ITEM',
+                textX, rowY(2));
+            ctx.fillStyle = '#ffd86b';
+            ctx.fillText('72,000 COINS · EQUALS 80 ROYAL COSMETIC CASE ENTRY FEES',
+                textX, rowY(3));
+            ctx.fillStyle = receipt?.ok ? '#8ff29a'
+                : receipt && !receipt.ok ? '#ffb0a0'
+                    : selected.owned ? '#8ff29a' : shortfall ? '#ffb0a0' : '#fff';
+            ctx.font = `800 ${layout.bodyFontPx}px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, receiptLine, textW), textX, rowY(4));
+            ctx.fillStyle = 'rgba(225,232,242,0.76)';
+            ctx.font = `700 ${layout.smallFontPx}px ${FONT}`;
+            ctx.fillText(`ALSO IN ROYAL CASES · MYTHIC 1.5% · ITEM BRANCH ${(CASE_ITEM_REWARD_CHANCE * 100).toFixed(0)}%`,
+                textX, rowY(5));
+            ctx.fillText(`${chanceKind} TARGET CHANCE ${(chance * 100).toFixed(chance * 100 < 1 ? 4 : 2)}% · SELECTION POOL ${target.target?.selectionPoolSize || 0}`,
+                textX, rowY(6));
+            ctx.fillStyle = '#ffb0a0';
+            ctx.fillText('RARE+ PITY IS NOT A MYTHIC GUARANTEE.', textX, rowY(7));
+            ctx.fillStyle = 'rgba(225,232,242,0.66)';
+            ctx.fillText('Known-price certainty; cases also award side items, coins and Vigil XP.',
+                textX, rowY(8));
+            this._lastCollectionCompletionTextSafe = selectorTextSafe
+                && rowY(8) + layout.smallFontPx / 2
+                    <= layout.caseTruthButton.y - (layout.gap || 8) + 0.001;
+        }
+
+        this._button(ctx, layout.caseTruthButton, pending ? 'CANCEL CONFIRM' : 'ROYAL CASE TRUTH', {
+            action: pending ? 'cancelCollectionBlueprint' : 'collectionCompletionSection',
+            arg: pending ? selected.id : 'case',
+            accent: pending ? 'rgba(105,48,48,0.95)' : 'rgba(82,58,28,0.95)',
+            fontSize: layout.buttonFontPx,
+            accessibleLabel: pending ? `Cancel ${selected.name} Blueprint confirmation`
+                : 'Open Royal Cosmetic Case truth',
+        });
+        let purchaseLabel = `FORGE BLUEPRINT · ${selected.cost.toLocaleString()} COINS`;
+        let enabled = !saving && !selected.owned && selected.affordable;
+        if (saving) purchaseLabel = 'SECURING SAVE ACROSS TABS…';
+        else if (selected.owned) purchaseLabel = 'OWNED · EQUIP FROM COLLECTION';
+        else if (!selected.affordable) purchaseLabel = `NEED ${shortfall.toLocaleString()} MORE COINS`;
+        else if (pending) purchaseLabel = `CONFIRM -${selected.cost.toLocaleString()} · ${state.blueprintConfirm.seconds || 3}S`;
+        this._button(ctx, layout.purchaseButton, purchaseLabel, {
+            enabled,
+            action: enabled ? 'purchaseCollectionBlueprint' : null,
+            arg: selected.id,
+            primary: pending,
+            accent: pending ? '#2e6b3f' : 'rgba(92,60,25,0.96)',
+            fontSize: layout.buttonFontPx,
+            accessibleLabel: saving ? `Securing ${selected.name} Blueprint purchase across game tabs`
+                : pending
+                ? `Confirm ${selected.name} Blueprint for ${selected.cost} coins`
+                : `Forge ${selected.name} Blueprint for ${selected.cost} coins`,
+        });
+    }
+
+    _drawCompletionCase(ctx, state, model, layout) {
+        const selected = model.selectedBlueprint || model.blueprints[0];
+        const truth = selected?.royalCase || caseTargetSnapshot({
+            caseType: 'royalCosmetic', targetId: selected?.id,
+            ownedIds: state.saveData.cosmetics.unlocked,
+            pityCount: state.saveData.casePity?.royalCosmetic || 0,
+        });
+        this._lastCollectionCompletionCaseTruth = truth;
+        const body = layout.body, gap = layout.phone ? 8 : 12;
+        const compact = layout.phone && body.h * layout.cssScale < 150;
+        let textSafe = true;
+        const topH = compact
+            ? Math.max(88, layout.smallFontPx * 2.45)
+            : Math.max(80, body.h * 0.25);
+        const topCards = segmentedRects({ x: body.x, y: body.y, w: body.w, h: topH }, 4, gap);
+        const top = [
+            ['ENTRY FEE', `${truth.cost.toLocaleString()} COINS`, '#ffd86b'],
+            ['ROYAL POOL', `${truth.poolTotal} ITEMS`, '#c08bff'],
+            ['ITEM BRANCH', `${(truth.branches.item * 100).toFixed(0)}%`, '#5fd36a'],
+            ['RARE+ PITY', `${truth.pity.remaining} OPEN${truth.pity.remaining === 1 ? '' : 'S'}`, '#ff9a4a'],
+        ];
+        for (let i = 0; i < topCards.length; i++) {
+            const rect = topCards[i], data = top[i];
+            this._panel(ctx, rect.x, rect.y, rect.w, rect.h,
+                'rgba(255,255,255,0.035)', `${data[2]}55`);
+            const rows = [];
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const cx = rect.x + rect.w / 2;
+            const labelY = rect.y + rect.h * (compact ? 0.24 : 0.31);
+            ctx.fillStyle = data[2];
+            const labelSize = this._fitFont(ctx, data[0], rect.w - 14, 800,
+                layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+            ctx.fillText(this._ellip(ctx, data[0], rect.w - 14), cx, labelY);
+            rows.push({ y: labelY, size: labelSize });
+            const valueY = rect.y + rect.h * (compact ? 0.73 : 0.67);
+            ctx.fillStyle = '#fff';
+            const valueSize = this._fitFont(ctx, data[1], rect.w - 14, 900,
+                layout.bodyFontPx, FONT, Math.max(22, layout.bodyFontPx - 12));
+            ctx.fillText(this._ellip(ctx, data[1], rect.w - 14), cx, valueY);
+            rows.push({ y: valueY, size: valueSize });
+            textSafe = textSafe && this._completionTextLaneSafe(rect, rows);
+        }
+        const rarityY = body.y + topH + gap;
+        const disclosureH = compact
+            ? Math.max(128, layout.smallFontPx * 4)
+            : Math.max(76, layout.smallFontPx * 5);
+        const rarityH = Math.max(1, body.y + body.h - disclosureH - gap - rarityY);
+        const rarityCards = segmentedRects({ x: body.x, y: rarityY, w: body.w, h: rarityH },
+            Math.max(1, truth.rarities.length), gap);
+        for (let i = 0; i < truth.rarities.length; i++) {
+            const row = truth.rarities[i], rect = rarityCards[i];
+            this._panel(ctx, rect.x, rect.y, rect.w, rect.h,
+                'rgba(255,255,255,0.03)', `${rarityColor(row.id)}66`);
+            const rows = [];
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const cx = rect.x + rect.w / 2;
+            const rarityLabel = `${rarityName(row.id).toUpperCase()} ${(row.odds * 100).toFixed(row.odds * 100 % 1 ? 1 : 0)}%`;
+            const rarityLabelY = rect.y + rect.h * (compact ? 0.28 : 0.20);
+            ctx.fillStyle = rarityColor(row.id);
+            const rarityLabelSize = this._fitFont(ctx, rarityLabel, rect.w - 12, 800,
+                layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 12));
+            ctx.fillText(this._ellip(ctx, rarityLabel, rect.w - 12), cx, rarityLabelY);
+            rows.push({ y: rarityLabelY, size: rarityLabelSize });
+            if (compact) {
+                const summary = `${row.total} TOTAL · ${row.unowned} LEFT`;
+                const summaryY = rect.y + rect.h * 0.72;
+                ctx.fillStyle = 'rgba(235,241,249,0.84)';
+                const summarySize = this._fitFont(ctx, summary, rect.w - 12, 800,
+                    layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 12));
+                ctx.fillText(this._ellip(ctx, summary, rect.w - 12), cx, summaryY);
+                rows.push({ y: summaryY, size: summarySize });
+            } else {
+                const totalY = rect.y + rect.h * 0.47;
+                ctx.fillStyle = '#fff';
+                const totalSize = this._fitFont(ctx, `${row.total} TOTAL`, rect.w - 12,
+                    900, layout.bodyFontPx, FONT, Math.max(22, layout.bodyFontPx - 12));
+                ctx.fillText(`${row.total} TOTAL`, cx, totalY);
+                rows.push({ y: totalY, size: totalSize });
+                const ownedText = `${row.owned} owned · ${row.unowned} unowned`;
+                const ownedY = rect.y + rect.h * 0.72;
+                ctx.fillStyle = 'rgba(225,232,242,0.70)';
+                const ownedSize = this._fitFont(ctx, ownedText, rect.w - 12, 700,
+                    layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+                ctx.fillText(this._ellip(ctx, ownedText, rect.w - 12), cx, ownedY);
+                rows.push({ y: ownedY, size: ownedSize });
+            }
+            if (truth.pity.forcedNext && !compact) {
+                ctx.fillStyle = '#ffd86b';
+                const forcedText = `forced weight ${(row.forcedOdds * 100).toFixed(2)}%`;
+                const forcedY = rect.y + rect.h * 0.90;
+                const forcedSize = this._fitFont(ctx, forcedText, rect.w - 12, 700,
+                    layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 10));
+                ctx.fillText(this._ellip(ctx, forcedText, rect.w - 12), cx, forcedY);
+                rows.push({ y: forcedY, size: forcedSize });
+            }
+            textSafe = textSafe && this._completionTextLaneSafe(rect, rows);
+        }
+        const targetChance = truth.target?.nextNamedProbability || 0;
+        const targetLabel = truth.pity.forcedNext ? 'FORCED RARE+ NEXT' : 'ORDINARY NEXT OPEN';
+        const disclosure = {
+            x: body.x, y: body.y + body.h - disclosureH,
+            w: body.w, h: disclosureH,
+        };
+        const disclosureRows = [];
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const branchText = compact
+            ? `BRANCHES · ITEM 82% · COINS ${(truth.branches.coin * 100).toFixed(1)}% · VIGIL XP ${(truth.branches.battlePassXp * 100).toFixed(1)}%`
+            : `BRANCHES · ITEM 82% · COINS ${(truth.branches.coin * 100).toFixed(1)}% · VIGIL XP ${(truth.branches.battlePassXp * 100).toFixed(1)}% · UNOWNED FIRST WITHIN RARITY`;
+        const branchY = disclosure.y + disclosure.h * 0.17;
+        ctx.fillStyle = '#ffd8b0';
+        const branchSize = this._fitFont(ctx, branchText, disclosure.w - 16, 800,
+            layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 12));
+        ctx.fillText(this._ellip(ctx, branchText, disclosure.w - 16),
+            disclosure.x + disclosure.w / 2, branchY);
+        disclosureRows.push({ y: branchY, size: branchSize });
+        ctx.fillStyle = '#ffb0a0';
+        const targetText = `TARGET ${selected?.name || 'NONE'} · ${targetLabel} ${(targetChance * 100).toFixed(targetChance * 100 < 1 ? 4 : 2)}% · RARE+ PITY IS NOT A MYTHIC GUARANTEE`;
+        const targetY = disclosure.y + disclosure.h * 0.50;
+        const targetSize = this._fitFont(ctx, targetText, disclosure.w - 16, 800,
+            layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 12));
+        ctx.fillText(this._ellip(ctx, targetText, disclosure.w - 16),
+            disclosure.x + disclosure.w / 2, targetY);
+        disclosureRows.push({ y: targetY, size: targetSize });
+        ctx.fillStyle = 'rgba(225,232,242,0.68)';
+        const duplicateText = compact
+            ? 'UNOWNED FIRST · DUPLICATES BECOME COIN DUST AFTER THAT RARITY IS COLLECTED'
+            : 'Duplicates convert to rarity coin dust only after that rolled rarity is collected.';
+        const duplicateY = disclosure.y + disclosure.h * 0.83;
+        const duplicateSize = this._fitFont(ctx, duplicateText, disclosure.w - 16, 700,
+            layout.smallFontPx, FONT, Math.max(20, layout.smallFontPx - 12));
+        ctx.fillText(this._ellip(ctx, duplicateText, disclosure.w - 16),
+            disclosure.x + disclosure.w / 2, duplicateY);
+        disclosureRows.push({ y: duplicateY, size: duplicateSize });
+        textSafe = textSafe && this._completionTextLaneSafe(disclosure, disclosureRows);
+        this._lastCollectionCompletionTextSafe = this._lastCollectionCompletionTextSafe
+            && textSafe;
+    }
+
+    _drawCollectionCompletion(ctx, state, content, options = {}) {
+        const section = state.collectionCompletion?.section || 'overview';
+        const layout = computePhoneCollectionCompletionLayout(content, {
+            cssScale: options.cssScale,
+            phone: options.phone === true,
+            section,
+        });
+        const model = buildCosmeticCompletionSnapshot({
+            ownedIds: state.saveData.cosmetics.unlocked,
+            blueprintClaims: state.saveData.cosmetics.blueprintClaims,
+            pursuitSetId: state.saveData.cosmetics.pursuitSetId,
+            selectedBlueprintId: state.collectionCompletion?.blueprintId,
+            coinBalance: state.saveData.totalCoins,
+            royalCosmeticPityCount: state.saveData.casePity?.royalCosmetic || 0,
+        });
+        this._lastCollectionCompletionRendered = true;
+        this._lastCollectionCompletionSection = section;
+        this._lastCollectionCompletionModel = model;
+        this._lastCollectionCompletionTextSafe = true;
+        this._lastCollectionCompletionCaseTruth = null;
+        this._panel(ctx, content.x, content.y, content.w, content.h,
+            'rgba(12,18,25,0.92)', 'rgba(95,211,106,0.30)');
+        if (options.phone === true && !layout.touchSafe) {
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffd6d6'; ctx.font = `800 ${layout.titleFontPx}px ${FONT}`;
+            ctx.fillText('Rotate or enlarge the window to open Collection Completion.',
+                content.x + content.w / 2, content.y + content.h / 2);
+            return;
+        }
+        const startHotspot = this.hotspots.length;
+        this._button(ctx, layout.backButton, 'BACK', {
+            action: 'collectionCompletionBack',
+            accent: 'rgba(34,66,56,0.96)', fontSize: layout.buttonFontPx,
+            accessibleLabel: section === 'overview'
+                ? 'Back to Character Collection' : 'Back within Collection Completion',
+        });
+        const completeSets = model.sets.filter((set) => set.complete).length;
+        const titleLeft = layout.backButton.x + layout.backButton.w + 20;
+        const titleW = Math.max(80, layout.header.x + layout.header.w - titleLeft - 10);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#bff5c4';
+        this._fitFont(ctx,
+            `COLLECTION COMPLETION · ${model.owned}/${model.total} · SETS ${completeSets}/${model.sets.length}`,
+            titleW, 900, layout.titleFontPx, FONT, options.phone ? 24 : 12);
+        ctx.fillText(`COLLECTION COMPLETION · ${model.owned}/${model.total} · SETS ${completeSets}/${model.sets.length}`,
+            titleLeft + titleW / 2, layout.header.y + layout.header.h / 2);
+        const tabs = [
+            { id: 'overview', label: 'OVERVIEW' },
+            { id: 'sets', label: 'SETS' },
+            { id: 'sources', label: 'SOURCES' },
+            { id: 'blueprint', label: 'BLUEPRINTS' },
+            { id: 'case', label: 'CASE TRUTH' },
+        ];
+        this._segmentedRow(ctx, tabs, section,
+            layout.tabs.x, layout.tabs.y, layout.tabs.w, layout.tabs.h,
+            'collectionCompletionSection', '#5fd36a', {
+                gap: options.phone ? 8 : 12,
+                radius: options.phone ? 12 : 9,
+                fontSize: layout.buttonFontPx,
+                fit: true,
+                fontFloor: options.phone ? 22 : 10,
+            });
+
+        if (!model.valid) {
+            ctx.fillStyle = '#ffd6d6'; ctx.font = `800 ${layout.bodyFontPx}px ${FONT}`;
+            ctx.fillText('Collection Completion is unavailable. Catalog truth failed closed.',
+                layout.body.x + layout.body.w / 2, layout.body.y + layout.body.h / 2);
+        } else if (section === 'sets') this._drawCompletionSets(ctx, state, model, layout);
+        else if (section === 'sources') this._drawCompletionSources(ctx, model, layout);
+        else if (section === 'blueprint') this._drawCompletionBlueprint(ctx, state, model, layout);
+        else if (section === 'case') this._drawCompletionCase(ctx, state, model, layout);
+        else this._drawCompletionOverview(ctx, model, layout);
+
+        const completionHotspots = this.hotspots.slice(startHotspot);
+        const actualMin = completionHotspots.length
+            ? Math.min(...completionHotspots.map((hotspot) =>
+                Math.min(hotspot.w, hotspot.h) * layout.cssScale)) : 0;
+        const contained = completionHotspots.every((hotspot) =>
+            hotspot.x >= content.x && hotspot.y >= content.y
+            && hotspot.x + hotspot.w <= content.x + content.w + 0.001
+            && hotspot.y + hotspot.h <= content.y + content.h + 0.001);
+        const nonOverlapping = completionHotspots.every((hotspot, index) => completionHotspots
+            .slice(index + 1).every((other) => hotspot.x + hotspot.w <= other.x + 0.001
+                || other.x + other.w <= hotspot.x + 0.001
+                || hotspot.y + hotspot.h <= other.y + 0.001
+                || other.y + other.h <= hotspot.y + 0.001));
+        this._lastCollectionCompletionMinTouchCss = Math.round(actualMin * 10) / 10;
+        this._lastCollectionCompletionTouchSafe = options.phone !== true
+            || (actualMin >= 44 && contained && nonOverlapping);
+        if (options.phone === true) {
+            this._lastCharacterPhonePane = 'completion';
+            this._lastCharacterPhonePaneTouchSafe = this._lastCollectionCompletionTouchSafe;
+            this._lastCharacterPhonePaneMinTouchCss = this._lastCollectionCompletionMinTouchCss;
+        }
+    }
+
     _drawPhoneCharacter(ctx, state, c) {
         const save = state.saveData;
         const cssScale = (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH;
+        if (state.collectionCompletion?.open === true) {
+            this._drawCollectionCompletion(ctx, state, c, { phone: true, cssScale });
+            return;
+        }
         const pane = state.characterPhonePane === 'rites' ? 'rites' : 'collection';
         this._lastCharacterPhonePane = pane;
         if (pane === 'rites') {
@@ -3803,6 +4746,12 @@ export class MenuRenderer {
             ctx.fillText(this._ellip(ctx, slotLabel, textW), tx,
                 rect.y + rect.h / 2);
         }
+        this._button(ctx, layout.completionButton, 'COMPLETION', {
+            action: 'openCollectionCompletion', primary: false,
+            accent: 'rgba(36,86,70,0.96)',
+            fontSize: layout.buttonFontPx,
+            accessibleLabel: 'Open Collection Completion overview',
+        });
         this._button(ctx, layout.attuneButton, 'HERO RITES', {
             action: 'characterPhonePane', arg: 'rites', primary: false, accent: 'rgba(88,48,118,0.95)',
             fontSize: layout.buttonFontPx,
@@ -3955,6 +4904,11 @@ export class MenuRenderer {
             this.renderer.cssHeight ?? INTERNAL_HEIGHT,
         )) {
             this._drawPhoneCharacter(ctx, state, c);
+            return;
+        }
+        if (state.collectionCompletion?.open === true) {
+            const cssScale = (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH;
+            this._drawCollectionCompletion(ctx, state, c, { phone: false, cssScale });
             return;
         }
         const save = state.saveData;

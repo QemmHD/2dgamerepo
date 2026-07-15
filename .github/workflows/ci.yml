@@ -113,6 +113,15 @@ jobs:
       - name: Validate cosmetic collection reachability and source truth
         run: node tools/validate-cosmetic-collection.js
 
+      - name: Validate Collection Completion truth and case disclosures
+        run: node tools/validate-collection-completion.js
+
+      - name: Validate atomic Mythic Blueprint purchases
+        run: node tools/validate-blueprint-purchase.js
+
+      - name: Validate Collection Completion session flow
+        run: node tools/validate-collection-completion-flow.js
+
       - name: Validate house-safe enemy navigation
         run: node tools/validate-navigation.js
 
@@ -609,6 +618,22 @@ jobs:
             && grep -q 'data-qa-error-keys="collectioncat,collectionpage,collectionqa,pursuit"' "$INVALID_COLLECTION_DOM" || {
               echo 'FAIL: invalid Collection receipt controls did not fail closed'; exit 1;
             }
+
+          INVALID_COMPLETION_DOM="/tmp/harness-invalid-completion-controls.html"
+          INVALID_COMPLETION_PROFILE=$(mktemp -d)
+          timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+            --disable-background-networking --disable-component-update \
+            --force-device-scale-factor=1 --window-size=1280,720 \
+            --virtual-time-budget=7000 --user-data-dir="$INVALID_COMPLETION_PROFILE" \
+            --dump-dom \
+            "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=character&completion=bogus&blueprint=bogus&completionfixture=bogus&wallet=-1&blueprintbuy=2" \
+            > "$INVALID_COMPLETION_DOM"
+          INVALID_COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_COMPLETION_DOM" | head -1)
+          echo "Invalid Completion controls: $INVALID_COMPLETION_TITLE"
+          echo "$INVALID_COMPLETION_TITLE" | grep -q 'DONE EXC:6 ' \
+            && grep -q 'data-qa-error-keys="blueprint,blueprintbuy,completion,completionfixture,completionqa,wallet"' "$INVALID_COMPLETION_DOM" || {
+              echo 'FAIL: invalid Completion receipt controls did not fail closed'; exit 1;
+            }
           # Durable Collection Growth I-A visual receipts. These use the same
           # production Canvas/harness path as the exception matrix above and are
           # uploaded for human layout review; deterministic geometry/source truth
@@ -806,6 +831,175 @@ jobs:
           [ "$(sha256sum "$COLLECTION_IB_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 5 ] || {
             echo 'FAIL: Collection I-B visual receipts were not five distinct frames'; exit 1;
           }
+
+          # Collection Completion Truth: durable human receipts for fresh-profile
+          # catalog truth, the deterministic Mythic Blueprint route, Royal Case
+          # disclosure, and the exact production two-press purchase transition.
+          COMPLETION_RECEIPTS=/tmp/collection-completion-truth
+          rm -rf "$COMPLETION_RECEIPTS"
+          mkdir -p "$COMPLETION_RECEIPTS"
+
+          capture_completion_truth() {
+            COMPLETION_NAME="$1"
+            COMPLETION_WINDOW="$2"
+            COMPLETION_QUERY="$3"
+            COMPLETION_KIND="$4"
+            COMPLETION_DOM="/tmp/collection-completion-${COMPLETION_NAME}.html"
+            COMPLETION_TARGET_WIDTH="${COMPLETION_WINDOW%,*}"
+            COMPLETION_TARGET_HEIGHT="${COMPLETION_WINDOW#*,}"
+            COMPLETION_WINDOW_WIDTH="$COMPLETION_TARGET_WIDTH"
+            COMPLETION_WINDOW_HEIGHT="$COMPLETION_TARGET_HEIGHT"
+            COMPLETION_ATTEMPTS=3
+            for ((COMPLETION_ATTEMPT=1; COMPLETION_ATTEMPT<=COMPLETION_ATTEMPTS; COMPLETION_ATTEMPT++)); do
+              COMPLETION_PROFILE=$(mktemp -d)
+              COMPLETION_WINDOW="${COMPLETION_WINDOW_WIDTH},${COMPLETION_WINDOW_HEIGHT}"
+              timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+                --autoplay-policy=no-user-gesture-required \
+                --disable-background-networking --disable-component-update \
+                --force-device-scale-factor=1 --window-size="$COMPLETION_WINDOW" \
+                --virtual-time-budget=7000 --user-data-dir="$COMPLETION_PROFILE" \
+                --dump-dom \
+                "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}" \
+                > "$COMPLETION_DOM"
+              COMPLETION_VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$COMPLETION_DOM" | head -1 | cut -d'"' -f2)
+              COMPLETION_VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$COMPLETION_DOM" | head -1 | cut -d'"' -f2)
+              if [[ ! "$COMPLETION_VIEWPORT_WIDTH" =~ ^[0-9]+$ || ! "$COMPLETION_VIEWPORT_HEIGHT" =~ ^[0-9]+$ ]]; then
+                echo 'FAIL: Completion capture omitted numeric viewport metrics'; exit 1
+              fi
+              if (( COMPLETION_VIEWPORT_WIDTH == COMPLETION_TARGET_WIDTH && COMPLETION_VIEWPORT_HEIGHT == COMPLETION_TARGET_HEIGHT )); then break; fi
+              COMPLETION_WINDOW_WIDTH=$((COMPLETION_WINDOW_WIDTH + COMPLETION_TARGET_WIDTH - COMPLETION_VIEWPORT_WIDTH))
+              COMPLETION_WINDOW_HEIGHT=$((COMPLETION_WINDOW_HEIGHT + COMPLETION_TARGET_HEIGHT - COMPLETION_VIEWPORT_HEIGHT))
+            done
+            COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$COMPLETION_DOM" | head -1)
+            echo "Collection Completion ${COMPLETION_NAME}: $COMPLETION_TITLE"
+            echo "$COMPLETION_TITLE" | grep -q 'DONE EXC:0 ' \
+              && grep -q 'data-qa-ready="1"' "$COMPLETION_DOM" \
+              && grep -q "data-qa-output=\"${COMPLETION_NAME}.png\"" "$COMPLETION_DOM" \
+              && grep -q 'data-qa-completion-open="true"' "$COMPLETION_DOM" \
+              && grep -q 'data-qa-completion-rendered="true"' "$COMPLETION_DOM" \
+              && grep -q 'data-qa-completion-text-safe="true"' "$COMPLETION_DOM" \
+              && grep -q "data-qa-viewport-width=\"${COMPLETION_TARGET_WIDTH}\"" "$COMPLETION_DOM" \
+              && grep -q "data-qa-viewport-height=\"${COMPLETION_TARGET_HEIGHT}\"" "$COMPLETION_DOM" \
+              && grep -q "data-qa-canvas-backing=\"${COMPLETION_TARGET_WIDTH}x${COMPLETION_TARGET_HEIGHT}\"" "$COMPLETION_DOM" \
+              && grep -q 'data-qa-completion-total="103"' "$COMPLETION_DOM" \
+              && grep -q 'data-qa-completion-deterministic="85"' "$COMPLETION_DOM" \
+              && grep -q 'data-qa-completion-case-only="18"' "$COMPLETION_DOM" \
+              && grep -q 'data-qa-completion-case-only-mythic="0"' "$COMPLETION_DOM" \
+              && grep -q 'data-qa-completion-sources="starter:13,boutique:44,blueprint:2,case:61,achievement:19,vigil:10"' "$COMPLETION_DOM" || {
+                echo "FAIL: ${COMPLETION_NAME} did not finish with canonical Completion truth"; exit 1;
+              }
+            if [[ "$COMPLETION_KIND" == *-touch || "$COMPLETION_KIND" == *-compact ]]; then
+              grep -q 'data-qa-input="touch"' "$COMPLETION_DOM" \
+                && grep -q 'data-qa-completion-touch-safe="true"' "$COMPLETION_DOM" \
+                && grep -q 'data-qa-character-hotspots-touch-safe="true"' "$COMPLETION_DOM" \
+                && grep -q "data-qa-viewport-width=\"${COMPLETION_TARGET_WIDTH}\"" "$COMPLETION_DOM" \
+                && grep -q "data-qa-viewport-height=\"${COMPLETION_TARGET_HEIGHT}\"" "$COMPLETION_DOM" \
+                && grep -q "data-qa-canvas-backing=\"${COMPLETION_TARGET_WIDTH}x${COMPLETION_TARGET_HEIGHT}\"" "$COMPLETION_DOM" || {
+                  echo "FAIL: ${COMPLETION_NAME} is not an exact touch-safe phone receipt"; exit 1;
+                }
+            fi
+            case "$COMPLETION_KIND" in
+              overview-keyboard)
+                grep -q 'data-qa-completion-section="overview"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-rendered-section="overview"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-owned="13"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-sets-complete="0"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-categories="fur:3/18,cloak:2/20,hat:3/22,aura:2/21,trail:3/22"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-focus="collectionCompletionSection:sources#0"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-focus-visible="true"' "$COMPLETION_DOM" || {
+                    echo 'FAIL: desktop Overview receipt lost fresh-profile or focus truth'; exit 1;
+                  }
+                ;;
+              overview-touch|overview-compact)
+                grep -q 'data-qa-completion-section="overview"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-owned="13"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-sets-complete="0"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-reduced="true"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-high-contrast="true"' "$COMPLETION_DOM" || {
+                    echo 'FAIL: phone Overview receipt lost fresh-profile accessibility truth'; exit 1;
+                  }
+                ;;
+              sources-compact)
+                grep -q 'data-qa-completion-section="sources"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-owned="13"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-sources="starter:13,boutique:44,blueprint:2,case:61,achievement:19,vigil:10"' "$COMPLETION_DOM" || {
+                    echo 'FAIL: compact Sources receipt lost route authority'; exit 1;
+                  }
+                ;;
+              blueprint-keyboard|blueprint-touch|blueprint-compact)
+                grep -q 'data-qa-completion-section="blueprint"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-blueprint-id="aura_requiem"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-blueprint-claims=""' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-blueprint-receipt=""' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-gravebell="4/5"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-owned="17"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-wallet="80000"' "$COMPLETION_DOM" || {
+                    echo 'FAIL: Requiem detail receipt lost its exact pre-purchase state'; exit 1;
+                  }
+                ;;
+              case-keyboard|case-compact)
+                grep -q 'data-qa-completion-section="case"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-blueprint-id="aura_requiem"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-gravebell="4/5"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-wallet="80000"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-case-truth="59:8200:1080:720:150:10:0:false"' "$COMPLETION_DOM" || {
+                    echo 'FAIL: Royal Case Truth receipt lost its selected target context'; exit 1;
+                  }
+                ;;
+              purchase-touch)
+                grep -q 'data-qa-completion-section="blueprint"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-blueprint-id="aura_requiem"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-blueprint-pending=""' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-blueprint-receipt="aura_requiem:72000:8000"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-blueprint-claims="aura_requiem"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-wallet="8000"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-owned="18"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-gravebell="5/5"' "$COMPLETION_DOM" \
+                  && grep -q 'data-qa-completion-sets-complete="1"' "$COMPLETION_DOM" || {
+                    echo 'FAIL: purchased Requiem receipt lost its atomic production transition'; exit 1;
+                  }
+                ;;
+            esac
+            cp "__out/${COMPLETION_NAME}.png" "$COMPLETION_RECEIPTS/${COMPLETION_NAME}.png"
+            node tools/artshot/validate-receipt-png.mjs \
+              "$COMPLETION_RECEIPTS/${COMPLETION_NAME}.png" \
+              --width="$COMPLETION_TARGET_WIDTH" --height="$COMPLETION_TARGET_HEIGHT"
+          }
+
+          capture_completion_truth completion-overview-desktop 1600,900 \
+            'screen=menu&tab=character&resetprofile=1&completion=overview&input=keyboard&focus=collectionCompletionSection%3Asources%230' \
+            overview-keyboard
+          capture_completion_truth completion-overview-phone 667,375 \
+            'screen=menu&tab=character&resetprofile=1&completion=overview&input=touch&reduced=1&contrast=1' \
+            overview-touch
+          capture_completion_truth completion-requiem-desktop 1600,900 \
+            'screen=menu&tab=character&resetprofile=1&completion=blueprint&blueprint=aura_requiem&completionfixture=gravebell4&wallet=80000&input=keyboard' \
+            blueprint-keyboard
+          capture_completion_truth completion-requiem-phone 667,375 \
+            'screen=menu&tab=character&resetprofile=1&completion=blueprint&blueprint=aura_requiem&completionfixture=gravebell4&wallet=80000&input=touch' \
+            blueprint-touch
+          capture_completion_truth completion-royal-case-truth 1600,900 \
+            'screen=menu&tab=character&resetprofile=1&completion=case&blueprint=aura_requiem&completionfixture=gravebell4&wallet=80000&input=keyboard' \
+            case-keyboard
+          capture_completion_truth completion-requiem-purchased 667,375 \
+            'screen=menu&tab=character&resetprofile=1&completion=blueprint&blueprint=aura_requiem&completionfixture=gravebell4&wallet=80000&blueprintbuy=1&input=touch' \
+            purchase-touch
+          capture_completion_truth completion-overview-compact 480,270 \
+            'screen=menu&tab=character&resetprofile=1&completion=overview&input=touch&reduced=1&contrast=1' \
+            overview-compact
+          capture_completion_truth completion-sources-compact 480,270 \
+            'screen=menu&tab=character&resetprofile=1&completion=sources&input=touch' \
+            sources-compact
+          capture_completion_truth completion-requiem-compact 480,270 \
+            'screen=menu&tab=character&resetprofile=1&completion=blueprint&blueprint=aura_requiem&completionfixture=gravebell4&wallet=80000&input=touch' \
+            blueprint-compact
+          capture_completion_truth completion-case-compact 480,270 \
+            'screen=menu&tab=character&resetprofile=1&completion=case&blueprint=aura_requiem&completionfixture=gravebell4&wallet=80000&input=touch' \
+            case-compact
+
+          [ "$(sha256sum "$COMPLETION_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 10 ] || {
+            echo 'FAIL: Collection Completion visual receipts were not ten distinct frames'; exit 1;
+          }
           echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, Collection, Boutique, menus, Mines)"
 
       - name: Upload Collection Growth I-A visual receipts
@@ -821,5 +1015,13 @@ jobs:
         with:
           name: collection-growth-ib-visual-receipts
           path: /tmp/collection-growth-ib/*.png
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Collection Completion Truth visual receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-completion-truth-visual-receipts
+          path: /tmp/collection-completion-truth/*.png
           if-no-files-found: error
           retention-days: 30

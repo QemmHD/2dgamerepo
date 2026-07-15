@@ -97,7 +97,13 @@ export function bpProgress(totalXp) {
 // Milestone unlocks (valid ids in cosmetics.js / gear.js). The existing gear
 // and cosmetic rewards stay in place for save continuity. Four gear milestones
 // now bundle a deterministic Last Light set piece; level 50 completes the set.
-const COSMETIC_MILESTONES = { 5: 'trail_sparks', 15: 'fur_ember', 25: 'aura_frost', 35: 'cloak_crimson', 45: 'fur_frost' };
+const COSMETIC_MILESTONES = Object.freeze({
+    5: 'trail_sparks',
+    15: 'fur_ember',
+    25: 'aura_frost',
+    35: 'cloak_crimson',
+    45: 'fur_frost',
+});
 const GEAR_MILESTONES = { 10: 'a_cinderplate', 20: 't_gleamloop', 30: 'w_lightningwand', 40: 'a_pyreguard' };
 export const PASS_COSMETIC_MILESTONES = Object.freeze({
     10: 'fur_vigil',
@@ -105,6 +111,22 @@ export const PASS_COSMETIC_MILESTONES = Object.freeze({
     30: 'hat_vigil',
     40: 'trail_vigil',
     50: 'aura_mythic',
+});
+
+// Complete deterministic cosmetic route for migration/completion truth. Keep
+// PASS_COSMETIC_MILESTONES above as the stable Last Light set API; this map
+// adds the five legacy odd-level rewards without changing reward tables.
+export const ALL_PASS_COSMETIC_MILESTONES = Object.freeze({
+    5: COSMETIC_MILESTONES[5],
+    10: PASS_COSMETIC_MILESTONES[10],
+    15: COSMETIC_MILESTONES[15],
+    20: PASS_COSMETIC_MILESTONES[20],
+    25: COSMETIC_MILESTONES[25],
+    30: PASS_COSMETIC_MILESTONES[30],
+    35: COSMETIC_MILESTONES[35],
+    40: PASS_COSMETIC_MILESTONES[40],
+    45: COSMETIC_MILESTONES[45],
+    50: PASS_COSMETIC_MILESTONES[50],
 });
 
 function rewardForLevel(level) {

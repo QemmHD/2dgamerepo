@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
     CASES, CASE_PITY, MINES, MINES_HOUSE, WAGER_BETS, caseOddsRows,
-    minesNextPickOdds, minesPayoutQuote, minesRawMultiplier,
+    minesNextPickOdds, minesPayoutQuote, minesRawMultiplier, openCase,
 } from '../src/systems/CaseSystem.js';
 
 let checks = 0;
@@ -19,10 +19,15 @@ const close = (actual, expected, tolerance, message) => {
 
 // SaveSystem is exercised against a real persistence surface without depending
 // on a browser. This also suppresses Node's experimental localStorage warning.
+const SAVE_KEY = 'monkey-survivor:save:v1';
 const storage = new Map();
+let saveWrites = 0;
 Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
     getItem: (key) => storage.has(key) ? storage.get(key) : null,
-    setItem: (key, value) => storage.set(key, String(value)),
+    setItem: (key, value) => {
+        if (key === SAVE_KEY) saveWrites++;
+        storage.set(key, String(value));
+    },
     removeItem: (key) => storage.delete(key),
 } });
 const { MAX_COIN_BALANCE, SaveSystem } = await import('../src/systems/SaveSystem.js');
@@ -221,6 +226,122 @@ function validateProductionFlow() {
     check(toasts.includes('Unavailable wager'), 'invalid-wager disclosure is missing');
 }
 
+function validateDurablePaidEntryGuards() {
+    storage.clear();
+    saveWrites = 0;
+
+    // Seed one durable 200k wallet, then load two independent tab-like
+    // SaveSystems from the exact same payload. A commits first; B must fail
+    // closed instead of overwriting A's newer whole-save authority.
+    const seed = new SaveSystem();
+    seed.data.totalCoins = 200_000;
+    check(seed.save(), 'failed to seed the shared durable wallet');
+    const seededRaw = storage.get(SAVE_KEY);
+    const saveA = new SaveSystem();
+    const saveB = new SaveSystem();
+    check(saveA.data.totalCoins === 200_000 && saveB.data.totalCoins === 200_000,
+        'shared SaveSystems did not load the same 200k wallet');
+
+    const writesBeforeA = saveWrites;
+    check(saveA.spendCoins(1), 'authoritative SaveSystem A could not commit an ordinary durable spend');
+    check(saveA.data.totalCoins === 199_999, 'authoritative spend did not debit A exactly once');
+    const durableARaw = storage.get(SAVE_KEY);
+    check(durableARaw !== seededRaw, 'authoritative spend did not change the durable payload');
+    check(saveWrites === writesBeforeA + 1, 'authoritative spend did not make exactly one save write');
+
+    // Direct spendCoins is itself transactional: stale detection must restore
+    // the *raw* pre-call balance and expose an actionable failure reason.
+    const staleSnapshot = JSON.stringify(saveB.data);
+    const staleBalance = saveB.data.totalCoins;
+    const writesBeforeDirectSpend = saveWrites;
+    check(saveB.spendCoins(CASES.royal.cost) === false,
+        'stale spendCoins accepted a debit after external save change');
+    check(saveB.getLastSaveFailureReason() === 'external-save-changed',
+        'stale spendCoins did not expose external-save-changed');
+    check(saveB.data.totalCoins === staleBalance,
+        'stale spendCoins did not restore the exact in-memory balance');
+    check(JSON.stringify(saveB.data) === staleSnapshot,
+        'stale spendCoins mutated non-wallet in-memory state');
+    check(saveWrites === writesBeforeDirectSpend,
+        'stale spendCoins attempted a durable write');
+    check(storage.get(SAVE_KEY) === durableARaw,
+        'stale spendCoins changed A\'s durable payload');
+
+    // A paid case must reject before any reward/pity/stat/unlock path or RNG.
+    // The complete B snapshot is stronger than individual field assertions and
+    // catches a future reward kind adding state outside today's known fields.
+    const realRandom = Math.random;
+    let rngCalls = 0;
+    let staleCase;
+    Math.random = () => { rngCalls++; return 0; };
+    try {
+        staleCase = openCase(saveB, 'royal');
+    } finally {
+        Math.random = realRandom;
+    }
+    check(staleCase?.ok === false && staleCase.reason === 'save-changed',
+        'stale paid case did not return the save-changed receipt');
+    check(rngCalls === 0, 'stale paid case reached an RNG reward path');
+    check(JSON.stringify(saveB.data) === staleSnapshot,
+        'stale paid case changed wallet/stat/pity/unlock/reward memory');
+    check(saveWrites === writesBeforeDirectSpend,
+        'stale paid case attempted a durable write');
+    check(storage.get(SAVE_KEY) === durableARaw,
+        'stale paid case changed A\'s durable payload');
+
+    // Player-facing integrations must surface the same stale-save rejection in
+    // both the visible toast channel and the accessibility live announcement.
+    const toasts = [];
+    const announcements = [];
+    const audioCalls = { caseOpen: 0, forge: 0 };
+    const game = {
+        saveSystem: saveB,
+        _setToast: (message) => toasts.push(message),
+        accessibility: { announce: (message) => announcements.push(message) },
+        audio: {
+            caseOpen: () => { audioCalls.caseOpen++; },
+            forge: () => { audioCalls.forge++; },
+            spinTick() {}, hurt() {}, reveal() {},
+        },
+    };
+    const overlay = new MinigameOverlay(game);
+    const staleMessage = 'Save changed — reload to continue';
+    const writesBeforeOverlay = saveWrites;
+    rngCalls = 0;
+    Math.random = () => { rngCalls++; return 0; };
+    try {
+        overlay.openCaseFlow('royal');
+        check(overlay.caseAnim === null, 'stale overlay case created a reel');
+        check(toasts.at(-1) === staleMessage,
+            'stale overlay case omitted the visible reload message');
+        check(announcements.at(-1) === staleMessage,
+            'stale overlay case omitted the accessibility reload message');
+        check(audioCalls.caseOpen === 0, 'stale overlay case played a successful-open cue');
+
+        const quotaBefore = saveB.gamblePlaysInfo();
+        overlay.openMines(WAGER_BETS[0]);
+        const quotaAfter = saveB.gamblePlaysInfo();
+        check(overlay.mines === null, 'stale Mines wager opened a board');
+        check(toasts.at(-1) === staleMessage,
+            'stale Mines wager omitted the visible reload message');
+        check(announcements.at(-1) === staleMessage,
+            'stale Mines wager omitted the accessibility reload message');
+        check(quotaAfter.remaining === quotaBefore.remaining
+            && quotaAfter.resetInMs === quotaBefore.resetInMs,
+            'stale Mines wager consumed or reset the hourly play quota');
+        check(audioCalls.forge === 0, 'stale Mines wager played the successful-board cue');
+    } finally {
+        Math.random = realRandom;
+    }
+    check(rngCalls === 0, 'stale overlay case/Mines rejection reached RNG');
+    check(JSON.stringify(saveB.data) === staleSnapshot,
+        'stale overlay case/Mines rejection mutated in-memory state');
+    check(saveWrites === writesBeforeOverlay,
+        'stale overlay case/Mines rejection attempted a durable write');
+    check(storage.get(SAVE_KEY) === durableARaw,
+        'stale overlay case/Mines rejection changed A\'s durable payload');
+}
+
 function validateHonestPresentationGuards() {
     const overlaySource = readFileSync(new URL('../src/systems/MinigameOverlay.js', import.meta.url), 'utf8');
     const menuSource = readFileSync(new URL('../src/systems/MenuRenderer.js', import.meta.url), 'utf8');
@@ -238,6 +359,7 @@ validateMinesMath();
 validateSimulation();
 validateCoinLedgerAndQuota();
 validateProductionFlow();
+validateDurablePaidEntryGuards();
 validateHonestPresentationGuards();
 
 console.log(`Gambling economy validation passed: ${checks} checks, ${WAGER_BETS.length} fixed stakes, ${(MINES_HOUSE * 100).toFixed(0)}% theoretical return.`);
