@@ -1,13 +1,13 @@
 # First Light bounded web evidence
 
-## Collection Completion Truth — PR #203 candidate
+## Collection Completion Truth — deployed PR #203
 
-- [Candidate contract, durability boundary, exact hashes, and nonclaims](collection-completion-truth-pr203.md)
-  records final feature head `35be073`, successful final-head PR CI `29386954424` and
-  artifact `8331811265`, plus the accepted visual run `29386301430`/artifact
-  `8331705612` whose ten hash-pinned receipts are copied here. It also records 34/34
-  validators, the 201,775-check boundary, and the remaining merge/deploy and ordinary
-  synchronous-write limitations.
+- [Delivery contract, protected-transaction boundary, exact hashes, and nonclaims](collection-completion-truth-pr203.md)
+  records merged PR #203/main `bbe2217`, final PR and main CI, Pages, public source and
+  `?dev=1` smoke, main artifact `8332102884`, plus the accepted visual run
+  `29386301430`/artifact `8331705612` whose ten hash-pinned receipts are copied here. It
+  also records 34/34 validators, the 201,775-check boundary, and the remaining ordinary
+  synchronous-write limitation.
 - [Overview desktop](completion-overview-desktop.png), [Overview phone](completion-overview-phone.png),
   [Requiem desktop](completion-requiem-desktop.png), [Requiem phone](completion-requiem-phone.png),
   [Royal Case truth](completion-royal-case-truth.png), and
@@ -17,9 +17,8 @@
   [Requiem](completion-requiem-compact.png), and [Case Truth](completion-case-compact.png)
   preserve the exact 480×270 compact tier.
 
-This is an accepted PR candidate, not deployed evidence. The bounded slice does not
-close Collection Growth I, A11-13, full 1.1/1.2/1.6, Fair Forge, either major arc,
-2.0, or 2.8.
+This bounded slice is fully shipped. It does not close Collection Growth I, A11-13,
+full 1.1/1.2/1.6, Fair Forge, either major arc, 2.0, or 2.8.
 
 ## Collection Growth I-B
 

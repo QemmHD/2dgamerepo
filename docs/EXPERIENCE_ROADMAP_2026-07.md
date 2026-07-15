@@ -3,7 +3,7 @@
 The versioned release sequence that grows this audit through the 2.0–10.0
 milestones lives in [`VERSION_ROADMAP_1_TO_10.md`](VERSION_ROADMAP_1_TO_10.md).
 
-Status: code-grounded implementation baseline and update plan, 2026-07-14. It
+Status: code-grounded implementation baseline and update plan, 2026-07-15. It
 reconciles the current game with
 [the 2026-07-04 master roadmap](ROADMAP.md) and
 [The Long Vigil plan](MAJOR_UPDATE_PLAN.md), then sets a practical 30/60/90-day
@@ -49,13 +49,14 @@ The recommended next releases are therefore:
 ### Additive expansion decision — staged delivery status
 
 The latest scope is accepted as a staged expansion of the existing Ten Fires plan.
-The deployed baseline contains five bounded foundations: PR #192's six-hero animated cosmetic pose
+The deployed baseline contains five early bounded foundations plus the follow-on PR #201
+and PR #203 slices: PR #192's six-hero animated cosmetic pose
 contract, PR #194's exact per-map campaign ledger, PR #196's deterministic Guided Run
 Path, PR #198's Collection Growth I-A reachability/source slice, and PR #200's
 Collection Growth I-B 30-piece/preset/pursuit slice. PR #201 also ships their bounded
-phone Character/Hero Rites and relic-authority correction. PR #203 is an accepted,
-not-yet-deployed candidate for Collection Completion Truth, two fixed-price Mythic
-Blueprints, and protected earned-coin/once-only transactions. High Refresh, House V2,
+phone Character/Hero Rites and relic-authority correction. PR #203 now ships bounded
+Collection Completion Truth, two fixed-price Mythic Blueprints, and protected earned-
+coin/once-only transactions. High Refresh, House V2,
 new weapon classes, destinations, minigames, boss art, and story remain partial or
 planned exactly as described below. Research and grayboxes can run early, but content
 production follows the dependency gates instead of multiplying detached cosmetics,
@@ -63,7 +64,7 @@ bland maps, or unbalanced weapons.
 
 | Planned capability | 0–90 day foundation | Major-release home | Non-negotiable proof |
 | --- | --- | --- | --- |
-| Cosmetic repair and expansion | **Rig/I-A/I-B shipped in PR #192/#198/#200; PR #203 candidate:** six heroes, 18 body sheets, shared pose anchors, 103 source-routed cosmetics in 15 sets, deterministic paging/filters, six per-hero presets, pursuit guidance, atomic look transactions, and 30 genuine new pieces across six coherent I-B sets are deployed. PR #203's accepted candidate adds exact completion/category/set/source receipts and two 72,000 earned-coin Mythic Blueprints; merge/deploy remain pending. | Bounded rig/I-A/I-B in 1.x; bounded Completion Truth groundwork pulled forward; later destination/Chronicle sets through 10.0 remain | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no layer drifts while the body animates. Preserve the current **7,332-check** attachment gate, genuine silhouette/material standard, source truth, no-power rule, and additive save-v10 migration. PR #203 adds no cosmetic, currency, power, or Case/Mines/Pass balance change. Do not recreate I-B or count palette swaps as new designs. |
+| Cosmetic repair and expansion | **Rig/I-A/I-B plus bounded Completion Truth shipped in PR #192/#198/#200/#203:** six heroes, 18 body sheets, shared pose anchors, 103 source-routed cosmetics in 15 sets, deterministic paging/filters, six per-hero presets, pursuit guidance, atomic look transactions, 30 genuine new pieces across six coherent I-B sets, exact completion/category/set/source receipts, and two 72,000 earned-coin Mythic Blueprints are deployed. | Bounded rig/I-A/I-B in 1.x; bounded Completion Truth groundwork pulled forward and shipped; later destination/Chronicle sets through 10.0 remain | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no layer drifts while the body animates. Preserve the current **7,332-check** attachment gate, genuine silhouette/material standard, source truth, no-power rule, and additive save-v10 migration. PR #203 adds no cosmetic, currency, power, or Case/Mines/Pass balance change. Do not recreate I-B or count palette swaps as new designs. |
 | Mobile high frame rate | Profile render interpolation, lighting/overdraw, and quality tiers; name the option **High Refresh** | 1.7 foundation, hardened in 3.8/7.8/9.8 | Fixed deterministic simulation and identical gameplay hashes at Standard/High Refresh; interpolated camera/entities; physical 60/90/120 Hz frame-pacing plus battery/thermal tests. Never promise 120 FPS because browser, display, power mode, and heat can limit cadence. |
 | Campaign unlock truth | **Shipped in PR #194:** save-v10 unique-per-map ledger, conservative legacy migration, centralized receipt/status UI, closed provenance, and a session-only credit-off `?dev=1` bypass. | 1.3 foundation shipped; extend through every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. Malformed current saves never regain lifetime-total access; QA bypass performs zero storage writes. |
 | Guided run tasks | **Shipped in PR #196:** seeded mode/capability-aware Orientation → Tactic → Climax director, one current task, exact progress/action/current potential coin reward, completed Run Path coins held for terminal settlement, terminal completed-phase Deeds XP, safe fallback, atomic coin-receipt ledger, active-task `O` recall, onboarding precedence, announcements, and responsive HUD. | Bounded 1.1 guidance foundation shipped; 1.3/later extension open | One current task shows progress, potential coin reward, and next action; impossible tasks cannot be selected. Debug Mode/`showDebug`, map bypass, and live debug actions disable Run Path coin settlement and objective-derived Deeds XP; `?dev=1`/QA alone does not. A non-terminal abort—including restart or pause-menu abandon—and reload forfeits held Run Path coins and never reaches objective-derived XP; a valid terminal resolution settles. Supported modes complete or substitute across the committed mode/capability/seed matrix. The 26 candidates shipped at main `5abd6fd` are a selection catalog, never 26 simultaneous chores. |
@@ -80,8 +81,8 @@ objective, or story progress.
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At current shipped main `b43baae`, `src/` contains 304 files,
-including 136 JavaScript modules and about 55,947 nonblank lines of JavaScript. Raw
+planning documents. At current shipped main `bbe2217`, `src/` contains 307 files,
+including 139 JavaScript modules and about 60,204 nonblank lines of JavaScript. Raw
 file counts are inventory context, not a quality claim.
 
 ### Exact playable/content inventory
@@ -165,11 +166,10 @@ plans describe:
   and a 0.93 payout factor; that is an all-ages/trust decision, not merely a
   balance detail.
 
-What is still missing is not another currency. PR #203's accepted candidate now supplies
-broader collection/category/set/source receipts, two known-price Mythic routes, readable
-Royal Case truth, and fail-closed protection for earned-coin and once-only rewards; it
-still needs merge, deployment, public smoke, and deployed `?dev=1` retention. Physical-
-device/assistive-technology case operation, chapter/export depth, and evidence that the
+What is still missing is not another currency. PR #203 now supplies broader collection/
+category/set/source receipts, two known-price Mythic routes, readable Royal Case truth,
+and fail-closed protection for earned-coin and once-only rewards. Physical-device/
+assistive-technology case operation, chapter/export depth, and evidence that the
 current time-to-level-50 and coin economy feel rewarding across real playtests remain.
 The original 65-item count overstated visual depth because many looks were palette
 variants. PR #192 fixed the shared live/preview pose attachment foundation; PR #198's
@@ -179,11 +179,11 @@ PR #200 then fulfilled I-B's unreduced commitment with 30 genuine pieces across 
 sets, raising the catalog to 103/15 while adding six per-hero presets, atomic look
 transactions, persistent pursuit, and honest next-source guidance. PR #201 then makes
 that same system honest at 667px, compact/touch-safe at 568/480px, separates Hero Rites
-from relic ATTUNE, and rejects undiscovered relic spends in save authority. PR #203's
-candidate resolves the named random-only Mythic ceiling with exactly two fixed 72,000-
-coin Blueprints while leaving every Case rule unchanged. Once that bounded candidate is
-deployed, the next credible world slice is one original House V2 Emberwood cabin plus a
-Ruin Bell encounter—not another detached cosmetic system or recolor-heavy count.
+from relic ATTUNE, and rejects undiscovered relic spends in save authority. PR #203
+resolves the named random-only Mythic ceiling with exactly two fixed 72,000-coin
+Blueprints while leaving every Case rule unchanged. The next credible world slice is
+one original House V2 Emberwood cabin plus a Ruin Bell encounter—not another detached
+cosmetic system or recolor-heavy count.
 
 ### Audio now
 
@@ -283,7 +283,7 @@ but is stale as a current backlog. Its major claims now resolve as follows:
 | 16 trash enemies on 5 behaviors; global mix | 20 trash enemies, 7 tagged behavior groups, biome enemy mixes, hazards, lieutenants | Role composition, house tactics, and clearer counters |
 | 3 roads | 11 roads | Improve discovery/route clarity before adding more |
 | No onboarding and 9-tab dump | 12-step menu tour plus a 9-step non-modal first-run gameplay chain; staged unlocks; 11 screens grouped into 6 sections; PR #186 keyboard focus foundation | Add direct blink/Focus/Kindle success and first-death debrief; controller focus, text scaling, complete hierarchy/routing, and short first-run comprehension tests remain open |
-| Battle-pass run receipt is dead | Post-run XP buckets, claims, milestones, migration, and Everflame are live; PR #200 ships per-hero cosmetic presets; PR #203 is an accepted candidate for protected claim persistence and completion receipts | Deploy PR #203, then pacing measurement, reward-preview polish, chapter shelf/export recovery, and gear-source parity |
+| Battle-pass run receipt is dead | Post-run XP buckets, claims, milestones, migration, and Everflame are live; PR #200 ships per-hero cosmetic presets; PR #203 ships protected claim persistence and completion receipts | Pacing measurement, reward-preview polish, chapter shelf/export recovery, and gear-source parity |
 | Heirloom Cinders is a no-op | Starting-economy flow was repaired and all 9 permanent upgrades are surfaced | Make old upgrades more interesting at cap without breaking save IDs |
 | `Game.js` is 4,119 lines | About 3,245 nonblank lines after update/render/input/combat/photo/run-state splits and the shipped campaign/Run Path/Collection integrations | Continue seam extraction only when a feature needs it |
 | Obstacle queries allocate per enemy | Spatial obstacle/index work is GC-conscious and shared broadphase exists | Prove nav/collision at 180 bodies and cap unbounded projectile growth |
@@ -651,7 +651,7 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
   the selected hero's validated look remains the legacy equipped compatibility mirror.
 - Preserve I-A/I-B category/ownership/source filters, stable "how to obtain" routes,
   deterministic 8-item paging, paged Boutique sets, set pursuit, and atomic full-look
-  transactions for all 103 cosmetics/15 sets. Once PR #203 deploys, preserve its exact
+  transactions for all 103 cosmetics/15 sets. Preserve PR #203's exact
   completion/category/set/source receipts and two fixed Mythic Blueprint routes. Add
   equivalent source truth for every gear item separately.
 - Preserve PR #201's shared resolved-CSS phone classifier, exact 667x375 Collection and
@@ -857,7 +857,7 @@ This is scheduling intent, not shipped inventory:
 | Major arc | Expansion focus |
 | --- | --- |
 | 1.0 → 2.0 | Fix cosmetic attachments; exact three-unique-boss map gates; completable guided objectives; first House V2 cabin and macro-map plan; visual/performance budgets; one weapon-class schema/spectacle slice; truthful High Refresh foundation. |
-| 2.0 → 3.0 | Named deterministic RNG streams; PR #203's bounded Collection Completion Truth/two-Blueprint candidate pulled groundwork onto the PR #200 I-B substrate without closing 2.8 or this arc; class/gear vertical slices; destination packs; two non-wager mastery minigames; Chronicle prologue data. |
+| 2.0 → 3.0 | Named deterministic RNG streams; PR #203's bounded Collection Completion Truth/two-Blueprint delivery pulled groundwork onto the PR #200 I-B substrate without closing 2.8 or this arc; class/gear vertical slices; destination packs; two non-wager mastery minigames; Chronicle prologue data. |
 | 3.0 → 4.0 | Three-act deterministic branching Pilgrimage; choice consequences and sidegrade rewards; Forgeheart map/faction/boss-model family; balanced cross-class builds. |
 | 4.0 → 5.0 | Four new macro-distinct maps, twelve House V2 interiors, Apex Hunt, Nightfall Siege, twelve gap-filling weapons, destination gear/cosmetic families. |
 | 5.0 → 6.0 | Public Map/House/Encounter/Boss/Arsenal/Story tools prove the same schemas, budgets, and validators used by official content. |
@@ -901,7 +901,7 @@ navigation + boss/audio release baseline
 save fixtures
     -> shared cosmetic pose rig
     -> shipped per-hero cosmetic presets and I-B silhouette expansion
-    -> PR #203 accepted completion receipts + two-Blueprint decision (deploy pending)
+    -> PR #203 shipped completion receipts + two-Blueprint decision
     -> unique boss ledger and objective receipts
     -> save export/import
 
@@ -1078,9 +1078,9 @@ without re-equipping a set or watching its hat/cloak detach, see one reachable g
 task at a time, understand exactly which of the previous map's three Keepers still
 blocks the next map, and share/replay a deterministic challenge. The cosmetic rig,
 bounded Collection Growth I-A browsing/source slice, I-B 30-piece/preset/pursuit slice,
-campaign gate, and Guided Run Path are shipped foundations. PR #203's Completion Truth/
-protected-transaction work is an accepted candidate, not a deployed foundation; the
-House V2 cabin, playable tutorial/debrief, and later destination-specific guidance
+campaign gate, Guided Run Path, and PR #203's bounded Completion Truth/protected-
+transaction work are shipped foundations; the House V2 cabin, playable tutorial/
+debrief, and later destination-specific guidance
 remain required.
 High Refresh may be called shipped only if interpolation and
 physical-device gates are complete.

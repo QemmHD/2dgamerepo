@@ -167,9 +167,8 @@ for all enemy/creature art:
   `docs/evidence/v1.1/collection-growth-ia-deployed-smoke.md`,
   `docs/evidence/v1.1/collection-growth-ib-deployed-smoke.md`, and
   `docs/evidence/v1.1/collection-growth-ib-pr201-deployed-reconciliation.md`.
-- Collection Completion Truth is an accepted PR #203 candidate at feature head
-  `35be073`; it is not shipped until merge, `main` CI, Pages, public smoke, and deployed
-  `?dev=1` retention pass. It reports 103 cosmetics/15 sets, five category totals,
+- Collection Completion Truth is a bounded shipped slice at main `bbe2217` through
+  PR #203. It reports 103 cosmetics/15 sets, five category totals,
   overlapping source counts, 85 known-route items, and 18 random-only items from the
   shared catalog. Exactly two case-routed Mythics (`aura_gloam_moths` and
   `aura_requiem`) gain fixed 72,000 earned-coin Blueprints; Royal Cases remain random
