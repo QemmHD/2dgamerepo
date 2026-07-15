@@ -832,6 +832,10 @@ ok(harnessSource.includes('completionMutationRequested')
     && harnessSource.includes('fixture, wallet, and purchase controls are local-only')
     && harnessSource.includes('QA_COMPLETION_SECTION && completionMutationAllowed'),
 'harness economy fixtures are localhost-only and cannot continue after rejection');
+ok(harnessSource.includes('while (game.blueprintPurchasePending')
+    && harnessSource.includes('performance.now() < purchaseDeadline')
+    && harnessSource.includes('production Web Lock purchase did not settle within 3 seconds'),
+'harness waits boundedly for the real asynchronous Web Lock receipt before asserting it');
 ok(harnessSource.includes('completionTextSafe: game.ui?.menu?._lastCollectionCompletionTextSafe === true')
     && harnessSource.includes('qaRoot.dataset.qaCompletionTextSafe')
     && harnessSource.includes('qaRoot.dataset.qaCompletionCaseTruth'),

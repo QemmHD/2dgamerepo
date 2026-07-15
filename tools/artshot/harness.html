@@ -599,6 +599,19 @@ async function boot() {
             if (QA_BLUEPRINT_BUY && QA_BLUEPRINT_ID) {
                 game._menuAction('purchaseCollectionBlueprint', QA_BLUEPRINT_ID);
                 game._menuAction('purchaseCollectionBlueprint', QA_BLUEPRINT_ID);
+                // The player-facing path deliberately crosses an async Web Lock
+                // boundary. Wait for that real transaction to settle before the
+                // receipt/render pass instead of letting a same-turn fixture read
+                // the pre-purchase wallet. This remains bounded and fails closed;
+                // the harness never writes the expected result itself.
+                const purchaseDeadline = performance.now() + 3000;
+                while (game.blueprintPurchasePending
+                    && performance.now() < purchaseDeadline) {
+                    await new Promise((resolve) => setTimeout(resolve, 20));
+                }
+                if (game.blueprintPurchasePending) {
+                    ERR.push('blueprintbuy: production Web Lock purchase did not settle within 3 seconds');
+                }
             }
         }
         if (BPXP != null) {
