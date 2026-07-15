@@ -600,17 +600,19 @@ async function boot() {
                 game._menuAction('purchaseCollectionBlueprint', QA_BLUEPRINT_ID);
                 game._menuAction('purchaseCollectionBlueprint', QA_BLUEPRINT_ID);
                 // The player-facing path deliberately crosses an async Web Lock
-                // boundary. Wait for that real transaction to settle before the
-                // receipt/render pass instead of letting a same-turn fixture read
-                // the pre-purchase wallet. This remains bounded and fails closed;
-                // the harness never writes the expected result itself.
-                const purchaseDeadline = performance.now() + 3000;
-                while (game.blueprintPurchasePending
-                    && performance.now() < purchaseDeadline) {
-                    await new Promise((resolve) => setTimeout(resolve, 20));
+                // boundary. Await that exact operation instead of polling a
+                // virtual clock, which can advance timers while starving the
+                // browser's lock-manager task. Chrome's outer process timeout
+                // remains the fail-closed bound; the harness never writes the
+                // expected result itself.
+                const purchaseTask = game._blueprintPurchaseTask;
+                if (!purchaseTask || typeof purchaseTask.then !== 'function') {
+                    ERR.push('blueprintbuy: production Web Lock task was not published');
+                } else {
+                    await purchaseTask;
                 }
                 if (game.blueprintPurchasePending) {
-                    ERR.push('blueprintbuy: production Web Lock purchase did not settle within 3 seconds');
+                    ERR.push('blueprintbuy: production Web Lock purchase did not settle');
                 }
             }
         }

@@ -873,7 +873,11 @@ export const GameInputActionMethods = {
                     } catch (e) {
                         operation = { ok: false, reason: 'transaction-lock-failed' };
                     }
-                    Promise.resolve(operation).then((result) => {
+                    // Keep the exact operation promise available to lifecycle
+                    // owners (including the production harness) so they can
+                    // await the browser's Web Lock task directly. Polling a
+                    // virtual clock can starve that task in headless Chromium.
+                    const purchaseTask = Promise.resolve(operation).then((result) => {
                         if (this.blueprintPurchasePending?.serial !== serial
                             || this.blueprintPurchasePending?.id !== item.id) return;
                         this.blueprintPurchasePending = null;
@@ -887,6 +891,12 @@ export const GameInputActionMethods = {
                             ok: false, reason: 'transaction-lock-failed',
                         });
                         this.menuFocusNeedsRefresh = true;
+                    });
+                    this._blueprintPurchaseTask = purchaseTask;
+                    purchaseTask.finally(() => {
+                        if (this._blueprintPurchaseTask === purchaseTask) {
+                            this._blueprintPurchaseTask = null;
+                        }
                     });
                     break;
                 }
