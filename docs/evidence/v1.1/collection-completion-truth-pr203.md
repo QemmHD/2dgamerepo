@@ -1,13 +1,18 @@
-# Collection Completion Truth and protected-transaction candidate — PR #203
+# Collection Completion Truth and protected-transaction delivery — PR #203
 
-Status: **accepted feature candidate; not yet shipped**. This record must not be
-rewritten as deployed evidence until PR #203 is merged, `main` CI and Pages pass, and
-the cache-busted public build is smoked.
+Status: **bounded slice fully shipped**. This delivery does not promote any broader
+milestone or roadmap arc listed under the nonclaims below.
 
-## Candidate identity
+## Delivery identity
 
-- Draft PR: [#203](https://github.com/QemmHD/2dgamerepo/pull/203)
-- Current feature head: `35be07386d3c62443e4b799f8e5d52542b8fd04e`
+- Merged PR: [#203](https://github.com/QemmHD/2dgamerepo/pull/203)
+- Squash main: [`bbe2217c604816c0b22a6d8badb9a08585a9ab30`](https://github.com/QemmHD/2dgamerepo/commit/bbe2217c604816c0b22a6d8badb9a08585a9ab30)
+- Final docs-head PR CI: [29387646028](https://github.com/QemmHD/2dgamerepo/actions/runs/29387646028)
+- Main CI: [29387784394](https://github.com/QemmHD/2dgamerepo/actions/runs/29387784394)
+- Pages: [29387784422](https://github.com/QemmHD/2dgamerepo/actions/runs/29387784422)
+- Main ten-frame artifact: [8332102884](https://github.com/QemmHD/2dgamerepo/actions/runs/29387784394/artifacts/8332102884)
+- Main artifact ZIP SHA-256 and size: `f501e5ccc986ca2761963a5f28bae64da997d683dac4b1663c0f6b9f85436f04`, 4,378,321 bytes
+- Optimized feature head: `35be07386d3c62443e4b799f8e5d52542b8fd04e`
 - Final-head PR CI: [29386954424](https://github.com/QemmHD/2dgamerepo/actions/runs/29386954424)
 - Final-head ten-frame artifact: [8331811265](https://github.com/QemmHD/2dgamerepo/actions/runs/29386954424/artifacts/8331811265)
 - Final-head artifact ZIP SHA-256: `3d5015a12fb3f36704222281b5ce0f0020080c0cf9d0fa9613dee002345dc4db`
@@ -95,6 +100,29 @@ completion and the final PNG PUT must finish before the DOM is serialized. The f
 four-biome/house/touch/focus/accessibility/status/menu/Mines matrix and all ten Completion
 captures ended with the required `DONE EXC:0` final receipts.
 
+## Deployed public smoke
+
+After Pages run `29387784422` passed, cache-busted requests against
+[`qemmhd.github.io/2dgamerepo`](https://qemmhd.github.io/2dgamerepo/) returned HTTP 200
+for both the player URL and `?dev=1`, plus every source authority below. Hashes are over
+the UTF-8 response text fetched with a no-cache request.
+
+| Public response | SHA-256 |
+| --- | --- |
+| Player index and `?dev=1` index | `E42184003D5D228ED1A781A9904174779DCE750A026FDF1CC058FEEDB35BBB81` |
+| `src/config/GameConfig.js` | `B00FEF75412EE18C1468E2B560C20C702BE128BCB0BD1E0BE721869289CC1D48` |
+| `src/systems/MenuRenderer.js` | `FE1148EF53A21C6293B1545FC49BF62AB030C06991202B245AE738FC15E76A42` |
+| `src/systems/CollectionCompletion.js` | `E0A2FC2127AAAF346ACFC6EED1C3B601E2D7060C887E264E4F84170901576876` |
+| `src/content/cosmetics.js` | `A5AE666290555AB46914AF4E1518F9E85CC8432C0D87FB9BE2052B35A4410143` |
+| `src/systems/SaveSystem.js` | `338739B92C99ABD81E39DB425AA3997FFCBD91C1170252E192A35720ADFA28D6` |
+| `src/systems/EntitlementTransaction.js` | `4060EBDE33ABA71FF1C250006E03999776CD9FDF9421BA0D74BC2C5E6C776C1F` |
+| `src/systems/ShopTransaction.js` | `6D476CA2F76A6AD549FF8EA9E2B79440D87292EFBE10D9DFFF16E0615D37239B` |
+
+The deployed config retains the exact `dev=1` gate. The deployed Settings source retains
+**Debug Mode**, **Unlock All Maps (testing)**, **+1,000**, **+10,000**, and **Unlock All
+Items** behind that gate. The deployed catalog exposes exactly two 72,000-coin Blueprint
+ids, and the save/entitlement/shop sources retain their protected transaction paths.
+
 ## Durable visual receipts
 
 | Receipt | Exact canvas | SHA-256 |
@@ -126,7 +154,5 @@ portrait, tablet, zoom, or assistive-technology acceptance.
   atomic mutex; two simultaneous ordinary writers can still race. Earned-coin and
   once-only flows above no longer rely on that path; broader single-writer/
   transactional-storage work remains open.
-- This candidate does **not** complete Collection Growth I, A11-13, full 1.1 or 1.6,
-  full 1.2/Fair Forge, either 1.0→2.0/2.0→3.0 arc, 2.0, or 2.8. Merge, `main` CI,
-  Pages, public source smoke, and deployed `?dev=1` retention are still required before
-  this bounded slice may be called fully shipped.
+- This bounded delivery does **not** complete Collection Growth I, A11-13, full 1.1 or
+  1.6, full 1.2/Fair Forge, either 1.0→2.0/2.0→3.0 arc, 2.0, or 2.8.
