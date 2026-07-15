@@ -37,34 +37,91 @@
     frame.height = String(height);
     frame.style.width = `${width}px`;
     frame.style.height = `${height}px`;
-    frame.src = target;
-    const startedAt = performance.now();
-    const mirror = setInterval(() => {
+    root.dataset.qaFrameViewport = `${width}x${height}`;
+
+    // The parent page owns the dump-dom receipt, while the production harness
+    // and its canvas live in the exact-size child viewport. Mirror every child
+    // QA attribute as it appears so Chromium can serialize the canonical child
+    // metrics on the parent document. Waiting to copy until the DONE title can
+    // race virtual time while the child is still loading its module graph.
+    let observer = null;
+    let observedRoot = null;
+    let fallbackMirror = null;
+    let finished = false;
+    const syncReceipt = () => {
+        if (finished) return;
         try {
             const childRoot = frame.contentDocument?.documentElement;
             const childTitle = frame.contentDocument?.title || '';
-            if (childRoot && childTitle.startsWith('DONE EXC:')) {
+            if (childRoot) {
                 for (const name of childRoot.getAttributeNames()) {
                     if (name.startsWith('data-qa-')) {
                         root.setAttribute(name, childRoot.getAttribute(name) || '');
                     }
                 }
-                root.dataset.qaFrameViewport = `${width}x${height}`;
+            }
+            if (childRoot?.dataset.qaReady === '1' && childTitle.startsWith('DONE EXC:')) {
                 document.title = childTitle;
-                clearInterval(mirror);
-            } else if (performance.now() - startedAt > 6000) {
-                root.dataset.qaReady = '1';
-                root.dataset.qaErrorKeys = 'frame';
-                document.title = 'DONE EXC:1 enemies:0 map:unknown error:frame child did not finish';
-                clearInterval(mirror);
+                finished = true;
+                observer?.disconnect();
+                clearInterval(fallbackMirror);
             }
         } catch (error) {
             root.dataset.qaReady = '1';
             root.dataset.qaErrorKeys = 'frame';
             document.title = `DONE EXC:1 enemies:0 map:unknown error:frame ${String(error)}`;
-            clearInterval(mirror);
+            finished = true;
+            observer?.disconnect();
+            clearInterval(fallbackMirror);
         }
-    }, 20);
+    };
+    const observeChild = () => {
+        try {
+            const childRoot = frame.contentDocument?.documentElement;
+            if (!childRoot) return;
+            if (childRoot === observedRoot) {
+                syncReceipt();
+                return;
+            }
+            observer?.disconnect();
+            observedRoot = childRoot;
+            observer = new MutationObserver(syncReceipt);
+            observer.observe(childRoot, {
+                attributes: true,
+                childList: true,
+                characterData: true,
+                subtree: true,
+            });
+            syncReceipt();
+        } catch (error) {
+            root.dataset.qaReady = '1';
+            root.dataset.qaErrorKeys = 'frame';
+            document.title = `DONE EXC:1 enemies:0 map:unknown error:frame ${String(error)}`;
+            finished = true;
+        }
+    };
+    frame.addEventListener('load', observeChild);
+    frame.src = target;
+    fallbackMirror = setInterval(() => {
+        if (finished) {
+            clearInterval(fallbackMirror);
+            return;
+        }
+        observeChild();
+        syncReceipt();
+    }, 50);
+
+    // Keep this beyond CI's 7 s virtual-time budget. A 6 s parent timeout could
+    // win against the child module load and erase an otherwise valid receipt.
+    setTimeout(() => {
+        if (finished) return;
+        root.dataset.qaReady = '1';
+        root.dataset.qaErrorKeys = 'frame';
+        document.title = 'DONE EXC:1 enemies:0 map:unknown error:frame child did not finish';
+        finished = true;
+        observer?.disconnect();
+        clearInterval(fallbackMirror);
+    }, 15000);
 })();
 </script>
 </body>

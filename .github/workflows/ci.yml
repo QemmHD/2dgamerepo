@@ -62,7 +62,22 @@ jobs:
       - name: Validate fair gambling economy and disclosures
         run: node tools/validate-gambling-economy.js
 
-      - name: Validate durable once-only Mines cashouts
+      - name: Validate whole-save mutation and exclusive transaction durability
+        run: node tools/validate-save-transaction-durability.js
+
+      - name: Validate atomic case transactions
+        run: node tools/validate-case-transaction-durability.js
+
+      - name: Validate cross-tab paid-case exclusion
+        run: node tools/validate-case-exclusive-flow.js
+
+      - name: Validate atomic case reward entitlements
+        run: node tools/validate-case-entitlement-durability.js
+
+      - name: Validate atomic shop purchase entitlements
+        run: node tools/validate-shop-transaction-durability.js
+
+      - name: Validate durable Mines entries and once-only cashouts
         run: node tools/validate-mines-transaction-durability.js
 
       - name: Validate combat integrity
@@ -873,17 +888,29 @@ jobs:
                 --virtual-time-budget=7000 --user-data-dir="$COMPLETION_PROFILE" \
                 --dump-dom "$COMPLETION_URL" \
                 > "$COMPLETION_DOM"
-              COMPLETION_VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$COMPLETION_DOM" | head -1 | cut -d'"' -f2)
-              COMPLETION_VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$COMPLETION_DOM" | head -1 | cut -d'"' -f2)
+              COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$COMPLETION_DOM" | head -1 || true)
+              COMPLETION_QA_DIAGNOSTICS=$(grep -oE 'data-qa-(ready|error-keys|completion-blueprint-(pending|receipt)|completion-wallet|output)="[^"]*"' "$COMPLETION_DOM" \
+                | sort -u | tr '\n' ' ' || true)
+              echo "Collection Completion ${COMPLETION_NAME} attempt ${COMPLETION_ATTEMPT}: ${COMPLETION_TITLE:-<missing title>}"
+              echo "Completion QA: ${COMPLETION_QA_DIAGNOSTICS:-<no final QA fields>}"
+              if [[ "$COMPLETION_TITLE" != *'DONE EXC:'* ]]; then
+                echo "FAIL: ${COMPLETION_NAME} harness did not publish a DONE receipt; viewport validation was not reached"; exit 1
+              fi
+              if ! grep -q 'data-qa-ready="1"' "$COMPLETION_DOM"; then
+                echo "FAIL: ${COMPLETION_NAME} published DONE without its ready receipt; viewport validation was not reached"; exit 1
+              fi
+              if [[ "$COMPLETION_TITLE" != *'DONE EXC:0 '* ]]; then
+                echo "FAIL: ${COMPLETION_NAME} harness reported an exception before viewport validation"; exit 1
+              fi
+              COMPLETION_VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$COMPLETION_DOM" | head -1 | cut -d'"' -f2 || true)
+              COMPLETION_VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$COMPLETION_DOM" | head -1 | cut -d'"' -f2 || true)
               if [[ ! "$COMPLETION_VIEWPORT_WIDTH" =~ ^[0-9]+$ || ! "$COMPLETION_VIEWPORT_HEIGHT" =~ ^[0-9]+$ ]]; then
-                echo 'FAIL: Completion capture omitted numeric viewport metrics'; exit 1
+                echo "FAIL: ${COMPLETION_NAME} completed but omitted numeric viewport metrics"; exit 1
               fi
               if (( COMPLETION_VIEWPORT_WIDTH == COMPLETION_TARGET_WIDTH && COMPLETION_VIEWPORT_HEIGHT == COMPLETION_TARGET_HEIGHT )); then break; fi
               COMPLETION_WINDOW_WIDTH=$((COMPLETION_WINDOW_WIDTH + COMPLETION_TARGET_WIDTH - COMPLETION_VIEWPORT_WIDTH))
               COMPLETION_WINDOW_HEIGHT=$((COMPLETION_WINDOW_HEIGHT + COMPLETION_TARGET_HEIGHT - COMPLETION_VIEWPORT_HEIGHT))
             done
-            COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$COMPLETION_DOM" | head -1)
-            echo "Collection Completion ${COMPLETION_NAME}: $COMPLETION_TITLE"
             echo "Completion viewport ${COMPLETION_VIEWPORT_WIDTH}x${COMPLETION_VIEWPORT_HEIGHT}; target ${COMPLETION_TARGET_WIDTH}x${COMPLETION_TARGET_HEIGHT}"
             echo "$COMPLETION_TITLE" | grep -q 'DONE EXC:0 ' \
               && grep -q 'data-qa-ready="1"' "$COMPLETION_DOM" \

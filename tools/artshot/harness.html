@@ -385,6 +385,9 @@ async function boot() {
         catch (error) { ERR.push('resetprofile: ' + String(error)); }
     }
     const preferenceSeed = new SaveSystem();
+    if (!await preferenceSeed.whenSaveParticipationReady()) {
+        ERR.push('save-participation: preference seed did not acquire its shared lock');
+    }
     if (REDUCED) preferenceSeed.setSetting('reducedEffects', true);
     if (QA_UI_SCALE != null) preferenceSeed.setSetting('uiScale', QA_UI_SCALE);
     if (QA_HIGH_CONTRAST != null) preferenceSeed.setSetting('highContrast', QA_HIGH_CONTRAST);
@@ -393,8 +396,14 @@ async function boot() {
     if (QA_MONO != null) preferenceSeed.setSetting('monoAudio', QA_MONO);
     if (QA_VOICE_VOLUME != null) preferenceSeed.setSetting('volVoice', QA_VOICE_VOLUME / 100);
     if (QA_VIBRATION) preferenceSeed.setSetting('vibration', QA_VIBRATION);
+    if (!await preferenceSeed.dispose()) {
+        ERR.push('save-participation: preference seed did not release its shared lock');
+    }
 
     game = new Game({ renderer, input, loop });
+    if (!await game.saveSystem.whenSaveParticipationReady()) {
+        ERR.push('save-participation: game save did not acquire its shared lock');
+    }
     game.showDebug = false;          // no debug grid/HUD in the art frame
     if (QA_VIBRATION_CAP != null) game.haptics.supported = () => QA_VIBRATION_CAP;
     const liveHapticPulse = game.haptics.pulse.bind(game.haptics);
@@ -650,7 +659,8 @@ async function boot() {
         if (MINESBET != null) {
             try {
                 game.saveSystem.data.totalCoins = Math.max(game.saveSystem.data.totalCoins, 10000);
-                game.minigame.openMines(MINESBET);
+                const minesStart = game.minigame.openMines(MINESBET);
+                if (minesStart && typeof minesStart.then === 'function') await minesStart;
                 if (!game.minigame.mines) throw new Error(`could not stage preset ${MINESBET}`);
                 // QA-only known mine positions make the requested number of
                 // safe reveals deterministic while all displayed math still
@@ -1621,13 +1631,18 @@ async function boot() {
     window.__done = true;
 }
 
-boot().catch((e) => {
+try {
+    // Keep module evaluation (and therefore document load) pending until every
+    // async fixture has settled. In particular, --dump-dom must not serialize
+    // while Chrome's browser process is still granting the production Web Lock.
+    await boot();
+} catch (e) {
     const message = 'boot: ' + String(e && e.stack || e);
     ERR.push(message);
     window.__bootError = message;
     console.error(message);
     document.title = 'BOOTFAIL ' + message.slice(0, 120);
-});
+}
 </script>
 </body>
 </html>
