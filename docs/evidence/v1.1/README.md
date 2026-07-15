@@ -19,6 +19,9 @@
 
 ## Collection Growth I-B phone correction — PR #201
 
+- [Deployed reconciliation](collection-growth-ib-pr201-deployed-reconciliation.md)
+  records merge main `45f6216`, main CI/visual artifact, Pages, cache-busted source
+  smoke, final counts, and the unchanged bounded claim.
 - [PR receipt and visual review](collection-growth-ib-pr201-phone-correction.md)
   records feature head `1322d3a`, successful PR CI `29377897747`, artifact
   `8328580576`, the 198,687-assertion boundary, progression-authority correction, and

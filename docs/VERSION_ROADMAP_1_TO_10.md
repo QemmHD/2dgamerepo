@@ -93,7 +93,7 @@ definitions, 12 bosses, 40 weapons, 11 evolutions, 15 fusions, 20 passives, 11
 roads, 26 relics, 14 pacts, 10 keystones, 18 rites, 21 gear pieces, 65 cosmetics in
 7 complete sets, 50 battle-pass levels, Daily Road, Rite Trial, Boss Rush, Weekly
 Ember, photo mode, recap cards, adaptive music, touch controls, and four generated
-structure styles. Current main `a34baca` contains 103 cosmetics in 15 complete sets
+structure styles. Current main `45f6216` contains 103 cosmetics in 15 complete sets
 after the bounded Collection Growth I-A/I-B deliveries described below.
 
 The baseline is deep enough. Its weaknesses are cohesion and product finish:
@@ -195,9 +195,17 @@ Cosmetics remain visual-only; Battle Pass/achievement rewards, case costs/odds/p
 unowned weighting, Mines stakes, and the 93% return did not change. This fulfills I-B
 only—not complete Collection Growth I, 1.1, 1.6, 2.0, or 2.8.
 
+[PR #201](https://github.com/QemmHD/2dgamerepo/pull/201) then corrected the bounded
+phone/progression truth at main `45f6216`: exact 667x375 rich Collection and Hero
+Rites surfaces, compact 568/480px layouts, shared resolved-CSS classification, 44
+CSS-pixel controls, session-only nested routing, and save-authoritative undiscovered-
+relic rejection. It preserves the 103-item content/economy/schema and `?dev=1`
+contracts; physical-device/AT/portrait/tablet and Completion Truth remain open.
+
 ### 2026-07-14 additive scope allocation — staged delivery status
 
-The following work expands the roadmap and records the five shipped foundations above;
+The following work expands the roadmap and records the five shipped foundations plus
+the phone/progression correction above;
 every other capability remains partial or planned until its own acceptance passes. It
 does not inflate the existing
 46–60-addition contracts with recolors, refactors, or test fixtures. Wands remain the
@@ -206,7 +214,7 @@ without turning EMBERWAKE into a generic sword game.
 
 | Capability | First complete proof | Expansion arc | Acceptance before the roadmap may call it shipped |
 | --- | --- | --- | --- |
-| Cosmetic attachment rig and genuine collection growth | 1.6 rig shipped in PR #192; I-A reachability/source slice in PR #198; I-B's separate 30-piece/six-set pack, presets, pursuit, and atomic look transactions in PR #200 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows every authored state/direction; no layer drifts while the body animates. Preserve the 103-item paging/filter/source contract, **7,332-check** attachment gate, genuine material/silhouette standard, visual-only rule, and save-v10 migration. Collection Completion Truth/Blueprint work and later destination sets remain open; do not recreate I-B. |
+| Cosmetic attachment rig and genuine collection growth | 1.6 rig shipped in PR #192; I-A reachability/source slice in PR #198; I-B's separate 30-piece/six-set pack, presets, pursuit, and atomic look transactions in PR #200; responsive phone/Rites and relic-authority correction in PR #201 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows every authored state/direction; no layer drifts while the body animates. Preserve the 103-item paging/filter/source contract, **7,332-check** attachment gate, genuine material/silhouette standard, visual-only rule, save-v10 migration, exact 667px phone receipts, compact 568/480px targets, and separation between Hero Rites and relic ATTUNE. Collection Completion Truth/Blueprint work and later destination sets remain open; do not recreate I-B. |
 | Mobile High Refresh mode | 1.7 | 3.8, 7.8, 9.8 | Settings says **High Refresh**, never promises 120 FPS. Simulation remains fixed and deterministic; interpolated render state is proven for camera and all high-motion entities; Standard and High Refresh produce the same gameplay hash. 90/120 Hz physical-device, battery/heat, backgrounding, reduced-effects, and fallback tests pass before store copy mentions supported high-frame-rate play. |
 | Exact campaign map unlocks | 1.3 foundation shipped in PR #194 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; malformed current ledgers fail closed; `?dev=1`/`unlockMaps` is session-only QA state and never writes false campaign progress. |
 | Guided, completable run objectives | Bounded 1.1 guidance foundation shipped in PR #196; 1.3 extension open | 2.1, 3.1, 4.5 | One current task moves through Orientation → Tactic → Climax with progress, current potential coin reward, next action, held Run Path coin settlement, and separately derived terminal completed-phase Deeds XP. The seeded director filters by mode, available systems, and finite capacity; invalid tasks substitute deterministically; coin receipts are atomic and idempotent. Supported modes complete or cleanly substitute across the committed mode/capability/seed matrix; later map-specific tasks and modes must add explicit fixtures. |
