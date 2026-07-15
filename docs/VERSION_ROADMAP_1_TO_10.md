@@ -200,12 +200,25 @@ phone/progression truth at main `45f6216`: exact 667x375 rich Collection and Her
 Rites surfaces, compact 568/480px layouts, shared resolved-CSS classification, 44
 CSS-pixel controls, session-only nested routing, and save-authoritative undiscovered-
 relic rejection. It preserves the 103-item content/economy/schema and `?dev=1`
-contracts; physical-device/AT/portrait/tablet and Completion Truth remain open.
+contracts; physical-device/AT/portrait/tablet remain open, while Completion Truth is
+the accepted-but-unshipped candidate recorded below.
+
+[PR #203](https://github.com/QemmHD/2dgamerepo/pull/203) is now an accepted feature
+candidate, not a shipped boundary. At head `35be073` it adds exact 103-item/15-set
+completion, category and overlapping-source receipts; fixed 72,000 earned-coin routes
+for the two formerly random-only Mythics; additive save-v10 `blueprintClaims`; and
+fail-closed exclusive transactions for earned-coin and once-only Case, Mines, Battle
+Pass, Daily Road, shop, and Blueprint flows. It adds no cosmetic, currency, power, or
+balance change: Case pools/order/costs/odds/pity/unowned weighting/duplicates, Mines
+math/93% return, and Battle Pass XP/reward values remain identical. Ordinary synchronous
+writes still use a compare-before-save stale-authority guard rather than an atomic
+mutex. Merge, `main` CI, Pages, public smoke, and deployed `?dev=1` proof remain pending;
+full Collection Growth I, 1.2/Fair Forge, 2.8, and both major arcs remain open.
 
 ### 2026-07-14 additive scope allocation — staged delivery status
 
-The following work expands the roadmap and records the five shipped foundations plus
-the phone/progression correction above;
+The following work expands the roadmap and records the five shipped foundations, the
+phone/progression correction, and the explicitly unshipped PR #203 candidate above;
 every other capability remains partial or planned until its own acceptance passes. It
 does not inflate the existing
 46–60-addition contracts with recolors, refactors, or test fixtures. Wands remain the
@@ -214,7 +227,7 @@ without turning EMBERWAKE into a generic sword game.
 
 | Capability | First complete proof | Expansion arc | Acceptance before the roadmap may call it shipped |
 | --- | --- | --- | --- |
-| Cosmetic attachment rig and genuine collection growth | 1.6 rig shipped in PR #192; I-A reachability/source slice in PR #198; I-B's separate 30-piece/six-set pack, presets, pursuit, and atomic look transactions in PR #200; responsive phone/Rites and relic-authority correction in PR #201 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows every authored state/direction; no layer drifts while the body animates. Preserve the 103-item paging/filter/source contract, **7,332-check** attachment gate, genuine material/silhouette standard, visual-only rule, save-v10 migration, exact 667px phone receipts, compact 568/480px targets, and separation between Hero Rites and relic ATTUNE. Collection Completion Truth/Blueprint work and later destination sets remain open; do not recreate I-B. |
+| Cosmetic attachment rig and genuine collection growth | 1.6 rig shipped in PR #192; I-A reachability/source slice in PR #198; I-B's separate 30-piece/six-set pack, presets, pursuit, and atomic look transactions in PR #200; responsive phone/Rites and relic-authority correction in PR #201; bounded Completion Truth/two-Blueprint work accepted but not deployed in PR #203 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows every authored state/direction; no layer drifts while the body animates. Preserve the 103-item paging/filter/source contract, **7,332-check** attachment gate, genuine material/silhouette standard, visual-only rule, save-v10 migration, exact 667px phone receipts, compact 568/480px targets, and separation between Hero Rites and relic ATTUNE. PR #203 must pass merge/deploy/public proof before its bounded groundwork is called shipped; later destination sets and full 2.8 remain open. Do not recreate I-B. |
 | Mobile High Refresh mode | 1.7 | 3.8, 7.8, 9.8 | Settings says **High Refresh**, never promises 120 FPS. Simulation remains fixed and deterministic; interpolated render state is proven for camera and all high-motion entities; Standard and High Refresh produce the same gameplay hash. 90/120 Hz physical-device, battery/heat, backgrounding, reduced-effects, and fallback tests pass before store copy mentions supported high-frame-rate play. |
 | Exact campaign map unlocks | 1.3 foundation shipped in PR #194 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; malformed current ledgers fail closed; `?dev=1`/`unlockMaps` is session-only QA state and never writes false campaign progress. |
 | Guided, completable run objectives | Bounded 1.1 guidance foundation shipped in PR #196; 1.3 extension open | 2.1, 3.1, 4.5 | One current task moves through Orientation → Tactic → Climax with progress, current potential coin reward, next action, held Run Path coin settlement, and separately derived terminal completed-phase Deeds XP. The seeded director filters by mode, available systems, and finite capacity; invalid tasks substitute deterministically; coin receipts are atomic and idempotent. Supported modes complete or cleanly substitute across the committed mode/capability/seed matrix; later map-specific tasks and modes must add explicit fixtures. |
@@ -290,7 +303,7 @@ acceptance metric is met; an incomplete row ships under its current version numb
 | 2.5 | Two-Keeper | Two-player primary loop and 30-minute swarm/boss soak; independent remaps, drop-in/out, revive, and non-color identity cues pass. |
 | 2.6 | Archive Seasons | A chapter can be started, switched, completed, left for 90 simulated days, and resumed with no expired reward or punitive catch-up curve. |
 | 2.7 | Known-Content Packs | Install/remove/upgrade fixtures for every pack; exact product manifest; base save survives missing or downgraded optional content. |
-| 2.8 | Roster and Mastery | 2 gap-filling heroes, Collection Completion Truth/Blueprint work on PR #200's early-shipped 30-piece I-B substrate, proven weapon-class/gear slices, authored Chronicle paths, sidegrade-only mastery, and bounded Blueprint import/export. The I-B delivery alone does not promote 2.8. |
+| 2.8 | Roster and Mastery | 2 gap-filling heroes, completion/Blueprint systems on PR #200's early-shipped 30-piece I-B substrate, proven weapon-class/gear slices, authored Chronicle paths, sidegrade-only mastery, and bounded Blueprint import/export. PR #203 pulls forward only exact completion truth and two earned-coin Mythic routes; neither I-B nor that candidate promotes 2.8. |
 | 2.9 | Common Hearth | Four local profiles, portable Hearth Bundles, private share surfaces, and a no-reward Memory Theatre with caption/audio/motion controls all pass network-blocked completion. |
 | 3.0 | The Shared Flame | 46 additions; determinism, ghost, couch, chapter, camp, and removable-pack gates pass together; at least 8 heroes and 6 mechanically distinct maps. |
 | 3.1 | Ember Pilgrimage | Complete deterministic 3-act expedition with consequences, recoverable sidegrade rewards, suspend/resume at every interlude, branch replay, and one-action Standard Run. |
@@ -555,13 +568,13 @@ captures one second apart keep decorative UI stable.
 - Add source filters: Pass, Cases, Boutique, Achievement, Boss, Rite, Map, and Set.
 - Make case odds, pity progress, duplicate conversion, and unowned weighting readable
   on one screen before opening.
-- Resolve PR #200's explicit Gravebell watchpoint before calling collection balance
-  complete. Its case-only Mythic `aura_requiem` currently has no deterministic ceiling:
-  1.5% Royal Mythic odds × 82% item branch and eight eligible Mythics imply about
-  365.9 cases/329,000 gross coins for a named target from a fresh pool, or about
-  81.3 cases/73,000 gross coins when it is the last unowned Mythic. Rare+ pity neither
-  targets Mythic nor caps that named-item tail. Decide an honest Blueprint/direct-price
-  ceiling without silently changing the shipped odds, pity, or Mines economy.
+- PR #203's accepted candidate resolves PR #200's named Gravebell watchpoint with fixed
+  72,000 earned-coin Blueprints for `aura_requiem` and `aura_gloam_moths`. Keep its
+  ordinary next-open probability, unchanged Royal rules, and “Rare+ pity is not a
+  Mythic guarantee” disclosure visible; the comparison to 80 Royal entry fees must
+  never imply that 80 random openings guarantee either item. Full 1.2/Fair Forge still
+  needs merge/deploy proof, accessible case-operation acceptance, broader simulation,
+  reel work, and the remaining requirements below.
 - Replace misleading reel near-miss offsets with a reel that represents its real
   result neighborhood; keep anticipation through timing, lighting, audio, and a
   skippable reveal.
@@ -1749,12 +1762,14 @@ Release scorecard:
 5. Produce one House V2 Emberwood cabin/Ruin Bell vertical slice while 1.3 enemy roles
    navigate and fight through it; do not mass-produce house art before shared render,
    collision, nav, LOS, door, spawn, room, and roof truth passes.
-6. Build Collection Completion Truth next; do not recreate I-B. Preserve PR #192's
-   attachment resolver and PR #198/#200's all-103 reachability/source/paging, six-hero
-   preset migration, pursuit, atomic look transaction, all-state/all-direction, Reduced
-   Effects, and no-power proofs. Add broader completion analytics/receipts and decide an
-   explicit Blueprint/direct-price ceiling for random-only Mythics without changing
-   currency, case odds/pity, Mines, Battle Pass, or promoting broader 2.8.
+6. Land and deploy PR #203's bounded Collection Completion Truth candidate; do not
+   recreate I-B. Preserve PR #192's attachment resolver and PR #198/#200's all-103
+   reachability/source/paging, six-hero preset migration, pursuit, atomic look
+   transaction, all-state/all-direction, Reduced Effects, and no-power proofs. Preserve
+   PR #203's exactly two 72,000 earned-coin Blueprints and protected transactions without
+   changing currency, Case rules, Mines, Battle Pass balance, or promoting full 1.2,
+   broader 2.8, or either major arc. After deployment proof, continue the House V2/Ruin
+   Bell vertical slice and remaining First Light gates.
 7. Complete audio lifecycle/mix gates, one Blender boss-family batch, and one bounded
    wand/weapon-class spectacle slice with grayscale/reduced-effects/performance proof.
 8. Add Gamepad/PWA; profile lighting/fill rate and finish deterministic interpolation

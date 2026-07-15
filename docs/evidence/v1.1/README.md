@@ -1,5 +1,26 @@
 # First Light bounded web evidence
 
+## Collection Completion Truth — PR #203 candidate
+
+- [Candidate contract, durability boundary, exact hashes, and nonclaims](collection-completion-truth-pr203.md)
+  records final feature head `35be073`, successful final-head PR CI `29386954424` and
+  artifact `8331811265`, plus the accepted visual run `29386301430`/artifact
+  `8331705612` whose ten hash-pinned receipts are copied here. It also records 34/34
+  validators, the 201,775-check boundary, and the remaining merge/deploy and ordinary
+  synchronous-write limitations.
+- [Overview desktop](completion-overview-desktop.png), [Overview phone](completion-overview-phone.png),
+  [Requiem desktop](completion-requiem-desktop.png), [Requiem phone](completion-requiem-phone.png),
+  [Royal Case truth](completion-royal-case-truth.png), and
+  [post-purchase phone](completion-requiem-purchased.png) are the primary human-review
+  receipts.
+- [Overview](completion-overview-compact.png), [Sources](completion-sources-compact.png),
+  [Requiem](completion-requiem-compact.png), and [Case Truth](completion-case-compact.png)
+  preserve the exact 480×270 compact tier.
+
+This is an accepted PR candidate, not deployed evidence. The bounded slice does not
+close Collection Growth I, A11-13, full 1.1/1.2/1.6, Fair Forge, either major arc,
+2.0, or 2.8.
+
 ## Collection Growth I-B
 
 - [Delivery and visual smoke](collection-growth-ib-deployed-smoke.md) records PR #200,
