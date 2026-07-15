@@ -191,8 +191,8 @@ jobs:
             --autoplay-policy=no-user-gesture-required \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1600,900 \
-            --virtual-time-budget=15000 --user-data-dir="$(mktemp -d)" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=20&badge=1" \
+            --timeout=25000 --user-data-dir="$(mktemp -d)" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=20&blockboot=1&badge=1" \
             > /tmp/harness-dom.html
           TITLE=$(grep -o '<title>[^<]*</title>' /tmp/harness-dom.html | head -1)
           echo "Harness title: $TITLE"
@@ -229,8 +229,8 @@ jobs:
                 --autoplay-policy=no-user-gesture-required \
                 --disable-background-networking --disable-component-update \
                 --force-device-scale-factor=1 --window-size="$MATRIX_WINDOW" \
-                --virtual-time-budget=7000 --user-data-dir="$MATRIX_PROFILE" \
-                --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&badge=1&${QUERY}" \
+                --timeout=15000 --user-data-dir="$MATRIX_PROFILE" \
+                --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&blockboot=1&badge=1&${QUERY}" \
                 > "$MATRIX_DOM"
               if [[ "$MATRIX_TOUCH" != true ]]; then break; fi
               VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
@@ -574,8 +574,8 @@ jobs:
             --autoplay-policy=no-user-gesture-required \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1280,720 \
-            --virtual-time-budget=7000 --user-data-dir="$INVALID_PROFILE" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=settings&uiscale=129&contrast=yes&settingspane=display&statuses=none&captions=yes&captiondetail=verbose&mono=maybe&voicevol=33&vibration=maximum&vibrationcap=yes&caption=speech" \
+            --timeout=15000 --user-data-dir="$INVALID_PROFILE" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=settings&uiscale=129&contrast=yes&settingspane=display&statuses=none&captions=yes&captiondetail=verbose&mono=maybe&voicevol=33&vibration=maximum&vibrationcap=yes&caption=speech" \
             > "$INVALID_DOM"
           INVALID_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_DOM" | head -1)
           echo "Invalid-control receipt: $INVALID_TITLE"
@@ -594,8 +594,8 @@ jobs:
           timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1280,720 \
-            --virtual-time-budget=7000 --user-data-dir="$INVALID_OBJECTIVE_PROFILE" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&runmode=chaos&objectivephase=middle&objectiveprogress=&pause=yes" \
+            --timeout=15000 --user-data-dir="$INVALID_OBJECTIVE_PROFILE" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&runmode=chaos&objectivephase=middle&objectiveprogress=&pause=yes" \
             > "$INVALID_OBJECTIVE_DOM"
           INVALID_OBJECTIVE_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_OBJECTIVE_DOM" | head -1)
           echo "Invalid Run Path controls: $INVALID_OBJECTIVE_TITLE"
@@ -611,8 +611,8 @@ jobs:
           timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1280,720 \
-            --virtual-time-budget=7000 --user-data-dir="$EMPTY_VOICE_PROFILE" \
-            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=settings&settingspane=accessibility&voicevol=" \
+            --timeout=15000 --user-data-dir="$EMPTY_VOICE_PROFILE" \
+            --dump-dom "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=settings&settingspane=accessibility&voicevol=" \
             > "$EMPTY_VOICE_DOM"
           EMPTY_VOICE_TITLE=$(grep -o '<title>[^<]*</title>' "$EMPTY_VOICE_DOM" | head -1)
           echo "Empty voice-volume receipt: $EMPTY_VOICE_TITLE"
@@ -626,9 +626,9 @@ jobs:
           timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1280,720 \
-            --virtual-time-budget=7000 --user-data-dir="$INVALID_COLLECTION_PROFILE" \
+            --timeout=15000 --user-data-dir="$INVALID_COLLECTION_PROFILE" \
             --dump-dom \
-            "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=boutique&collectioncat=weapon&collectionpage=0&pursuit=missing-set" \
+            "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=boutique&collectioncat=weapon&collectionpage=0&pursuit=missing-set" \
             > "$INVALID_COLLECTION_DOM"
           INVALID_COLLECTION_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_COLLECTION_DOM" | head -1)
           echo "Invalid Collection controls: $INVALID_COLLECTION_TITLE"
@@ -642,9 +642,9 @@ jobs:
           timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
             --disable-background-networking --disable-component-update \
             --force-device-scale-factor=1 --window-size=1280,720 \
-            --virtual-time-budget=7000 --user-data-dir="$INVALID_COMPLETION_PROFILE" \
+            --timeout=15000 --user-data-dir="$INVALID_COMPLETION_PROFILE" \
             --dump-dom \
-            "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&badge=1&screen=menu&tab=character&completion=bogus&blueprint=bogus&completionfixture=bogus&wallet=-1&blueprintbuy=2" \
+            "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&badge=1&screen=menu&tab=character&completion=bogus&blueprint=bogus&completionfixture=bogus&wallet=-1&blueprintbuy=2" \
             > "$INVALID_COMPLETION_DOM"
           INVALID_COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$INVALID_COMPLETION_DOM" | head -1)
           echo "Invalid Completion controls: $INVALID_COMPLETION_TITLE"
@@ -679,9 +679,9 @@ jobs:
               --autoplay-policy=no-user-gesture-required \
               --disable-background-networking --disable-component-update \
               --force-device-scale-factor=1 --window-size=1600,900 \
-              --virtual-time-budget=7000 --user-data-dir="$COLLECTION_PROFILE" \
+              --timeout=15000 --user-data-dir="$COLLECTION_PROFILE" \
               --dump-dom \
-              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&screen=menu&tab=${COLLECTION_TAB}&input=keyboard&focus=${COLLECTION_FOCUS}&out=${COLLECTION_NAME}${COLLECTION_EXTRA}" \
+              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&screen=menu&tab=${COLLECTION_TAB}&input=keyboard&focus=${COLLECTION_FOCUS}&out=${COLLECTION_NAME}${COLLECTION_EXTRA}" \
               > "$COLLECTION_DOM"
             COLLECTION_TITLE=$(grep -o '<title>[^<]*</title>' "$COLLECTION_DOM" | head -1)
             echo "Collection visual ${COLLECTION_TAB}: $COLLECTION_TITLE"
@@ -737,9 +737,9 @@ jobs:
                 --autoplay-policy=no-user-gesture-required \
                 --disable-background-networking --disable-component-update \
                 --force-device-scale-factor=1 --window-size="$COLLECTION_IB_WINDOW" \
-                --virtual-time-budget=7000 --user-data-dir="$COLLECTION_IB_PROFILE" \
+                --timeout=15000 --user-data-dir="$COLLECTION_IB_PROFILE" \
                 --dump-dom \
-                "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&out=${COLLECTION_IB_NAME}.png&${COLLECTION_IB_QUERY}" \
+                "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&out=${COLLECTION_IB_NAME}.png&${COLLECTION_IB_QUERY}" \
                 > "$COLLECTION_IB_DOM"
               if [[ "$COLLECTION_IB_KIND" != *-touch ]]; then break; fi
               COLLECTION_IB_VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$COLLECTION_IB_DOM" | head -1 | cut -d'"' -f2)
@@ -871,7 +871,7 @@ jobs:
             for ((COMPLETION_ATTEMPT=1; COMPLETION_ATTEMPT<=COMPLETION_ATTEMPTS; COMPLETION_ATTEMPT++)); do
               COMPLETION_PROFILE=$(mktemp -d)
               COMPLETION_WINDOW="${COMPLETION_WINDOW_WIDTH},${COMPLETION_WINDOW_HEIGHT}"
-              COMPLETION_URL="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}"
+              COMPLETION_URL="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&blockboot=1&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}"
               # Chromium clamps a top-level headless window below 500 CSS px on
               # this runner. For the committed 480x270 acceptance tier, host the
               # unchanged production harness in an exact same-origin iframe and
@@ -879,13 +879,13 @@ jobs:
               # renderer, Canvas backing, and persisted PNG all see 480x270.
               if (( COMPLETION_TARGET_WIDTH < 500 )); then
                 COMPLETION_WINDOW="800,600"
-                COMPLETION_URL="http://127.0.0.1:8909/tools/artshot/exact-frame.html?width=${COMPLETION_TARGET_WIDTH}&height=${COMPLETION_TARGET_HEIGHT}#/tools/artshot/harness.html?seconds=0&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}"
+                COMPLETION_URL="http://127.0.0.1:8909/tools/artshot/exact-frame.html?width=${COMPLETION_TARGET_WIDTH}&height=${COMPLETION_TARGET_HEIGHT}#/tools/artshot/harness.html?seconds=0&blockboot=1&out=${COMPLETION_NAME}.png&${COMPLETION_QUERY}"
               fi
               timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
                 --autoplay-policy=no-user-gesture-required \
                 --disable-background-networking --disable-component-update \
                 --force-device-scale-factor=1 --window-size="$COMPLETION_WINDOW" \
-                --virtual-time-budget=7000 --user-data-dir="$COMPLETION_PROFILE" \
+                --timeout=15000 --user-data-dir="$COMPLETION_PROFILE" \
                 --dump-dom "$COMPLETION_URL" \
                 > "$COMPLETION_DOM"
               COMPLETION_TITLE=$(grep -o '<title>[^<]*</title>' "$COMPLETION_DOM" | head -1 || true)

@@ -144,6 +144,7 @@ window.addEventListener('error', (e) => ERR.push(String(e.message || e.error || 
 window.addEventListener('unhandledrejection', (e) => ERR.push('promise: ' + String(e.reason)));
 
 const params = new URLSearchParams(location.search);
+const BLOCK_BOOT = params.get('blockboot') === '1';
 const SECONDS = parseFloat(params.get('seconds') || '12');
 const BADGE = params.get('badge') === '1';
 const SCREEN = params.get('screen') || 'run';   // 'run' | 'menu'
@@ -1631,17 +1632,29 @@ async function boot() {
     window.__done = true;
 }
 
-try {
-    // Keep module evaluation (and therefore document load) pending until every
-    // async fixture has settled. In particular, --dump-dom must not serialize
-    // while Chrome's browser process is still granting the production Web Lock.
-    await boot();
-} catch (e) {
+function reportBootFailure(e) {
     const message = 'boot: ' + String(e && e.stack || e);
     ERR.push(message);
     window.__bootError = message;
     console.error(message);
     document.title = 'BOOTFAIL ' + message.slice(0, 120);
+}
+
+if (BLOCK_BOOT) {
+    try {
+        // Exact async transaction receipts opt into a load-blocking module. CI
+        // pairs this with Chrome's real-time --timeout (not a virtual-time
+        // budget), so browser-process Web Lock and PNG PUT tasks can settle
+        // before --dump-dom serializes the authoritative DONE receipt.
+        await boot();
+    } catch (e) {
+        reportBootFailure(e);
+    }
+} else {
+    // Fast render matrices retain their established fire-and-forget virtual
+    // clock. Their fixtures are synchronous and must not make page readiness
+    // depend on unrelated image/network completion ordering.
+    boot().catch(reportBootFailure);
 }
 </script>
 </body>
