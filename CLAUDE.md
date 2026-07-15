@@ -143,7 +143,8 @@ for all enemy/creature art:
   opening `?dev=1` or running the QA harness does not. A non-terminal abort—including
   restart or pause-menu abandon—and reload forfeits held Run Path coins and never
   reaches objective-derived terminal XP; a valid terminal resolution settles.
-- Collection Growth I-A/I-B: shipped through main `a34baca`; `src/content/cosmetics.js`
+- Collection Growth I-A/I-B plus its phone/progression correction: shipped through
+  main `45f6216`; `src/content/cosmetics.js`
   remains catalog/source truth and `src/systems/CosmeticCollection.js` owns deterministic
   eight-item category/ownership/source pages for all 103 cosmetics and 15 sets.
   `MenuRenderer.js`/`GameInputActions.js` own paged Collection/Boutique staging,
@@ -152,7 +153,11 @@ for all enemy/creature art:
   `CaseSystem.js` consumes the same exclusions. I-B's 30 pieces form Kilnheart,
   Rimeglass, Thorncrown, Stormglass, Sunscar, and Gravebell. `SaveSystem.js` migrates
   the selected look into six per-hero presets while preserving the legacy equipped
-  mirror; unknown cosmetic grants fail closed. All preview/reel/live silhouettes and
+  mirror; unknown cosmetic grants fail closed. PR #201 adds the shared resolved-CSS
+  phone classifier, rich 667px and compact 568/480px Character layouts, a session-only
+  Hero Rites drill-in, exact 44 CSS-pixel control floors, and authoritative rejection
+  of undiscovered Relic Attunement before spend/mutation/persistence. Hero Rites must
+  never route through or acknowledge relic ATTUNE. All preview/reel/live silhouettes and
   effects must retain the shared six-hero × 27-pose attachment contract and freeze
   under Reduced Effects. Cosmetics remain visual-only; neither slice changed Battle
   Pass/achievement rewards, case costs/odds/pity/unowned weighting, Mines stakes, or
@@ -160,8 +165,9 @@ for all enemy/creature art:
   that named watchpoint until a future Blueprint/direct-price decision. Complete
   Collection Growth I, A11-13, 1.1, 1.6, the 1.0 → 2.0 arc, 2.0, and 2.8 remain open.
   Durable visual, hash, delivery, hosted-source, and limitation receipts live in
-  `docs/evidence/v1.1/collection-growth-ia-deployed-smoke.md` and
-  `docs/evidence/v1.1/collection-growth-ib-deployed-smoke.md`.
+  `docs/evidence/v1.1/collection-growth-ia-deployed-smoke.md`,
+  `docs/evidence/v1.1/collection-growth-ib-deployed-smoke.md`, and
+  `docs/evidence/v1.1/collection-growth-ib-pr201-deployed-reconciliation.md`.
 - Player is PROCEDURAL & animated (4-dir × idle/walk/cast/hurt) — never
   replace the hero with a flat AI sprite.
 - Enemy sprites resolve through layered fallbacks in `Enemy.js`

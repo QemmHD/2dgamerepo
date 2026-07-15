@@ -52,7 +52,8 @@ The latest scope is accepted as a staged expansion of the existing Ten Fires pla
 Five bounded foundations are now shipped: PR #192's six-hero animated cosmetic pose
 contract, PR #194's exact per-map campaign ledger, PR #196's deterministic Guided Run
 Path, PR #198's Collection Growth I-A reachability/source slice, and PR #200's
-Collection Growth I-B 30-piece/preset/pursuit slice. High Refresh, House V2, new weapon
+Collection Growth I-B 30-piece/preset/pursuit slice. PR #201 also ships their bounded
+phone Character/Hero Rites and relic-authority correction. High Refresh, House V2, new weapon
 classes, destinations, minigames, boss art, and story remain partial or planned exactly as
 described below. Research and grayboxes can run early, but content production follows
 the dependency gates instead of multiplying detached cosmetics, bland maps, or
@@ -77,8 +78,8 @@ objective, or story progress.
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At current shipped main `a34baca`, `src/` contains 303 files,
-including 135 JavaScript modules and about 55,471 nonblank lines of JavaScript. Raw
+planning documents. At current shipped main `45f6216`, `src/` contains 304 files,
+including 136 JavaScript modules and about 55,947 nonblank lines of JavaScript. Raw
 file counts are inventory context, not a quality claim.
 
 ### Exact playable/content inventory
@@ -172,7 +173,9 @@ bounded Collection Growth I-A added eight genuine styles and routed all 73 then-
 cosmetics through deterministic 8-item paging plus category/ownership/source filters.
 PR #200 then fulfilled I-B's unreduced commitment with 30 genuine pieces across six
 sets, raising the catalog to 103/15 while adding six per-hero presets, atomic look
-transactions, persistent pursuit, and honest next-source guidance. The next credible
+transactions, persistent pursuit, and honest next-source guidance. PR #201 then makes
+that same system honest at 667px, compact/touch-safe at 568/480px, separates Hero Rites
+from relic ATTUNE, and rejects undiscovered relic spends in save authority. The next credible
 slice is Collection Completion Truth, including a deterministic-ceiling decision for
 random-only Mythics—not another detached cosmetic system or recolor-heavy count.
 
@@ -644,6 +647,10 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
   deterministic 8-item paging, paged Boutique sets, set pursuit, and atomic full-look
   transactions for all 103 cosmetics/15 sets. Add broader completion analytics and
   equivalent source truth for every gear item.
+- Preserve PR #201's shared resolved-CSS phone classifier, exact 667x375 Collection and
+  Hero Rites receipts, compact 568/480px layouts, 44 CSS-pixel controls, nested Escape/
+  tour behavior, and strict separation between Hero Rites and progression-locked relic
+  ATTUNE. Undiscovered relic attunement remains a zero-mutation/zero-write rejection.
 - Preserve Collection Growth I-B's 30 genuine pieces across Kilnheart, Rimeglass,
   Thorncrown, Stormglass, Sunscar, and Gravebell. The commitment is fulfilled by
   PR #200; do not recreate it or relabel palette swaps as new designs.
