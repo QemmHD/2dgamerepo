@@ -9,6 +9,7 @@ import { INTERNAL_WIDTH, INTERNAL_HEIGHT } from '../config/GameConfig.js';
 import {
     openCase, buildCaseReel, MINES, WAGER_BETS, rollMines, minesPayoutQuote,
 } from './CaseSystem.js';
+import { MAX_COIN_BALANCE } from './SaveSystem.js';
 import { getGlowSprite } from '../assets/ProceduralSprites.js';
 import { roundRectPath, clamp01, easeOutCubic, easeOutBack } from '../render/DrawUtils.js';
 
@@ -192,6 +193,7 @@ export class MinigameOverlay {
         this.mines = {
             bet: stake, mineSet: rollMines(), revealed: [], safeRevealed: 0, mul: 1,
             stopped: false, busted: false, cashed: false, result: null, age: 0,
+            settlementFailed: false, settlementFailureReason: null,
             // Overhaul juice (all keyed off this._menuClock):
             revealTimes: {}, // idx → clock stamp (per-tile reveal pop)
             bustIdx: null,   // which tile detonated (shock ring)
@@ -226,14 +228,62 @@ export class MinigameOverlay {
     // Cash out the live multiplier (needs at least one safe reveal).
     minesCashOut() {
         const m = this.mines;
-        if (!m || m.stopped || m.safeRevealed <= 0) return;
-        m.stopped = true; m.cashed = true; m.stopFxT = this._menuClock;
+        if (!m || m.stopped || m.safeRevealed <= 0) return false;
         const quote = minesPayoutQuote(m.bet, m.safeRevealed);
         const payout = quote.payout;
+
+        // Cashout is a real-money-shaped trust boundary even though this game
+        // only uses earned coins. Do not publish the BANKED state, chime, or
+        // result until the wallet write is durably accepted. SaveSystem.addCoins
+        // intentionally has a fire-and-forget API, so transact the one wallet
+        // field here and restore its exact raw value when stale storage or a
+        // failed write rejects the commit.
+        const save = this.game?.saveSystem;
+        const rawBalance = save?.data?.totalCoins;
+        const balance = rawBalance === Infinity ? MAX_COIN_BALANCE
+            : Number.isFinite(rawBalance) && rawBalance > 0
+                ? Math.min(MAX_COIN_BALANCE, Math.floor(rawBalance)) : 0;
+        const credit = Number.isFinite(payout) && payout > 0
+            ? Math.min(MAX_COIN_BALANCE, Math.floor(payout)) : 0;
+        const nextBalance = credit > MAX_COIN_BALANCE - balance
+            ? MAX_COIN_BALANCE : balance + credit;
+        let committed = false;
+        if (save?.data && typeof save.save === 'function' && credit > 0) {
+            save.data.totalCoins = nextBalance;
+            try {
+                committed = save.save() === true;
+            } catch (e) {
+                committed = false;
+            }
+            if (!committed) save.data.totalCoins = rawBalance;
+        }
+
+        if (!committed) {
+            const reason = save?.getLastSaveFailureReason?.() || 'persistence-failed';
+            m.stopped = true;
+            m.cashed = false;
+            m.settlementFailed = true;
+            m.settlementFailureReason = reason;
+            m.result = null;
+            m.stopFxT = this._menuClock;
+            const message = reason === 'external-save-changed'
+                ? 'Cashout not saved — save changed. Reload to recover.'
+                : 'Cashout not saved — wallet unchanged. Reload to recover.';
+            this.game?._setToast?.(message);
+            this.game?.accessibility?.announce?.(message);
+            this.game?.audio?.deny?.();
+            return false;
+        }
+
+        m.stopped = true;
+        m.cashed = true;
+        m.settlementFailed = false;
+        m.settlementFailureReason = null;
+        m.stopFxT = this._menuClock;
         m.mul = quote.multiplier;
         m.result = { mul: quote.multiplier, payout, net: quote.net };
-        if (payout > 0) this.game.saveSystem.addCoins(payout);
         this.game.audio.reveal(m.mul >= 8 ? 'mythic' : m.mul >= 4 ? 'legendary' : m.mul >= 2 ? 'epic' : 'rare');
+        return true;
     }
 
     dismissMines() { this.mines = null; }
@@ -388,7 +438,10 @@ export class MinigameOverlay {
         const potential = quote.payout;
         ctx.font = `700 21px ${FONT}`;
         const net = quote.net >= 0 ? `+${quote.net}` : `${quote.net}`;
-        const balanceLine = m.busted
+        const settlementFailed = m.settlementFailed === true;
+        const balanceLine = settlementFailed
+            ? 'CASHOUT NOT SAVED  ·  WALLET UNCHANGED  ·  RELOAD TO RECOVER'
+            : m.busted
             ? `STAKE LOST ◎ ${m.bet}   ·   ${m.safeRevealed} SAFE BEFORE THE MINE`
             : m.cashed
                 ? `FINAL CASHOUT ◎ ${m.result.payout}   ·   NET ${m.result.net >= 0 ? '+' : ''}${m.result.net}`
@@ -497,9 +550,12 @@ export class MinigameOverlay {
         } else {
             ctx.textBaseline = 'alphabetic';
             ctx.font = `800 46px ${FONT}`;
-            this._mText(ctx, m.busted ? 'FORGE COOLED' : 'BANKED!', cx, cb.y + 28, m.busted ? '#ff5a4a' : '#74e890');
+            this._mText(ctx, settlementFailed ? 'SAVE RECOVERY NEEDED'
+                : m.busted ? 'FORGE COOLED' : 'BANKED!', cx, cb.y + 28,
+            (m.busted || settlementFailed) ? '#ff8a4a' : '#74e890');
             ctx.font = `800 30px ${FONT}`;
-            this._mText(ctx, m.busted ? `Lost ◎ ${m.bet}`
+            this._mText(ctx, settlementFailed ? 'Cashout not saved · wallet unchanged'
+                : m.busted ? `Lost ◎ ${m.bet}`
                 : `Won ◎ ${m.result.payout}   (${m.result.net >= 0 ? '+' : ''}${m.result.net})`, cx, cb.y + 70, '#fff');
             ctx.font = `600 22px ${FONT}`;
             const help = inputModality === 'keyboard'

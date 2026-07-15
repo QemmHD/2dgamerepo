@@ -62,6 +62,9 @@ jobs:
       - name: Validate fair gambling economy and disclosures
         run: node tools/validate-gambling-economy.js
 
+      - name: Validate durable once-only Mines cashouts
+        run: node tools/validate-mines-transaction-durability.js
+
       - name: Validate combat integrity
         run: node tools/validate-combat-integrity.js
 
