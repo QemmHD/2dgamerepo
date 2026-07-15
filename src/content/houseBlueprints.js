@@ -41,10 +41,22 @@ const door = (id, x, y, axis, width, connects, options = {}) => ({
 // no pixel, outline, palette, or furniture coordinate is copied from it.
 export const EMBERWOOD_RUIN_BELL_CABIN = deepFreeze({
     id: 'emberwood-ruin-bell-cabin',
-    version: 2,
+    version: 3,
     name: 'Last-Wick Cabin',
     biomeId: 'emberwood',
     renderStyle: 'cabin',
+    // This is one dwelling, not a collection of legacy building cards. The
+    // renderer consumes these stable material/profile ids while every physical
+    // wall below remains the collision/LOS/navigation authority.
+    architecture: {
+        form: 'single-shell-dwelling',
+        projection: 'top-down-cutaway',
+        foundation: 'continuous-stone-ring',
+        floor: 'continuous-clean-oak',
+        partitions: 'low-timber-divider',
+        props: 'pixel-plan',
+        exteriorShellCount: 1,
+    },
     dimensions: {
         interiorW: 540,
         interiorH: 432,
@@ -106,25 +118,25 @@ export const EMBERWOOD_RUIN_BELL_CABIN = deepFreeze({
 
         // Low internal partitions. The same gaps are the navigation graph.
         wall('partition-wing-north', 50, -197, 10, 19, {
-            kind: 'partition', renderHeight: 76,
+            kind: 'partition', renderHeight: 34,
         }),
         wall('partition-wing-middle', 50, -5, 10, 37, {
-            kind: 'partition', renderHeight: 76,
+            kind: 'partition', renderHeight: 34,
         }),
         wall('partition-wing-south', 50, 192, 10, 24, {
-            kind: 'partition', renderHeight: 76,
+            kind: 'partition', renderHeight: 34,
         }),
         wall('partition-west-left', -229, 20, 41, 10, {
-            kind: 'partition', renderHeight: 72,
+            kind: 'partition', renderHeight: 32,
         }),
         wall('partition-west-right', 9, 20, 41, 10, {
-            kind: 'partition', renderHeight: 72,
+            kind: 'partition', renderHeight: 32,
         }),
         wall('partition-east-left', 55, -10, 5, 10, {
-            kind: 'partition', renderHeight: 70,
+            kind: 'partition', renderHeight: 30,
         }),
         wall('partition-east-right', 235, -10, 35, 10, {
-            kind: 'partition', renderHeight: 70,
+            kind: 'partition', renderHeight: 30,
         }),
     ],
     furniture: [
@@ -136,30 +148,54 @@ export const EMBERWOOD_RUIN_BELL_CABIN = deepFreeze({
             tags: ['encounter-anchor', 'bell'],
         },
         {
+            id: 'stone-hearth', sprite: 'cabinHearth', roomId: 'hearth-kitchen',
+            x: 0, y: -194, w: 112, h: 108, baseOffsetY: 24,
+            collider: { shape: 'rect', hw: 34, hh: 17 }, blocksLOS: true,
+            escape: { x: -1, y: 0 },
+            tags: ['hearth', 'domestic', 'light-anchor'],
+        },
+        {
+            id: 'work-table', sprite: 'cabinTable', roomId: 'dining-work',
+            x: -225, y: 175, w: 118, h: 98, baseOffsetY: 22,
+            collider: { shape: 'rect', hw: 32, hh: 21 }, blocksLOS: false,
+            escape: { x: 1, y: 0 },
+            tags: ['dining', 'work', 'domestic'],
+        },
+        {
             id: 'ember-cot', sprite: 'cabinBed', roomId: 'sleeping-nook',
-            x: 230, y: -34, w: 112, h: 132, baseOffsetY: 34,
+            x: 230, y: -38, w: 112, h: 132, baseOffsetY: 34,
             collider: { shape: 'rect', hw: 28, hh: 16 }, blocksLOS: false,
             tags: ['sleep'],
         },
         {
-            id: 'wick-crate', sprite: 'crate', roomId: 'storage-lean-to',
-            x: 214, y: 168, w: 70, h: 72, baseOffsetY: 24,
+            id: 'pantry-shelf', sprite: 'cabinShelf', roomId: 'storage-lean-to',
+            x: 235, y: 145, w: 82, h: 126, baseOffsetY: 24,
+            collider: { shape: 'rect', hw: 18, hh: 8 }, blocksLOS: true,
+            escape: { x: -1, y: 0 },
+            tags: ['storage', 'food', 'domestic'],
+        },
+        {
+            id: 'wick-crate', sprite: 'cabinCrate', roomId: 'storage-lean-to',
+            // Keep the dense supply cluster against the southeast wall instead
+            // of straddling the room's authored navigation origin. Radius-56
+            // bodies can now turn from storage into either interior doorway.
+            x: 225, y: 190, w: 70, h: 72, baseOffsetY: 24,
             collider: { shape: 'rect', hw: 28, hh: 22 }, blocksLOS: true,
             tags: ['storage'],
         },
         {
-            id: 'oil-barrel', sprite: 'barrel', roomId: 'storage-lean-to',
-            x: 126, y: 184, w: 56, h: 82, baseOffsetY: 24,
+            id: 'oil-barrel', sprite: 'cabinBarrel', roomId: 'storage-lean-to',
+            x: 95, y: 180, w: 56, h: 82, baseOffsetY: 24,
             collider: { shape: 'circle', r: 22 }, blocksLOS: true,
             tags: ['storage'],
         },
     ],
     floor: {
-        materialStyle: 'cabin',
-        // The 500×400 source is placed at its native 1.25 aspect ratio and is
-        // not stretched or cropped. It supplies hearth/rug material only; room
-        // rectangles above remain the gameplay authority.
-        decal: { x: -110, y: -78, w: 320, h: 256 },
+        materialStyle: 'cabinClean',
+        shellMaterialStyle: 'cabin',
+        // The clean original board field spans the one continuous foundation.
+        // It intentionally contains no baked rooms, walls, rug, or furnishings.
+        decal: null,
     },
     spawnExclusions: [
         { id: 'interior', x: 0, y: 0, hw: 270, hh: 216 },
@@ -173,10 +209,22 @@ export const EMBERWOOD_RUIN_BELL_CABIN = deepFreeze({
         interiorAlpha: 0.14,
     },
     states: {
-        intact: { roof: 'complete', light: 0.42, disabledWallIds: [] },
-        lit: { roof: 'complete', light: 0.72, disabledWallIds: [] },
-        damaged: { roof: 'damaged', light: 0.34, disabledWallIds: [] },
-        ruined: { roof: 'ruined', light: 0.12, disabledWallIds: ['shell-east-upper'] },
+        intact: {
+            roof: 'complete', damageProfile: 'sound', severity: 0,
+            light: 0.42, disabledWallIds: [],
+        },
+        lit: {
+            roof: 'complete', damageProfile: 'ember-lit', severity: 0,
+            light: 0.72, disabledWallIds: [],
+        },
+        damaged: {
+            roof: 'damaged', damageProfile: 'scorched-east-eave', severity: 1,
+            light: 0.34, disabledWallIds: [],
+        },
+        ruined: {
+            roof: 'ruined', damageProfile: 'open-east-collapse', severity: 2,
+            light: 0.12, disabledWallIds: ['shell-east-upper'],
+        },
     },
     encounter: {
         id: 'ruin-bell-vigil',
@@ -190,8 +238,11 @@ export const EMBERWOOD_RUIN_BELL_CABIN = deepFreeze({
         graceOutsideSeconds: 6,
         retryDelaySeconds: 8,
         rewardSockets: {
-            chest: { roomId: 'dining-work', x: -210, y: 120 },
-            shrine: { roomId: 'dining-work', x: -10, y: 120 },
+            // These remain in the dining/work zone but sit farther apart than
+            // the two pickup radii plus a radius-50 player body. A player can
+            // therefore never overlap both choices on the same update tick.
+            chest: { roomId: 'dining-work', x: -8, y: 174 },
+            shrine: { roomId: 'dining-work', x: -228, y: 72 },
             pickupDelaySeconds: 0.9,
             requiresExitBeforePickup: true,
         },

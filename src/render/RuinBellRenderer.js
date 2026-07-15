@@ -15,7 +15,7 @@ const ASH = '#82766d';
 const PAPER = '#fff4df';
 
 const ENGAGED_PHASES = new Set(['arming', 'warning', 'active']);
-const DEFENSE_PHASES = new Set(['warning', 'active']);
+const DEFENSE_PHASES = new Set(['warning', 'active', 'technical-defer']);
 const TELEGRAPH_PHASES = new Set(['warning', 'active']);
 const QUIET_PHASES = new Set(['locked', 'spent']);
 const STAGE_ORDINAL = Object.freeze({
@@ -175,7 +175,8 @@ function drawTimerNotch(ctx, anchor, snapshot, highContrast) {
 function drawDefenseBoundary(ctx, defense, snapshot, highContrast, reduced, contourOnly = false) {
     if (!defense) return false;
     const pulse = reduced ? 0.78 : pulseFor(snapshot, 2.2);
-    const accent = highContrast ? PAPER : (defense.outside ? EMBER_HOT : '#ffc866');
+    const accent = highContrast ? PAPER
+        : (defense.outside ? EMBER_HOT : phaseAccent(phaseOf(snapshot)));
     const dash = defense.outside ? [9, 7] : [18, 8, 3, 8];
 
     ctx.save();
@@ -396,9 +397,13 @@ function drawBellResonance(ctx, anchor, snapshot, phase, highContrast, reduced) 
     const pulse = reduced ? 0.78 : pulseFor(snapshot, 4.6);
     const lift = 38;
     const spread = reduced ? 0 : (pulse - 0.78) * 16;
+    // Reduced Effects keeps one static semantic toll arc instead of freezing
+    // all three animated echoes in place. This materially lowers visual noise
+    // in a still frame while preserving the Bell's readable state marker.
+    const ringCount = reduced ? 1 : 3;
     ctx.save();
     ctx.lineCap = 'round';
-    for (let index = 0; index < 3; index++) {
+    for (let index = 0; index < ringCount; index++) {
         const radius = 24 + index * 13 + spread;
         const alpha = 0.76 - index * 0.17;
         ctx.globalAlpha = highContrast ? 1 : alpha;
@@ -423,6 +428,56 @@ function drawLiveRoleMarks(ctx, snapshot, highContrast) {
         drawRoleGlyph(ctx, mark.role, mark.x, mark.y - finite(mark.radius, 34) - 14,
             12, mark.accent || EMBER_HOT, highContrast);
     }
+}
+
+function drawRewardMarks(ctx, snapshot, highContrast, reduced) {
+    if (phaseOf(snapshot) !== 'cleared' || snapshot?.rewardReady !== true) return 0;
+    const marks = Array.isArray(snapshot?.rewardMarks) ? snapshot.rewardMarks : [];
+    let painted = 0;
+    for (const mark of marks) {
+        if (!Number.isFinite(mark?.x) || !Number.isFinite(mark?.y)) continue;
+        const radius = clamp(finite(mark.radius, 42) + 13, 42, 96);
+        const accent = highContrast ? PAPER : (mark.accent || '#ffd38a');
+        const lift = radius + 30;
+        const pulse = reduced ? 0 : Math.sin(visualTime(snapshot) * 3.2 + painted) * 4;
+        const label = String(mark.label || (mark.choice === 'shrine' ? 'WICK SHRINE' : 'CHEST'));
+
+        ctx.save();
+        ctx.globalAlpha = highContrast ? 1 : 0.94;
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = highContrast ? 9 : 7;
+        ctx.setLineDash(mark.choice === 'shrine' ? [5, 5] : []);
+        drawArc(ctx, mark.x, mark.y, radius, 0, TWO_PI);
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = highContrast ? 5 : 3;
+        drawArc(ctx, mark.x, mark.y, radius, 0, TWO_PI);
+        ctx.setLineDash([]);
+
+        // A short locator stem and textual choice label identify the existing
+        // reward entities. This is guidance around real Chest/Shrine art, not a
+        // replacement drawing or an inferred pickup location.
+        const labelY = mark.y - lift - pulse;
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = highContrast ? 8 : 6;
+        ctx.beginPath();
+        ctx.moveTo(mark.x, mark.y - radius);
+        ctx.lineTo(mark.x, labelY + 8);
+        ctx.stroke();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = highContrast ? 4 : 2.5;
+        ctx.stroke();
+        ctx.font = '700 18px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.lineWidth = highContrast ? 7 : 5;
+        ctx.strokeStyle = INK;
+        ctx.strokeText(label, mark.x, labelY);
+        ctx.fillStyle = accent;
+        ctx.fillText(label, mark.x, labelY);
+        ctx.restore();
+        painted++;
+    }
+    return painted;
 }
 
 export class RuinBellRenderer {
@@ -534,6 +589,7 @@ export class RuinBellRenderer {
         if (phase === 'warning' || phase === 'active') {
             drawLiveRoleMarks(ctx, snapshot, highContrast);
         }
+        drawRewardMarks(ctx, snapshot, highContrast, reduced);
         ctx.restore();
         return true;
     }

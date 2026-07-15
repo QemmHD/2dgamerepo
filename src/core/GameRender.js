@@ -166,6 +166,9 @@ export const GameRenderMethods = {
             this.camera, viewW, viewH,
             (ob) => ob.draw(ctx), (ob) => !!ob.def.decorative
         );
+        this.obstacleSystem.forVisibleStructures(this.camera, viewW, viewH, (structure) => {
+            structureRenderer.drawFloorDetails(ctx, structure);
+        });
         this.profiler.end('obstacles');
 
         // Visible standing art is assembled after ground hazards so every actor
@@ -246,9 +249,11 @@ export const GameRenderMethods = {
             (ob) => addStanding(standingQueue, standingPool, standingCount++, STAND_OBSTACLE,
                 ob, ob.baseY, 0, standingSerial++),
             // Structure walls keep their collision/LOS authority but cohesive
-            // shell art owns their pixels. Decorative floors already drew.
+            // shell art owns their pixels. Authored top-down blueprint walls
+            // enter this same baseY-sorted queue; legacy facade walls stay
+            // centralized on the structure rear/front planes.
             (ob) => !ob.def.decorative
-                && !(ob.type === 'buildingWall' && ob.structureId && !ob.partition),
+                && !(ob.type === 'buildingWall' && ob.structureId && !ob.def.blueprintId),
         );
         for (const g of this.gems) {
             if (!cull(g)) continue;
@@ -294,7 +299,11 @@ export const GameRenderMethods = {
                     structureRenderer.drawRear(ctx, value, this.player);
                     break;
                 case STAND_OBSTACLE:
-                    value.draw(ctx);
+                    if (value.type === 'buildingWall' && value.def.blueprintId) {
+                        structureRenderer.drawBlueprintWall(ctx, value);
+                    } else {
+                        value.draw(ctx);
+                    }
                     break;
                 case STAND_STRUCTURE_FRONT:
                     structureRenderer.drawFront(ctx, value);
@@ -580,16 +589,65 @@ export const GameRenderMethods = {
     // inside the camera transform).
     _buildRuinBellRenderSnapshot() {
         const source = this.ruinBellDirector?.getRenderSnapshot?.();
-        if (!source || !Array.isArray(source.roleMarks) || source.roleMarks.length === 0) {
-            return source || null;
+        if (!source) return null;
+        const sourceRoleMarks = source.roleMarks;
+        const roleMarks = Array.isArray(sourceRoleMarks) ? sourceRoleMarks : [];
+        const needsRolePositions = roleMarks.length > 0;
+        const needsRewardPositions = source.rewardReady === true;
+
+        // Most frames are locked, available, claimed, or spent and have
+        // nothing to enrich. Preserve the Director's immutable snapshot in
+        // those phases instead of scanning every enemy and allocating a Map at
+        // 60/120 FPS. A malformed legacy roleMarks value is sanitized once so
+        // renderer adapters still fail closed rather than throwing.
+        if (!needsRolePositions && !needsRewardPositions) {
+            return sourceRoleMarks == null || Array.isArray(sourceRoleMarks)
+                ? source
+                : { ...source, roleMarks: [] };
         }
-        const live = new Map();
-        for (const enemy of this.enemies) {
-            if (enemy.active && enemy.ruinBellMemberId) live.set(enemy.ruinBellMemberId, enemy);
+
+        let live = null;
+        if (needsRolePositions) {
+            live = new Map();
+            for (const enemy of this.enemies || []) {
+                if (enemy.active && enemy.ruinBellMemberId) {
+                    live.set(enemy.ruinBellMemberId, enemy);
+                }
+            }
+        }
+
+        // Cleared Bell rewards are real standing entities, and their authored
+        // sockets can still shift through `_clearSpot`.  Enrich the pure
+        // Director snapshot from those live, provenance-tagged objects so the
+        // semantic renderer can point at the exact Chest/Shrine positions
+        // without inventing a pickup location or duplicating reward art.
+        const rewardMarks = [];
+        if (needsRewardPositions) {
+            const addReward = (reward, choice, label, accent) => {
+                if (!reward?.active
+                    || reward.ruinBellInstanceId !== source.instanceId
+                    || reward.ruinBellRewardId !== source.rewardId
+                    || reward.ruinBellRewardChoice !== choice
+                    || !Number.isFinite(reward.x) || !Number.isFinite(reward.y)) return;
+                rewardMarks.push({
+                    choice,
+                    label,
+                    accent,
+                    x: reward.x,
+                    y: reward.y,
+                    radius: Number.isFinite(reward.radius) ? reward.radius : 42,
+                });
+            };
+            for (const chest of this.chests || []) {
+                addReward(chest, 'chest', 'CHEST', '#ffd166');
+            }
+            for (const shrine of this.shrines || []) {
+                addReward(shrine, 'shrine', 'WICK SHRINE', '#ff9ecf');
+            }
         }
         return {
             ...source,
-            roleMarks: source.roleMarks.map((mark) => {
+            roleMarks: roleMarks.map((mark) => {
                 const enemy = live.get(mark.memberId);
                 return enemy ? {
                     ...mark,
@@ -598,6 +656,7 @@ export const GameRenderMethods = {
                     radius: enemy.radius,
                 } : mark;
             }),
+            rewardMarks,
         };
     },
 

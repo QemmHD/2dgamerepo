@@ -191,10 +191,10 @@ export function pauseExitConfirmSnapshot(game, now = Date.now()) {
     };
 }
 
-// The Ruin Bell temporarily borrows the existing single guidance card; it
-// never creates a competing HUD panel. Away from the cabin, the normal Run
-// Path remains visible. Near/engaged/retry states expose the encounter's pure
-// director snapshot through the same visual and accessibility language.
+// The Ruin Bell temporarily borrows the existing single guidance owner; it
+// never creates a competing HUD panel. Real phones integrate that guidance
+// into the top command rail, while larger screens retain the shared Run Path
+// card. Away from the cabin, normal Run Path ownership returns unchanged.
 export function ruinBellObjectiveSnapshot(game, providedGuidance = undefined) {
     if (game?.screen !== 'gameplay') return null;
     const director = game?.ruinBellDirector;
@@ -233,21 +233,53 @@ export function ruinBellObjectiveSnapshot(game, providedGuidance = undefined) {
         : countdown == null
             ? `${Math.round(current)} / ${Math.round(target)}`
             : `${Math.ceil(countdown)}s · ${Math.round(current)}/${Math.round(target)}`;
+    const compactProgressLabel = phase === 'arming'
+        ? `${current.toFixed(1)}/${target.toFixed(1)}s`
+        : countdown == null
+            ? `${Math.round(current)}/${Math.round(target)}`
+            : `${Math.ceil(countdown)}s·${Math.round(current)}/${Math.round(target)}`;
+    const attempt = Math.max(1, Math.round(Number(guidance.attempt) || 1));
+    const maxAttempts = Math.max(attempt,
+        Math.round(Number(guidance.maxAttempts) || attempt));
+    const railActions = {
+        'The Ruin Bell wakes after Vigil 3.': 'Unlocks after Vigil 3.',
+        'Hold position by the bell to ring it.': 'Hold by the bell to ring.',
+        'Hold position - ringing the Ruin Bell.': 'Hold position to ring.',
+        'First Toll - brace both doors.': 'Brace both cabin doors.',
+        'Defeat every bellbound attacker.': 'Defeat all bellbound attackers.',
+        'Hold the cabin until the bell seals.': 'Hold cabin until the bell seals.',
+        'Return to the cabin before the Ruin Bell breaks.': 'Return to the cabin now.',
+        'Cabin defense restored.': 'Cabin defense restored.',
+        'The toll is held while the approach clears.': 'Approach blocked - toll held.',
+        'The damaged bell is relighting.': 'Bell relighting.',
+        'Ring again - final attempt.': 'Ring again - final attempt.',
+        'Choose the Chest or Wick Shrine.': '+32 XP · Choose Chest/Wick Shrine.',
+        'The Ruin Bell is silent for this run.': 'NO REWARD · Bell silent this run.',
+    };
+    const railStateLabel = phase === 'cleared'
+        ? 'BELL HELD' : phase === 'spent' ? 'BELL LOST' : `BELL ${attempt}/${maxAttempts}`;
     return {
         owner: 'ruin-bell',
         id: `ruin-bell:${phase}:${guidance.attempt}:${guidance.stageId || 'none'}`,
         phaseLabel: 'HOUSE CONTRACT',
         phaseNumeral: guidance.symbol || 'BELL',
-        headerLabel: `RUIN BELL · ${guidance.attemptLabel}`,
+        headerLabel: `BELL · TRY ${attempt}/${maxAttempts}`,
+        compactHeaderLabel: `BELL · ${attempt}/${maxAttempts}`,
+        railStatusLabel: `${railStateLabel} · ${compactProgressLabel}`,
         title: guidance.title,
         nextAction: guidance.nextAction,
+        railActionLabel: railActions[guidance.nextAction] || guidance.nextAction,
         bodyLabel: labels[phase] || 'NEXT',
         current,
         target,
         progress: Math.max(0, Math.min(1, Number(guidance.progress) || 0)),
         progressLabel,
+        compactProgressLabel,
         reward: { amount: 0 },
-        rewardLabel: guidance.rewardLabel,
+        rewardLabel: phase === 'spent'
+            ? 'NO COMPLETION REWARD' : guidance.rewardLabel,
+        compactRewardLabel: phase === 'spent'
+            ? 'NO REWARD' : '+32 XP · CHEST/SHRINE',
         rewardColor: phase === 'spent' ? '#a9a1b5' : '#7fe0a0',
         contextText: countdown == null
             ? (game.input?.isTouchMode?.() ? 'HOUSE CONTRACT' : 'O · HEAR CONTRACT')

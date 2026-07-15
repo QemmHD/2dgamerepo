@@ -338,6 +338,7 @@ export class ObstacleSystem {
             blueprintId: blueprint.id,
             blueprintVersion: blueprint.version,
             blueprint,
+            architecture: blueprint.architecture || null,
             state,
             poiReservation: blueprint.encounter?.id || null,
             doorSide,
@@ -372,6 +373,10 @@ export class ObstacleSystem {
                 palette,
                 styleType: renderStyle,
                 blueprintId: blueprint.id,
+                renderProjection: blueprint.architecture?.projection || 'top-down-cutaway',
+                partitionProfile: part.kind === 'partition'
+                    ? blueprint.architecture?.partitions || 'low-timber-divider'
+                    : null,
             };
             const ob = new Obstacle(def, cx + part.x, cy + part.y);
             ob.structureId = structureId;
@@ -402,6 +407,7 @@ export class ObstacleSystem {
                 styleType: renderStyle,
                 blueprintId: blueprint.id,
                 sprite: item.sprite,
+                renderProjection: blueprint.architecture?.projection || 'top-down-cutaway',
             };
             const ob = new Obstacle(def, cx + item.x, cy + item.y);
             ob.structureId = structureId;
@@ -423,6 +429,7 @@ export class ObstacleSystem {
             palette,
             styleType: renderStyle,
             blueprintId: blueprint.id,
+            floorMaterialStyle: blueprint.floor?.materialStyle || renderStyle,
         };
         const fob = new Obstacle(floor, cx, cy);
         fob.structureId = structureId;
@@ -542,6 +549,22 @@ export class ObstacleSystem {
             if (ob.wallEdge === 'east') return { nx: 1, ny: 0, depth: right + cr };
             if (ob.wallEdge === 'north') return { nx: 0, ny: -1, depth: top + cr };
             if (ob.wallEdge === 'south') return { nx: 0, ny: 1, depth: bottom + cr };
+            // Authored furnishings can also name a clear escape direction.
+            // This matters in compact domestic zones: resolving a body from a
+            // table/shelf center toward the nearest partition can create a
+            // false pocket even though the open side is unobstructed.
+            const ex = ob.escapeX || 0;
+            const ey = ob.escapeY || 0;
+            if (Math.abs(ex) >= Math.abs(ey) && Math.abs(ex) > 1e-9) {
+                return ex < 0
+                    ? { nx: -1, ny: 0, depth: left + cr }
+                    : { nx: 1, ny: 0, depth: right + cr };
+            }
+            if (Math.abs(ey) > 1e-9) {
+                return ey < 0
+                    ? { nx: 0, ny: -1, depth: top + cr }
+                    : { nx: 0, ny: 1, depth: bottom + cr };
+            }
             const m = Math.min(left, right, top, bottom);
             if (m === left) return { nx: -1, ny: 0, depth: left + cr };
             if (m === right) return { nx: 1, ny: 0, depth: right + cr };

@@ -1089,6 +1089,68 @@ await section('render snapshot enrichment and pure renderer smoke', () => {
     'high-contrast semantic pass lost the activation ring');
     equal(JSON.stringify(enriched), before,
         'high-contrast/reduced renderer mutated its input');
+
+    const rewardFixture = completedRewardFixture(8181);
+    const rewardGame = rewardRuntime(rewardFixture);
+    GameUpdateMethods._handleRuinBellEvent.call(rewardGame, rewardFixture.event);
+    const rewardSource = rewardFixture.director.getRenderSnapshot();
+    const rewardEnriched = GameRenderMethods._buildRuinBellRenderSnapshot.call(rewardGame);
+    equal(rewardEnriched?.rewardMarks?.length, 2,
+        'cleared render adapter did not expose both live reward choices');
+    deepEqual(rewardEnriched.rewardMarks.map((mark) => mark.choice).sort(), ['chest', 'shrine'],
+        'cleared render adapter reward choices');
+    for (const mark of rewardEnriched.rewardMarks) {
+        const liveReward = mark.choice === 'chest' ? rewardGame.chests[0] : rewardGame.shrines[0];
+        close(mark.x, liveReward.x, 0, `${mark.choice} semantic marker x`);
+        close(mark.y, liveReward.y, 0, `${mark.choice} semantic marker y`);
+    }
+    check(!Object.hasOwn(rewardSource, 'rewardMarks'),
+        'pure Director invented live reward positions');
+    const rewardCtx = fakeCanvasContext();
+    check(ruinBellRenderer.drawAbove(rewardCtx, rewardEnriched, presentation),
+        'cleared reward semantic renderer returned false');
+    const rewardLabels = rewardCtx.calls
+        .filter((entry) => entry.method === 'fillText')
+        .map((entry) => entry.args[0]);
+    deepEqual(rewardLabels, ['CHEST', 'WICK SHRINE'],
+        'cleared semantic pass did not identify both real reward entities');
+
+    const technical = {
+        ...enriched,
+        phase: 'technical-defer',
+        defense: { ...enriched.defense, outside: false },
+    };
+    const technicalCtx = fakeCanvasContext();
+    check(ruinBellRenderer.drawGround(technicalCtx, technical, presentation),
+        'technical-defer ground renderer returned false');
+    check(technicalCtx.calls.some((entry) => entry.method === 'arc'
+        && entry.args[0] === STRUCTURE.x && entry.args[1] === STRUCTURE.y
+        && entry.args[2] === 460),
+    'technical-defer lost the cabin defense boundary');
+
+    const dormantSource = { visible: true, phase: 'spent', roleMarks: [], rewardReady: false };
+    const dormantEnemies = {
+        [Symbol.iterator]() {
+            throw new Error('dormant render adapter scanned enemies');
+        },
+    };
+    const dormantResult = GameRenderMethods._buildRuinBellRenderSnapshot.call({
+        ruinBellDirector: { getRenderSnapshot: () => dormantSource },
+        enemies: dormantEnemies,
+    });
+    equal(dormantResult, dormantSource,
+        'dormant render adapter allocated instead of preserving the pure snapshot');
+
+    const malformedResult = GameRenderMethods._buildRuinBellRenderSnapshot.call({
+        ruinBellDirector: {
+            getRenderSnapshot: () => ({
+                visible: true, phase: 'active', roleMarks: { legacy: true }, rewardReady: false,
+            }),
+        },
+        enemies: dormantEnemies,
+    });
+    deepEqual(malformedResult.roleMarks, [],
+        'malformed legacy roleMarks did not fail closed without scanning enemies');
 });
 
 await section('deterministic semantic music events', () => {

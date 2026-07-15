@@ -44,7 +44,7 @@ export class Obstacle {
         // Keeping these Obstacle instances invisible preserves every physical
         // wall/LOS/nav query while removing six shadows, seams, caps, and outlines
         // that previously made one house look like unrelated slabs.
-        if (this.type === 'buildingWall' && this.structureId && !this.partition) return;
+        if (this.type === 'buildingWall' && this.structureId) return;
         const size = this.def.size;
         // Per-instance palette wins (biome tinting / building walls set it);
         // otherwise fall back to the archetype's own palette.
@@ -453,33 +453,61 @@ export class Obstacle {
         const hw = w / 2, hh = h / 2;
         const blueprint = getHouseBlueprint(this.def.blueprintId);
         if (blueprint) {
-            const pattern = getWallPattern(blueprint.floor?.materialStyle || this.def.styleType, ctx);
-            ctx.fillStyle = pattern || '#4b3829';
-            ctx.fillRect(-hw, -hh, w, h);
-
-            // Each authored room gets a restrained material grade. These are
-            // gameplay zones from the shared blueprint, not a second visual
-            // layout, and the Wick Hall overlay makes the clear circulation
-            // spine readable without labels or placeholder art.
-            for (const room of blueprint.rooms || []) {
-                if (!room.floorTone) continue;
+            // House V2 gets one uninterrupted clean-board field. The legacy
+            // cabin floor raster includes a fireplace, rug, table, and implied
+            // room shell, so using it here made the authored cabin read as old
+            // buildings pasted inside a larger facade. V3's source asset is a
+            // material only; rooms and props stay owned by the blueprint.
+            const floorStyle = blueprint.floor?.materialStyle || this.def.styleType;
+            const cleanFloor = getFloorDecal(floorStyle);
+            if (cleanFloor) {
                 ctx.save();
-                ctx.globalAlpha = room.overlay ? 0.22 : 0.16;
-                ctx.fillStyle = room.floorTone;
-                ctx.fillRect(room.x - room.w / 2, room.y - room.h / 2, room.w, room.h);
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(cleanFloor, -hw, -hh, w, h);
+                ctx.restore();
+            } else {
+                const shellStyle = blueprint.floor?.shellMaterialStyle || this.def.styleType;
+                const pattern = getWallPattern(shellStyle, ctx);
+                ctx.fillStyle = pattern || '#4b3829';
+                ctx.fillRect(-hw, -hh, w, h);
+            }
+
+            // The circulation spine is a worn route within the same boards,
+            // not another filled room. Thin inlay rails and door thresholds
+            // reveal the believable plan without drawing a second shell.
+            const hall = (blueprint.rooms || []).find((room) => room.overlay
+                && room.tags?.includes('circulation'));
+            if (hall) {
+                ctx.save();
+                ctx.globalAlpha = 0.34;
+                ctx.strokeStyle = hall.floorTone || '#705038';
+                ctx.lineWidth = 5;
+                for (const x of [hall.x - hall.w / 2 + 7, hall.x + hall.w / 2 - 7]) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, -hh + 4);
+                    ctx.lineTo(x, hh - 4);
+                    ctx.stroke();
+                }
                 ctx.restore();
             }
-            const decalDef = blueprint.floor?.decal;
-            const decal = getFloorDecal(blueprint.floor?.materialStyle || this.def.styleType);
-            if (decal && decalDef) {
-                ctx.drawImage(
-                    decal,
-                    decalDef.x - decalDef.w / 2,
-                    decalDef.y - decalDef.h / 2,
-                    decalDef.w,
-                    decalDef.h,
-                );
+            ctx.save();
+            ctx.fillStyle = 'rgba(34, 17, 10, 0.52)';
+            for (const entry of blueprint.doors || []) {
+                if (entry.kind !== 'interior') continue;
+                if (entry.axis === 'horizontal') {
+                    ctx.fillRect(entry.x - entry.width * 0.42, entry.y - 3,
+                        entry.width * 0.84, 6);
+                } else {
+                    ctx.fillRect(entry.x - 3, entry.y - entry.width * 0.42,
+                        6, entry.width * 0.84);
+                }
             }
+            ctx.restore();
+
+            // A single inset edge binds the floor to the continuous foundation.
+            ctx.strokeStyle = 'rgba(25, 13, 10, 0.70)';
+            ctx.lineWidth = 7;
+            ctx.strokeRect(-hw + 3.5, -hh + 3.5, w - 7, h - 7);
             if (this.tint && this.tint.amt > 0.01) {
                 ctx.save();
                 ctx.globalAlpha = Math.min(0.16, this.tint.amt * 0.45);
@@ -551,7 +579,11 @@ export class Obstacle {
             ? getObstacleSprite(key, this.tint)
             : getHousePropSprite(key);
         if (sprite) {
-            ctx.drawImage(sprite, -w / 2, -h, w, h);
+            const topDown = this.def.renderProjection === 'top-down-cutaway';
+            ctx.save();
+            if (topDown) ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(sprite, -w / 2, topDown ? -h / 2 : -h, w, h);
+            ctx.restore();
             return;
         }
         // Never-rejecting raster loaders keep this material fallback as the

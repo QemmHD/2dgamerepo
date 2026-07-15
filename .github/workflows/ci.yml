@@ -215,35 +215,83 @@ jobs:
             MATRIX_INDEX=$((MATRIX_INDEX + 1))
             MATRIX_DOM="/tmp/harness-matrix-${MATRIX_INDEX}.html"
             MATRIX_TOUCH=false
+            MATRIX_DEVICE=''
+            MATRIX_MOBILE=false
             MATRIX_WINDOW_WIDTH=1280
             MATRIX_WINDOW_HEIGHT=720
+            MATRIX_VIEWPORT_WIDTH=1280
+            MATRIX_VIEWPORT_HEIGHT=720
+            MATRIX_DEVICE_SCALE=1
             MATRIX_ATTEMPTS=1
             if [[ "&${QUERY}&" == *"&touch=1&"* ]]; then
               MATRIX_TOUCH=true
               MATRIX_WINDOW_WIDTH=667
               MATRIX_WINDOW_HEIGHT=375
+              MATRIX_VIEWPORT_WIDTH=667
+              MATRIX_VIEWPORT_HEIGHT=375
               MATRIX_ATTEMPTS=3
             fi
+            if [[ "$QUERY" =~ device=(mobile-portrait|mobile-landscape) ]]; then
+              MATRIX_DEVICE="${BASH_REMATCH[1]}"
+              MATRIX_MOBILE=true
+              MATRIX_TOUCH=true
+              MATRIX_DEVICE_SCALE=3
+              MATRIX_ATTEMPTS=1
+              if [[ "$MATRIX_DEVICE" == mobile-portrait ]]; then
+                MATRIX_WINDOW_WIDTH=390
+                MATRIX_WINDOW_HEIGHT=844
+                MATRIX_VIEWPORT_WIDTH=390
+                MATRIX_VIEWPORT_HEIGHT=844
+              else
+                MATRIX_WINDOW_WIDTH=844
+                MATRIX_WINDOW_HEIGHT=390
+                MATRIX_VIEWPORT_WIDTH=844
+                MATRIX_VIEWPORT_HEIGHT=390
+              fi
+            fi
+            MATRIX_OUTPUT=''
+            if [[ "$QUERY" =~ out=([A-Za-z0-9._-]+) ]]; then
+              MATRIX_OUTPUT="${BASH_REMATCH[1]}"
+            fi
+            # Visual-review PNGs rely on the authoritative DOM/title EXC:0
+            # receipt and omit the harness-only green badge from gameplay.
+            MATRIX_BADGE=1
+            if [[ -n "$MATRIX_OUTPUT" ]]; then MATRIX_BADGE=0; fi
             # Chrome's --window-size may describe outer bounds on one runner
             # and the content viewport on another. Touch rows calibrate against
-            # the harness's real window.innerWidth/innerHeight receipt, then the
-            # final DOM must prove the exact 667x375 playable viewport.
+            # the harness's real window.innerWidth/innerHeight receipt. Mobile
+            # device rows use CDP metrics instead and must be exact on attempt 1.
             for ((MATRIX_ATTEMPT=1; MATRIX_ATTEMPT<=MATRIX_ATTEMPTS; MATRIX_ATTEMPT++)); do
               MATRIX_PROFILE=$(mktemp -d)
               MATRIX_WINDOW="${MATRIX_WINDOW_WIDTH},${MATRIX_WINDOW_HEIGHT}"
-              node tools/artshot/capture-harness.mjs \
+              MATRIX_CAPTURE_ARGS=(
                 --chrome="$CHROME" --window="$MATRIX_WINDOW" --timeout=30000 \
                 --profile="$MATRIX_PROFILE" --dom="$MATRIX_DOM" \
-                --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&blockboot=1&badge=1&${QUERY}"
+                --url="http://127.0.0.1:8909/tools/artshot/harness.html?seconds=1&blockboot=1&badge=${MATRIX_BADGE}&${QUERY}"
+              )
+              if [[ "$MATRIX_MOBILE" == true ]]; then
+                MATRIX_CAPTURE_ARGS+=(
+                  --viewport="${MATRIX_VIEWPORT_WIDTH},${MATRIX_VIEWPORT_HEIGHT}"
+                  --device-scale="$MATRIX_DEVICE_SCALE" --mobile=1 --touch=1
+                  --user-agent="Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+                )
+                if [[ -n "$MATRIX_OUTPUT" ]]; then
+                  MATRIX_CAPTURE_ARGS+=(--screenshot="__out/${MATRIX_OUTPUT}")
+                fi
+              fi
+              node tools/artshot/capture-harness.mjs "${MATRIX_CAPTURE_ARGS[@]}"
               if [[ "$MATRIX_TOUCH" != true ]]; then break; fi
               VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
               VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$MATRIX_DOM" | head -1 | cut -d'"' -f2)
               if [[ ! "$VIEWPORT_WIDTH" =~ ^[0-9]+$ || ! "$VIEWPORT_HEIGHT" =~ ^[0-9]+$ ]]; then
                 echo "FAIL: touch scenario '${QUERY}' omitted its numeric viewport receipt"; exit 1
               fi
-              if (( VIEWPORT_WIDTH == 667 && VIEWPORT_HEIGHT == 375 )); then break; fi
-              MATRIX_WINDOW_WIDTH=$((MATRIX_WINDOW_WIDTH + 667 - VIEWPORT_WIDTH))
-              MATRIX_WINDOW_HEIGHT=$((MATRIX_WINDOW_HEIGHT + 375 - VIEWPORT_HEIGHT))
+              if (( VIEWPORT_WIDTH == MATRIX_VIEWPORT_WIDTH && VIEWPORT_HEIGHT == MATRIX_VIEWPORT_HEIGHT )); then break; fi
+              if [[ "$MATRIX_MOBILE" == true ]]; then
+                echo "FAIL: ${MATRIX_DEVICE} CDP viewport was ${VIEWPORT_WIDTH}x${VIEWPORT_HEIGHT}; expected ${MATRIX_VIEWPORT_WIDTH}x${MATRIX_VIEWPORT_HEIGHT}"; exit 1
+              fi
+              MATRIX_WINDOW_WIDTH=$((MATRIX_WINDOW_WIDTH + MATRIX_VIEWPORT_WIDTH - VIEWPORT_WIDTH))
+              MATRIX_WINDOW_HEIGHT=$((MATRIX_WINDOW_HEIGHT + MATRIX_VIEWPORT_HEIGHT - VIEWPORT_HEIGHT))
               if (( MATRIX_WINDOW_WIDTH < 320 || MATRIX_WINDOW_WIDTH > 2048
                 || MATRIX_WINDOW_HEIGHT < 240 || MATRIX_WINDOW_HEIGHT > 2048 )); then
                 echo "FAIL: touch viewport calibration produced implausible outer bounds ${MATRIX_WINDOW_WIDTH}x${MATRIX_WINDOW_HEIGHT}"; exit 1
@@ -261,9 +309,36 @@ jobs:
               echo "FAIL: matrix scenario '${QUERY}' omitted its QA receipt"; exit 1;
             }
             if [[ "$MATRIX_TOUCH" == true ]]; then
-              grep -q 'data-qa-viewport-width="667"' "$MATRIX_DOM" \
-                && grep -q 'data-qa-viewport-height="375"' "$MATRIX_DOM" || {
-                  echo "FAIL: touch scenario '${QUERY}' inner viewport was ${VIEWPORT_WIDTH:-missing}x${VIEWPORT_HEIGHT:-missing}; expected exact 667x375 after calibration"; exit 1;
+              grep -q "data-qa-viewport-width=\"${MATRIX_VIEWPORT_WIDTH}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-viewport-height=\"${MATRIX_VIEWPORT_HEIGHT}\"" "$MATRIX_DOM" || {
+                  echo "FAIL: touch scenario '${QUERY}' inner viewport was ${VIEWPORT_WIDTH:-missing}x${VIEWPORT_HEIGHT:-missing}; expected exact ${MATRIX_VIEWPORT_WIDTH}x${MATRIX_VIEWPORT_HEIGHT}"; exit 1;
+                }
+            fi
+            if [[ "$MATRIX_MOBILE" == true ]]; then
+              EXPECTED_ORIENTATION='landscape-primary'
+              EXPECTED_ROTATED=false
+              EXPECTED_ROTATE_HINT_VISIBLE=false
+              EXPECTED_ROTATE_HINT_COMPACT=false
+              if [[ "$MATRIX_DEVICE" == mobile-portrait ]]; then
+                EXPECTED_ORIENTATION='portrait-primary'
+                EXPECTED_ROTATED=true
+                EXPECTED_ROTATE_HINT_VISIBLE=true
+                EXPECTED_ROTATE_HINT_COMPACT=true
+              fi
+              grep -q "data-qa-device-profile=\"${MATRIX_DEVICE}\"" "$MATRIX_DOM" \
+                && grep -q 'data-qa-device-pixel-ratio="3"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-user-agent-mobile="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-max-touch-points="5"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-pointer-coarse="true"' "$MATRIX_DOM" \
+                && grep -q "data-qa-screen-orientation=\"${EXPECTED_ORIENTATION}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-renderer-rotated=\"${EXPECTED_ROTATED}\"" "$MATRIX_DOM" \
+                && grep -q 'data-qa-rotate-hint-text="Rotate to landscape for the full HUD"' "$MATRIX_DOM" \
+                && grep -q "data-qa-rotate-hint-visible=\"${EXPECTED_ROTATE_HINT_VISIBLE}\"" "$MATRIX_DOM" \
+                && grep -q "data-qa-rotate-hint-compact=\"${EXPECTED_ROTATE_HINT_COMPACT}\"" "$MATRIX_DOM" \
+                && grep -q 'data-qa-rotate-hint-outside-stage="true"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-input="touch"' "$MATRIX_DOM" \
+                && grep -q 'data-qa-objective-variant="rail"' "$MATRIX_DOM" || {
+                  echo "FAIL: ${MATRIX_DEVICE} scenario did not use the required mobile profile, honest rotate affordance, and integrated Bell rail"; exit 1;
                 }
             fi
             if [[ "$QUERY" == *"input=keyboard"* ]]; then
@@ -271,9 +346,11 @@ jobs:
                 echo "FAIL: matrix scenario '${QUERY}' did not stage keyboard modality"; exit 1;
               }
             fi
-            if [[ "$QUERY" == *"reduced=1"* ]]; then
-              grep -q 'data-qa-reduced="true"' "$MATRIX_DOM" || {
-                echo "FAIL: matrix scenario '${QUERY}' did not persist Reduced Effects"; exit 1;
+            if [[ "$QUERY" =~ reduced=([01]) ]]; then
+              EXPECTED_REDUCED=false
+              if [[ "${BASH_REMATCH[1]}" == 1 ]]; then EXPECTED_REDUCED=true; fi
+              grep -q "data-qa-reduced=\"${EXPECTED_REDUCED}\"" "$MATRIX_DOM" || {
+                echo "FAIL: matrix scenario '${QUERY}' did not persist Reduced Effects=${EXPECTED_REDUCED}"; exit 1;
               }
             fi
             if [[ "$QUERY" =~ uiscale=([0-9]+) ]]; then
@@ -607,8 +684,8 @@ jobs:
                     echo "FAIL: ${EXPECTED_RUIN_BELL} Ruin Bell emitted an early reward"; exit 1;
                   }
               fi
-              if [[ "$QUERY" =~ out=([A-Za-z0-9._-]+) ]]; then
-                RUIN_BELL_OUTPUT="${BASH_REMATCH[1]}"
+              if [[ -n "$MATRIX_OUTPUT" ]]; then
+                RUIN_BELL_OUTPUT="$MATRIX_OUTPUT"
                 grep -q "data-qa-output=\"${RUIN_BELL_OUTPUT}\"" "$MATRIX_DOM" \
                   && test -s "__out/${RUIN_BELL_OUTPUT}" || {
                     echo "FAIL: Ruin Bell '${EXPECTED_RUIN_BELL}' visual receipt was not saved"; exit 1;
@@ -619,9 +696,16 @@ jobs:
                 [[ "$RUIN_BELL_BACKING" =~ ^([0-9]+)x([0-9]+)$ ]] || {
                   echo "FAIL: Ruin Bell '${EXPECTED_RUIN_BELL}' omitted its canvas backing receipt"; exit 1;
                 }
+                if [[ "$MATRIX_MOBILE" == true ]]; then
+                  RUIN_BELL_PNG_WIDTH=$((MATRIX_VIEWPORT_WIDTH * MATRIX_DEVICE_SCALE))
+                  RUIN_BELL_PNG_HEIGHT=$((MATRIX_VIEWPORT_HEIGHT * MATRIX_DEVICE_SCALE))
+                else
+                  RUIN_BELL_PNG_WIDTH="${BASH_REMATCH[1]}"
+                  RUIN_BELL_PNG_HEIGHT="${BASH_REMATCH[2]}"
+                fi
                 node tools/artshot/validate-receipt-png.mjs \
                   "$RUIN_BELL_RECEIPTS/${RUIN_BELL_OUTPUT}" \
-                  --width="${BASH_REMATCH[1]}" --height="${BASH_REMATCH[2]}"
+                  --width="$RUIN_BELL_PNG_WIDTH" --height="$RUIN_BELL_PNG_HEIGHT"
               fi
             fi
           done <<'MATRIX'
@@ -651,7 +735,10 @@ jobs:
           emberwood|objectivephase=climax&objectiveprogress=0.65&runmode=weekly&touch=1&uiscale=130&reduced=1&contrast=1&boss=1&bossid=stormwingAlpha&bossframes=1
           emberwood|map=emberwood&ruinbell=arming&out=ruin-bell-arming-1280x720.png
           emberwood|map=emberwood&ruinbell=warning&captions=1&captiondetail=full&out=ruin-bell-warning-1280x720.png
-          emberwood|map=emberwood&ruinbell=crossfire&touch=1&uiscale=130&reduced=1&out=ruin-bell-crossfire-667x375.png
+          emberwood|map=emberwood&ruinbell=crossfire&device=mobile-portrait&touch=1&uiscale=130&reduced=0&out=ruin-bell-crossfire-mobile-portrait-390x844.png
+          emberwood|map=emberwood&ruinbell=crossfire&device=mobile-portrait&touch=1&uiscale=130&reduced=1&out=ruin-bell-crossfire-mobile-portrait-reduced-390x844.png
+          emberwood|map=emberwood&ruinbell=crossfire&device=mobile-landscape&touch=1&uiscale=130&reduced=0&out=ruin-bell-crossfire-mobile-landscape-844x390.png
+          emberwood|map=emberwood&ruinbell=crossfire&device=mobile-landscape&touch=1&uiscale=130&reduced=1&out=ruin-bell-crossfire-mobile-landscape-reduced-844x390.png
           emberwood|map=emberwood&ruinbell=breach&uiscale=130&contrast=1&out=ruin-bell-breach-high-contrast-1280x720.png
           emberwood|map=emberwood&ruinbell=technical&out=ruin-bell-technical-1280x720.png
           emberwood|map=emberwood&ruinbell=cleared&out=ruin-bell-cleared-1280x720.png
@@ -660,10 +747,23 @@ jobs:
           emberwood|screen=menu&tab=battlepass&bpxp=12600&bpclaimthrough=12&bpreceipt=1
           emberwood|screen=menu&tab=shop&mines=250&minessafe=3&input=keyboard&minesFocus=7&reduced=1
           MATRIX
-          [ "$(find "$RUIN_BELL_RECEIPTS" -maxdepth 1 -type f -name '*.png' | wc -l)" -eq 8 ] \
-            && [ "$(sha256sum "$RUIN_BELL_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 8 ] || {
+          [ "$(find "$RUIN_BELL_RECEIPTS" -maxdepth 1 -type f -name '*.png' | wc -l)" -eq 11 ] \
+            && [ "$(sha256sum "$RUIN_BELL_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 11 ] || {
               echo 'FAIL: Ruin Bell visual receipt set is incomplete or contains duplicate states'; exit 1;
             }
+          for MOBILE_ORIENTATION in portrait landscape; do
+            NORMAL_RECEIPT="$RUIN_BELL_RECEIPTS/ruin-bell-crossfire-mobile-${MOBILE_ORIENTATION}-"
+            if [[ "$MOBILE_ORIENTATION" == portrait ]]; then
+              NORMAL_RECEIPT+="390x844.png"
+              REDUCED_RECEIPT="$RUIN_BELL_RECEIPTS/ruin-bell-crossfire-mobile-portrait-reduced-390x844.png"
+            else
+              NORMAL_RECEIPT+="844x390.png"
+              REDUCED_RECEIPT="$RUIN_BELL_RECEIPTS/ruin-bell-crossfire-mobile-landscape-reduced-844x390.png"
+            fi
+            [ "$(sha256sum "$NORMAL_RECEIPT" | cut -d' ' -f1)" != "$(sha256sum "$REDUCED_RECEIPT" | cut -d' ' -f1)" ] || {
+              echo "FAIL: ${MOBILE_ORIENTATION} Reduced Effects receipt is pixel-identical to its normal-effects control"; exit 1;
+            }
+          done
 
           # Real Chromium/Web Audio graph gate: three independent player buses,
           # stereo->mono->stereo graph continuity, and muted-voice duck safety.

@@ -7,6 +7,7 @@
 // contract that the featured Emberwood cabin does not currently satisfy.
 
 import { performance } from 'node:perf_hooks';
+import { readFileSync } from 'node:fs';
 import {
     EMBERWOOD_RUIN_BELL_CABIN,
     HOUSE_V2_STATES,
@@ -24,8 +25,10 @@ import {
     MAP_STRUCTURES,
     STRUCTURE_PLACEMENT,
 } from '../src/content/mapObjects.js';
+import { CHEST, PLAYER, WICK_ROADS } from '../src/config/GameConfig.js';
 import { enemyNavigationRole, steerEnemyMovement } from '../src/systems/EnemyNavigation.js';
 import { ObstacleSystem } from '../src/systems/ObstacleSystem.js';
+import { structureRenderer } from '../src/render/StructureRenderer.js';
 
 const WORLD_W = 7200;
 const WORLD_H = 4050;
@@ -91,6 +94,26 @@ function finiteObject(entry, keys, label) {
     for (const key of keys) {
         check(Number.isFinite(entry?.[key]), `${label}.${key} must be finite`);
     }
+}
+
+function pngDimensions(relativeUrl) {
+    const bytes = readFileSync(new URL(relativeUrl, import.meta.url));
+    check(bytes.length > 32, `${relativeUrl} must contain PNG data`);
+    check(bytes.subarray(1, 4).toString('ascii') === 'PNG', `${relativeUrl} must be a PNG`);
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), bytes };
+}
+
+function partitionTraceContext() {
+    const calls = [];
+    return {
+        calls,
+        save() { calls.push('save'); },
+        restore() { calls.push('restore'); },
+        translate(x, y) { calls.push(`translate:${x}:${y}`); },
+        rotate(value) { calls.push(`rotate:${value}`); },
+        fillRect(x, y, w, h) { calls.push(`fill:${x}:${y}:${w}:${h}`); },
+        strokeRect(x, y, w, h) { calls.push(`stroke:${x}:${y}:${w}:${h}`); },
+    };
 }
 
 function activeOwnedObstacles(obstacles, structure) {
@@ -276,12 +299,28 @@ function validateSchemaAndGeometry() {
     check(JSON.stringify(HOUSE_V2_STATES) === JSON.stringify(['intact', 'lit', 'damaged', 'ruined']),
         'House V2 state order must be intact, lit, damaged, ruined');
     check(getHouseBlueprint(CABIN.id) === CABIN, 'blueprint registry must return the canonical cabin object');
-    check(CABIN.version === 2, `blueprint version must be 2, got ${CABIN.version}`);
+    check(CABIN.version === 3, `blueprint version must be 3, got ${CABIN.version}`);
     check(CABIN.biomeId === BIOME, `blueprint biome must be ${BIOME}`);
     check(Object.isFrozen(CABIN), 'blueprint root must be frozen');
     check(Object.isFrozen(CABIN.rooms) && Object.isFrozen(CABIN.walls)
         && Object.isFrozen(CABIN.doors), 'blueprint authored arrays must be frozen');
     check(houseGeometrySignature(CABIN).length > 100, 'geometry signature must be populated');
+    check(CABIN.architecture?.form === 'single-shell-dwelling',
+        'cabin must declare one coherent dwelling form');
+    check(CABIN.architecture?.projection === 'top-down-cutaway',
+        'cabin shell and furnishings must share the top-down cutaway projection');
+    check(CABIN.architecture?.exteriorShellCount === 1,
+        'cabin must declare exactly one exterior shell');
+    check(CABIN.architecture?.foundation === 'continuous-stone-ring',
+        'cabin must declare the continuous foundation renderer contract');
+    check(CABIN.architecture?.floor === 'continuous-clean-oak',
+        'cabin must declare one clean interior floor');
+    check(CABIN.architecture?.partitions === 'low-timber-divider',
+        'cabin must declare the low interior-partition profile');
+    check(CABIN.architecture?.props === 'pixel-plan',
+        'cabin furnishings must declare the game-native pixel-plan style');
+    check(CABIN.floor?.materialStyle === 'cabinClean' && CABIN.floor?.decal === null,
+        'House V3 must not reuse the legacy room/furniture composite floor decal');
 
     const dims = CABIN.dimensions;
     finiteObject(dims, ['interiorW', 'interiorH', 'wall', 'wallH', 'mainDoor'], 'dimensions');
@@ -294,6 +333,25 @@ function validateSchemaAndGeometry() {
         'room ids must be unique');
     check(CABIN.rooms.filter((entry) => entry.overlay).length === 1,
         'exactly one circulation overlay zone is expected');
+
+    // Four physical rooms tile one foundation exactly. No overlap means none
+    // can masquerade as a nested legacy building; shared edges are real walls
+    // and door gaps below.
+    const physicalRooms = CABIN.rooms.filter((entry) => !entry.overlay);
+    close(physicalRooms.reduce((sum, entry) => sum + entry.w * entry.h, 0),
+        dims.interiorW * dims.interiorH, 1e-9,
+        'physical room area must exactly tile the continuous floor');
+    for (let i = 0; i < physicalRooms.length; i++) {
+        for (let j = i + 1; j < physicalRooms.length; j++) {
+            const a = physicalRooms[i], b = physicalRooms[j];
+            const overlapW = Math.min(a.x + a.w / 2, b.x + b.w / 2)
+                - Math.max(a.x - a.w / 2, b.x - b.w / 2);
+            const overlapH = Math.min(a.y + a.h / 2, b.y + b.h / 2)
+                - Math.max(a.y - a.h / 2, b.y - b.h / 2);
+            check(overlapW <= 1e-9 || overlapH <= 1e-9,
+                `physical rooms ${a.id}/${b.id} overlap instead of sharing an edge`);
+        }
+    }
 
     const innerHW = dims.interiorW / 2;
     const innerHH = dims.interiorH / 2;
@@ -325,6 +383,10 @@ function validateSchemaAndGeometry() {
         `wall ${part.id} must stay inside the structure shell`);
         for (const state of part.inactiveStates || []) {
             check(HOUSE_V2_STATES.includes(state), `wall ${part.id} references unknown state ${state}`);
+        }
+        if (part.kind === 'partition') {
+            check(part.renderHeight >= 22 && part.renderHeight <= 36,
+                `partition ${part.id} must stay furniture-scale, got ${part.renderHeight}`);
         }
     }
 
@@ -359,7 +421,15 @@ function validateSchemaAndGeometry() {
     }
 
     check(CABIN.spawnExclusions.length >= 3, 'interior and both approaches need spawn exclusions');
-    check(CABIN.furniture.length >= 4, 'cabin needs the bell and domestic furniture');
+    check(CABIN.furniture.length >= 7, 'cabin needs the bell plus a complete domestic furnishing set');
+    const domesticRooms = new Set(CABIN.furniture
+        .filter((entry) => entry.tags?.includes('domestic'))
+        .map((entry) => entry.roomId));
+    check(domesticRooms.has('hearth-kitchen') && domesticRooms.has('dining-work')
+        && domesticRooms.has('storage-lean-to'),
+    'domestic props must establish hearth, dining/work, and storage functions');
+    check(CABIN.furniture.some((entry) => entry.tags?.includes('sleep')),
+        'sleeping nook needs a bed identity');
     for (const item of CABIN.furniture) {
         check(EXPECTED_ROOMS.includes(item.roomId),
             `furniture ${item.id} references unknown room ${item.roomId}`);
@@ -384,8 +454,14 @@ function validateSchemaAndGeometry() {
             && Math.abs(socket.y - room.y) <= room.h / 2 - 40,
         `${kind} reward socket lacks 40px room clearance`);
     }
-    check(Math.hypot(sockets.chest.x - sockets.shrine.x, sockets.chest.y - sockets.shrine.y) > 150,
-        'Bell reward sockets are not visibly separated');
+    const rewardDistance = Math.hypot(
+        sockets.chest.x - sockets.shrine.x,
+        sockets.chest.y - sockets.shrine.y,
+    );
+    const simultaneousPickupSpan = CHEST.pickupRadius + WICK_ROADS.shrinePickupRadius
+        + PLAYER.radius * 2;
+    check(rewardDistance > simultaneousPickupSpan + 12,
+        `Bell reward choices can overlap one player body (${rewardDistance.toFixed(1)}px <= ${simultaneousPickupSpan + 12}px)`);
 
     for (const state of HOUSE_V2_STATES) {
         const definition = houseStateDefinition(CABIN, state);
@@ -393,11 +469,20 @@ function validateSchemaAndGeometry() {
         check(['complete', 'damaged', 'ruined'].includes(definition?.roof),
             `state ${state} has invalid roof mode ${definition?.roof}`);
         check(Number.isFinite(definition?.light), `state ${state} needs a finite light level`);
+        check(Number.isFinite(definition?.severity), `state ${state} needs a finite visual severity`);
+        check(typeof definition?.damageProfile === 'string' && definition.damageProfile.length > 0,
+            `state ${state} needs a named damage profile`);
         check(Array.isArray(definition?.disabledWallIds), `state ${state} needs disabledWallIds`);
         for (const id of definition?.disabledWallIds || []) {
             check(wallIds.includes(id), `state ${state} disables unknown wall ${id}`);
         }
     }
+    check(houseStateDefinition(CABIN, 'damaged').severity
+        < houseStateDefinition(CABIN, 'ruined').severity,
+    'ruined state must be visually more severe than damaged');
+    check(houseStateDefinition(CABIN, 'damaged').damageProfile
+        !== houseStateDefinition(CABIN, 'ruined').damageProfile,
+    'damaged and ruined states must not share one visual profile');
 }
 
 function validatePlacementAndDeterminism() {
@@ -470,6 +555,136 @@ function validatePlacementAndDeterminism() {
         'regeneration after a state mutation must restore the deterministic intact world');
     check(first.obstacles.getStructureByBlueprint(CABIN.id)?.state === 'intact',
         'regeneration must reset transient house state to intact');
+}
+
+function validateArchitectureRenderingAndAssets() {
+    const { obstacles, structure } = makeFixture();
+    check(structure.architecture === CABIN.architecture,
+        'placed structure must retain canonical single-dwelling architecture metadata');
+    const floor = obstacles.obstacles.find((entry) =>
+        entry.structureId === structure.id && entry.type === 'buildingFloor');
+    check(floor?.def.floorMaterialStyle === 'cabinClean',
+        'compiled floor must select the clean material-only source asset');
+
+    const partitions = obstacles.obstacles.filter((entry) =>
+        entry.structureId === structure.id && entry.partition);
+    const expectedIds = CABIN.walls.filter((entry) => entry.kind === 'partition')
+        .map((entry) => entry.id);
+    check(partitions.length === expectedIds.length,
+        `compiled ${partitions.length}/${expectedIds.length} interior partitions`);
+    check(partitions.every((entry) =>
+        entry.def.partitionProfile === CABIN.architecture.partitions),
+    'compiled partitions must retain the low-divider visual profile');
+    const blueprintWalls = obstacles.obstacles.filter((entry) =>
+        entry.structureId === structure.id && entry.type === 'buildingWall');
+    check(blueprintWalls.every((entry) =>
+        entry.def.renderProjection === CABIN.architecture.projection),
+    'compiled shell and partitions must retain the top-down render projection');
+
+    // The production visible collector is painter-ordered once by baseY. Run
+    // its exact predicate and renderer route, then prove every authored active
+    // shell/partition footprint paints once and only once.
+    const counts = new Map();
+    const ctx = partitionTraceContext();
+    obstacles.forVisible(
+        { x: structure.x, y: structure.y }, 1800, 1400,
+        (ob) => {
+            if (ob.type === 'buildingWall' && ob.def.blueprintId
+                && structureRenderer.drawBlueprintWall(ctx, ob)) {
+                counts.set(ob.wallId, (counts.get(ob.wallId) || 0) + 1);
+            }
+        },
+        (ob) => !ob.def.decorative
+            && !(ob.type === 'buildingWall' && ob.structureId && !ob.def.blueprintId),
+    );
+    const activeWallIds = CABIN.walls.filter((entry) => houseWallActive(CABIN, entry, 'intact'))
+        .map((entry) => entry.id);
+    for (const id of activeWallIds) {
+        check(counts.get(id) === 1, `active plan wall ${id} painted ${counts.get(id) || 0} times`);
+    }
+    check([...counts.keys()].every((id) => activeWallIds.includes(id)),
+        'top-down wall route painted a wall outside the authored active set');
+    check(ctx.calls.some((entry) => entry.startsWith('fill:'))
+        && ctx.calls.some((entry) => entry.startsWith('stroke:')),
+    'low-divider renderer emitted no material geometry');
+
+    // Structure-owned walls must never fall back to Obstacle's standing facade
+    // drawer. Every authored segment uses the exact footprint route above.
+    for (const wall of blueprintWalls) {
+        const legacyCtx = partitionTraceContext();
+        wall.draw(legacyCtx);
+        check(legacyCtx.calls.length === 0,
+            `structure wall ${wall.wallId} leaked into the legacy facade drawer`);
+    }
+
+    const muted = partitions[0];
+    muted.active = false;
+    const inactiveCtx = partitionTraceContext();
+    check(structureRenderer.drawBlueprintWall(inactiveCtx, muted) === false,
+        'inactive blueprint-wall renderer must fail closed');
+    check(inactiveCtx.calls.length === 0, 'inactive partition emitted pixels');
+    let collectedInactive = false;
+    obstacles.forVisible({ x: muted.x, y: muted.y }, 800, 800, (ob) => {
+        if (ob === muted) collectedInactive = true;
+    });
+    check(!collectedInactive, 'inactive partition entered the visible painter queue');
+    muted.active = true;
+
+    const gameRenderSource = readFileSync(
+        new URL('../src/core/GameRender.js', import.meta.url), 'utf8');
+    const enqueueAt = gameRenderSource.indexOf('ob, ob.baseY, 0, standingSerial++');
+    const routeAt = gameRenderSource.indexOf('structureRenderer.drawBlueprintWall(ctx, value)');
+    const floorDetailAt = gameRenderSource.indexOf('structureRenderer.drawFloorDetails(ctx, structure)');
+    check(enqueueAt >= 0, 'standing queue must sort blueprint walls by their real baseY');
+    check(routeAt > enqueueAt, 'sorted standing queue must route blueprint walls to the plan renderer');
+    check(floorDetailAt >= 0 && floorDetailAt < enqueueAt,
+        'floor-state details must paint after decorative floors and before standing art');
+
+    const rearCtx = partitionTraceContext();
+    structureRenderer.drawRear(rearCtx, structure, { x: structure.x, y: structure.y });
+    check(rearCtx.calls.length === 0, 'top-down House V2 leaked into the tall rear-facade renderer');
+    const frontCtx = partitionTraceContext();
+    structureRenderer.drawFront(frontCtx, structure);
+    check(frontCtx.calls.length === 0, 'top-down House V2 leaked into the tall front-facade renderer');
+    const drawGroundSource = readFileSync(
+        new URL('../src/render/StructureRenderer.js', import.meta.url), 'utf8');
+    const groundSlice = drawGroundSource.slice(
+        drawGroundSource.indexOf('drawGround(ctx, structure)'),
+        drawGroundSource.indexOf('_drawApproach(ctx, s, m'),
+    );
+    check(!groundSlice.includes('_drawStateFootprint'),
+        'state damage must not paint beneath and get erased by the floor raster');
+
+    const floorPng = pngDimensions('../src/assets/obstacles/floor_cabin_clean.png');
+    check(floorPng.width === 512 && floorPng.height === 410,
+        `clean floor must be 512x410, got ${floorPng.width}x${floorPng.height}`);
+    for (const file of [
+        'cabin_bed.png', 'ruin_bell.png', 'cabin_hearth.png', 'cabin_table.png',
+        'cabin_shelf.png', 'cabin_crate.png', 'cabin_barrel.png',
+    ]) {
+        const png = pngDimensions(`../src/assets/obstacles/${file}`);
+        check(png.width === 256 && png.height === 256,
+            `${file} must be a 256x256 transparent prop render`);
+    }
+    const blenderSource = readFileSync(
+        new URL('./blender/render_house_v2_props.py', import.meta.url), 'utf8');
+    for (const builder of [
+        'build_clean_floor', 'build_bed', 'build_ruin_bell', 'build_hearth',
+        'build_table', 'build_shelf', 'build_crate', 'build_barrel',
+    ]) {
+        check(blenderSource.includes(`def ${builder}(`), `Blender source lacks ${builder}`);
+    }
+    check(blenderSource.includes('camera.rotation_euler = (0, 0, 0)'),
+        'House V2 props must render from the exact top-down Blender camera');
+    check(blenderSource.includes('pixelate-sheet.mjs') && blenderSource.includes('logical=64'),
+        'House V2 props must install through the deterministic pixel-art pass');
+    check(!blenderSource.includes('IsZbjO') && !blenderSource.includes('C:\\Downloads'),
+        'reference-only image must never enter the asset generator');
+    const credits = readFileSync(new URL('../ASSET_CREDITS.md', import.meta.url), 'utf8');
+    for (const file of [
+        'floor_cabin_clean.png', 'cabin_bed.png', 'ruin_bell.png', 'cabin_hearth.png',
+        'cabin_table.png', 'cabin_shelf.png', 'cabin_crate.png', 'cabin_barrel.png',
+    ]) check(credits.includes(file), `${file} needs original Blender provenance in ASSET_CREDITS.md`);
 }
 
 function validateDoorsAndStates() {
@@ -861,6 +1076,7 @@ function validateBoundedStress() {
 const totalStarted = performance.now();
 runSection('schema and geometry', validateSchemaAndGeometry);
 runSection('featured placement and determinism', validatePlacementAndDeterminism);
+runSection('single-dwelling render and original assets', validateArchitectureRenderingAndAssets);
 runSection('doors, states, collision, LOS, and rebuilds', validateDoorsAndStates);
 runSection('room, spawn, and furniture authority', validateRoomsSpawnsAndFurniture);
 runSection('player/small/large role navigation', validateNavigationRoles);

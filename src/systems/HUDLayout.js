@@ -36,6 +36,14 @@ export function hudRectsOverlap(a, b, gap = 0) {
         && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y;
 }
 
+// Canvas controls are authored in internal pixels, but WCAG/touch guidance is
+// screen-space. Keep the desktop 96px control and grow only when needed to
+// preserve a 44 CSS-pixel phone target after the fixed canvas is scaled down.
+export function phoneHUDControlSize(cssScale) {
+    const scale = Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1;
+    return Math.max(96, Math.ceil(44 / scale));
+}
+
 export function computeHUDLayout(options = {}) {
     const width = Math.max(640, finiteOr(options.width, DEFAULT_W));
     const height = Math.max(360, finiteOr(options.height, DEFAULT_H));
@@ -50,6 +58,8 @@ export function computeHUDLayout(options = {}) {
     const abilityCount = Math.max(0, Math.floor(finiteOr(options.abilityCount)));
     const hasVigil = !!options.hasVigil;
     const hasObjective = !!options.hasObjective;
+    const objectiveOwner = typeof options.objectiveOwner === 'string'
+        ? options.objectiveOwner : '';
     // UI scale is a screen-space HUD preference. It must never alter world or
     // camera coordinates, renderer fit, or the fixed touch-action discs.
     const uiScale = uiScaleFactor(options.uiScale);
@@ -62,14 +72,39 @@ export function computeHUDLayout(options = {}) {
     const bottom = height - safe.bottom;
     const usableW = Math.max(1, right - left);
     const centerX = left + usableW / 2;
+    const phoneCanvas = (
+        options.phoneViewport === true
+        || (options.phoneViewport == null && usableW * cssScale <= 700)
+    );
+    const phoneViewport = touchMode && phoneCanvas;
+    const mobileBellRail = phoneViewport && hasObjective
+        && objectiveOwner === 'ruin-bell';
+    const controlSize = phoneCanvas ? phoneHUDControlSize(cssScale) : 96;
+    const pause = rect(right - controlSize * 2 - 36, top + 20,
+        controlSize, controlSize);
 
     // The command rail owns timer, vigil, kills, coins, and (outside a duel)
     // the THREAT band. A duel shortens it to one row and claims a dedicated
     // plate immediately below; no method invents another top-centre Y value.
-    const headerW = Math.min(compact ? 640 : 620, Math.max(360, usableW - 520));
-    const headerH = (hasBoss ? 80 : 104) + Math.round((uiScale - 1) * 80);
-    const header = rect(centerX - headerW / 2, top + 8, headerW, headerH);
-    const threat = hasBoss
+    const standardHeaderW = Math.min(compact ? 640 : 620,
+        Math.max(360, usableW - 520));
+    const bellRailGap = mobileBellRail ? Math.ceil(8 / cssScale) : 0;
+    const bellRailLeft = left + 16 + 500 + bellRailGap;
+    const bellRailRight = pause.x - bellRailGap;
+    const headerW = mobileBellRail
+        ? Math.max(360, bellRailRight - bellRailLeft)
+        : standardHeaderW;
+    const headerH = mobileBellRail
+        ? Math.ceil(72 / cssScale)
+        : (hasBoss ? 80 : 104) + Math.round((uiScale - 1) * 80);
+    const header = rect(
+        mobileBellRail ? bellRailLeft : centerX - headerW / 2,
+        top + 8,
+        headerW,
+        headerH,
+    );
+    header.mobileBellRail = mobileBellRail;
+    const threat = hasBoss || mobileBellRail
         ? rect(0, 0, 0, 0)
         : rect(header.x + 24, header.y + header.h - 25, header.w - 48, 10);
     // Scaled HUDs use the extra rail height as a real second lane:
@@ -77,29 +112,57 @@ export function computeHUDLayout(options = {}) {
     // separate bounded lane above THREAT. At 100% the original single-row
     // coordinates remain exact. CSS widths around 1280 still select the desktop
     // cockpit, so this cannot be restricted to touch/compact mode.
-    const splitCommandLanes = uiScale > 1;
+    const splitCommandLanes = uiScale > 1 || mobileBellRail;
     const timerTextPx = (compact ? 46 : 42) * uiScale;
-    const identityTextPx = (compact ? 22 : 19) * uiScale;
-    const primaryY = splitCommandLanes
+    const identityTextPx = mobileBellRail
+        ? Math.max(14 * uiScale, Math.ceil(16 / cssScale))
+        : (compact ? 22 : 19) * uiScale;
+    const bellActionTextPx = mobileBellRail
+        ? Math.max(15 * uiScale, Math.ceil(16 / cssScale)) : 0;
+    const primaryY = mobileBellRail
+        ? header.y + Math.ceil(4 / cssScale) + timerTextPx / 2
+        : splitCommandLanes
         ? header.y + 4 + timerTextPx / 2
         : header.y + (hasBoss ? header.h / 2 : 36 * uiScale);
-    const identityY = splitCommandLanes
+    const identityY = mobileBellRail
+        ? primaryY
+        : splitCommandLanes
         ? primaryY + timerTextPx / 2 + 4 + identityTextPx / 2
         : primaryY;
+    const bellActionY = mobileBellRail
+        ? primaryY + timerTextPx / 2 + Math.ceil(3 / cssScale)
+            + bellActionTextPx / 2
+        : 0;
+    const bellPad = mobileBellRail ? Math.ceil(10 / cssScale) : 0;
+    const bellBarH = mobileBellRail ? Math.ceil(3 / cssScale) : 0;
+    const bellBarY = mobileBellRail
+        ? header.y + header.h - Math.ceil(5 / cssScale) - bellBarH
+        : 0;
     const command = {
         split: splitCommandLanes,
+        mobileBellObjective: mobileBellRail,
         primaryY,
         identityY,
         primaryTop: primaryY - timerTextPx / 2,
         primaryBottom: primaryY + timerTextPx / 2,
         identityTop: identityY - identityTextPx / 2,
         identityBottom: identityY + identityTextPx / 2,
-        timerX: header.x + 24,
-        timerMaxW: header.w * (splitCommandLanes ? 0.45 : 0.30),
-        countersRight: header.x + header.w - 24,
-        countersMaxW: header.w * (splitCommandLanes ? 0.45 : 0.30),
-        identityX: header.x + header.w * 0.53,
-        identityMaxW: splitCommandLanes ? header.w - 48 : header.w * 0.34,
+        timerX: header.x + (mobileBellRail ? bellPad : 24),
+        timerMaxW: header.w * (mobileBellRail ? 0.22 : splitCommandLanes ? 0.45 : 0.30),
+        countersRight: header.x + header.w - (mobileBellRail ? bellPad : 24),
+        countersMaxW: header.w * (mobileBellRail ? 0.22 : splitCommandLanes ? 0.45 : 0.30),
+        identityX: mobileBellRail ? header.x + header.w / 2 : header.x + header.w * 0.53,
+        identityMaxW: mobileBellRail ? header.w * 0.46
+            : splitCommandLanes ? header.w - 48 : header.w * 0.34,
+        bellMetaPx: identityTextPx,
+        bellActionPx: bellActionTextPx,
+        bellActionX: mobileBellRail ? header.x + bellPad : 0,
+        bellActionY,
+        bellActionMaxW: mobileBellRail ? header.w - bellPad * 2 : 0,
+        bellBar: mobileBellRail
+            ? rect(header.x + bellPad, bellBarY,
+                header.w - bellPad * 2, bellBarH)
+            : rect(0, 0, 0, 0),
     };
 
     // Keep the duel plate out of the left-side cockpit. Compact mode reserves
@@ -163,11 +226,13 @@ export function computeHUDLayout(options = {}) {
             maxBottom: vitals.y - 24,
         });
 
-    // Existing pause hit geometry is preserved exactly. The layout merely
-    // exposes it so validation can prove the command rail stays clear.
-    const controlSize = 96;
-    const pause = rect(right - 228, top + 20, controlSize, controlSize);
-    const combo = rect(right - 260, top + 140, 220, 68);
+    // Desktop keeps the exact 96px control. A resolved phone canvas grows the
+    // pause/debug hit geometry just enough to stay 44 CSS pixels even before
+    // the first touch switches the active input modality. Bell mode suppresses
+    // the optional streak readout so the one top rail remains the sole owner.
+    const combo = mobileBellRail
+        ? rect(0, 0, 0, 0)
+        : rect(right - 260, top + 140, 220, 68);
     const guidanceTop = Math.max(
         combo.y + combo.h + 16,
         activeBottom(boss, top),
@@ -177,7 +242,13 @@ export function computeHUDLayout(options = {}) {
     // One right-rail guidance owner. The Run Path combines the current task and
     // Living Vigil counts; once all three phases finish, the richer Vigil card
     // can reclaim this same lane without stacking two equal-weight panels.
-    const phoneGuidance = touchMode && usableW * cssScale <= 700;
+    // Do not infer "phone" from width alone. Modern landscape phones commonly
+    // resolve to an 844-960 CSS-pixel COVER canvas; the former <=700 check sent
+    // those real devices through the compact-tablet branch and produced a wide
+    // centred slab even though the 667px QA fixture looked correct. UISystem
+    // supplies the shared ResponsiveLayout classification. Pure/test callers
+    // without it retain the historical narrow-phone fallback.
+    const phoneGuidance = phoneViewport;
     const compressedGuidance = !phoneGuidance && cssScale < 0.999;
     // A 1280x720 outer window can leave a much shorter content viewport after
     // browser chrome is removed, pushing the fixed-aspect canvas into this
@@ -197,24 +268,26 @@ export function computeHUDLayout(options = {}) {
     const objectiveTitlePx = Math.max(22 * uiScale, Math.ceil(17 / cssScale));
     const objectiveBodyPx = Math.max(15 * uiScale, Math.ceil(16 / cssScale));
     const objectiveProgressPx = Math.max(14 * uiScale, Math.ceil(16 / cssScale));
-    const objectiveH = Math.max(
-        (compact ? 230 : 172) * uiScale,
-        objectiveMetaPx + objectiveTitlePx + objectiveBodyPx * 2
-            + objectiveProgressPx + 70 * uiScale,
-        // At the 667x375 ship target some authored next actions need three
-        // lines at the 16 CSS-pixel accessibility floor. This height gives the
-        // title, action, bar, and reward sequential lanes instead of letting a
-        // percentage-based body run through the progress bar.
-        phoneGuidance ? Math.ceil(134 / cssScale) : 0,
-        // A 1920-wide logical canvas shown at common 1280/1600 CSS widths
-        // still needs two or three complete action lines plus real gutters.
-        compressedGuidance
-            ? Math.ceil((narrowCompressedGuidance ? 164 : 140) / cssScale)
-            : 0,
-    );
+    // Generic phone Run Path guidance remains a compact edge chip. Ruin Bell
+    // has no playfield card: its essential truth is integrated into the
+    // existing top command rail and the objective allocation collapses to 0.
+    const phoneChipCssH = 112;
+    const objectiveH = phoneGuidance
+        ? Math.ceil(phoneChipCssH / cssScale)
+        : Math.max(
+            (compact ? 230 : 172) * uiScale,
+            objectiveMetaPx + objectiveTitlePx + objectiveBodyPx * 2
+                + objectiveProgressPx + 70 * uiScale,
+            // A 1920-wide logical canvas shown at common 1280/1600 CSS widths
+            // still needs two or three complete action lines plus real gutters.
+            compressedGuidance
+                ? Math.ceil((narrowCompressedGuidance ? 164 : 140) / cssScale)
+                : 0,
+        );
     const reservedAbilityY = touchMode ? bottom - 394 : bottom - 148;
-    const phoneAbilityGap = phoneGuidance ? Math.ceil(4 / cssScale) : 0;
-    const edgeCompactObjective = hasObjective && phoneGuidance
+    const phoneAbilityGap = phoneGuidance && !mobileBellRail
+        ? Math.ceil(4 / cssScale) : 0;
+    const edgeCompactObjective = hasObjective && phoneGuidance && !mobileBellRail
         && guidanceTop + objectiveH + phoneAbilityGap > reservedAbilityY;
     const denseObjective = hasObjective && compact && !phoneGuidance
         && guidanceTop + objectiveH + 8 > reservedAbilityY;
@@ -241,7 +314,18 @@ export function computeHUDLayout(options = {}) {
         : denseObjective
             ? Math.max(164, reservedAbilityY - guidanceTop - 12)
             : objectiveH;
-    const objective = hasObjective
+    const objective = hasObjective && mobileBellRail
+        ? Object.assign(rect(0, 0, 0, 0), {
+            integrated: true,
+            phone: true,
+            mobileChip: false,
+            ruinBellRail: true,
+            uiScale,
+            metaPx: objectiveMetaPx,
+            bodyPx: objectiveBodyPx,
+            progressPx: objectiveProgressPx,
+        })
+        : hasObjective
         ? Object.assign(rect(
             edgeCompactObjective
                 ? edgeObjectiveX
@@ -260,15 +344,19 @@ export function computeHUDLayout(options = {}) {
             dense: denseObjective,
             edgeCompact: edgeCompactObjective,
             phone: phoneGuidance,
+            mobileChip: phoneGuidance,
+            ruinBellRail: false,
             compressed: compressedGuidance && !denseObjective,
             narrowCompressed: narrowCompressedGuidance && !denseObjective,
             centerKeepoutPx: phoneGuidance ? 40 : 0,
         })
         : rect(0, 0, 0, 0);
-    if (hasObjective) {
-        const pad = phoneGuidance ? Math.ceil(6 / cssScale) : 18 * uiScale;
+    if (hasObjective && !mobileBellRail) {
+        const pad = phoneGuidance
+            ? Math.ceil(4 / cssScale)
+            : 18 * uiScale;
         const barH = Math.max(7 * uiScale, 7);
-        const cssGap3 = phoneGuidance ? Math.ceil(3 / cssScale) : 0;
+        const cssGap2 = phoneGuidance ? Math.ceil(2 / cssScale) : 0;
         const cssGap6 = phoneGuidance ? Math.ceil(6 / cssScale) : 0;
         let headerY = objective.y + pad + objectiveMetaPx * 0.52;
         let titleY = objective.y + objective.h * 0.31;
@@ -282,16 +370,16 @@ export function computeHUDLayout(options = {}) {
         if (edgeCompactObjective) {
             headerY = objective.y + pad + objectiveMetaPx / 2;
             titleY = null;
-            bodyY = headerY + objectiveMetaPx / 2 + Math.ceil(5 / cssScale);
+            bodyY = headerY + objectiveMetaPx / 2 + cssGap2;
             bodyLineHeight = objectiveBodyPx * 1.02;
             bodyLines = 4;
             footerY = objective.y + objective.h - pad - objectiveProgressPx / 2;
             barY = footerY - objectiveProgressPx / 2 - cssGap6 - barH;
         } else if (phoneGuidance) {
             headerY = objective.y + pad + objectiveMetaPx / 2;
-            titleY = headerY + objectiveMetaPx / 2 + cssGap3 + objectiveTitlePx / 2;
-            bodyY = titleY + objectiveTitlePx / 2 + cssGap3;
-            bodyLineHeight = objectiveBodyPx * 0.96;
+            titleY = null;
+            bodyY = headerY + objectiveMetaPx / 2 + cssGap2;
+            bodyLineHeight = objectiveBodyPx;
             bodyLines = 3;
             footerY = objective.y + objective.h - pad - objectiveProgressPx / 2;
             barY = footerY - objectiveProgressPx / 2 - cssGap6 - barH;
@@ -328,9 +416,11 @@ export function computeHUDLayout(options = {}) {
             bodyBarGap: barY - (bodyY + bodyLineHeight * (bodyLines - 1) + objectiveBodyPx),
             barFooterGap: footerY - objectiveProgressPx / 2 - (barY + barH),
             stackedAction: phoneGuidance,
-            showTitle: !edgeCompactObjective,
-            showContext: !edgeCompactObjective,
-            compactPhase: edgeCompactObjective,
+            showTitle: !phoneGuidance,
+            showContext: !phoneGuidance,
+            showBodyLabel: true,
+            compactPhase: phoneGuidance,
+            mobileChip: phoneGuidance,
             compressed: compressedGuidance && !denseObjective,
             minimumGap: phoneGuidance ? cssGap6 : 0,
         };

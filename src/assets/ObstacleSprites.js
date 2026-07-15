@@ -41,6 +41,10 @@ const WALL_FILES = {
 
 const FLOOR_FILES = {
     cabin: 'floor_cabin.png',
+    // House V2 uses an original clean-board material. Unlike the legacy cabin
+    // composite, it contains no baked fireplace, rug, furniture, or wall art,
+    // so the authored blueprint remains the only room/furnishing authority.
+    cabinClean: 'floor_cabin_clean.png',
     ruin: 'floor_ruin.png',
     keep: 'floor_keep.png',
     adobe: 'floor_adobe.png',
@@ -50,6 +54,11 @@ const FLOOR_FILES = {
 // share the same never-rejecting loader/fallback contract as world obstacles.
 const HOUSE_PROP_FILES = {
     cabinBed: 'cabin_bed.png',
+    cabinHearth: 'cabin_hearth.png',
+    cabinTable: 'cabin_table.png',
+    cabinShelf: 'cabin_shelf.png',
+    cabinCrate: 'cabin_crate.png',
+    cabinBarrel: 'cabin_barrel.png',
     ruinBell: 'ruin_bell.png',
 };
 

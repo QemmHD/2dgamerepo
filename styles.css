@@ -63,17 +63,17 @@ canvas#game:focus-visible {
     border: 0;
 }
 
-/* Portrait on a touch device: rotate the landscape game 90° about its center
-   so it fills the screen. The canvas stays flex-centered inside the rotated
-   box, so a pure 90° rotation needs no width/height swap. */
+/* EMBERWAKE is landscape-required on phones. While a device is portrait we
+   keep the landscape canvas visible behind an upright, screen-space rotate
+   affordance; rotating either direction removes the affordance. */
 #stage.rotated {
     transform: rotate(90deg);
     transform-origin: center center;
 }
 
-/* "Rotate your device" courtesy hint — a screen-space sibling (NOT inside the
-   rotated stage), so it reads upright in portrait. Shown briefly then fades.
-   Gameplay continues underneath (the game already fills the screen rotated). */
+/* Screen-space sibling (NOT inside the rotated stage), so portrait guidance is
+   always upright. It begins as an unmistakable orientation prompt, then docks
+   to a compact persistent pill instead of pretending portrait is supported. */
 #rotate-hint {
     position: fixed;
     inset: 0;
@@ -93,4 +93,24 @@ canvas#game:focus-visible {
     pointer-events: none;
 }
 #rotate-hint.show { display: flex; }
-#rotate-hint.hidden { opacity: 0; }
+#rotate-hint.show.hidden {
+    align-items: flex-start;
+    justify-content: center;
+    padding: calc(var(--sai-top) + 10px) calc(var(--sai-right) + 10px)
+        calc(var(--sai-bottom) + 10px) calc(var(--sai-left) + 10px);
+    background: transparent;
+    opacity: 1;
+}
+#rotate-hint.show.hidden span {
+    max-width: min(86vw, 360px);
+    padding: 9px 14px;
+    border: 1px solid rgba(255, 196, 105, 0.72);
+    border-radius: 999px;
+    background: rgba(12, 15, 23, 0.94);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.56),
+        inset 0 0 0 1px rgba(255, 237, 202, 0.08);
+    color: #fff1d6;
+    font-size: clamp(14px, 3.8vw, 18px);
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+}
