@@ -1,17 +1,17 @@
 # House V2 and Ruin Bell local candidate
 
-Status: **corrected and committed as `662cdc9`, attached to draft PR #205, and locally
-validated at 36/36 validators plus syntax/YAML/Bash/diff and independent visual gates,
-but not yet accepted by post-correction hosted CI/browser review, merged, deployed, or
-shipped**.
+Status: **corrected and committed as `662cdc9`, published in draft PR #205, locally
+validated, and accepted by post-correction hosted CI plus independent original-resolution
+review, but not yet merged, deployed, publicly smoked, or shipped**.
 
 This record describes the bounded candidate on
 `feature/house-v2-ruin-bell`, based on `origin/main` at
 `3449a18cf4ada4eac0926f0259275fae558f622d`. The exact corrected code candidate is
 [`662cdc93ec273be7fcae063fc93dc8b63347eb1a`](https://github.com/QemmHD/2dgamerepo/commit/662cdc93ec273be7fcae063fc93dc8b63347eb1a)
-in draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205). No accepted hosted CI
-run, immutable visual artifact, Pages deployment, or public smoke is recorded yet.
-Nothing in this file is delivery evidence.
+in draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205). Hosted run
+[`29399841105`](https://github.com/QemmHD/2dgamerepo/actions/runs/29399841105) and its
+immutable visual artifact are accepted below. No merge, Pages deployment, or public
+smoke is recorded yet, so this is candidate evidence rather than delivery evidence.
 
 ## Reference-image provenance boundary
 
@@ -109,10 +109,12 @@ queue, and silent-context fallback assertions. This is code/logic proof only; it
 not a long-session listening test, physical-device mix test, background/restore soak,
 or proof that SFX never masks the score on every device.
 
-## Authored CI and visual receipt gate
+## Hosted CI and visual receipt acceptance
 
-The local workflow changes define eight production-harness states across eleven visual
-receipts, but no newly accepted post-correction artifact exists yet:
+The corrected workflow defines eight production-harness states across eleven visual
+receipts. Run `29399841105`, job `87301636711`, completed successfully against the PR
+head at run time `6e3dfbd88ec14073d6ff236c5e158312d0a32f5e` and uploaded the following
+accepted set:
 
 | Required receipt | Viewport/canvas and required accessibility state |
 | --- | --- |
@@ -148,6 +150,43 @@ rejection, and post-claim stale-card removal are currently logic/runtime asserti
 `tools/validate-ruin-bell.js`; they are not misrepresented here as a ninth accepted
 visual artifact.
 
+### Immutable hosted identity
+
+| Fact | Accepted value |
+| --- | --- |
+| Workflow run | `29399841105` - success |
+| Verify job | `87301636711` - all 48 steps succeeded |
+| Hosted run head | `6e3dfbd88ec14073d6ff236c5e158312d0a32f5e` |
+| Artifact | `ruin-bell-visual-receipts`, ID `8336657384`, 18,085,984 bytes |
+| Artifact digest | `sha256:648e0ba86aa2970f93196c22dbf825353bd04d8f0c138896fbc2ab7308312991` |
+| Retention | Not expired at acceptance; GitHub expiry `2026-08-14T08:13:20Z` |
+| Integrity | Exactly 11 expected PNGs, no extras, 11 unique SHA-256 hashes |
+| Dimensions | Seven desktop frames at 1280x720; two landscape frames at 2532x1170; two portrait frames at 1170x2532 |
+
+Per-file SHA-256:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| arming | `5bbb84dbed320d33f9358093a06e2c399836de95c0f128c159b7658e0e5fc6a0` |
+| warning | `def33e0071c5b5aeb8d98d8592e91326e0395bcec456f59fbc23ed9157147532` |
+| portrait | `4648600c401afede5abecb9b44a3668fba6963313f7cd27d69fa3ec200fb901c` |
+| portrait Reduced Effects | `12ce3fb723f211378c0d88025abcefa9057a24fb76e793a8027cdf24bf3e615c` |
+| landscape | `b6b5a0e1330eabb56dcea51d0c32d72285677bb2fb431badd560d7b38faec9b2` |
+| landscape Reduced Effects | `813c7e8123b986b7921dbe269c238423c3542c0e0f19012c5d603eed6363769a` |
+| breach High Contrast | `f082d457e68fc4e74349950a5769f8fe9f4c684aadfd313f90281889743a4a7b` |
+| technical | `193c78aadeb168008b3f53f6604c52eeb9e4ea8abba688f4305c7d7d2f3ddb3a` |
+| cleared | `e6374cd9f9bccbd6da3c8f72aa77ca525fe9bb4127715408655574213e19e5be` |
+| failed | `ead5bf248fb3da87007d0779d2cb6d6396061347bd5ab2dda0db84646635b66e` |
+| ruined | `24c0ae5fa97fd2f5190e554a58529018a54509f8ad267a0cb45dc6c130f8fd52` |
+
+Independent review opened every hosted PNG at original resolution. Arming, warning,
+breach/High Contrast, and technical phases were distinct and unclipped; technical
+defer retained the defense boundary. Cleared visibly located the live Chest and Wick
+Shrine. Failed recovery and final ruin were materially distinct, and ruin said
+`NO COMPLETION REWARD`. The mobile rail cleared vitals, pause, ULT, and Blink;
+normal/Reduced Effects pairs were visibly different while retaining primary combat
+cues; portrait kept the complete upright landscape prompt and readable rotated HUD.
+
 ## Local validation snapshot - 2026-07-14
 
 These commands were run locally against the code now identified by candidate commit
@@ -164,21 +203,16 @@ These commands were run locally against the code now identified by candidate com
 | `node tools/validate-hud-layout.js` | PASS - 14,180 assertions across 180 desktop/mobile/orientation scenarios |
 | Full local repository gate | PASS - 36/36 validators, 189/189 Node syntax, Blender Python AST, CI YAML parse, Bash syntax across 38 workflow run blocks, and diff check; zero reported failures |
 
-The complete local repository gate passes against the exact code commit. Independent
-original-resolution review also accepted the corrected top-down house, unobstructed
-mobile command rail, honest portrait orientation cue, and visibly quieter Reduced
-Effects pair. Mutable local receipts live under `artifacts/mobile-hud-rail/`; they are
-development aids, not release evidence. The hosted Chromium/Web Audio matrix,
-immutable eleven-PNG artifact, hosted original-resolution review, long-run
-performance/audio soak, and physical-device/assistive-technology checks have not yet
-been reconciled for this corrected commit.
+The complete local repository gate passes against the exact code commit. Mutable local
+receipts under `artifacts/mobile-hud-rail/` remain development aids; the hosted
+identity and review above are the accepted browser evidence. Long-run
+performance/audio soak and physical-device/assistive-technology checks remain open.
 
 ## Delivery and roadmap nonclaims
 
-Before anyone says this bounded slice shipped, it still needs accepted hosted gates,
-immutable artifact identity/hashes, manual visual review, merge SHA, post-merge `main`
-CI, Pages deploy, cache-busted player and `?dev=1` smoke, and a delivery reconciliation
-update to this record.
+Before anyone says this bounded slice shipped, it still needs a merge SHA, post-merge
+`main` CI, Pages deploy, cache-busted player and `?dev=1` smoke, and a delivery
+reconciliation update to this record.
 
 Even after that bounded delivery, it would not complete House V2 as a multi-kit system,
 the six-event Waylight promise, all enemy-role work, physical-device/AT acceptance,
