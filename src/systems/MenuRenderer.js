@@ -3845,7 +3845,7 @@ export class MenuRenderer {
 
         this._panel(ctx, c.x, c.y, c.w, c.h,
             'rgba(24,16,12,0.88)', 'rgba(255,154,74,0.30)');
-        this._button(ctx, layout.backButton, 'BACK TO COLLECTION', {
+        this._button(ctx, layout.backButton, 'BACK', {
             action: 'characterPhonePane', arg: 'collection',
             accent: 'rgba(74,48,42,0.96)', fontSize: layout.buttonFontPx,
             accessibleLabel: 'Back to Character Collection',
