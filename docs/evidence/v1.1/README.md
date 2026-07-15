@@ -1,5 +1,40 @@
 # First Light bounded web evidence
 
+## Collection Growth I-B
+
+- [Delivery and visual smoke](collection-growth-ib-deployed-smoke.md) records PR #200,
+  main `a34baca`, exact CI/Pages/artifact identity, deployed source smoke, economy
+  boundary, and the bounded I-B claim.
+- [Character Collection, desktop](collection-growth-ib-character-desktop.png) records
+  Fur page 2/3, 18 matches, 103-item/15-set totals, Stormglass pursuit guidance, and
+  visible keyboard focus at 1600x900.
+- [Character Collection, production mobile backing tier](collection-growth-ib-character-phone.png)
+  records the same staged state at the exact 439x247 production-harness mobile tier.
+- [Stormglass Boutique](collection-growth-ib-boutique-stormglass.png) records the
+  five-piece mixed-source look, exact 26,000-coin deterministic ceiling, shortfall,
+  attachment state, and keyboard focus.
+- [Gravebell Boutique](collection-growth-ib-boutique-gravebell.png) records the
+  five-piece case-only look, honest random-drop guidance, and disabled preview-only
+  action.
+
+## Collection Growth I-B phone correction — PR #201
+
+- [PR receipt and visual review](collection-growth-ib-pr201-phone-correction.md)
+  records feature head `1322d3a`, successful PR CI `29377897747`, artifact
+  `8328580576`, the 198,687-assertion boundary, progression-authority correction, and
+  explicit deployment/device nonclaims.
+- [Character Collection, desktop](collection-growth-ib-pr201-character-desktop.png)
+  preserves the 1600x900 page/source/pursuit/focus evidence after the correction.
+- [Character Collection, exact 667x375 phone](collection-growth-ib-pr201-character-phone.png)
+  records the rich live-look layout, direct filters, eight entries, readable pursuit,
+  phone-only Hero Rites route, and measured touch-safe runtime.
+- [Hero Rites, exact 667x375 phone](collection-growth-ib-pr201-hero-rites-phone.png)
+  records all three Rites, their progress, the existing Attunement gate/purchase, and
+  readable `BACK` control without exposing relic ATTUNE.
+- [Stormglass fitting room](collection-growth-ib-pr201-boutique-stormglass.png) and
+  [Gravebell fitting room](collection-growth-ib-pr201-boutique-gravebell.png) record
+  real trail previews while preserving deterministic/random source truth.
+
 ## Collection Growth I-A
 
 - [Delivery and visual smoke](collection-growth-ia-deployed-smoke.md) records the

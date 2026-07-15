@@ -49,18 +49,18 @@ The recommended next releases are therefore:
 ### Additive expansion decision — staged delivery status
 
 The latest scope is accepted as a staged expansion of the existing Ten Fires plan.
-Four bounded foundations are now shipped: PR #192's six-hero animated cosmetic pose
+Five bounded foundations are now shipped: PR #192's six-hero animated cosmetic pose
 contract, PR #194's exact per-map campaign ledger, PR #196's deterministic Guided Run
-Path, and PR #198's Collection Growth I-A reachability/source slice. The separate
-Collection Growth I-B 30-look pack, High Refresh, House V2, new weapon classes,
-destinations, minigames, boss art, and story remain partial or planned exactly as
+Path, PR #198's Collection Growth I-A reachability/source slice, and PR #200's
+Collection Growth I-B 30-piece/preset/pursuit slice. High Refresh, House V2, new weapon
+classes, destinations, minigames, boss art, and story remain partial or planned exactly as
 described below. Research and grayboxes can run early, but content production follows
 the dependency gates instead of multiplying detached cosmetics, bland maps, or
 unbalanced weapons.
 
 | Planned capability | 0–90 day foundation | Major-release home | Non-negotiable proof |
 | --- | --- | --- | --- |
-| Cosmetic repair and expansion | **Rig shipped in PR #192; bounded I-A shipped in PR #198:** six heroes, 18 body sheets, pose-local head/shoulder/hand contracts, deterministic Blender/install/browser fixtures, eight genuine styles, 8-item paging, category/ownership/source filters, and stable obtain routes for all 73 items. Collection Growth I-B remains open. | Rig and I-A in 1.x; a separate first 30 genuinely distinct looks in 2.x; destination/Chronicle sets through 10.0 | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no hat or cloak remains behind while the body animates. Palette swaps do not count as silhouette variety. I-A's eight enabling looks neither count toward nor reduce I-B's separate 30-look pack. |
+| Cosmetic repair and expansion | **Rig/I-A/I-B shipped in PR #192/#198/#200:** six heroes, 18 body sheets, shared pose anchors, 103 source-routed cosmetics in 15 sets, deterministic paging/filters, six per-hero presets, pursuit guidance, atomic look transactions, and 30 genuine new pieces across six coherent I-B sets. | Bounded rig/I-A/I-B in 1.x; collection-completion/Blueprint work and later destination/Chronicle sets through 10.0 remain | Gameplay and every preview use the same head/shoulder/hand/chest/back anchors; no layer drifts while the body animates. Preserve the current **7,332-check** attachment gate, genuine silhouette/material standard, source truth, no-power rule, and additive save-v10 migration. Do not recreate I-B or count palette swaps as new designs. |
 | Mobile high frame rate | Profile render interpolation, lighting/overdraw, and quality tiers; name the option **High Refresh** | 1.7 foundation, hardened in 3.8/7.8/9.8 | Fixed deterministic simulation and identical gameplay hashes at Standard/High Refresh; interpolated camera/entities; physical 60/90/120 Hz frame-pacing plus battery/thermal tests. Never promise 120 FPS because browser, display, power mode, and heat can limit cadence. |
 | Campaign unlock truth | **Shipped in PR #194:** save-v10 unique-per-map ledger, conservative legacy migration, centralized receipt/status UI, closed provenance, and a session-only credit-off `?dev=1` bypass. | 1.3 foundation shipped; extend through every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. Malformed current saves never regain lifetime-total access; QA bypass performs zero storage writes. |
 | Guided run tasks | **Shipped in PR #196:** seeded mode/capability-aware Orientation → Tactic → Climax director, one current task, exact progress/action/current potential coin reward, completed Run Path coins held for terminal settlement, terminal completed-phase Deeds XP, safe fallback, atomic coin-receipt ledger, active-task `O` recall, onboarding precedence, announcements, and responsive HUD. | Bounded 1.1 guidance foundation shipped; 1.3/later extension open | One current task shows progress, potential coin reward, and next action; impossible tasks cannot be selected. Debug Mode/`showDebug`, map bypass, and live debug actions disable Run Path coin settlement and objective-derived Deeds XP; `?dev=1`/QA alone does not. A non-terminal abort—including restart or pause-menu abandon—and reload forfeits held Run Path coins and never reaches objective-derived XP; a valid terminal resolution settles. Supported modes complete or substitute across the committed mode/capability/seed matrix. The 26 candidates shipped at main `5abd6fd` are a selection catalog, never 26 simultaneous chores. |
@@ -77,8 +77,8 @@ objective, or story progress.
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At current shipped main `454e944`, `src/` contains 303 files,
-including 135 JavaScript modules and about 54,060 nonblank lines of JavaScript. Raw
+planning documents. At current shipped main `a34baca`, `src/` contains 303 files,
+including 135 JavaScript modules and about 55,471 nonblank lines of JavaScript. Raw
 file counts are inventory context, not a quality claim.
 
 ### Exact playable/content inventory
@@ -91,7 +91,7 @@ file counts are inventory context, not a quality claim.
 | Boss vocabulary | 14 attack kinds: aimed, beam, charge, cross, fan, lingering, mines, rain, seekers, shockwave, spiral arms, summon, wall, and zones |
 | Arsenal | 40 weapons across 9 runtime kinds; 11 evolutions; 15 fusions; 20 passives |
 | Build/meta systems | 11 roads; 26 relics (8 attunable); 14 pacts; 10 keystones; 5 patrons; 18 rites (3 per hero) |
-| Equipment and looks | 21 gear pieces in 4 categories; 73 cosmetics in 5 categories; 9 complete cosmetic sets; 6 rarity tiers |
+| Equipment and looks | 21 gear pieces in 4 categories; 103 cosmetics in 5 categories; 15 complete cosmetic sets; 6 rarity tiers |
 | Long-term goals | 50 battle-pass levels; 22 achievements; 16 daily challenge templates; 26 Guided Run Path candidates feeding a three-phase sequential path; 9 permanent upgrades |
 | Modes | Standard run, Daily Road, Rite Trial, Boss Rush (12 apex fights), and Weekly Ember |
 | World encounters/dressing | 4 interactive Vigil Sites; 12 named formation encounters; 13 prop types; 4 structure styles; 4 biome themes; 11 generated structures per world by default |
@@ -162,16 +162,19 @@ plans describe:
   and a 0.93 payout factor; that is an all-ages/trust decision, not merely a
   balance detail.
 
-What is still missing is not another currency. It is per-hero outfit convenience,
-collection statistics and completion depth, accessible case presentation, and evidence
+What is still missing is not another currency. It is broader collection/category/set
+completion analytics and receipts, accessible case presentation, chapter/export depth,
+and evidence
 that the current time-to-level-50 and coin economy feel rewarding across real playtests.
 The original 65-item count overstated visual depth because many looks were palette
 variants. PR #192 fixed the shared live/preview pose attachment foundation; PR #198's
-bounded Collection Growth I-A added eight genuine styles and routed all 73 current
-cosmetics through deterministic 8-item paging plus category/ownership/source filters
-and stable obtain routes. The next credible expansion is I-B's separate 30-look
-silhouette/material pack through that same rig—not another detached cosmetic system or
-recolor-heavy quantity claim—and I-A's eight do not reduce that commitment.
+bounded Collection Growth I-A added eight genuine styles and routed all 73 then-current
+cosmetics through deterministic 8-item paging plus category/ownership/source filters.
+PR #200 then fulfilled I-B's unreduced commitment with 30 genuine pieces across six
+sets, raising the catalog to 103/15 while adding six per-hero presets, atomic look
+transactions, persistent pursuit, and honest next-source guidance. The next credible
+slice is Collection Completion Truth, including a deterministic-ceiling decision for
+random-only Mythics—not another detached cosmetic system or recolor-heavy count.
 
 ### Audio now
 
@@ -271,7 +274,7 @@ but is stale as a current backlog. Its major claims now resolve as follows:
 | 16 trash enemies on 5 behaviors; global mix | 20 trash enemies, 7 tagged behavior groups, biome enemy mixes, hazards, lieutenants | Role composition, house tactics, and clearer counters |
 | 3 roads | 11 roads | Improve discovery/route clarity before adding more |
 | No onboarding and 9-tab dump | 12-step menu tour plus a 9-step non-modal first-run gameplay chain; staged unlocks; 11 screens grouped into 6 sections; PR #186 keyboard focus foundation | Add direct blink/Focus/Kindle success and first-death debrief; controller focus, text scaling, complete hierarchy/routing, and short first-run comprehension tests remain open |
-| Battle-pass run receipt is dead | Post-run XP buckets, claims, milestones, migration, and Everflame are live | Pacing measurement, reward-preview polish, collection statistics, per-hero presets, and gear-source parity |
+| Battle-pass run receipt is dead | Post-run XP buckets, claims, milestones, migration, and Everflame are live; PR #200 ships per-hero cosmetic presets | Pacing measurement, reward-preview polish, broader collection completion analytics, chapter shelf/export recovery, and gear-source parity |
 | Heirloom Cinders is a no-op | Starting-economy flow was repaired and all 9 permanent upgrades are surfaced | Make old upgrades more interesting at cap without breaking save IDs |
 | `Game.js` is 4,119 lines | About 3,245 nonblank lines after update/render/input/combat/photo/run-state splits and the shipped campaign/Run Path/Collection integrations | Continue seam extraction only when a feature needs it |
 | Obstacle queries allocate per enemy | Spatial obstacle/index work is GC-conscious and shared broadphase exists | Prove nav/collision at 180 bodies and cap unbounded projectile growth |
@@ -633,17 +636,17 @@ clear tooltips, save migration fixtures, and a no-choice-dominates simulation.
   replaceable-vs-anatomical head-feature truth across all 18 installed direction sheets.
 - Keep the shipped all-hero/all-direction contact-sheet, install-manifest, PNG-style,
   Blender, and live browser contracts green. Preserve PR #192's historical
-  **4,387-check** gate and PR #198's current **5,268-check** attachment gate before
-  expanding the collection.
-- Add per-hero cosmetic presets while retaining the current global equipped
-  values as migration defaults.
-- Preserve I-A's category/ownership/source filters, stable "how to obtain" route for
-  every cosmetic, deterministic 8-item paging, and paged Boutique sets. Add set-level
-  Collection filtering/planning and equivalent source truth for every gear item.
-- Deliver Collection Growth I-B's separate 30 genuine silhouette/material looks across
-  coherent sets through the green rig/reachability gates. Palette swaps remain useful
-  variants but are not reported as 30 new designs; I-A's eight enabling looks neither
-  count toward nor reduce this pack.
+  **4,387-check** gate, PR #198's **5,268-check** gate, and PR #200's current
+  **7,332-check** attachment gate across 162 frames/810 points.
+- Preserve PR #200's six per-hero cosmetic presets and additive save-v10 migration;
+  the selected hero's validated look remains the legacy equipped compatibility mirror.
+- Preserve I-A/I-B category/ownership/source filters, stable "how to obtain" routes,
+  deterministic 8-item paging, paged Boutique sets, set pursuit, and atomic full-look
+  transactions for all 103 cosmetics/15 sets. Add broader completion analytics and
+  equivalent source truth for every gear item.
+- Preserve Collection Growth I-B's 30 genuine pieces across Kilnheart, Rimeglass,
+  Thorncrown, Stormglass, Sunscar, and Gravebell. The commitment is fulfilled by
+  PR #200; do not recreate it or relabel palette swaps as new designs.
 - Show pass reward preview, claim state, next milestone, and the exact post-run
   XP receipt in one consistent component.
 - Keep levels permanent. If a second chapter is authored, let the player select
@@ -840,7 +843,7 @@ This is scheduling intent, not shipped inventory:
 | Major arc | Expansion focus |
 | --- | --- |
 | 1.0 → 2.0 | Fix cosmetic attachments; exact three-unique-boss map gates; completable guided objectives; first House V2 cabin and macro-map plan; visual/performance budgets; one weapon-class schema/spectacle slice; truthful High Refresh foundation. |
-| 2.0 → 3.0 | Named deterministic RNG streams; first 30-look silhouette pack; class/gear vertical slices; destination packs; two non-wager mastery minigames; Chronicle prologue data. |
+| 2.0 → 3.0 | Named deterministic RNG streams; Collection Completion Truth/Blueprint work on the 30-piece I-B substrate pulled forward in PR #200; class/gear vertical slices; destination packs; two non-wager mastery minigames; Chronicle prologue data. |
 | 3.0 → 4.0 | Three-act deterministic branching Pilgrimage; choice consequences and sidegrade rewards; Forgeheart map/faction/boss-model family; balanced cross-class builds. |
 | 4.0 → 5.0 | Four new macro-distinct maps, twelve House V2 interiors, Apex Hunt, Nightfall Siege, twelve gap-filling weapons, destination gear/cosmetic families. |
 | 5.0 → 6.0 | Public Map/House/Encounter/Boss/Arsenal/Story tools prove the same schemas, budgets, and validators used by official content. |
@@ -883,7 +886,8 @@ navigation + boss/audio release baseline
 
 save fixtures
     -> shared cosmetic pose rig
-    -> per-hero cosmetic presets and silhouette expansion
+    -> shipped per-hero cosmetic presets and I-B silhouette expansion
+    -> collection-completion receipts and Blueprint/direct-price decision
     -> unique boss ledger and objective receipts
     -> save export/import
 
@@ -923,7 +927,7 @@ These are local/QA metrics unless the player explicitly exports a trace.
 | Map unlocks | Three unique predecessor boss ids required; repeats/wrong map/mode/debug do not count; legacy unlocks survive; card and launch predicate agree; `?dev=1` bypass writes no progress |
 | Objectives | One current task at a time as Orientation/Tactic/Climax advances; the committed mode/capability/seed matrix completes or names a deterministic substitute; future map-specific tasks add explicit fixtures; abort/reload cannot settle coins or reach objective XP |
 | Progression | 276+ deterministic checks remain green; level-50 pacing target 35-55 ordinary successful runs; every reward resolves and every duplicate has a receipt |
-| Cosmetics | Gameplay and every preview share pose anchors; zero detached layer in all states/directions; first expansion contains 30 reviewed silhouette/material designs plus paging/filter/source proof |
+| Cosmetics | Gameplay and every preview share pose anchors; zero detached layer in all states/directions; PR #200's 30 reviewed I-B pieces retain paging/filter/source/preset/pursuit/atomicity proof; later packs must pass the same gate |
 | Builds | Each promoted class has a complete vertical slice; fixed-seed matrices and human runs retain starter viability, multiple successful archetypes, bounded VFX/entities, and no universal best class |
 | Story | Same version/seed/choices reproduce graph and authored spawn schedule; every branch terminates/resumes; consequences are visible; rewards pay once, remain sidegrades, and are recoverable through Memory replay |
 | Cases | Odds/pity visible; skip available immediately; reduced-motion reveal under 0.5 s; no pass/achievement requires Mines or a case purchase |
@@ -948,9 +952,9 @@ Preserve the delivered gates, then add the remaining coverage in this order:
    owned-entity cleanup are checked. Next add full-fight damage/time traces.
 4. **Encounter composition:** seeded role quotas, biome priors, support/add caps,
    kill relief, boss suppression, and invariant global cap.
-5. **Progression/save:** preserve the existing 276 checks; add historical save
-   fixtures, capstone migrations, per-hero cosmetic presets, case pity, and
-   import corruption tests.
+5. **Progression/save:** preserve historical save fixtures, capstone migrations,
+   PR #200's per-hero preset migration/atomic transaction checks, and case pity;
+   add export/import corruption and recovery tests.
 6. **Input/accessibility:** keyboard focus order, active modality, reduced-effects save
    inheritance, phone Settings, and receipt-bearing Home/Mines gates are delivered by
    PR #186; PR #188 delivers the bounded Combat HUD scale/contrast/status slice; PR #190
@@ -999,7 +1003,8 @@ Preserve the delivered gates, then add the remaining coverage in this order:
 | Boss clarity becomes easier but longer | HP inflation would punish learning | Keep/reduce HP where recovery adds uptime; tune via phase time and damage-source trace |
 | Unbounded player projectiles | Large builds can outgrow pool and collision assumptions | Introduce live budget/merge/degrade policy before denser weapons/events |
 | Save expansion breaks veterans | Cosmetics, capstones, RNG, and Codex all add state | Append-only IDs, defaults, explicit migrations, backup/export, fixture round trips |
-| Cosmetic quantity hides a broken rig | More items amplify detachment and make browsing unusable | Shared pose resolver and all-state capture gate before a 30-look pack; paging/filtering before registry growth |
+| Cosmetic quantity hides a broken rig | More items amplify detachment and make browsing unusable | Preserve PR #200's shared pose resolver, **7,332-check** all-state gate, 103-item paging/filter/source truth, and genuine-material standard before any later registry growth |
+| Random-only Mythic has no deterministic ceiling | A named Gravebell target can consume an extreme coin tail even though every roll is honest | Keep exact odds/pity/source copy visible; treat `aura_requiem` as an explicit watchpoint; decide a Blueprint/direct-price ceiling before claiming collection balance complete |
 | “120 FPS” becomes a false promise | Browser/device cadence and heat/power policy are not controlled by the game | Call it High Refresh; fixed sim + interpolation; physical 60/90/120 Hz pacing/thermal evidence; graceful fallback |
 | Spectacle hides combat truth | Dense wand/class VFX can mask enemies, tells, pickups, and objectives | Explicit particle/projectile/fill-rate and palette/motion/RGB budgets; muted/grayscale/reduced-effects/phone captures |
 | Branching story creates missable power or dead ends | Consequences become punishment or corrupt resumable runs | Versioned finite graph, reachability/receipt fixtures, sidegrade rewards, checkpoint recovery, post-finale Memory routes |
@@ -1058,14 +1063,14 @@ signature and opening, understand every point of post-run XP, dress each hero
 without re-equipping a set or watching its hat/cloak detach, see one reachable guided
 task at a time, understand exactly which of the previous map's three Keepers still
 blocks the next map, and share/replay a deterministic challenge. The cosmetic rig,
-bounded Collection Growth I-A browsing/source slice, campaign gate, and Guided Run
-Path are shipped foundations; the House V2 cabin,
+bounded Collection Growth I-A browsing/source slice, I-B 30-piece/preset/pursuit slice,
+campaign gate, and Guided Run Path are shipped foundations; the House V2 cabin,
 playable tutorial/debrief, and later destination-specific guidance remain required.
 High Refresh may be called shipped only if interpolation and
 physical-device gates are complete.
 
 A veteran should feel that the existing 40 weapons, 20 enemies, 12 bosses, 11
-roads, 50 pass levels, and 73 cosmetics (the original 65 plus I-A's eight) became more
+roads, 50 pass levels, and 103 cosmetics in 15 complete sets became more
 coherent and valuable. If
 that is not true, adding a fifth biome or another hundred rewards would only
 make the same problems larger.
