@@ -10,6 +10,22 @@ This is the release roadmap. `ROADMAP.md` remains the long-range idea bank and
 document turns those materials into nine major-version arcs with clear player
 promises, dependencies, exit gates, and content budgets.
 
+### Current House V2/Ruin Bell candidate boundary
+
+Candidate commit [`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837)
+on `feature/house-v2-ruin-bell`, based on `origin/main` at `3449a18`, is published in
+draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205) with the first one-cabin/one-event implementation candidate. Its local
+gate is green at **36/36 validators**, including **725** Ruin Bell checks, plus full Node
+syntax, harness-module syntax, CI YAML parse, and diff check. It is still not a release:
+hosted CI/artifact, original-resolution visual review, merge, Pages deploy, and public
+smoke remain open. See the
+[`candidate evidence record`](evidence/v1.1/house-v2-ruin-bell-candidate.md) for exact
+behavior, reference-image restrictions, local results, visual gates, and nonclaims.
+
+No major arc is promoted by this local work. The 1.0->2.0 arc and every later arc through
+10.0 remain incomplete, including the broader House V2 kits, six Waylight POIs, enemy-
+role program, device/AT/performance proof, and release convergence gates.
+
 ## 1. Product contract that survives every version
 
 EMBERWAKE is not becoming a generic live-service game. Its identity remains:
@@ -1761,9 +1777,11 @@ Release scorecard:
    forfeits held Run Path coins and never reaches objective XP; a valid terminal resolution
    settles. Add no objective pool or map-specific task without
    reachable-metric and settlement fixtures.
-5. Produce one House V2 Emberwood cabin/Ruin Bell vertical slice while 1.3 enemy roles
-   navigate and fight through it; do not mass-produce house art before shared render,
-   collision, nav, LOS, door, spawn, room, and roof truth passes.
+5. Finish, validate, and publish the local House V2 Emberwood cabin/Ruin Bell candidate
+   while 1.3 enemy roles navigate and fight through it. Do not call it shipped before
+   its targeted/full/hosted/evidence/delivery gates are recorded, and do not mass-produce
+   house art before shared render, collision, nav, LOS, door, spawn, room, roof, 100-seed,
+   every-body/projectile, performance, and device truth passes.
 6. Preserve PR #203's shipped bounded Collection Completion Truth; do not recreate I-B.
    Preserve PR #192's attachment resolver and PR #198/#200's all-103
    reachability/source/paging, six-hero preset migration, pursuit, atomic look

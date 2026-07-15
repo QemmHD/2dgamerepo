@@ -639,6 +639,32 @@ export class Enemy {
             moveY = nx * this._navSide;
         }
 
+        // Ruin Bell crossfire roles have authored interior sockets. Marksmen
+        // and keepers first take that readable formation through the normal
+        // house portal graph, then hold it; their existing projectile/support
+        // behavior remains authoritative and still aims at the live player.
+        // A knockback that dislodges them naturally makes them retake position.
+        let navigationTargetX = player.x;
+        let navigationTargetY = player.y;
+        const bellSocket = this.ruinBellCombatSocket;
+        const usesBellSocket = (this.ruinBellRole === 'marksman'
+            || this.ruinBellRole === 'support')
+            && Number.isFinite(bellSocket?.x) && Number.isFinite(bellSocket?.y);
+        if (!frozen && usesBellSocket && this.windupTimer <= 0) {
+            const socketDx = bellSocket.x - this.x;
+            const socketDy = bellSocket.y - this.y;
+            const socketDistance = Math.hypot(socketDx, socketDy);
+            navigationTargetX = bellSocket.x;
+            navigationTargetY = bellSocket.y;
+            if (socketDistance > Math.max(34, this.radius + 12)) {
+                moveX = socketDx / Math.max(0.0001, socketDistance);
+                moveY = socketDy / Math.max(0.0001, socketDistance);
+            } else {
+                moveX = 0;
+                moveY = 0;
+            }
+        }
+
         // Every motile enemy gets local obstacle steering. The previous gate
         // compared boss-only fields (`undefined <= 0`) on normal enemies, which
         // is false in JavaScript: despite the old comment, ALL non-bosses drove
@@ -648,7 +674,8 @@ export class Enemy {
             this.bossWindupTimer > 0 || this.bossRecoveryTimer > 0 ||
             this.bossPhaseBreakTimer > 0 || !!this.activeAttack;
         if (obstacleSystem && !committedMove && (moveX || moveY) && spd > 0 &&
-            steerEnemyMovement(this, moveX, moveY, spd, obstacleSystem, dt)) {
+            steerEnemyMovement(this, moveX, moveY, spd, obstacleSystem, dt,
+                navigationTargetX, navigationTargetY)) {
             moveX = this._navMoveX;
             moveY = this._navMoveY;
         }

@@ -69,12 +69,18 @@ export const CombatResolverMethods = {
     // Boss reward: spawn a treasure chest AND a Wick Shrine to either side of the
     // death point. They're linked as siblings — walking onto one claims it and
     // despawns the other, so the player PICKS ONE (chest reward or relic altar).
-    _dropBossReward(x, y) {
+    _dropBossReward(x, y, placement = null) {
         const off = WICK_ROADS.bossRewardOffset;
-        const cs = this._clearSpot(x - off, y, 40);
-        const ss = this._clearSpot(x + off, y, 40);
-        const chest = new Chest(cs.x, cs.y);
-        const shrine = new Shrine(ss.x, ss.y);
+        const chestTarget = placement?.chest || { x: x - off, y };
+        const shrineTarget = placement?.shrine || { x: x + off, y };
+        const cs = this._clearSpot(chestTarget.x, chestTarget.y, 40);
+        const ss = this._clearSpot(shrineTarget.x, shrineTarget.y, 40);
+        const pickupOptions = {
+            pickupDelay: placement?.pickupDelaySeconds,
+            requiresExitBeforePickup: placement?.requiresExitBeforePickup === true,
+        };
+        const chest = new Chest(cs.x, cs.y, pickupOptions);
+        const shrine = new Shrine(ss.x, ss.y, pickupOptions);
         chest._sibling = shrine;
         shrine._sibling = chest;
         this.chests.push(chest);
@@ -231,6 +237,7 @@ export const CombatResolverMethods = {
                     this._encounterDefeatedIds.push(e.encounterMemberId);
                     if (e.encounterGuardian) this._encounterRewardPos = { x: e.x, y: e.y };
                 }
+                if (e.ruinBellMemberId) this._ruinBellDefeatedIds.push(e.ruinBellMemberId);
                 this.particles.deathBurst(e.x, e.y, deathColor(e));
                 if (e.affix && !suppressAffix) this._applyAffixDeath(e, enqueueDeath);
                 // P1.3 splitter: bursts into live slimelets (def-driven,

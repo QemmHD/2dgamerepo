@@ -14,9 +14,9 @@ export class Renderer {
 
         this.safeArea = { top: 0, right: 0, bottom: 0, left: 0 };
 
-        // Mobile landscape: when the device is portrait we CSS-rotate the
-        // landscape game 90° so it FILLS the screen, and remap touch + safe
-        // area through this flag. _lockedLandscape is set if a real OS
+        // Mobile is landscape-required. While the device is portrait we
+        // CSS-rotate the landscape game 90° behind an upright rotate cue and
+        // remap touch + safe area through this flag. _lockedLandscape is set if a real OS
         // orientation lock succeeds (Android/PWA), in which case we never
         // CSS-rotate. _dprCap lets the FPS governor shed backing-store cost.
         this.rotated = false;
@@ -260,26 +260,38 @@ export class Renderer {
         const el = this._hintEl;
         if (!el || !el.classList) return;
         if (this.rotated) {
-            // Show the courtesy hint once, then auto-fade after 2.5s. Gameplay
-            // is NOT paused — the game is already filling the screen rotated.
+            // Every portrait entry owns a visible orientation affordance. The
+            // first entry starts with the full prompt, then CSS turns `hidden`
+            // into a compact persistent pill. Later portrait entries restore
+            // that pill immediately instead of leaving the player unguided.
+            el.classList.add('show');
             if (!this._hintEverShown) {
                 this._hintEverShown = true;
-                el.classList.add('show');
                 el.classList.remove('hidden');
                 this._hintHideAt = (window.performance?.now?.() ?? 0) + 2500;
                 const tick = () => {
                     if (!this.rotated) return;
                     if ((window.performance?.now?.() ?? Infinity) >= this._hintHideAt) {
                         el.classList.add('hidden');
+                        this._hintHideAt = 0;
                         return;
                     }
                     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tick);
                 };
                 if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tick);
+            } else if (this._hintHideAt > 0
+                && (window.performance?.now?.() ?? Infinity) < this._hintHideAt) {
+                // iOS may emit several visualViewport resizes during the first
+                // portrait entry. Keep the initial prompt expanded for its
+                // full reading window instead of compacting on the first one.
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
             }
         } else {
             el.classList.remove('show');
             el.classList.add('hidden');
+            this._hintHideAt = 0;
         }
     }
 }

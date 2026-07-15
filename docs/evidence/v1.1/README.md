@@ -1,5 +1,24 @@
 # First Light bounded web evidence
 
+## House V2 and Ruin Bell - local candidate, not shipped
+
+- [Candidate contract, provenance boundary, local validation snapshot, visual gate,
+  and nonclaims](house-v2-ruin-bell-candidate.md) records candidate commit
+  [`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837)
+  in draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205), based on `origin/main` at `3449a18`.
+- The record distinguishes implemented local behavior from validation and delivery.
+  At grounding, all six named targeted validators pass, including **725** Ruin Bell
+  checks for reward claim provenance and post-claim no-stale-card truth; the full local
+  gate is also green at **36/36 validators** plus Node/harness syntax, CI YAML parse, and
+  diff check. Hosted CI, an accepted eight-frame artifact, original-resolution review,
+  merge, Pages deploy, and public smoke remain open.
+- The user-supplied `C:\Downloads\IsZbjO.png` has no verified repository provenance or
+  reuse license. It is reference-only for general room zoning and circulation; no
+  source pixels, outline, palette, furniture coordinates, or file copy may ship.
+
+This candidate does not close House V2 multiplication, the six-event Waylight promise,
+any major-version arc, or the 1.0->10.0 roadmap.
+
 ## Collection Completion Truth — deployed PR #203
 
 - [Delivery contract, protected-transaction boundary, exact hashes, and nonclaims](collection-completion-truth-pr203.md)

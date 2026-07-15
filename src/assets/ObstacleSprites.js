@@ -41,9 +41,25 @@ const WALL_FILES = {
 
 const FLOOR_FILES = {
     cabin: 'floor_cabin.png',
+    // House V2 uses an original clean-board material. Unlike the legacy cabin
+    // composite, it contains no baked fireplace, rug, furniture, or wall art,
+    // so the authored blueprint remains the only room/furnishing authority.
+    cabinClean: 'floor_cabin_clean.png',
     ruin: 'floor_ruin.png',
     keep: 'floor_keep.png',
     adobe: 'floor_adobe.png',
+};
+
+// Original Blender-rendered furnishings for the first House V2 cabin.  They
+// share the same never-rejecting loader/fallback contract as world obstacles.
+const HOUSE_PROP_FILES = {
+    cabinBed: 'cabin_bed.png',
+    cabinHearth: 'cabin_hearth.png',
+    cabinTable: 'cabin_table.png',
+    cabinShelf: 'cabin_shelf.png',
+    cabinCrate: 'cabin_crate.png',
+    cabinBarrel: 'cabin_barrel.png',
+    ruinBell: 'ruin_bell.png',
 };
 
 // World-border palisade: a horizontally-seamless stockade strip ringing the
@@ -90,6 +106,7 @@ export function loadObstacleSprites() {
     for (const t in FILES) jobs.push(loadOne('ob:' + t, FILES[t]));
     for (const s in WALL_FILES) jobs.push(loadOne('wall:' + s, WALL_FILES[s]));
     for (const s in FLOOR_FILES) jobs.push(loadOne('floor:' + s, FLOOR_FILES[s]));
+    for (const key in HOUSE_PROP_FILES) jobs.push(loadOne('house:' + key, HOUSE_PROP_FILES[key]));
     jobs.push(loadOne('border', BORDER_FILE));
     _loadPromise = Promise.all(jobs).then((r) => r.some(Boolean));
     return _loadPromise;
@@ -141,6 +158,11 @@ export function getWallPattern(style, ctx) {
 // Interior floor decal canvas for a building style, or null.
 export function getFloorDecal(style) {
     return sprites.get('floor:' + style) || null;
+}
+
+// Authored House V2 prop canvas, or null while loading / after failure.
+export function getHousePropSprite(key) {
+    return sprites.get('house:' + key) || null;
 }
 
 // World-border palisade strip canvas (or null → dashed-rect fallback).

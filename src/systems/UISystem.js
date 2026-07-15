@@ -21,10 +21,11 @@ import {
 import { getChestSprite, getCoinSprite, getGlowSprite } from '../assets/ProceduralSprites.js';
 import { getRarityIcon } from '../assets/CustomIcons.js';
 import { MenuRenderer } from './MenuRenderer.js';
-import { computeHUDLayout } from './HUDLayout.js';
+import { computeHUDLayout, phoneHUDControlSize } from './HUDLayout.js';
 import { DISPLAY_FONT } from '../assets/MenuFont.js';
 import { battlePassRunReceipt } from './BattlePassSystem.js';
 import { normalizeUiScale, uiScaleFactor } from './AccessibilityPreferences.js';
+import { isPhoneLandscapeViewport } from './ResponsiveLayout.js';
 
 const DEBUG_BUTTON_SIZE = 96;
 const DEBUG_BUTTON_MARGIN = 20;
@@ -145,7 +146,9 @@ export class UISystem {
         // Below tablet width, increase logical sizes and use the touch-safe
         // top-left cockpit even if a coarse pointer was not reported.
         const cssW = this.renderer.cssWidth || INTERNAL_WIDTH;
+        const cssH = this.renderer.cssHeight || INTERNAL_HEIGHT;
         const compact = !!state.touchMode || cssW < 1100;
+        const phoneViewport = isPhoneLandscapeViewport(cssW, cssH);
         return computeHUDLayout({
             width: INTERNAL_WIDTH,
             height: INTERNAL_HEIGHT,
@@ -159,9 +162,11 @@ export class UISystem {
             relicCount: state.runRelics?.length ?? 0,
             abilityCount: state.abilityCooldowns?.length ?? 0,
             hasObjective: !!state.runObjective,
+            objectiveOwner: state.runObjective?.owner || '',
             hasVigil: !!state.vigilTracker && !state.runObjective,
             uiScale: normalizeUiScale(state.saveData?.settings?.uiScale),
             cssScale: cssW / INTERNAL_WIDTH,
+            phoneViewport,
         });
     }
 
@@ -244,12 +249,21 @@ export class UISystem {
 
     getDebugButtonRect() {
         const sa = this.renderer.safeArea;
+        const size = this._hudControlSize();
         return {
-            x: INTERNAL_WIDTH - sa.right - DEBUG_BUTTON_SIZE - DEBUG_BUTTON_MARGIN,
+            x: INTERNAL_WIDTH - sa.right - size - DEBUG_BUTTON_MARGIN,
             y: sa.top + DEBUG_BUTTON_MARGIN,
-            w: DEBUG_BUTTON_SIZE,
-            h: DEBUG_BUTTON_SIZE,
+            w: size,
+            h: size,
         };
+    }
+
+    _hudControlSize() {
+        const cssW = this.renderer.cssWidth || INTERNAL_WIDTH;
+        const cssH = this.renderer.cssHeight || INTERNAL_HEIGHT;
+        return isPhoneLandscapeViewport(cssW, cssH)
+            ? phoneHUDControlSize(cssW / INTERNAL_WIDTH)
+            : DEBUG_BUTTON_SIZE;
     }
 
     getLevelUpCardRects(count) {
@@ -346,7 +360,7 @@ export class UISystem {
     // Small HUD pause button, just left of the DBG button.
     getPauseButtonRect() {
         const dbg = this.getDebugButtonRect();
-        return { x: dbg.x - DEBUG_BUTTON_SIZE - 16, y: dbg.y, w: DEBUG_BUTTON_SIZE, h: DEBUG_BUTTON_SIZE };
+        return { x: dbg.x - dbg.w - 16, y: dbg.y, w: dbg.w, h: dbg.h };
     }
 
     // Pause overlay buttons (stacked, centered).
@@ -572,6 +586,13 @@ export class UISystem {
     _drawRunObjectiveCard(ctx, state, hud) {
         const objective = state.runObjective;
         const r = hud.objective;
+        if (objective && r?.integrated === true
+            && hud.command?.mobileBellObjective === true) {
+            this._lastDrawReceipt.objectiveVariant = 'rail';
+            this._lastDrawReceipt.objectiveTextComplete
+                = hud.command.integratedTextComplete === true;
+            return true;
+        }
         if (!objective || !r || r.w <= 0 || r.h <= 0) return;
         const scale = hud.uiScale || 1;
         const lanes = r.lanes || {};
@@ -583,14 +604,15 @@ export class UISystem {
         const bodyPx = Math.max(12, Math.floor(r.bodyPx || 16 * scale));
         const progressPx = Math.max(12, Math.floor(r.progressPx || 15 * scale));
         const immediate = objective.vigilPrompt ?? null;
-        const bodyLabel = 'NEXT';
+        const ruinBellObjective = objective.owner === 'ruin-bell';
+        const bodyLabel = objective.bodyLabel || 'NEXT';
         const body = objective.nextAction;
         const vigil = state.vigilTracker;
-        const contextText = immediate?.title
+        const contextText = objective.contextText || (immediate?.title
             ? `NOW · ${immediate.title}`
             : vigil
                 ? `SITES ${vigil.activatedSites}/${vigil.siteKindTotal} · PACKS ${vigil.encountersCleared}`
-                : state.touchMode ? 'PATH ACTIVE' : 'O · HEAR TASK';
+                : state.touchMode ? 'PATH ACTIVE' : 'O · HEAR TASK');
         const contextColor = immediate?.color
             || (highContrast ? '#ffffff' : 'rgba(225,216,203,0.62)');
 
@@ -615,12 +637,14 @@ export class UISystem {
 
         const headerY = lanes.headerY ?? (r.y + pad + metaPx * 0.52);
         const phaseSuffix = objective.substitution ? ' · SAFE ROUTE' : '';
-        const phaseText = lanes.compactPhase
+        const phaseText = (lanes.mobileChip && objective.compactHeaderLabel)
+            || objective.headerLabel || (lanes.compactPhase
             ? `${objective.phaseNumeral} · ${objective.phaseLabel}${phaseSuffix}`
-            : `${objective.phaseNumeral} / III · ${objective.phaseLabel}${phaseSuffix}`;
-        const progressText = lanes.compactPhase
+            : `${objective.phaseNumeral} / III · ${objective.phaseLabel}${phaseSuffix}`);
+        const progressText = (lanes.mobileChip && objective.compactProgressLabel)
+            || objective.progressLabel || (lanes.compactPhase
             ? `${objective.current}/${objective.target}`
-            : `${objective.current} / ${objective.target}`;
+            : `${objective.current} / ${objective.target}`);
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
         ctx.font = `850 ${metaPx}px ${MONO}`;
@@ -673,9 +697,18 @@ export class UISystem {
             showContext = true,
             minRewardSize = progressPx,
         }) => {
-            const rewardText = state.objectiveRewardsEligible === false
-                ? 'NO COIN REWARD'
-                : `+${objective.reward.amount} COINS`;
+            const compactReward = lanes.mobileChip
+                && typeof objective.compactRewardLabel === 'string'
+                && objective.compactRewardLabel.length > 0
+                ? objective.compactRewardLabel : null;
+            const authoredReward = compactReward != null
+                || (typeof objective.rewardLabel === 'string'
+                    && objective.rewardLabel.length > 0);
+            const rewardText = compactReward || (authoredReward
+                ? objective.rewardLabel
+                : state.objectiveRewardsEligible === false
+                    ? 'NO COIN REWARD'
+                    : `+${objective.reward.amount} COINS`);
             const rewardFit = fitHudLabel(ctx, rewardText, rewardMaxW, {
                 weight: 800,
                 size: progressPx,
@@ -685,7 +718,8 @@ export class UISystem {
             ctx.font = `800 ${rewardFit.fontSize}px ${MONO}`;
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'left';
-            ctx.fillStyle = state.objectiveRewardsEligible === false ? '#a9a1b5' : '#7fe0a0';
+            ctx.fillStyle = objective.rewardColor
+                || (!authoredReward && state.objectiveRewardsEligible === false ? '#a9a1b5' : '#7fe0a0');
             ctx.fillText(rewardFit.text, r.x + pad, footerY);
             if (showContext) {
                 const contextFit = fitHudLabel(ctx, contextText, contextMaxW, {
@@ -702,10 +736,10 @@ export class UISystem {
             return rewardFit;
         };
 
-        // Phone guidance follows sequential lanes owned by HUDLayout. A normal
-        // card keeps its title and a three-line action. During a stacked duel,
-        // the narrow edge rail prioritises the complete action, progress, and
-        // reward over secondary title/context copy.
+        // Phone guidance follows sequential chip lanes owned by HUDLayout.
+        // Redundant title/context copy collapses on every phone; generic Run
+        // Path actions keep three lines, while the bounded Ruin Bell language
+        // fits two. Emergency duel rails preserve the same priority order.
         if (lanes.stackedAction) {
             if (lanes.showTitle !== false && Number.isFinite(lanes.titleY)) {
                 const titleFit = fitHudLabel(ctx, objective.title, r.w - pad * 2, {
@@ -723,9 +757,11 @@ export class UISystem {
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             ctx.fillStyle = highContrast ? '#ffffff' : '#ffe0a3';
+            const actionText = lanes.showBodyLabel === false
+                ? body : `${bodyLabel} · ${body}`;
             const actionWrap = wrapText(
                 ctx,
-                `${bodyLabel} · ${body}`,
+                actionText,
                 r.x + pad,
                 lanes.bodyY,
                 r.w - pad * 2,
@@ -735,12 +771,15 @@ export class UISystem {
             drawProgressBar();
 
             const showContext = lanes.showContext !== false
-                && state.objectiveRewardsEligible !== false;
+                && state.objectiveRewardsEligible !== false
+                && !ruinBellObjective;
             const rewardFit = drawFooter({
                 footerY: lanes.footerY,
                 rewardMaxW: showContext ? r.w * 0.44 : r.w - pad * 2,
                 contextMaxW: r.w * 0.44,
                 showContext,
+                minRewardSize: ruinBellObjective && !lanes.mobileChip
+                    ? 12 : progressPx,
             });
             this._lastDrawReceipt.objectiveVariant = r.edgeCompact ? 'edge' : 'phone';
             this._lastDrawReceipt.objectiveTextComplete = actionWrap?.truncated !== true
@@ -775,8 +814,10 @@ export class UISystem {
             );
             const rewardFit = drawFooter({
                 footerY: lanes.footerY ?? (r.y + r.h - progressPx - 15 * scale),
-                rewardMaxW: r.w * 0.45,
+                rewardMaxW: ruinBellObjective ? r.w - pad * 2 : r.w * 0.45,
                 contextMaxW: r.w * 0.45,
+                showContext: !ruinBellObjective,
+                minRewardSize: ruinBellObjective ? 12 : progressPx,
             });
             drawProgressBar();
             this._lastDrawReceipt.objectiveVariant = 'dense';
@@ -834,11 +875,13 @@ export class UISystem {
 
         const denseFooter = r.dense || state.touchMode;
         const compressedFooter = lanes.compressed === true;
-        const showFooterContext = !compressedFooter
-            || state.objectiveRewardsEligible !== false;
+        const showFooterContext = !ruinBellObjective && (!compressedFooter
+            || state.objectiveRewardsEligible !== false);
         const rewardFit = drawFooter({
             footerY: lanes.footerY ?? (r.y + r.h - pad - progressPx * 0.42),
-            rewardMaxW: compressedFooter
+            rewardMaxW: ruinBellObjective
+                ? r.w - pad * 2
+                : compressedFooter
                 ? showFooterContext ? r.w * 0.43 : r.w - pad * 2
                 : r.w * (state.objectiveRewardsEligible === false
                     ? 0.43 : denseFooter ? 0.38 : 0.30),
@@ -847,9 +890,11 @@ export class UISystem {
                 : r.w * (state.objectiveRewardsEligible === false
                     ? 0.43 : denseFooter ? 0.50 : 0.56),
             showContext: showFooterContext,
-            minRewardSize: compressedFooter
-                ? progressPx
-                : denseFooter ? Math.max(12, progressPx - 3) : progressPx,
+            minRewardSize: ruinBellObjective
+                ? 12
+                : compressedFooter
+                    ? progressPx
+                    : denseFooter ? Math.max(12, progressPx - 3) : progressPx,
         });
         this._lastDrawReceipt.objectiveVariant = 'standard';
         this._lastDrawReceipt.objectiveTextComplete = actionWrap?.truncated !== true
@@ -860,6 +905,10 @@ export class UISystem {
 
     _drawCommandRail(ctx, state, hud) {
         const r = hud.header;
+        const command = hud.command || {};
+        const bellObjective = command.mobileBellObjective
+            && state.runObjective?.owner === 'ruin-bell'
+            ? state.runObjective : null;
         const ws = state.waveState;
         const boss = state.activeBoss;
         const compact = hud.compact;
@@ -870,12 +919,12 @@ export class UISystem {
 
         ctx.save();
         this._hudGlassPlate(ctx, r.x, r.y, r.w, r.h, 19, {
-            stroke: boss ? 'rgba(255,92,65,0.34)' : 'rgba(255,180,120,0.16)',
+            stroke: bellObjective?.accent
+                || (boss ? 'rgba(255,92,65,0.34)' : 'rgba(255,180,120,0.16)'),
         });
         roundRectPath(ctx, r.x, r.y, r.w, r.h, 19); ctx.clip();
 
         const scale = hud.uiScale || 1;
-        const command = hud.command || {};
         const rowY = command.primaryY ?? (r.y + (boss ? r.h / 2 : 36 * scale));
         const identityY = command.identityY ?? rowY;
         const timerX = command.timerX ?? (r.x + 24);
@@ -890,21 +939,22 @@ export class UISystem {
         ctx.textAlign = 'left';
         this._textWithShadow(ctx, timer, timerX, rowY, '#fff7e8');
 
-        // The vigil identity lives in the command rail instead of a separately
-        // positioned label. In a duel it contracts so the boss plate beneath
-        // it becomes the clear primary hierarchy.
-        const waveText = ws
-            ? (boss ? `VIGIL ${ws.index + 1}` : `WAVE ${ws.index + 1}  ·  ${ws.name}`)
-            : 'THE VIGIL';
+        // Ruin Bell borrows this existing identity lane on real phones instead
+        // of opening a second playfield card. Standard runs retain wave truth.
+        const waveText = bellObjective
+            ? bellObjective.railStatusLabel
+            : ws
+                ? (boss ? `VIGIL ${ws.index + 1}` : `WAVE ${ws.index + 1}  ·  ${ws.name}`)
+                : 'THE VIGIL';
         ctx.textAlign = 'center';
         const waveFit = fitHudLabel(ctx, waveText, command.identityMaxW ?? r.w * 0.34, {
-            weight: 700,
-            size: this._uiPx(compact ? 22 : 19),
-            minSize: this._uiPx(compact ? 16 : 14),
-            family: DISPLAY_FONT,
+            weight: bellObjective ? 850 : 700,
+            size: bellObjective ? command.bellMetaPx : this._uiPx(compact ? 22 : 19),
+            minSize: bellObjective ? command.bellMetaPx : this._uiPx(compact ? 16 : 14),
+            family: bellObjective ? MONO : DISPLAY_FONT,
         });
         this._textWithShadow(ctx, waveFit.text, command.identityX ?? (r.x + r.w * 0.53), identityY,
-            boss ? '#ffc0a2' : '#ffd786');
+            bellObjective?.accent || (boss ? '#ffc0a2' : '#ffd786'));
 
         // Stable icon counters at the right edge.
         const coinVal = `${state.runCoins ?? 0}`;
@@ -921,6 +971,48 @@ export class UISystem {
         ctx.textAlign = 'right';
         this._textWithShadow(ctx, 'KILLS', killRight - killValueW - 7, rowY + 1,
             'rgba(255,255,255,0.58)');
+
+        if (bellObjective) {
+            const actionFit = fitHudLabel(
+                ctx,
+                bellObjective.railActionLabel || bellObjective.nextAction,
+                command.bellActionMaxW,
+                {
+                    weight: 750,
+                    size: command.bellActionPx,
+                    minSize: command.bellActionPx,
+                    family: DISPLAY_FONT,
+                },
+            );
+            ctx.textAlign = 'center';
+            this._textWithShadow(
+                ctx,
+                actionFit.text,
+                command.bellActionX + command.bellActionMaxW / 2,
+                command.bellActionY,
+                '#fff0cf',
+            );
+            const bar = command.bellBar;
+            if (bar?.w > 0 && bar.h > 0) {
+                roundRectPath(ctx, bar.x, bar.y, bar.w, bar.h, bar.h / 2);
+                ctx.fillStyle = 'rgba(0,0,0,0.64)';
+                ctx.fill();
+                const fillW = bar.w * clamp01(bellObjective.progress);
+                if (fillW > 0) {
+                    roundRectPath(ctx, bar.x, bar.y, Math.max(bar.h, fillW), bar.h, bar.h / 2);
+                    ctx.fillStyle = bellObjective.accent || '#ffad5a';
+                    ctx.fill();
+                }
+                if (this._highContrast) {
+                    roundRectPath(ctx, bar.x, bar.y, bar.w, bar.h, bar.h / 2);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+            command.integratedTextComplete = waveFit.truncated !== true
+                && actionFit.truncated !== true;
+        }
 
         // Pressure is an explicitly named THREAT band. A boss duel suppresses
         // it because boss HP and cast state are the authoritative threat signal.
@@ -982,7 +1074,9 @@ export class UISystem {
         // Shrink the timer font (only) before the plate could reach the two
         // top-right buttons on a wide safe-area — never move the buttons.
         let tf = 50, mm = measure(tf);
-        const leftmostBtn = INTERNAL_WIDTH - sa.right - 2 * (DEBUG_BUTTON_SIZE + DEBUG_BUTTON_MARGIN) - 16;
+        const controlSize = this._hudControlSize();
+        const leftmostBtn = INTERNAL_WIDTH - sa.right
+            - controlSize * 2 - DEBUG_BUTTON_MARGIN * 2 - 16;
         // Hard ceiling: a centred plate whose half-width reaches leftmostBtn — so
         // the plate right edge can NEVER cross into the top-right buttons, even at
         // an absurd right safe-area (no floor that could override this).
@@ -1025,6 +1119,7 @@ export class UISystem {
     // with a draining window bar. Pops in scale on each milestone tier and
     // pulses faster the hotter the streak — the core "keep going" feedback.
     _drawComboMeter(ctx, state, hud) {
+        if (hud.command?.mobileBellObjective) return;
         const combo = state.combo ?? 0;
         if (combo < (COMBO.minToShow ?? 3)) return;
         // Anchored to the upper-RIGHT (right-aligned), below the debug/pause
@@ -2659,18 +2754,36 @@ export class UISystem {
         const heldCoins = Math.max(0, Math.floor(state.objectiveCoinsHeld ?? 0));
         const objective = state.runObjective;
         if (objective) {
-            const reward = state.objectiveRewardsEligible === false
-                ? 'PRACTICE' : `+${objective.reward.amount} COIN REWARD`;
-            const line = `${objective.phaseLabel} ${objective.phaseIndex + 1}/3 · `
-                + `${objective.title} ${objective.current}/${objective.target} · ${reward}`;
-            ctx.font = `750 26px ${MONO}`;
-            ctx.fillStyle = objective.accent || '#ffd166';
-            const fit = fitHudLabel(ctx, line, 920, {
-                weight: 750, size: 26, minSize: 20, family: MONO,
-            });
-            ctx.font = `750 ${fit.fontSize}px ${MONO}`;
-            ctx.fillText(fit.text, INTERNAL_WIDTH / 2,
-                INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 126 : 108));
+            if (objective.owner === 'ruin-bell') {
+                const status = `${objective.headerLabel} · ${objective.progressLabel}`;
+                const statusFit = fitHudLabel(ctx, status, 1040, {
+                    weight: 750, size: 26, minSize: 20, family: MONO,
+                });
+                ctx.font = `750 ${statusFit.fontSize}px ${MONO}`;
+                ctx.fillStyle = objective.accent || '#ffd166';
+                ctx.fillText(statusFit.text, INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 142 : 126));
+                const rewardFit = fitHudLabel(ctx, objective.rewardLabel, 1040, {
+                    weight: 800, size: 24, minSize: 18, family: MONO,
+                });
+                ctx.font = `800 ${rewardFit.fontSize}px ${MONO}`;
+                ctx.fillStyle = objective.rewardColor || '#7fe0a0';
+                ctx.fillText(rewardFit.text, INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 106 : 90));
+            } else {
+                const reward = state.objectiveRewardsEligible === false
+                    ? 'PRACTICE' : `+${objective.reward.amount} COIN REWARD`;
+                const line = `${objective.phaseLabel} ${objective.phaseIndex + 1}/3 · `
+                    + `${objective.title} ${objective.current}/${objective.target} · ${reward}`;
+                ctx.font = `750 26px ${MONO}`;
+                ctx.fillStyle = objective.accent || '#ffd166';
+                const fit = fitHudLabel(ctx, line, 920, {
+                    weight: 750, size: 26, minSize: 20, family: MONO,
+                });
+                ctx.font = `750 ${fit.fontSize}px ${MONO}`;
+                ctx.fillText(fit.text, INTERNAL_WIDTH / 2,
+                    INTERNAL_HEIGHT / 2 - (heldCoins > 0 ? 126 : 108));
+            }
         }
         if (heldCoins > 0) {
             const armed = confirm?.action === 'restart' || confirm?.action === 'menu';
@@ -2679,7 +2792,7 @@ export class UISystem {
             ctx.fillText(
                 `${heldCoins} COINS HELD · RESTART OR LEAVE FORFEITS THEM`,
                 INTERNAL_WIDTH / 2,
-                INTERNAL_HEIGHT / 2 - 88,
+                INTERNAL_HEIGHT / 2 - (objective?.owner === 'ruin-bell' ? 70 : 88),
             );
         }
 

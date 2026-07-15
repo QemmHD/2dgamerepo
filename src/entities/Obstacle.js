@@ -10,7 +10,13 @@
 // keeps the art data-driven via the archetype palette.
 
 import { footprintDepth } from '../content/mapObjects.js';
-import { getObstacleSprite, getWallPattern, getFloorDecal } from '../assets/ObstacleSprites.js';
+import {
+    getObstacleSprite,
+    getWallPattern,
+    getFloorDecal,
+    getHousePropSprite,
+} from '../assets/ObstacleSprites.js';
+import { getHouseBlueprint } from '../content/houseBlueprints.js';
 
 export class Obstacle {
     constructor(def, x, y) {
@@ -51,6 +57,12 @@ export class Obstacle {
         // drawn centered with NO grounding shadow (it lies ON the ground).
         if (this.type === 'buildingFloor') {
             this._drawBuildingFloor(ctx, w, h, palette);
+            ctx.restore();
+            return;
+        }
+
+        if (this.type === 'buildingFurnishing') {
+            this._drawBuildingFurnishing(ctx, w, h, palette);
             ctx.restore();
             return;
         }
@@ -439,6 +451,72 @@ export class Obstacle {
     // lived-in. Drawn centered (origin = interior center); never collides.
     _drawBuildingFloor(ctx, w, h, p) {
         const hw = w / 2, hh = h / 2;
+        const blueprint = getHouseBlueprint(this.def.blueprintId);
+        if (blueprint) {
+            // House V2 gets one uninterrupted clean-board field. The legacy
+            // cabin floor raster includes a fireplace, rug, table, and implied
+            // room shell, so using it here made the authored cabin read as old
+            // buildings pasted inside a larger facade. V3's source asset is a
+            // material only; rooms and props stay owned by the blueprint.
+            const floorStyle = blueprint.floor?.materialStyle || this.def.styleType;
+            const cleanFloor = getFloorDecal(floorStyle);
+            if (cleanFloor) {
+                ctx.save();
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(cleanFloor, -hw, -hh, w, h);
+                ctx.restore();
+            } else {
+                const shellStyle = blueprint.floor?.shellMaterialStyle || this.def.styleType;
+                const pattern = getWallPattern(shellStyle, ctx);
+                ctx.fillStyle = pattern || '#4b3829';
+                ctx.fillRect(-hw, -hh, w, h);
+            }
+
+            // The circulation spine is a worn route within the same boards,
+            // not another filled room. Thin inlay rails and door thresholds
+            // reveal the believable plan without drawing a second shell.
+            const hall = (blueprint.rooms || []).find((room) => room.overlay
+                && room.tags?.includes('circulation'));
+            if (hall) {
+                ctx.save();
+                ctx.globalAlpha = 0.34;
+                ctx.strokeStyle = hall.floorTone || '#705038';
+                ctx.lineWidth = 5;
+                for (const x of [hall.x - hall.w / 2 + 7, hall.x + hall.w / 2 - 7]) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, -hh + 4);
+                    ctx.lineTo(x, hh - 4);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+            ctx.save();
+            ctx.fillStyle = 'rgba(34, 17, 10, 0.52)';
+            for (const entry of blueprint.doors || []) {
+                if (entry.kind !== 'interior') continue;
+                if (entry.axis === 'horizontal') {
+                    ctx.fillRect(entry.x - entry.width * 0.42, entry.y - 3,
+                        entry.width * 0.84, 6);
+                } else {
+                    ctx.fillRect(entry.x - 3, entry.y - entry.width * 0.42,
+                        6, entry.width * 0.84);
+                }
+            }
+            ctx.restore();
+
+            // A single inset edge binds the floor to the continuous foundation.
+            ctx.strokeStyle = 'rgba(25, 13, 10, 0.70)';
+            ctx.lineWidth = 7;
+            ctx.strokeRect(-hw + 3.5, -hh + 3.5, w - 7, h - 7);
+            if (this.tint && this.tint.amt > 0.01) {
+                ctx.save();
+                ctx.globalAlpha = Math.min(0.16, this.tint.amt * 0.45);
+                ctx.fillStyle = this.tint.color;
+                ctx.fillRect(-hw, -hh, w, h);
+                ctx.restore();
+            }
+            return;
+        }
         // AI interior decal for this building style (plank+rug+hearth etc.),
         // scaled to the interior; procedural floor below is the fallback.
         const decal = getFloorDecal(this.def.styleType);
@@ -493,5 +571,23 @@ export class Obstacle {
         ctx.fillRect(tx - 22, ty - 14, 44, 6);
         ctx.fillStyle = '#5a4632';
         ctx.beginPath(); ctx.arc(tx - 36, ty + 6, 9, 0, Math.PI * 2); ctx.fill();
+    }
+
+    _drawBuildingFurnishing(ctx, w, h, p) {
+        const key = this.def.sprite;
+        const sprite = key === 'crate' || key === 'barrel'
+            ? getObstacleSprite(key, this.tint)
+            : getHousePropSprite(key);
+        if (sprite) {
+            const topDown = this.def.renderProjection === 'top-down-cutaway';
+            ctx.save();
+            if (topDown) ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(sprite, -w / 2, topDown ? -h / 2 : -h, w, h);
+            ctx.restore();
+            return;
+        }
+        // Never-rejecting raster loaders keep this material fallback as the
+        // resilience tier; it is deliberately generic and collision-faithful.
+        this._drawBlock(ctx, w, h, p || { base: '#5c4430', top: '#86643f', edge: '#2d2118' });
     }
 }

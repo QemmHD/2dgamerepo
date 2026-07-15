@@ -25,7 +25,7 @@ import {
     ENEMY,
     WAVE_LIMITS,
 } from '../config/GameConfig.js';
-import { clamp, compactInPlace } from './MathUtils.js';
+import { TWO_PI, clamp, compactInPlace } from './MathUtils.js';
 import { Player } from '../entities/Player.js';
 import { BOSS_SPAWN_PROVENANCE, Enemy } from '../entities/Enemy.js';
 import { XPGem } from '../entities/XPGem.js';
@@ -37,6 +37,7 @@ import { retireEncounterEnemyTags } from '../systems/EncounterDirector.js';
 import { AUTO_AIM_RANGE } from '../systems/WeaponSystem.js';
 import { HazardSystem } from '../systems/HazardSystem.js';
 import { nextMusicState } from '../systems/MusicDirector.js';
+import { RUIN_BELL_EVENT, resolveRuinBellMusicCue } from '../content/music.js';
 
 // Second Wind only regenerates when no enemy is within this radius.
 const SECOND_WIND_RADIUS = 340;
@@ -256,6 +257,7 @@ export const GameUpdateMethods = {
         // player can reposition; it actually spawns when the warning expires.
         const bossAlive = this.enemies.some((e) => e.active && e.boss);
         const siteChallengeActive = !!this.vigilSiteSystem?.hasActiveChallenge?.();
+        const ruinBellStageOwned = !!this.ruinBellDirector?.ownsStage?.();
         const encounterPhase = this.encounterDirector?.getSnapshot?.().phase;
         // Combat resolution runs after directors, so a guardian killed on the
         // prior frame may be waiting in this queue. Give that earned lifecycle
@@ -277,7 +279,8 @@ export const GameUpdateMethods = {
                     this._startBossWarning(act.spawn, provenance);
                 }
             }
-        } else if (!bossAlive && !this.bossWarning && !siteChallengeActive && !pendingEncounterLifecycle) {
+        } else if (!bossAlive && !this.bossWarning && !siteChallengeActive
+            && !pendingEncounterLifecycle && !ruinBellStageOwned) {
             const bossId = this.bossDirector.update(this.time, bossAlive);
             if (bossId) {
                 const provenance = this.campaignRun?.taintReason === 'debug-time-jump'
@@ -304,6 +307,7 @@ export const GameUpdateMethods = {
         // precedes the spawn. `bossAlive` is reused from the boss gate above.
         let lieutenantAlive = this.enemies.some((e) => e.active && e.lieutenant);
         const authoredChallengeActive = siteChallengeActive
+            || ruinBellStageOwned
             || (!!encounterPhase && encounterPhase !== 'idle');
         if (!this.bossRush && !bossActiveForLieutenant && !this.lieutenantWarning
             && !lieutenantAlive && !authoredChallengeActive) {
@@ -355,7 +359,8 @@ export const GameUpdateMethods = {
             bossActive,
             bossWarning: !!this.bossWarning,
             overlayActive: lieutenantActive || !!this.lieutenantWarning
-                || !!this.vigilSiteSystem?.hasActiveChallenge?.(),
+                || !!this.vigilSiteSystem?.hasActiveChallenge?.()
+                || !!this.ruinBellDirector?.ownsStage?.(),
             defeatedMemberIds: defeated,
         });
         this._applyEncounterOutput(output);
@@ -373,7 +378,8 @@ export const GameUpdateMethods = {
                 spawnResults: [{ packId: request.packId, acceptedMemberIds }],
                 bossActive: !!this.arena,
                 bossWarning: !!this.bossWarning,
-                overlayActive: !!this.vigilSiteSystem?.hasActiveChallenge?.(),
+                overlayActive: !!this.vigilSiteSystem?.hasActiveChallenge?.()
+                    || !!this.ruinBellDirector?.ownsStage?.(),
             });
             for (const event of follow?.events || []) this._handleEncounterEvent(event);
         }
@@ -414,7 +420,8 @@ export const GameUpdateMethods = {
                     targetY + Math.sin(bearing) * spread,
                     radius + 8,
                 );
-                if (this.obstacleSystem.isBlocked(candidate.x, candidate.y, radius + 6)) continue;
+                if ((this.obstacleSystem.isSpawnBlocked?.(candidate.x, candidate.y, radius + 6)
+                    ?? this.obstacleSystem.isBlocked(candidate.x, candidate.y, radius + 6))) continue;
                 const pdx = candidate.x - this.player.x, pdy = candidate.y - this.player.y;
                 if (pdx * pdx + pdy * pdy < 360 * 360) continue;
                 let overlaps = false;
@@ -478,6 +485,464 @@ export const GameUpdateMethods = {
         this.audio.objective();
         this.waveDirector.announce(`${event.title.toUpperCase()}  +24 XP · 15 COINS DROPPED`, 2.4, event.color ?? '#ffd166');
         this._encounterRewardPos = null;
+    },
+
+    _ruinBellContext(extra = null) {
+        const encounterPhase = this.encounterDirector?.getSnapshot?.().phase;
+        const bossActive = !!this.arena || this.enemies.some((enemy) => enemy.active && enemy.boss);
+        const lieutenantActive = this.enemies.some((enemy) => enemy.active && enemy.lieutenant);
+        return {
+            screen: this.screen,
+            player: this.player,
+            waveState: this.waveState,
+            paused: !!this.paused,
+            gameOver: !!this.gameOver,
+            victory: !!this.victory,
+            upgradeChoices: !!this.upgradeChoices,
+            chestReward: !!this.chestReward,
+            altar: !!this.altar,
+            photoMode: !!this.photoMode,
+            bossActive,
+            bossWarning: !!this.bossWarning,
+            lieutenantActive,
+            lieutenantWarning: !!this.lieutenantWarning,
+            tacticalEncounterActive: !!encounterPhase && encounterPhase !== 'idle',
+            vigilChallengeActive: !!this.vigilSiteSystem?.hasActiveChallenge?.(),
+            ...(extra || {}),
+        };
+    },
+
+    _updateRuinBell(dt) {
+        const director = this.ruinBellDirector;
+        if (!director) return;
+        const defeatedMemberIds = this._ruinBellDefeatedIds.splice(0);
+        const output = director.update(dt, this._ruinBellContext({ defeatedMemberIds }));
+        this._applyRuinBellOutput(output);
+    },
+
+    // A director output may synchronously request a wave and then emit a
+    // follow-up after Game acknowledges it. Keep that handshake bounded while
+    // still allowing a throttled/large-dt frame to catch up through all three
+    // authored stages without leaving an impossible pending request behind.
+    _applyRuinBellOutput(initialOutput) {
+        if (!initialOutput || !this.ruinBellDirector) return;
+        const outputs = [initialOutput];
+        for (let cursor = 0; cursor < outputs.length && cursor < 8; cursor++) {
+            const output = outputs[cursor];
+            const events = output?.events || [];
+            const closesSpawnLane = events.some((event) =>
+                event?.type === 'ruin-bell-cleared'
+                || event?.type === 'ruin-bell-failed'
+                || event?.type === 'ruin-bell-technical-defer');
+            for (const event of events) this._handleRuinBellEvent(event);
+            // Cleanup/terminal events are authoritative for their whole output.
+            // Even a malformed or older Director must not spawn a request after
+            // Game has just retired the encounter's bodies and attacks.
+            if (closesSpawnLane) continue;
+            for (const request of output?.spawnRequests || []) {
+                const result = this._spawnRuinBellWave(request);
+                const follow = this.ruinBellDirector.update(0, this._ruinBellContext({
+                    spawnResults: [result],
+                }));
+                if (follow) outputs.push(follow);
+            }
+        }
+    },
+
+    _spawnRuinBellWave(request) {
+        const deferred = (reason, acceptedMemberIds = []) => ({
+            requestId: request?.requestId || null,
+            acceptedMemberIds,
+            deferred: true,
+            technicalDefer: true,
+            reason,
+        });
+        if (!request || request.allOrNone !== true || !Array.isArray(request.units)
+            || typeof request.requestId !== 'string' || typeof request.instanceId !== 'string') {
+            return deferred('invalid-request');
+        }
+
+        const requiredIds = Array.isArray(request.requiredMemberIds)
+            ? request.requiredMemberIds : [];
+        const required = new Set(requiredIds);
+        if (!request.units.length || request.units.length !== request.requiredCount
+            || required.size !== request.units.length) return deferred('invalid-manifest');
+
+        const live = this.enemies.reduce((count, enemy) => count + (enemy.active ? 1 : 0), 0);
+        const cap = Math.min(
+            WAVE_LIMITS.maxEnemyCap,
+            Math.max(0, Math.floor(this.waveState?.maxAlive ?? WAVE_LIMITS.maxEnemyCap)),
+        );
+        if (cap - live < request.units.length) return deferred('enemy-cap');
+
+        const placements = [];
+        const seen = new Set();
+        const attempts = Math.max(1, Math.min(8,
+            Math.floor(request.placementAttemptsPerUnit ?? 8)));
+        for (let index = 0; index < request.units.length; index++) {
+            const unit = request.units[index];
+            const memberId = unit?.memberId;
+            const def = ENEMY[unit?.type];
+            if (!def || def.boss || typeof memberId !== 'string'
+                || !required.has(memberId) || seen.has(memberId)) {
+                return deferred('invalid-unit');
+            }
+            seen.add(memberId);
+            const radius = Math.max(8, Number.isFinite(def.radius) ? def.radius : 30);
+            const laneStart = unit.chargeLane?.worldFrom;
+            const entry = laneStart && Number.isFinite(laneStart.x) && Number.isFinite(laneStart.y)
+                ? laneStart : unit.entry;
+            if (!entry || !Number.isFinite(entry.x) || !Number.isFinite(entry.y)) {
+                return deferred('missing-entry');
+            }
+
+            let normalX = Number(unit.entry?.normal?.x) || 0;
+            let normalY = Number(unit.entry?.normal?.y) || 0;
+            let normalLength = Math.hypot(normalX, normalY);
+            if (laneStart && unit.chargeLane?.worldThrough) {
+                // The authored charge lane points from outside toward the
+                // cabin. Its inverse is the outward fallback used only for
+                // deterministic placement probes around the exact lane start.
+                normalX = laneStart.x - unit.chargeLane.worldThrough.x;
+                normalY = laneStart.y - unit.chargeLane.worldThrough.y;
+                normalLength = Math.hypot(normalX, normalY);
+            }
+            if (normalLength < 0.001) {
+                const origin = request.structureOrigin;
+                normalX = entry.x - (origin?.x || 0);
+                normalY = entry.y - (origin?.y || 0);
+                normalLength = Math.hypot(normalX, normalY) || 1;
+            }
+            normalX /= normalLength;
+            normalY /= normalLength;
+            const tangentX = -normalY;
+            const tangentY = normalX;
+            const seed = Number.isFinite(unit.attackSeed) ? unit.attackSeed : 0.5;
+            const spreadIndex = index - (request.units.length - 1) / 2;
+            const tangentOffset = laneStart
+                ? 0
+                : spreadIndex * (radius * 1.2 + 34) + (seed - 0.5) * 26;
+            const outwardOffset = laneStart ? 0 : radius + 150;
+            const targetX = entry.x + normalX * outwardOffset + tangentX * tangentOffset;
+            const targetY = entry.y + normalY * outwardOffset + tangentY * tangentOffset;
+            let spot = null;
+            for (let attempt = 0; attempt < attempts; attempt++) {
+                const probeRadius = attempt === 0 ? 0 : (radius + 30) * (1 + Math.floor((attempt - 1) / 3));
+                const bearing = seed * TWO_PI + attempt * 2.399963229728653;
+                const candidate = this._clearSpot(
+                    targetX + Math.cos(bearing) * probeRadius,
+                    targetY + Math.sin(bearing) * probeRadius,
+                    radius + 8,
+                );
+                if ((this.obstacleSystem.isSpawnBlocked?.(candidate.x, candidate.y, radius + 6)
+                    ?? this.obstacleSystem.isBlocked(candidate.x, candidate.y, radius + 6))) continue;
+                const pdx = candidate.x - this.player.x;
+                const pdy = candidate.y - this.player.y;
+                const playerGap = Math.max(170, radius + this.player.radius + 92);
+                if (pdx * pdx + pdy * pdy < playerGap * playerGap) continue;
+
+                let overlaps = false;
+                for (const prior of placements) {
+                    const dx = candidate.x - prior.x;
+                    const dy = candidate.y - prior.y;
+                    const gap = radius + prior.radius + 18;
+                    if (dx * dx + dy * dy < gap * gap) { overlaps = true; break; }
+                }
+                if (overlaps) continue;
+                for (const enemy of this.enemies) {
+                    if (!enemy.active) continue;
+                    const dx = candidate.x - enemy.x;
+                    const dy = candidate.y - enemy.y;
+                    const gap = radius + Math.max(8, enemy.radius || 0) + 14;
+                    if (dx * dx + dy * dy < gap * gap) { overlaps = true; break; }
+                }
+                if (!overlaps) { spot = candidate; break; }
+            }
+            if (!spot) return deferred('placement-blocked');
+            placements.push({ unit, radius, x: spot.x, y: spot.y });
+        }
+        if (seen.size !== required.size || requiredIds.some((id) => !seen.has(id))) {
+            return deferred('manifest-mismatch');
+        }
+
+        // Constructors run before any object enters the authoritative array.
+        // If future enemy content throws, the all-or-none promise still holds.
+        const created = [];
+        try {
+            for (const placement of placements) {
+                const { unit, x, y } = placement;
+                const enemy = new Enemy(unit.type, x, y, {
+                    healthMul: this.waveState.healthMul,
+                    speedMul: this.waveState.speedMul,
+                    contactDamageMul: this.waveState.damageMul ?? 1,
+                    elite: false,
+                });
+                enemy.ruinBellMemberId = unit.memberId;
+                enemy.ruinBellInstanceId = request.instanceId;
+                enemy.ruinBellStageId = request.stageId;
+                enemy.ruinBellRole = unit.role || 'threshold';
+                enemy.ruinBellEntryDoorId = unit.entryDoorId || null;
+                enemy.ruinBellRouteRoomIds = Array.isArray(unit.routeRoomIds)
+                    ? [...unit.routeRoomIds] : [];
+                enemy.ruinBellCombatSocket = unit.combatSocket?.world
+                    ? { ...unit.combatSocket.world } : null;
+                enemy.ruinBellChargeLane = unit.chargeLane ? {
+                    from: unit.chargeLane.worldFrom ? { ...unit.chargeLane.worldFrom } : null,
+                    through: unit.chargeLane.worldThrough ? { ...unit.chargeLane.worldThrough } : null,
+                    to: unit.chargeLane.worldTo ? { ...unit.chargeLane.worldTo } : null,
+                    clearance: unit.chargeLane.clearance,
+                } : null;
+                created.push(enemy);
+            }
+        } catch (_) {
+            return deferred('enemy-construction');
+        }
+        this.enemies.push(...created);
+        try { this.waveDirector.notifySpawn?.(created.length); }
+        catch (_) { /* spawn membership remains authoritative */ }
+        return {
+            requestId: request.requestId,
+            acceptedMemberIds: created.map((enemy) => enemy.ruinBellMemberId),
+        };
+    },
+
+    _retireRuinBellMembers(memberIds = null) {
+        const requested = Array.isArray(memberIds) ? new Set(memberIds) : null;
+        const instanceId = this.ruinBellDirector?.instanceId;
+        let retired = 0;
+        for (const enemy of this.enemies) {
+            if (!enemy.active || !enemy.ruinBellMemberId) continue;
+            if (instanceId && enemy.ruinBellInstanceId !== instanceId) continue;
+            if (requested && !requested.has(enemy.ruinBellMemberId)) continue;
+            enemy.active = false;
+            retired++;
+        }
+        // Bellbound attacks outlive their owner by design, so retire them by
+        // explicit encounter provenance on defer/failure/clear. Without this, a
+        // retry can begin under an old marksman bolt or bomber blast zone.
+        for (const projectile of this.enemyProjectiles) {
+            if (!projectile.active || !projectile.ruinBellInstanceId) continue;
+            if (instanceId && projectile.ruinBellInstanceId !== instanceId) continue;
+            if (requested && !requested.has(projectile.ruinBellMemberId)) continue;
+            projectile.active = false;
+        }
+        for (const hazard of this.hazards) {
+            if (!hazard.active || !hazard.ruinBellInstanceId) continue;
+            if (instanceId && hazard.ruinBellInstanceId !== instanceId) continue;
+            if (requested && !requested.has(hazard.ruinBellMemberId)) continue;
+            hazard.active = false;
+        }
+        return retired;
+    },
+
+    _setRuinBellHouseState(nextState) {
+        const structure = this.ruinBellStructure;
+        if (!structure || typeof nextState !== 'string') return false;
+        return this.obstacleSystem.setStructureState?.(structure.id, nextState) === true;
+    },
+
+    _playRuinBellMusic(eventName, semanticOverride = null) {
+        const director = this.ruinBellDirector;
+        if (!director) return null;
+        const ordinal = this._ruinBellMusicOrdinal++;
+        const resolved = resolveRuinBellMusicCue(eventName, director.seed, ordinal);
+        if (!resolved) return null;
+        const cue = semanticOverride ? { ...resolved, ...semanticOverride } : resolved;
+        if (cue.combat) {
+            const holdSeconds = Math.max(0.5, (Number(cue.combat.holdBars) || 0) * 2);
+            this.musicState = {
+                ...this.musicState,
+                scene: cue.combat.scene,
+                intensity: cue.combat.intensity,
+                target: cue.combat.intensity,
+            };
+            this._ruinBellMusicHold = {
+                scene: cue.combat.scene,
+                intensity: cue.combat.intensity,
+                remaining: holdSeconds,
+            };
+        }
+        const caption = this.audio.musicEvent?.('ruinBell', cue) || cue.caption;
+        if (caption) {
+            this.captionSystem?.sound?.({
+                key: `${cue.id}-${ordinal}`,
+                text: caption,
+                detail: 'full',
+                priority: eventName === RUIN_BELL_EVENT.ESCALATION ? 86 : 78,
+                cooldown: 0,
+            });
+        }
+        this.accessibility?.announce?.(cue.announcement);
+        return cue;
+    },
+
+    _handleRuinBellEvent(event) {
+        if (!event?.type) return;
+        if (event.houseState) this._setRuinBellHouseState(event.houseState);
+        const anchor = event.anchor || this.ruinBellDirector?.anchor || this.ruinBellStructure
+            || { x: this.player.x, y: this.player.y };
+
+        if (event.type === 'ruin-bell-unlocked') {
+            this.waveDirector.announce('RUIN BELL AWAKENED  ·  FIND THE LAST-WICK CABIN', 3.0, '#ffad5a');
+            this.accessibility?.announce?.('Ruin Bell unlocked. Find the Last-Wick Cabin and hold position by the bell.');
+            return;
+        }
+        if (event.type === 'ruin-bell-arming-cancelled'
+            || event.type === 'ruin-bell-wave-requested') return;
+
+        if (event.type === 'ruin-bell-started') {
+            for (const hazard of this.hazards) if (hazard.active && hazard.biome) hazard.active = false;
+            this._playRuinBellMusic(RUIN_BELL_EVENT.WARNING);
+            this.waveDirector.announce('FIRST TOLL  ·  BRACE BOTH DOORS', 2.8, '#ffad5a');
+            this._spawnRing(anchor.x, anchor.y, {
+                maxR: 250, width: 10, life: 0.62, color: '#ffad5a', ease: 'outCubic',
+            });
+            this._shake(SCREEN_SHAKE.intensity * 0.42, 0.32);
+            this.haptics?.pulse?.('bossAttack');
+            return;
+        }
+        if (event.type === 'ruin-bell-stage-warning') {
+            if ((event.stageIndex ?? 0) > 0) this._playRuinBellMusic(RUIN_BELL_EVENT.ESCALATION);
+            this.waveDirector.announce(
+                `${String(event.title || 'BELLBOUND').toUpperCase()}  ·  ${String(event.text || 'HOLD THE CABIN').toUpperCase()}`,
+                Math.max(2.2, event.leadSeconds || 0),
+                event.color || '#ff6a78',
+            );
+            return;
+        }
+        if (event.type === 'ruin-bell-wave-spawned') {
+            this.waveDirector.announce(
+                `${String(event.title || 'BELLBOUND').toUpperCase()} FORMED  ·  ${event.count || 0} HOSTILES`,
+                1.6,
+                '#ffd166',
+            );
+            return;
+        }
+        if (event.type === 'ruin-bell-technical-defer') {
+            this._retireRuinBellMembers(event.cleanupMemberIds);
+            this.waveDirector.announce('APPROACH RESETTING  ·  ATTEMPT PRESERVED', 2.4, '#a9a1b5');
+            this.accessibility?.announce?.('Ruin Bell approach resetting. Your attempt was not consumed.');
+            return;
+        }
+        if (event.type === 'ruin-bell-defense-warning') {
+            this.waveDirector.announce(
+                `RETURN TO THE CABIN  ·  ${Math.ceil(event.retryIn || 0)}s`,
+                2.2,
+                '#ff6a78',
+            );
+            this.accessibility?.announce?.('Return to the Last-Wick Cabin before the Ruin Bell breaks.');
+            this.haptics?.pulse?.('bossAttack');
+            return;
+        }
+        if (event.type === 'ruin-bell-defense-restored') {
+            this.waveDirector.announce('CABIN DEFENSE RESTORED', 1.6, '#7fe0a0');
+            this.accessibility?.announce?.('Cabin defense restored.');
+            return;
+        }
+        if (event.type === 'ruin-bell-failed') {
+            this._retireRuinBellMembers();
+            this._playRuinBellMusic(RUIN_BELL_EVENT.FAILURE, event.retryAvailable ? null : {
+                caption: 'Ruin Bell lost: silent for this run.',
+                announcement: 'The Ruin Bell is silent for this run. No completion reward was earned.',
+            });
+            this._ruinBellReceipt = {
+                ok: false,
+                attempt: event.attempt,
+                retryAvailable: event.retryAvailable === true,
+                receipt: event.receipt,
+            };
+            this.waveDirector.announce(
+                event.retryAvailable
+                    ? `RUIN BELL CRACKED  ·  RETRY IN ${Math.ceil(event.retryIn || 0)}s`
+                    : 'RUIN BELL LOST  ·  NO COMPLETION REWARD',
+                3.2,
+                '#ff6a78',
+            );
+            this._shake(SCREEN_SHAKE.intensity * 0.55, 0.38);
+            return;
+        }
+        if (event.type === 'ruin-bell-retry-ready') {
+            this.waveDirector.announce('RUIN BELL RELIT  ·  FINAL ATTEMPT READY', 2.8, '#ffad5a');
+            this.accessibility?.announce?.('Ruin Bell relit. Return to the bell for the final attempt.');
+            return;
+        }
+        if (event.type !== 'ruin-bell-cleared' || this._ruinBellRewarded) return;
+
+        this._retireRuinBellMembers();
+        this._ruinBellRewarded = true;
+        const xp = Math.max(0, Math.round(event.reward?.xp || 0));
+        this._grantVigilXp(xp, anchor.x, anchor.y);
+        const authoredSockets = this.ruinBellStructure?.blueprint?.encounter?.rewardSockets;
+        const rewardPlacement = authoredSockets?.chest && authoredSockets?.shrine ? {
+            chest: {
+                x: this.ruinBellStructure.x + authoredSockets.chest.x,
+                y: this.ruinBellStructure.y + authoredSockets.chest.y,
+            },
+            shrine: {
+                x: this.ruinBellStructure.x + authoredSockets.shrine.x,
+                y: this.ruinBellStructure.y + authoredSockets.shrine.y,
+            },
+            pickupDelaySeconds: authoredSockets.pickupDelaySeconds,
+            requiresExitBeforePickup: authoredSockets.requiresExitBeforePickup === true,
+        } : null;
+        const chestStart = Array.isArray(this.chests) ? this.chests.length : 0;
+        const shrineStart = Array.isArray(this.shrines) ? this.shrines.length : 0;
+        this._dropBossReward(anchor.x, anchor.y, rewardPlacement);
+        const rewardId = typeof event.rewardId === 'string'
+            ? event.rewardId : this.ruinBellDirector?.rewardId;
+        const rewardChest = Array.isArray(this.chests) ? this.chests[chestStart] : null;
+        const rewardShrine = Array.isArray(this.shrines) ? this.shrines[shrineStart] : null;
+        if (rewardChest && rewardShrine && typeof rewardId === 'string') {
+            rewardChest.ruinBellInstanceId = event.instanceId;
+            rewardChest.ruinBellRewardId = rewardId;
+            rewardChest.ruinBellRewardChoice = 'chest';
+            rewardShrine.ruinBellInstanceId = event.instanceId;
+            rewardShrine.ruinBellRewardId = rewardId;
+            rewardShrine.ruinBellRewardChoice = 'shrine';
+        }
+        this._playRuinBellMusic(RUIN_BELL_EVENT.CLEAR);
+        this._ruinBellReceipt = {
+            ok: true,
+            attempt: event.attempt,
+            xp,
+            choice: event.reward?.choice || null,
+            rewardId: rewardId || null,
+            rewardClaimed: false,
+            claimedChoice: null,
+            rewardSockets: rewardPlacement ? {
+                chest: { ...rewardPlacement.chest },
+                shrine: { ...rewardPlacement.shrine },
+            } : null,
+            receipt: event.receipt,
+        };
+        this._spawnRing(anchor.x, anchor.y, {
+            maxR: 340, width: 13, life: 0.8, color: '#ffd38a', ease: 'outCubic',
+        });
+        this.particles.pickupSparkle(anchor.x, anchor.y, '#ffd38a');
+        this.waveDirector.announce(event.receipt || 'RUIN BELL HELD', 3.6, '#7fe0a0');
+        this.haptics?.pulse?.('bossDefeat');
+    },
+
+    _claimRuinBellReward(reward) {
+        const director = this.ruinBellDirector;
+        if (!director || !reward || typeof director.claimReward !== 'function') return false;
+        if (reward.ruinBellInstanceId !== director.instanceId
+            || reward.ruinBellRewardId !== director.rewardId
+            || (reward.ruinBellRewardChoice !== 'chest'
+                && reward.ruinBellRewardChoice !== 'shrine')) return false;
+        const accepted = director.claimReward({
+            instanceId: reward.ruinBellInstanceId,
+            rewardId: reward.ruinBellRewardId,
+            choice: reward.ruinBellRewardChoice,
+        });
+        if (!accepted) return false;
+        this._ruinBellReceipt = {
+            ...(this._ruinBellReceipt || {}),
+            rewardId: reward.ruinBellRewardId,
+            rewardClaimed: true,
+            claimedChoice: reward.ruinBellRewardChoice,
+        };
+        return true;
     },
 
     _updateVigilSites(dt) {
@@ -607,7 +1072,8 @@ export const GameUpdateMethods = {
             if (!def || def.boss) return [];
             const radius = Math.max(8, def.radius ?? 30);
             const spot = this._clearSpot(request.x, request.y, Math.max(radius + 8, request.clearance ?? 0));
-            if (this.obstacleSystem.isBlocked(spot.x, spot.y, radius + 6)) return [];
+            if ((this.obstacleSystem.isSpawnBlocked?.(spot.x, spot.y, radius + 6)
+                ?? this.obstacleSystem.isBlocked(spot.x, spot.y, radius + 6))) return [];
             placements.push({ request, def, radius, spot });
         }
         const spawned = [];
@@ -669,6 +1135,11 @@ export const GameUpdateMethods = {
         }
         // Boss arena: confine the player inside the ring (can't flee the fight).
         if (this.arena) this._confineToArena(this.player, this.player.radius);
+        // The Bell reads the post-collision player position, so merely brushing
+        // its radius through a wall can never arm the contract. It advances
+        // before house Waylights, whose set-piece gate sees the same-frame
+        // ownership transition and cannot overlap a newly started defense.
+        this._updateRuinBell(dt);
         this._updateVigilSites(dt);
         // Boss = main event: while a boss is incoming or alive, halt the normal
         // trash spawner so the fight is the player vs. the boss (and only the
@@ -677,7 +1148,7 @@ export const GameUpdateMethods = {
         // Boss Rush is boss-only: the trash spawner never runs (each fight is the
         // player vs. the apex + its own themed adds, with a calm prep phase between).
         const bossOnField = !!this.bossWarning || this.enemies.some((e) => e.active && e.boss);
-        if (!bossOnField && !this.bossRush) {
+        if (!bossOnField && !this.bossRush && !this.ruinBellDirector?.ownsStage?.()) {
             // Spawner slows with the world during Focus Time (worldDt).
             this.spawner.update(worldDt, this.player, this.enemies, this.waveState, this.obstacleSystem, this.waveDirector);
         }
@@ -743,7 +1214,19 @@ export const GameUpdateMethods = {
             const wasWinding = e.windupTimer > 0;
             const wasBossWinding = !!e.boss && e.bossWindupTimer > 0;
             const wasPhaseBreaking = !!e.boss && e.bossPhaseBreakTimer > 0;
+            const projectileStart = this.enemyProjectiles.length;
+            const hazardStart = this.hazards.length;
             e.update(dt, this.player, this.enemyProjectiles, this.obstacleSystem);
+            if (e.ruinBellMemberId) {
+                for (let i = projectileStart; i < this.enemyProjectiles.length; i++) {
+                    this.enemyProjectiles[i].ruinBellInstanceId = e.ruinBellInstanceId;
+                    this.enemyProjectiles[i].ruinBellMemberId = e.ruinBellMemberId;
+                }
+                for (let i = hazardStart; i < this.hazards.length; i++) {
+                    this.hazards[i].ruinBellInstanceId = e.ruinBellInstanceId;
+                    this.hazards[i].ruinBellMemberId = e.ruinBellMemberId;
+                }
+            }
             if (e.boss) {
                 // Apex casts use their own timer, so they never reached the
                 // regular-enemy transition cues below. Announce both the honest
@@ -782,6 +1265,8 @@ export const GameUpdateMethods = {
                         kind: 'delayedZone', x: e.x, y: e.y, r: e.def.blastRadius,
                         damage: e.blastDamage, age: 0, lifetime: e.def.windup,
                         hitPlayer: false, detonateAge: 0, active: true,
+                        ruinBellInstanceId: e.ruinBellInstanceId || null,
+                        ruinBellMemberId: e.ruinBellMemberId || null,
                     });
                     if (this._inView(e.x, e.y, 0)) {
                         this.audio.chargerWindup();
@@ -803,6 +1288,7 @@ export const GameUpdateMethods = {
                         this._encounterDefeatedIds.push(e.encounterMemberId);
                         if (e.encounterGuardian) this._encounterRewardPos = { x: e.x, y: e.y };
                     }
+                    if (e.ruinBellMemberId) this._ruinBellDefeatedIds.push(e.ruinBellMemberId);
                     if (e.elite) this._selfDetonated.push(e);
                     else this.particles.deathBurst(e.x, e.y, '#ff9a4a');
                     if (this._inView(e.x, e.y, 120)) {
@@ -998,6 +1484,7 @@ export const GameUpdateMethods = {
                 this.pendingChests += 1;
                 // Claiming the chest despawns its sibling shrine (boss pick-one).
                 if (c._sibling && c._sibling.active) c._sibling.active = false;
+                this._claimRuinBellReward?.(c);
                 // Pop of golden sparkle the instant the chest is grabbed (the
                 // reward overlay follows, but the world gets immediate feedback).
                 this.particles.pickupSparkle(c.x, c.y, '#ffd166');
@@ -1012,6 +1499,7 @@ export const GameUpdateMethods = {
             if (s.update(dt, this.player)) {
                 this.pendingAltars += 1;
                 if (s._sibling && s._sibling.active) s._sibling.active = false;
+                this._claimRuinBellReward?.(s);
                 this.particles.pickupSparkle(s.x, s.y, '#ff9ecf');
                 this.particles.pickupSparkle(s.x, s.y - 8, '#ffd3ec');
                 // Mystical wick-chime — distinct from the chest's loot latch.
@@ -1121,6 +1609,37 @@ export const GameUpdateMethods = {
             bossPhase: boss?.phase ?? 1,
             playerHpFraction: this.player.maxHp > 0 ? this.player.hp / this.player.maxHp : 0,
         }, dt);
+        const bellMusicHold = this._ruinBellMusicHold;
+        if (bellMusicHold && !boss) {
+            bellMusicHold.remaining = Math.max(0, bellMusicHold.remaining - Math.max(0, dt));
+            if (bellMusicHold.remaining > 0) {
+                this.musicState = {
+                    ...this.musicState,
+                    scene: bellMusicHold.scene,
+                    intensity: bellMusicHold.intensity,
+                    target: bellMusicHold.intensity,
+                };
+            } else {
+                this._ruinBellMusicHold = null;
+            }
+        } else if (boss) {
+            this._ruinBellMusicHold = null;
+        }
+        // The encounter owns musical tension even during its authored breath
+        // between spawns. Raw crowd pressure alone would otherwise collapse the
+        // mix to calm after the first pack dies, making the Bell seem finished
+        // while its truthful 45-second seal timer is still running.
+        const bellDirector = this.ruinBellDirector;
+        if (bellDirector?.ownsStage?.()) {
+            const activeBell = bellDirector.phase === 'active';
+            const floor = activeBell ? 0.9 : 0.52;
+            this.musicState = {
+                ...this.musicState,
+                intensity: Math.max(this.musicState.intensity, floor),
+                target: Math.max(this.musicState.target, floor),
+                scene: activeBell ? 'onslaught' : 'hunt',
+            };
+        }
         if (this.audio.setCombatState) this.audio.setCombatState(this.musicState);
         else this.audio.setIntensity(this.musicState.intensity);
 

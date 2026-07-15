@@ -241,6 +241,16 @@ export const RunStateMethods = {
         this.vigilTracker = null;
         this._encounterDefeatedIds = [];
         this._encounterRewardPos = null;
+        // House V2's Ruin Bell is its own deterministic setpiece director. It
+        // shares only serializable requests/events with Game; every run reset
+        // drops the prior attempt, defeat queue, and idempotent reward latch.
+        this.ruinBellDirector = null;
+        this.ruinBellStructure = null;
+        this._ruinBellDefeatedIds = [];
+        this._ruinBellRewarded = false;
+        this._ruinBellMusicOrdinal = 0;
+        this._ruinBellMusicHold = null;
+        this._ruinBellReceipt = null;
         this.upgradeChoices = null;
         this.pendingLevelUps = 0;
         this.gameOver = false;

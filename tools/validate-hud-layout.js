@@ -5,9 +5,17 @@
 // previously produced top-centre and phone-left collisions.
 
 import { readFileSync } from 'node:fs';
-import { computeHUDLayout, hudRectsOverlap } from '../src/systems/HUDLayout.js';
-import { fitHudLabel, wrapText } from '../src/systems/UISystem.js';
+import {
+    computeHUDLayout,
+    hudRectsOverlap,
+    phoneHUDControlSize,
+} from '../src/systems/HUDLayout.js';
+import { UISystem, fitHudLabel, wrapText } from '../src/systems/UISystem.js';
 import { RUN_OBJECTIVE_CANDIDATES } from '../src/content/objectives.js';
+import { RUIN_BELL_CONTRACT } from '../src/content/ruinBell.js';
+import { isPhoneLandscapeViewport } from '../src/systems/ResponsiveLayout.js';
+import { Renderer } from '../src/systems/Renderer.js';
+import { ruinBellObjectiveSnapshot } from '../src/systems/UIStateBuilder.js';
 
 let checks = 0;
 let failures = 0;
@@ -222,6 +230,8 @@ for (const safeArea of safeAreas) {
                     `${name}: phone Run Path entered the 40 CSS-pixel player keepout`);
                 ok(objective.dense === false,
                     `${name}: phone Run Path regressed to the centered dense slab`);
+                ok(objective.mobileChip === true,
+                    `${name}: phone Run Path did not use the compact edge-chip contract`);
                 ok(objectiveLanes.bodyBarGap * scaleToCss >= 5.99,
                     `${name}: phone Run Path body does not clear its progress bar by 6 CSS pixels`);
                 ok(objectiveLanes.barFooterGap * scaleToCss >= 5.99,
@@ -253,12 +263,12 @@ for (const safeArea of safeAreas) {
                         && objectiveLanes.showContext === false,
                     `${name}: combat Run Path rail lost its complete four-line action priority`);
                 } else {
-                    ok(objective.h * scaleToCss >= 133.9,
-                        `${name}: phone Run Path cannot contain its three-line action contract`);
+                    ok(objective.h * scaleToCss >= 111.9,
+                        `${name}: phone Run Path cannot contain its compact three-line action contract`);
                     ok(objectiveLanes.bodyLines === 3
-                        && objectiveLanes.showTitle === true
-                        && objectiveLanes.showContext === true,
-                    `${name}: normal phone Run Path lost its sequential content lanes`);
+                        && objectiveLanes.showTitle === false
+                        && objectiveLanes.showContext === false,
+                    `${name}: normal phone Run Path lost its playfield-safe chip lanes`);
                 }
 
                 if (encounter.hasBoss && encounter.hasBossRush && uiScale === 130) {
@@ -352,6 +362,287 @@ class WideMeasureContext extends MeasureContext {
     }
 }
 const wideMeasureCtx = new WideMeasureContext();
+
+// Real-device correction gate. Renderer CSS-rotates 390x844 portrait and
+// leaves 844x390 landscape alone, but both resolve the same 844x474.75 COVER
+// canvas with 42.375 CSS pixels cropped from its top and bottom. Classify the
+// HUD from that resolved canvas instead of the former <=700 screenshot width.
+const realPhoneFixtures = [
+    { name: '390x844 portrait (CSS-rotated)', physicalW: 390, physicalH: 844, rotated: true },
+    { name: '844x390 landscape', physicalW: 844, physicalH: 390, rotated: false },
+];
+const phoneCanvasW = 844;
+const phoneVisibleH = 390;
+const phoneCanvasH = phoneCanvasW * 9 / 16;
+const phoneCssScale = phoneCanvasW / 1920;
+const phoneCropInternal = ((phoneCanvasH - phoneVisibleH) / 2) / phoneCssScale;
+const phoneSafeArea = { top: phoneCropInternal, right: 0, bottom: phoneCropInternal, left: 0 };
+ok(isPhoneLandscapeViewport(phoneCanvasW, phoneCanvasH),
+    '844px COVER canvas is not classified as a landscape phone');
+ok(phoneHUDControlSize(phoneCssScale) * phoneCssScale >= 43.99,
+    'phone HUD control sizing does not preserve a 44 CSS-pixel target');
+
+for (const fixture of realPhoneFixtures) {
+    ok(fixture.rotated === (fixture.physicalH > fixture.physicalW),
+        `${fixture.name}: portrait/landscape rotation premise drifted`);
+    for (const uiScale of [100, 130]) {
+        for (const hasBoss of [false, true]) {
+            const name = `${fixture.name}/${uiScale}%/${hasBoss ? 'boss' : 'field'}`;
+            const hud = computeHUDLayout({
+                width: 1920, height: 1080, safeArea: phoneSafeArea,
+                compact: true, touchMode: true, phoneViewport: true,
+                objectiveOwner: 'ruin-bell', uiScale, cssScale: phoneCssScale,
+                hasObjective: true, hasBoss, abilityCount: 8,
+            });
+            const objective = hud.objective;
+            const header = hud.header;
+            const command = hud.command;
+            const visibleHeaderY = (header.y - phoneSafeArea.top) * phoneCssScale;
+            const headerBottom = visibleHeaderY + header.h * phoneCssScale;
+
+            ok(objective.integrated === true && objective.phone === true
+                && objective.ruinBellRail === true && objective.mobileChip === false,
+            `${name}: Ruin Bell did not integrate with the phone command rail`);
+            ok(objective.w === 0 && objective.h === 0,
+                `${name}: Ruin Bell still allocates a separate playfield card`);
+            ok(command.mobileBellObjective === true && header.mobileBellRail === true,
+                `${name}: command rail omitted its Ruin Bell ownership`);
+            ok(inside(header, hud), `${name}: Bell command rail escapes COVER safe area`);
+            ok(!hudRectsOverlap(header, hud.vitals, 7 / phoneCssScale),
+                `${name}: Bell command rail overlaps vitals`);
+            ok(!hudRectsOverlap(header, hud.pause, 7 / phoneCssScale),
+                `${name}: Bell command rail overlaps pause`);
+            ok(header.h * phoneCssScale >= 71.9
+                && header.h * phoneCssScale <= 72.5,
+            `${name}: Bell command rail is not the bounded 72 CSS-pixel surface`);
+            ok(visibleHeaderY >= 0 && headerBottom <= 76.6,
+                `${name}: Bell command rail is not confined to the existing top HUD band`);
+            ok(!active(hud.threat) && !active(hud.combo),
+                `${name}: irrelevant THREAT/combo UI remains active during Bell rail mode`);
+            ok(objective.metaPx * phoneCssScale >= 15.99
+                && objective.bodyPx * phoneCssScale >= 15.99
+                && objective.progressPx * phoneCssScale >= 15.99,
+            `${name}: Bell command rail falls below the 16 CSS-pixel type floor`);
+            ok(command.bellMetaPx * phoneCssScale >= 15.99
+                && command.bellActionPx * phoneCssScale >= 15.99,
+            `${name}: essential Bell rail copy falls below 16 CSS pixels`);
+            ok(hud.pause.w * phoneCssScale >= 43.99
+                && hud.pause.h * phoneCssScale >= 43.99,
+            `${name}: pause control falls below the 44 CSS-pixel touch target`);
+            ok(command.bellBar.x >= header.x
+                && command.bellBar.x + command.bellBar.w <= header.x + header.w
+                && command.bellBar.y >= header.y
+                && command.bellBar.y + command.bellBar.h <= header.y + header.h,
+            `${name}: Bell progress escapes the integrated command rail`);
+            if (hasBoss) {
+                ok(!hudRectsOverlap(header, hud.boss, 6),
+                    `${name}: Bell command rail overlaps boss plate`);
+            }
+        }
+    }
+}
+
+// Exercise the production UISystem seam too: its runtime phone classifier,
+// objective owner handoff, visual pause rect and input hit rect must resolve to
+// the same layout that the pure allocator proved above.
+const phoneUi = new UISystem({
+    renderer: {
+        cssWidth: phoneCanvasW,
+        cssHeight: phoneCanvasH,
+        safeArea: phoneSafeArea,
+    },
+    loop: {},
+});
+const phoneUiState = {
+    touchMode: true,
+    activeBoss: null,
+    activeLieutenant: null,
+    bossRush: null,
+    runObjective: { owner: 'ruin-bell' },
+    vigilTracker: null,
+    ownedWeapons: [], ownedPassives: [], runRelics: [], abilityCooldowns: [],
+    saveData: { settings: { uiScale: 130 } },
+};
+const runtimePhoneHud = phoneUi.getHUDLayout(phoneUiState);
+const runtimePause = phoneUi.getPauseButtonRect();
+ok(runtimePhoneHud.objective.integrated
+    && runtimePhoneHud.objective.ruinBellRail
+    && runtimePhoneHud.command.mobileBellObjective
+    && runtimePhoneHud.objective.w === 0 && runtimePhoneHud.objective.h === 0,
+'production UISystem did not integrate Bell into the 844px phone command rail');
+ok(near(runtimePause.x, runtimePhoneHud.pause.x)
+    && near(runtimePause.y, runtimePhoneHud.pause.y)
+    && near(runtimePause.w, runtimePhoneHud.pause.w)
+    && near(runtimePause.h, runtimePhoneHud.pause.h),
+'production pause visual allocation and input hit target diverge on phone');
+ok(runtimePause.w * phoneCssScale >= 43.99,
+    'production phone pause hit target falls below 44 CSS pixels');
+
+// The integrated rail must fit every compact but complete Bell action at the
+// fixed 16 CSS-pixel floor under conservative Linux glyph metrics.
+const narrowBellHud = computeHUDLayout({
+    width: 1920, height: 1080, safeArea: phoneSafeArea,
+    compact: true, touchMode: true, phoneViewport: true,
+    objectiveOwner: 'ruin-bell', uiScale: 100, cssScale: phoneCssScale,
+    hasObjective: true, abilityCount: 8,
+});
+ok(narrowBellHud.objective.integrated
+    && narrowBellHud.command.mobileBellObjective,
+    'narrow real-phone fixture did not enter integrated Bell rail mode');
+const activeBellObjective = ruinBellObjectiveSnapshot({
+    screen: 'gameplay', input: { isTouchMode: () => true },
+}, {
+    visible: true, phase: 'active', urgent: true, inActivationRange: true,
+    attempt: 1, maxAttempts: 2, title: 'RUIN BELL',
+    nextAction: RUIN_BELL_CONTRACT.copy.active, current: 0, target: 11,
+    countdown: 60, rewardLabel: RUIN_BELL_CONTRACT.reward.label, accent: '#ffad5a',
+});
+ok(activeBellObjective?.headerLabel === 'BELL · TRY 1/2'
+    && activeBellObjective?.compactHeaderLabel === 'BELL · 1/2'
+    && activeBellObjective?.compactProgressLabel === '60s·0/11'
+    && activeBellObjective?.railStatusLabel === 'BELL 1/2 · 60s·0/11'
+    && activeBellObjective?.railActionLabel === 'Defeat all bellbound attackers.',
+'Ruin Bell state did not expose complete desktop/command-rail labels');
+wideMeasureCtx.font = `850 ${narrowBellHud.command.bellMetaPx}px monospace`;
+const railStatusFit = fitHudLabel(
+    wideMeasureCtx,
+    activeBellObjective.railStatusLabel,
+    narrowBellHud.command.identityMaxW,
+    { weight: 850, size: narrowBellHud.command.bellMetaPx,
+        minSize: narrowBellHud.command.bellMetaPx, family: 'monospace' },
+);
+wideMeasureCtx.font = `750 ${narrowBellHud.command.bellActionPx}px system-ui`;
+const railActionFit = fitHudLabel(
+    wideMeasureCtx,
+    activeBellObjective.railActionLabel,
+    narrowBellHud.command.bellActionMaxW,
+    { weight: 750, size: narrowBellHud.command.bellActionPx,
+        minSize: narrowBellHud.command.bellActionPx, family: 'system-ui' },
+);
+ok(!railStatusFit.truncated && !railActionFit.truncated,
+    'real-phone Bell rail status/action truncates at the 16 CSS-pixel floor');
+
+const bellRailActionFixtures = [
+    ['locked', 'locked', 'locked', 'Unlocks after Vigil 3.', 1, 0, 11, null],
+    ['available', 'dormant', 'available', 'Hold by the bell to ring.', 1, 0, 11, null],
+    ['arming', 'arming', 'arming', 'Hold position to ring.', 1, 0.6, 1.25, null],
+    ['warning', 'warning', 'warning', 'Brace both cabin doors.', 1, 0, 11, 60],
+    ['active', 'active', 'active', 'Defeat all bellbound attackers.', 1, 0, 11, 60],
+    ['all-defeated-early', 'active', 'allDefeatedEarly', 'Hold cabin until the bell seals.', 1, 11, 11, 8],
+    ['return-to-cabin', 'active', 'returnToCabin', 'Return to the cabin now.', 1, 6, 11, 36],
+    ['defense-restored', 'active', 'defenseRestored', 'Cabin defense restored.', 1, 6, 11, 35],
+    ['technical-defer', 'technical-defer', 'technicalDefer', 'Approach blocked - toll held.', 1, 0, 11, null],
+    ['retry-cooldown', 'retry-cooldown', 'retryCooldown', 'Bell relighting.', 1, 0, 11, 3],
+    ['retry-ready', 'dormant', 'retryReady', 'Ring again - final attempt.', 2, 0, 11, null],
+    ['cleared', 'cleared', 'cleared', '+32 XP · Choose Chest/Wick Shrine.', 1, 11, 11, null],
+    ['spent', 'spent', 'spent', 'NO REWARD · Bell silent this run.', 2, 0, 11, null],
+];
+for (const [name, phase, copyKey, expectedAction, attempt, current, target, countdown]
+    of bellRailActionFixtures) {
+    const objective = ruinBellObjectiveSnapshot({
+        screen: 'gameplay', input: { isTouchMode: () => true },
+    }, {
+        visible: true,
+        phase,
+        urgent: true,
+        inActivationRange: true,
+        rewardClaimed: false,
+        attempt,
+        maxAttempts: 2,
+        title: 'RUIN BELL',
+        nextAction: RUIN_BELL_CONTRACT.copy[copyKey],
+        current,
+        target,
+        countdown,
+        rewardLabel: RUIN_BELL_CONTRACT.reward.label,
+        accent: '#ffad5a',
+    });
+    ok(objective?.railActionLabel === expectedAction,
+        `${name} Bell state lost its authored compact action`);
+    const statusFit = fitHudLabel(
+        wideMeasureCtx,
+        objective?.railStatusLabel,
+        narrowBellHud.command.identityMaxW,
+        { weight: 850, size: narrowBellHud.command.bellMetaPx,
+            minSize: narrowBellHud.command.bellMetaPx, family: 'monospace' },
+    );
+    const actionFit = fitHudLabel(
+        wideMeasureCtx,
+        objective?.railActionLabel,
+        narrowBellHud.command.bellActionMaxW,
+        { weight: 750, size: narrowBellHud.command.bellActionPx,
+            minSize: narrowBellHud.command.bellActionPx, family: 'system-ui' },
+    );
+    ok(!statusFit.truncated && !actionFit.truncated,
+        `${name} Bell rail status/action truncates at the 16 CSS-pixel floor`);
+}
+const spentBellObjective = ruinBellObjectiveSnapshot({
+    screen: 'gameplay', input: { isTouchMode: () => true },
+}, {
+    visible: true, phase: 'spent', urgent: false, inActivationRange: true,
+    attempt: 2, maxAttempts: 2, title: 'RUIN BELL',
+    nextAction: RUIN_BELL_CONTRACT.copy.spent, current: 0, target: 11,
+    rewardLabel: RUIN_BELL_CONTRACT.reward.label, accent: '#a9a1b5',
+});
+ok(spentBellObjective?.rewardLabel === 'NO COMPLETION REWARD'
+    && spentBellObjective?.compactRewardLabel === 'NO REWARD'
+    && spentBellObjective?.railStatusLabel === 'BELL LOST · 0/11'
+    && spentBellObjective?.railActionLabel === 'NO REWARD · Bell silent this run.',
+'spent Ruin Bell still advertises a completion reward');
+const clearedBellObjective = ruinBellObjectiveSnapshot({
+    screen: 'gameplay', input: { isTouchMode: () => true },
+}, {
+    visible: true, phase: 'cleared', urgent: false, inActivationRange: true,
+    rewardClaimed: false, attempt: 1, maxAttempts: 2, title: 'RUIN BELL',
+    nextAction: RUIN_BELL_CONTRACT.copy.cleared, current: 11, target: 11,
+    rewardLabel: RUIN_BELL_CONTRACT.reward.label, accent: '#7fe0a0',
+});
+ok(!/XP|CHEST|SHRINE/i.test(activeBellObjective.railActionLabel)
+    && clearedBellObjective?.railStatusLabel === 'BELL HELD · 11/11'
+    && clearedBellObjective?.railActionLabel === '+32 XP · Choose Chest/Wick Shrine.',
+'phone Bell reward is not disclosed only at the clear/failure truth boundary');
+
+// Renderer owns the orientation lifecycle, not only the art harness. A phone
+// that returns to portrait after either landscape direction must immediately
+// restore the persistent pill; returning to landscape removes it again.
+class TokenList {
+    constructor(tokens = []) { this.tokens = new Set(tokens); }
+    add(...tokens) { tokens.forEach((token) => this.tokens.add(token)); }
+    remove(...tokens) { tokens.forEach((token) => this.tokens.delete(token)); }
+    contains(token) { return this.tokens.has(token); }
+}
+const orientationHintTokens = new TokenList(['hidden']);
+const orientationRenderer = Object.create(Renderer.prototype);
+orientationRenderer._hintEl = { classList: orientationHintTokens };
+orientationRenderer._hintEverShown = true;
+orientationRenderer.rotated = true;
+orientationRenderer._updateRotateHint();
+ok(orientationHintTokens.contains('show') && orientationHintTokens.contains('hidden'),
+    'Renderer does not restore the compact rotate affordance on portrait re-entry');
+orientationRenderer.rotated = false;
+orientationRenderer._updateRotateHint();
+ok(!orientationHintTokens.contains('show') && orientationHintTokens.contains('hidden'),
+    'Renderer does not remove the rotate affordance after landscape entry');
+orientationRenderer.rotated = true;
+orientationRenderer._updateRotateHint();
+ok(orientationHintTokens.contains('show') && orientationHintTokens.contains('hidden'),
+    'Renderer loses the rotate affordance after a second landscape/portrait cycle');
+
+const genericRealPhoneHud = computeHUDLayout({
+    width: 1920, height: 1080, safeArea: phoneSafeArea,
+    compact: true, touchMode: true, phoneViewport: true,
+    objectiveOwner: 'run-path', uiScale: 130, cssScale: phoneCssScale,
+    hasObjective: true, abilityCount: 8,
+});
+ok(genericRealPhoneHud.objective.phone
+    && genericRealPhoneHud.objective.mobileChip
+    && !genericRealPhoneHud.objective.dense
+    && genericRealPhoneHud.objective.lanes.bodyLines === 3
+    && genericRealPhoneHud.objective.lanes.showTitle === false
+    && genericRealPhoneHud.objective.lanes.showContext === false
+    && genericRealPhoneHud.objective.lanes.showBodyLabel === true,
+'844x390 generic Run Path did not use the playfield-safe three-line chip');
+
 wideMeasureCtx.font = `700 ${narrowObjectiveLayout.objective.bodyPx}px system-ui`;
 for (const tasks of Object.values(RUN_OBJECTIVE_CANDIDATES)) {
     for (const task of tasks) {
@@ -432,6 +723,9 @@ ok(!hudRectsOverlap(waveCssBounds, counterCssLane),
     '1280x720 CSS desktop wave still touches the KILLS/counter lane at 130%');
 
 const uiSource = readFileSync(new URL('../src/systems/UISystem.js', import.meta.url), 'utf8');
+const productionHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const productionCss = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+const harnessSource = readFileSync(new URL('./artshot/harness.html', import.meta.url), 'utf8');
 ok(!/for \(const layer of \[\s*\{/.test(uiSource),
     'player locator reintroduced a per-frame layer array/object allocation');
 ok(/fitHudLabel\(ctx, waveText/.test(uiSource) && /fitHudLabel\(ctx, a\.name/.test(uiSource),
@@ -441,6 +735,27 @@ ok(/const lanes = r\.lanes/.test(uiSource)
     && /lanes\.barY/.test(uiSource)
     && /lanes\.footerY/.test(uiSource),
     'Run Path renderer is not consuming HUDLayout-owned body/bar/footer lanes');
+ok(/isPhoneLandscapeViewport\(cssW, cssH\)/.test(uiSource)
+    && /objectiveOwner: state\.runObjective\?\.owner/.test(uiSource)
+    && /phoneViewport,/.test(uiSource),
+    'UISystem is not routing the resolved real-phone canvas into HUDLayout');
+ok(/objective\.compactHeaderLabel/.test(uiSource)
+    && /objective\.compactProgressLabel/.test(uiSource)
+    && /objective\.compactRewardLabel/.test(uiSource)
+    && /lanes\.showBodyLabel/.test(uiSource),
+    'phone objective renderer is not consuming its compact complete-copy contract');
+ok(/_hudControlSize\(\)/.test(uiSource)
+    && /phoneHUDControlSize\(cssW \/ INTERNAL_WIDTH\)/.test(uiSource)
+    && /dbg\.x - dbg\.w - 16/.test(uiSource),
+    'visible phone pause/debug controls do not share touch-safe hit geometry');
+ok(/id="rotate-hint" role="status" aria-live="polite"/.test(productionHtml)
+    && /Rotate to landscape for the full HUD/.test(productionHtml)
+    && /#rotate-hint\.show\.hidden/.test(productionCss),
+    'production portrait mode does not expose an honest persistent landscape-required status');
+ok(/id="rotate-hint" role="status" aria-live="polite"/.test(harnessSource)
+    && /qaRotateHint\.classList\.add\('show', 'hidden'\)/.test(harnessSource)
+    && /rotateHintOutsideStage/.test(harnessSource),
+    'device harness does not mirror and receipt the upright production rotate affordance');
 
 if (failures) {
     console.error(`HUD layout validation failed: ${failures}/${checks} checks across ${scenarios} scenarios.`);

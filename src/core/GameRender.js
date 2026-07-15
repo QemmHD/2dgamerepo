@@ -39,6 +39,7 @@ import { HazardSystem } from '../systems/HazardSystem.js';
 import { buildUIState } from '../systems/UIStateBuilder.js';
 import { gemLightColor } from './GameUpdate.js';
 import { structureRenderer } from '../render/StructureRenderer.js';
+import { ruinBellRenderer } from '../render/RuinBellRenderer.js';
 import {
     combatStatusCueSize,
     FULL_STATUS_CUE_LIMIT,
@@ -106,6 +107,11 @@ export const GameRenderMethods = {
         // render path. Unknown/legacy saves naturally resolve to false.
         const highContrast = this.saveSystem?.getSetting?.('highContrast') === true;
         const uiScale = this.saveSystem?.getSetting?.('uiScale') ?? 100;
+        const ruinBellRender = this._buildRuinBellRenderSnapshot();
+        const ruinBellPresentation = {
+            highContrast,
+            reducedEffects: this.reducedEffects === true,
+        };
 
         // "Emberlight" pipeline. The world draws fully lit; emitters
         // register lights into the darkness buffer as they're drawn; the
@@ -160,6 +166,9 @@ export const GameRenderMethods = {
             this.camera, viewW, viewH,
             (ob) => ob.draw(ctx), (ob) => !!ob.def.decorative
         );
+        this.obstacleSystem.forVisibleStructures(this.camera, viewW, viewH, (structure) => {
+            structureRenderer.drawFloorDetails(ctx, structure);
+        });
         this.profiler.end('obstacles');
 
         // Visible standing art is assembled after ground hazards so every actor
@@ -198,6 +207,7 @@ export const GameRenderMethods = {
         // Hazard ground decals (boss telegraphs, delayed zones, lingering
         // pools) — below entities so the boss paints over them.
         this.hazardSystem.drawGround(ctx, this, L);
+        ruinBellRenderer.drawGround(ctx, ruinBellRender, ruinBellPresentation);
         // House-bound Waylights are low standing props. Actors remain above
         // their plinths while house rear/front planes keep normal occlusion.
         this.vigilSiteSystem?.draw?.(ctx, this.camera, viewW, viewH, null);
@@ -239,8 +249,11 @@ export const GameRenderMethods = {
             (ob) => addStanding(standingQueue, standingPool, standingCount++, STAND_OBSTACLE,
                 ob, ob.baseY, 0, standingSerial++),
             // Structure walls keep their collision/LOS authority but cohesive
-            // shell art owns their pixels. Decorative floors already drew.
-            (ob) => !ob.def.decorative && !(ob.type === 'buildingWall' && ob.structureId),
+            // shell art owns their pixels. Authored top-down blueprint walls
+            // enter this same baseY-sorted queue; legacy facade walls stay
+            // centralized on the structure rear/front planes.
+            (ob) => !ob.def.decorative
+                && !(ob.type === 'buildingWall' && ob.structureId && !ob.def.blueprintId),
         );
         for (const g of this.gems) {
             if (!cull(g)) continue;
@@ -286,7 +299,11 @@ export const GameRenderMethods = {
                     structureRenderer.drawRear(ctx, value, this.player);
                     break;
                 case STAND_OBSTACLE:
-                    value.draw(ctx);
+                    if (value.type === 'buildingWall' && value.def.blueprintId) {
+                        structureRenderer.drawBlueprintWall(ctx, value);
+                    } else {
+                        value.draw(ctx);
+                    }
                     break;
                 case STAND_STRUCTURE_FRONT:
                     structureRenderer.drawFront(ctx, value);
@@ -351,6 +368,9 @@ export const GameRenderMethods = {
         this.hazardSystem.drawAbove(ctx, this, L);
 
         this.weaponSystem.drawEffects(ctx);
+        if (!highContrast) {
+            ruinBellRenderer.drawAbove(ctx, ruinBellRender, ruinBellPresentation);
+        }
         // Weapon effects (pulse/lightning) are bright emitters — carve light
         // holes so the veil doesn't dim them.
         if (L) {
@@ -368,6 +388,7 @@ export const GameRenderMethods = {
             this.vigilSiteSystem?.forVisible?.(this.camera, viewW, viewH, (site) => {
                 if (site.state !== 'spent') L.addLight(site.x, site.y - 18, 104, site.def.accent, 0.48, 2);
             });
+            ruinBellRenderer.registerLights(L, ruinBellRender, ruinBellPresentation);
         }
 
         // Expanding shockwave rings (kills / boss death / level-up) — additive
@@ -460,6 +481,7 @@ export const GameRenderMethods = {
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1;
         if (highContrast) this.hazardSystem.drawContrastOverlay(ctx, this);
+        if (highContrast) ruinBellRenderer.drawAbove(ctx, ruinBellRender, ruinBellPresentation);
         const statusSize = combatStatusCueSize(
             uiScale,
             this.renderer?.cssWidth,
@@ -469,6 +491,7 @@ export const GameRenderMethods = {
         for (const enemy of this.enemies) {
             if (!enemy.active || !cull(enemy)) continue;
             const fullStatus = enemy.boss || enemy.lieutenant || enemy.encounterGuardian
+                || !!enemy.ruinBellMemberId
                 || enemy === this.focusTarget;
             enemy.drawCombatCueOverlay(
                 ctx,
@@ -564,6 +587,79 @@ export const GameRenderMethods = {
     // Expanding shockwave rings — additive stroked circles that grow via an
     // ease and thin + fade as they reach their max radius. World-space (called
     // inside the camera transform).
+    _buildRuinBellRenderSnapshot() {
+        const source = this.ruinBellDirector?.getRenderSnapshot?.();
+        if (!source) return null;
+        const sourceRoleMarks = source.roleMarks;
+        const roleMarks = Array.isArray(sourceRoleMarks) ? sourceRoleMarks : [];
+        const needsRolePositions = roleMarks.length > 0;
+        const needsRewardPositions = source.rewardReady === true;
+
+        // Most frames are locked, available, claimed, or spent and have
+        // nothing to enrich. Preserve the Director's immutable snapshot in
+        // those phases instead of scanning every enemy and allocating a Map at
+        // 60/120 FPS. A malformed legacy roleMarks value is sanitized once so
+        // renderer adapters still fail closed rather than throwing.
+        if (!needsRolePositions && !needsRewardPositions) {
+            return sourceRoleMarks == null || Array.isArray(sourceRoleMarks)
+                ? source
+                : { ...source, roleMarks: [] };
+        }
+
+        let live = null;
+        if (needsRolePositions) {
+            live = new Map();
+            for (const enemy of this.enemies || []) {
+                if (enemy.active && enemy.ruinBellMemberId) {
+                    live.set(enemy.ruinBellMemberId, enemy);
+                }
+            }
+        }
+
+        // Cleared Bell rewards are real standing entities, and their authored
+        // sockets can still shift through `_clearSpot`.  Enrich the pure
+        // Director snapshot from those live, provenance-tagged objects so the
+        // semantic renderer can point at the exact Chest/Shrine positions
+        // without inventing a pickup location or duplicating reward art.
+        const rewardMarks = [];
+        if (needsRewardPositions) {
+            const addReward = (reward, choice, label, accent) => {
+                if (!reward?.active
+                    || reward.ruinBellInstanceId !== source.instanceId
+                    || reward.ruinBellRewardId !== source.rewardId
+                    || reward.ruinBellRewardChoice !== choice
+                    || !Number.isFinite(reward.x) || !Number.isFinite(reward.y)) return;
+                rewardMarks.push({
+                    choice,
+                    label,
+                    accent,
+                    x: reward.x,
+                    y: reward.y,
+                    radius: Number.isFinite(reward.radius) ? reward.radius : 42,
+                });
+            };
+            for (const chest of this.chests || []) {
+                addReward(chest, 'chest', 'CHEST', '#ffd166');
+            }
+            for (const shrine of this.shrines || []) {
+                addReward(shrine, 'shrine', 'WICK SHRINE', '#ff9ecf');
+            }
+        }
+        return {
+            ...source,
+            roleMarks: roleMarks.map((mark) => {
+                const enemy = live.get(mark.memberId);
+                return enemy ? {
+                    ...mark,
+                    x: enemy.x,
+                    y: enemy.y,
+                    radius: enemy.radius,
+                } : mark;
+            }),
+            rewardMarks,
+        };
+    },
+
     _drawEncounterGuardianMark(ctx, enemy) {
         const pulse = this.reducedEffects ? 0.72 : 0.62 + 0.18 * Math.sin(this.time * 5 + enemy.radius);
         const radius = enemy.radius + 12;

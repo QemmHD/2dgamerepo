@@ -28,6 +28,23 @@ function required(options, key) {
     return value;
 }
 
+function parseDimensions(value, label) {
+    const match = /^(\d+),(\d+)$/.exec(String(value || ''));
+    if (!match) throw new Error(`${label} must be WIDTH,HEIGHT`);
+    const width = Number.parseInt(match[1], 10);
+    const height = Number.parseInt(match[2], 10);
+    if (width < 1 || height < 1 || width > 8192 || height > 8192) {
+        throw new Error(`${label} is outside the supported 1..8192 range`);
+    }
+    return { width, height };
+}
+
+function optionBoolean(options, key) {
+    if (!(key in options)) return false;
+    if (!['0', '1'].includes(options[key])) throw new Error(`--${key} must be 0 or 1`);
+    return options[key] === '1';
+}
+
 async function waitUntil(read, accept, timeoutMs, label) {
     const deadline = Date.now() + timeoutMs;
     let lastError = null;
@@ -108,8 +125,19 @@ async function main() {
     const profile = resolve(required(options, 'profile'));
     const windowSize = options.window || '1280,720';
     const timeoutMs = Math.max(1000, Number.parseInt(options.timeout || '30000', 10) || 30000);
+    const viewport = options.viewport ? parseDimensions(options.viewport, '--viewport') : null;
+    const mobile = optionBoolean(options, 'mobile');
+    const touch = optionBoolean(options, 'touch');
+    const deviceScaleFactor = Number.parseFloat(options['device-scale'] || '1');
+    if (!(deviceScaleFactor > 0) || deviceScaleFactor > 4) {
+        throw new Error('--device-scale must be greater than 0 and at most 4');
+    }
+    const userAgent = options['user-agent'] || '';
+    const screenshotPath = options.screenshot ? resolve(options.screenshot) : null;
+    const emulate = !!viewport || mobile || touch || !!userAgent || options['device-scale'] != null;
     await mkdir(profile, { recursive: true });
     await mkdir(dirname(domPath), { recursive: true });
+    if (screenshotPath) await mkdir(dirname(screenshotPath), { recursive: true });
 
     const browserArgs = [
         '--headless=new',
@@ -123,7 +151,7 @@ async function main() {
         `--window-size=${windowSize}`,
         `--user-data-dir=${profile}`,
         '--remote-debugging-port=0',
-        url,
+        emulate ? 'about:blank' : url,
     ];
     const child = spawn(chrome, browserArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
     const childExit = new Promise((resolveExit) => child.once('exit', resolveExit));
@@ -153,7 +181,6 @@ async function main() {
             },
             (entries) => Array.isArray(entries) && entries.some((entry) => (
                 entry.type === 'page' && entry.webSocketDebuggerUrl
-                && entry.url && entry.url !== 'about:blank'
             )),
             Math.min(timeoutMs, 10000),
             'Chrome page target',
@@ -161,10 +188,39 @@ async function main() {
         const target = targets.find((entry) => (
             entry.type === 'page' && entry.webSocketDebuggerUrl
             && entry.url && entry.url !== 'about:blank'
-        ));
+        )) || targets.find((entry) => entry.type === 'page' && entry.webSocketDebuggerUrl);
         cdp = new CdpConnection(target.webSocketDebuggerUrl);
         await cdp.open(Math.min(timeoutMs, 10000));
         await cdp.send('Runtime.enable');
+        if (emulate) {
+            if (!viewport) throw new Error('--viewport is required when mobile emulation is enabled');
+            await cdp.send('Page.enable');
+            await cdp.send('Network.enable');
+            const portrait = viewport.height > viewport.width;
+            await cdp.send('Emulation.setDeviceMetricsOverride', {
+                width: viewport.width,
+                height: viewport.height,
+                deviceScaleFactor,
+                mobile,
+                screenWidth: viewport.width,
+                screenHeight: viewport.height,
+                screenOrientation: {
+                    type: portrait ? 'portraitPrimary' : 'landscapePrimary',
+                    angle: portrait ? 0 : 90,
+                },
+            });
+            await cdp.send('Emulation.setTouchEmulationEnabled', {
+                enabled: touch,
+                maxTouchPoints: touch ? 5 : 1,
+            });
+            if (userAgent) {
+                await cdp.send('Network.setUserAgentOverride', {
+                    userAgent,
+                    platform: mobile ? 'Android' : '',
+                });
+            }
+            await cdp.send('Page.navigate', { url });
+        }
 
         latest = await waitUntil(
             async () => {
@@ -183,6 +239,16 @@ async function main() {
             'harness data-qa-ready receipt',
         );
         await writeFile(domPath, latest.html, 'utf8');
+        if (screenshotPath) {
+            await cdp.send('Page.bringToFront');
+            const screenshot = await cdp.send('Page.captureScreenshot', {
+                format: 'png',
+                fromSurface: true,
+                captureBeyondViewport: false,
+            });
+            if (!screenshot.data) throw new Error('Page.captureScreenshot returned no PNG data');
+            await writeFile(screenshotPath, Buffer.from(screenshot.data, 'base64'));
+        }
         process.stdout.write(`Harness CDP receipt: ${latest.title || '<missing title>'}\n`);
     } catch (error) {
         if (latest.html) await writeFile(domPath, latest.html, 'utf8');

@@ -216,6 +216,220 @@ export const BOSS_SUITES = Object.freeze({
         }, { swing: 0, cutoff: 3900, reverb: 0.16, energy: 1.18 }),
 });
 
+// Ruin Bell event layer. These are short, procedural phrases that sit over the
+// current Emberwood tracker; they never replace the song or introduce another
+// downloaded asset. Runtime presentation (caption / live-region announcement)
+// is immediate, while `quantize` keeps the musical phrase on the next bar so a
+// toll cannot knock the adaptive score off beat.
+//
+// `resolveRuinBellMusicCue()` is intentionally pure. Given the same run seed,
+// event and ordinal (attempt/wave index), it always chooses the same variant.
+// That gives capture tests and replayed seeded runs identical musical direction
+// without asking AudioSystem to consume Math.random() at an encounter boundary.
+export const RUIN_BELL_EVENT = Object.freeze({
+    WARNING: 'warning',
+    ESCALATION: 'escalation',
+    CLEAR: 'clear',
+    FAILURE: 'failure',
+});
+
+const NEXT_BAR = Object.freeze({
+    unit: 'bar',
+    edge: 'next',
+    offset: 0,
+    maxWaitBars: 1,
+    interrupt: false,
+});
+
+function bellVariant(config) {
+    return Object.freeze({
+        ...config,
+        notes: Object.freeze((config.notes || []).map((note) => Object.freeze({ ...note }))),
+        hits: Object.freeze((config.hits || []).map((hit) => Object.freeze({ ...hit }))),
+    });
+}
+
+function bellEvent(config) {
+    return Object.freeze({
+        ...config,
+        quantize: NEXT_BAR,
+        combat: Object.freeze({ ...config.combat }),
+        variants: Object.freeze(config.variants.map(bellVariant)),
+    });
+}
+
+// Phrase note contract consumed by the tracker scheduler:
+// - `step` is a sixteenth-note offset inside the quantized bar (0..15).
+// - `degree` uses the active score's scale; `register` is a MIDI-note offset.
+// - `durationSteps` and `gain` feed the existing procedural instrument voice.
+// Hits reuse AudioSystem's procedural kick/snare/hat voices. The semantic text
+// remains useful with captions, mono audio, or sound fully muted.
+export const RUIN_BELL_MUSIC_EVENTS = Object.freeze({
+    [RUIN_BELL_EVENT.WARNING]: bellEvent({
+        id: 'ruin-bell-warning',
+        semanticLabel: 'Ruin Bell warning',
+        caption: 'Ruin Bell: the broken seal is waking.',
+        announcement: 'The Ruin Bell is waking. Prepare inside the Last-Wick Cabin.',
+        fallbackSfx: 'bossTelegraph',
+        combat: { scene: 'hunt', intensity: 0.52, holdBars: 1 },
+        variants: [
+            {
+                id: 'warning-low-toll', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'graveBell', degree: 0, register: -12, durationSteps: 12, gain: 0.072 },
+                    { step: 8, instrument: 'graveBell', degree: 0, register: 0, durationSteps: 7, gain: 0.040 },
+                ],
+                hits: [{ step: 0, voice: 'snare', gain: 0.34 }],
+            },
+            {
+                id: 'warning-hollow-answer', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'graveBell', degree: 0, register: -12, durationSteps: 12, gain: 0.068 },
+                    { step: 6, instrument: 'emberBell', degree: 3, register: 0, durationSteps: 5, gain: 0.032 },
+                    { step: 12, instrument: 'graveBell', degree: 1, register: -12, durationSteps: 4, gain: 0.040 },
+                ],
+                hits: [{ step: 0, voice: 'kick', gain: 0.28 }],
+            },
+        ],
+    }),
+    [RUIN_BELL_EVENT.ESCALATION]: bellEvent({
+        id: 'ruin-bell-escalation',
+        semanticLabel: 'Ruin Bell escalation',
+        caption: 'Ruin Bell: the answer grows louder.',
+        announcement: 'The Ruin Bell is escalating. Hold the cabin and break the answering wave.',
+        fallbackSfx: 'enrage',
+        combat: { scene: 'onslaught', intensity: 0.9, holdBars: 2 },
+        variants: [
+            {
+                id: 'escalation-iron-pulse', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'graveBell', degree: 0, register: -12, durationSteps: 8, gain: 0.078 },
+                    { step: 4, instrument: 'anvilPulse', degree: 0, register: -12, durationSteps: 3, gain: 0.042 },
+                    { step: 8, instrument: 'graveBell', degree: 4, register: -12, durationSteps: 7, gain: 0.064 },
+                    { step: 12, instrument: 'anvilPulse', degree: 2, register: -12, durationSteps: 3, gain: 0.040 },
+                ],
+                hits: [
+                    { step: 0, voice: 'kick', gain: 0.46 },
+                    { step: 8, voice: 'snare', gain: 0.50 },
+                ],
+            },
+            {
+                id: 'escalation-wick-alarm', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'graveBell', degree: 0, register: -12, durationSteps: 10, gain: 0.075 },
+                    { step: 3, instrument: 'emberBell', degree: 1, register: 0, durationSteps: 4, gain: 0.034 },
+                    { step: 6, instrument: 'emberBell', degree: 3, register: 0, durationSteps: 4, gain: 0.038 },
+                    { step: 9, instrument: 'emberBell', degree: 4, register: 0, durationSteps: 5, gain: 0.042 },
+                    { step: 12, instrument: 'graveBell', degree: 0, register: 0, durationSteps: 4, gain: 0.052 },
+                ],
+                hits: [
+                    { step: 0, voice: 'kick', gain: 0.42 },
+                    { step: 4, voice: 'snare', gain: 0.38 },
+                    { step: 12, voice: 'snare', gain: 0.48 },
+                ],
+            },
+            {
+                id: 'escalation-three-tolls', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'graveBell', degree: 0, register: -12, durationSteps: 7, gain: 0.076 },
+                    { step: 5, instrument: 'graveBell', degree: 2, register: -12, durationSteps: 6, gain: 0.066 },
+                    { step: 10, instrument: 'graveBell', degree: 4, register: -12, durationSteps: 6, gain: 0.064 },
+                ],
+                hits: [
+                    { step: 0, voice: 'kick', gain: 0.45 },
+                    { step: 10, voice: 'snare', gain: 0.46 },
+                ],
+            },
+        ],
+    }),
+    [RUIN_BELL_EVENT.CLEAR]: bellEvent({
+        id: 'ruin-bell-clear',
+        semanticLabel: 'Ruin Bell secured',
+        caption: 'Ruin Bell secured: the answering dark falls quiet.',
+        announcement: 'Ruin Bell secured. Choose the chest or the Wick Shrine.',
+        fallbackSfx: 'objective',
+        combat: { scene: 'calm', intensity: 0.18, holdBars: 2 },
+        variants: [
+            {
+                id: 'clear-ember-rise', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'emberBell', degree: 0, register: 0, durationSteps: 6, gain: 0.058 },
+                    { step: 4, instrument: 'emberBell', degree: 2, register: 0, durationSteps: 6, gain: 0.054 },
+                    { step: 8, instrument: 'emberBell', degree: 4, register: 0, durationSteps: 8, gain: 0.060 },
+                    { step: 12, instrument: 'emberBell', degree: 7, register: 0, durationSteps: 8, gain: 0.064 },
+                ],
+                hits: [{ step: 0, voice: 'kick', gain: 0.22 }],
+            },
+            {
+                id: 'clear-hearth-answer', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'graveBell', degree: 0, register: -12, durationSteps: 10, gain: 0.044 },
+                    { step: 4, instrument: 'emberBell', degree: 3, register: 0, durationSteps: 7, gain: 0.048 },
+                    { step: 8, instrument: 'emberBell', degree: 5, register: 0, durationSteps: 7, gain: 0.052 },
+                    { step: 12, instrument: 'emberBell', degree: 7, register: 0, durationSteps: 8, gain: 0.060 },
+                ],
+                hits: [],
+            },
+        ],
+    }),
+    [RUIN_BELL_EVENT.FAILURE]: bellEvent({
+        id: 'ruin-bell-failure',
+        semanticLabel: 'Ruin Bell attempt failed',
+        caption: 'Ruin Bell failed: the broken seal must recover.',
+        announcement: 'The cabin fell silent. The Ruin Bell must recover before another attempt.',
+        fallbackSfx: 'banish',
+        combat: { scene: 'hunt', intensity: 0.34, holdBars: 2 },
+        variants: [
+            {
+                id: 'failure-ash-fall', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'graveBell', degree: 4, register: -12, durationSteps: 8, gain: 0.060 },
+                    { step: 6, instrument: 'graveBell', degree: 2, register: -12, durationSteps: 7, gain: 0.054 },
+                    { step: 12, instrument: 'graveBell', degree: 0, register: -12, durationSteps: 4, gain: 0.050 },
+                ],
+                hits: [{ step: 0, voice: 'snare', gain: 0.26 }],
+            },
+            {
+                id: 'failure-broken-wick', layer: 'apex',
+                notes: [
+                    { step: 0, instrument: 'emberBell', degree: 3, register: 0, durationSteps: 4, gain: 0.040 },
+                    { step: 3, instrument: 'graveBell', degree: 1, register: -12, durationSteps: 9, gain: 0.058 },
+                    { step: 11, instrument: 'graveBell', degree: 0, register: -12, durationSteps: 5, gain: 0.050 },
+                ],
+                hits: [{ step: 3, voice: 'kick', gain: 0.24 }],
+            },
+        ],
+    }),
+});
+
+function ruinBellHash(value) {
+    let hash = 2166136261;
+    const text = String(value);
+    for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+export function resolveRuinBellMusicCue(event, runSeed = 0, ordinal = 0) {
+    const definition = RUIN_BELL_MUSIC_EVENTS[event];
+    if (!definition) return null;
+    const variantIndex = ruinBellHash(`${runSeed}:${event}:${ordinal}`) % definition.variants.length;
+    return Object.freeze({
+        event,
+        id: definition.id,
+        semanticLabel: definition.semanticLabel,
+        caption: definition.caption,
+        announcement: definition.announcement,
+        fallbackSfx: definition.fallbackSfx,
+        combat: definition.combat,
+        quantize: definition.quantize,
+        variantIndex,
+        variant: definition.variants[variantIndex],
+    });
+}
+
 export const VOICE_STINGERS = Object.freeze({
     darkFoundYou: Object.freeze({
         id: 'darkFoundYou', line: 'The dark found you.',

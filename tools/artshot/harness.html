@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>EMBERWAKE art harness</title>
 <style>
   html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
@@ -9,9 +10,27 @@
      than the viewport; without flex centering the harness crops only the foot
      while Renderer.safeArea correctly assumes an even top/bottom crop. */
   #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  /* Production rotates its landscape canvas when a coarse-pointer device is
+     physically portrait. Mirror that transform here so device receipts show
+     the same composition a phone displays instead of an unrotated test crop. */
+  #stage.rotated { transform: rotate(90deg); transform-origin: center center; }
   canvas { display: block; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  /* Mirror the shipped landscape-required portrait affordance. It stays
+     outside #stage so its copy remains upright while the game rotates. */
+  #rotate-hint { position: fixed; inset: 0; z-index: 10; display: none;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 16px; background: rgba(5, 7, 12, 0.82); color: #cdd6e2;
+    font: 600 5vw/1.4 system-ui, sans-serif; pointer-events: none; }
+  #rotate-hint.show { display: flex; }
+  #rotate-hint.show.hidden { align-items: flex-start; justify-content: center;
+    padding: 10px; background: transparent; opacity: 1; }
+  #rotate-hint.show.hidden span { max-width: min(86vw, 360px); padding: 9px 14px;
+    border: 1px solid rgba(255, 196, 105, 0.72); border-radius: 999px;
+    background: rgba(12, 15, 23, 0.94); color: #fff1d6;
+    box-shadow: 0 4px 18px rgba(0,0,0,.56), inset 0 0 0 1px rgba(255,237,202,.08);
+    font-size: clamp(14px, 3.8vw, 18px); line-height: 1.2; letter-spacing: .01em; }
 </style>
 </head>
 <body>
@@ -31,12 +50,16 @@
 
   Query params:
     seconds  game-time to simulate before the shot (default 12)
-    badge    "1" stamps an EXC:<n> exception-count badge top-left (self-check)
+    badge    "1" stamps an EXC:<n> exception-count badge top-left (self-check;
+             omit it for visual-review receipts and use the DOM/title receipt)
     screen   "menu" to shoot the main menu instead of a run; with tab=<name>
     input    active input convention: "keyboard", "pointer", or "touch"
              (legacy touch=1 still forces touch and takes precedence)
     focus    current menu hotspot key (encode # as %23), or an action fallback
-    reduced "1" persists Reduced Effects before staging the requested frame
+    reduced "1" or "0" persists the exact Reduced Effects state before staging
+    device  "mobile-portrait" or "mobile-landscape" makes the harness verify
+             that the CDP driver supplied its real CSS viewport, mobile UA,
+             touch points, coarse pointer, DPR 3, orientation and rotation
     uiscale  Combat HUD size: "100", "115", or "130"
     contrast high-contrast combat cues: "1" on or "0" off
     settingspane  Settings sub-pane: "general" or "accessibility" (menu only)
@@ -51,6 +74,9 @@
     vibrationcap force the QA capability receipt: "1" available or "0" unavailable
     caption  stage a gameplay caption fixture: "voice" or "danger" (run only)
     bosswarning "1" stages the real Emberwood boss-warning integration (run only)
+    ruinbell deterministic House V2 contract state: "arming", "warning",
+             "crossfire", "breach", "technical", "cleared", "failed", or
+             "ruined" (Emberwood run only; uses the production director/spawner)
     statuses "all" stages all seven combat-status cues on one enemy (run only)
     pause    "1" opens the production pause overlay after all run fixtures
     gameover "1" settles the staged run through the production death summary
@@ -79,6 +105,7 @@
              explicitly to shoot the guided-first-run hint pill itself
 -->
 <div id="stage"><canvas id="game" aria-describedby="game-instructions game-objective"></canvas></div>
+<div id="rotate-hint" role="status" aria-live="polite" aria-atomic="true"><span>Rotate to landscape for the full HUD</span></div>
 <p id="game-instructions" class="sr-only">Press O to hear the current Run Path task.</p>
 <p id="game-objective" class="sr-only"></p>
 <div id="game-status" class="sr-only" aria-live="polite" aria-atomic="true"></div>
@@ -137,6 +164,7 @@ import { DamageNumber } from '../../src/entities/DamageNumber.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 import { photoFilterIndexById } from '../../src/content/photoFilters.js';
 import { isPhoneLandscapeViewport } from '../../src/systems/ResponsiveLayout.js';
+import { buildUIState } from '../../src/systems/UIStateBuilder.js';
 
 const ERR = [];
 window.__ERR = ERR;
@@ -223,7 +251,22 @@ const INPUT_MODE = ['keyboard', 'pointer', 'touch'].includes(INPUT_REQUEST)
     ? INPUT_REQUEST
     : null;
 const MENU_FOCUS = (params.get('focus') || '').trim();
-const REDUCED = params.get('reduced') === '1';
+const REDUCED_REQUEST = params.has('reduced') ? params.get('reduced') : null;
+const QA_REDUCED = REDUCED_REQUEST === '1'
+    ? true
+    : REDUCED_REQUEST === '0'
+        ? false
+        : null;
+if (REDUCED_REQUEST != null && QA_REDUCED == null) {
+    ERR.push(`param: invalid reduced '${REDUCED_REQUEST}'`);
+}
+const DEVICE_REQUEST = params.has('device') ? params.get('device') : null;
+const QA_DEVICE = ['mobile-portrait', 'mobile-landscape'].includes(DEVICE_REQUEST)
+    ? DEVICE_REQUEST
+    : null;
+if (DEVICE_REQUEST != null && !QA_DEVICE) {
+    ERR.push(`param: invalid device '${DEVICE_REQUEST}'`);
+}
 const UI_SCALE_REQUEST = params.has('uiscale') ? params.get('uiscale') : null;
 const QA_UI_SCALE = ['100', '115', '130'].includes(UI_SCALE_REQUEST)
     ? Number(UI_SCALE_REQUEST)
@@ -277,6 +320,17 @@ const CAPTION_REQUEST = params.has('caption') ? params.get('caption') : null;
 const QA_CAPTION = ['voice', 'danger'].includes(CAPTION_REQUEST) ? CAPTION_REQUEST : null;
 const BOSS_WARNING_REQUEST = params.has('bosswarning') ? params.get('bosswarning') : null;
 const QA_BOSS_WARNING = BOSS_WARNING_REQUEST === '1';
+const RUIN_BELL_REQUEST = params.has('ruinbell') ? params.get('ruinbell') : null;
+const RUIN_BELL_STATES = [
+    'arming', 'warning', 'crossfire', 'breach',
+    'technical', 'cleared', 'failed', 'ruined',
+];
+const QA_RUIN_BELL = RUIN_BELL_STATES.includes(RUIN_BELL_REQUEST)
+    ? RUIN_BELL_REQUEST
+    : null;
+if (RUIN_BELL_REQUEST != null && !QA_RUIN_BELL) {
+    ERR.push(`param: invalid ruinbell '${RUIN_BELL_REQUEST}'`);
+}
 const STATUSES_REQUEST = params.has('statuses') ? params.get('statuses') : null;
 const QA_STATUSES = STATUSES_REQUEST === 'all' ? 'all' : null;
 const QA_PAUSED = params.get('pause') === '1';
@@ -389,7 +443,7 @@ async function boot() {
     if (!await preferenceSeed.whenSaveParticipationReady()) {
         ERR.push('save-participation: preference seed did not acquire its shared lock');
     }
-    if (REDUCED) preferenceSeed.setSetting('reducedEffects', true);
+    if (QA_REDUCED != null) preferenceSeed.setSetting('reducedEffects', QA_REDUCED);
     if (QA_UI_SCALE != null) preferenceSeed.setSetting('uiScale', QA_UI_SCALE);
     if (QA_HIGH_CONTRAST != null) preferenceSeed.setSetting('highContrast', QA_HIGH_CONTRAST);
     if (QA_CAPTIONS != null) preferenceSeed.setSetting('captions', QA_CAPTIONS);
@@ -748,6 +802,129 @@ async function boot() {
                 break;
             }
         }
+        // House V2 / Ruin Bell visual contract. Every state below is reached
+        // through the production RuinBellDirector -> GameUpdate spawn/result
+        // handshake. The harness only removes unrelated run noise, advances the
+        // authored clocks, and records real member deaths between stages.
+        if (QA_RUIN_BELL) {
+            try {
+                if ((MAP || game._obstacleBiome) !== 'emberwood') {
+                    throw new Error('ruinbell states are Emberwood-only');
+                }
+                const director = game.ruinBellDirector;
+                const structure = game.ruinBellStructure;
+                const anchor = director?.anchor;
+                if (!director || !structure || !anchor) {
+                    throw new Error('production Ruin Bell placement is unavailable');
+                }
+
+                // Start every receipt with one clean production run board. These
+                // arrays remain the authoritative Game arrays; no encounter body
+                // or reward is fabricated by the harness.
+                for (const list of [
+                    game.enemies, game.projectiles, game.enemyProjectiles,
+                    game.hazards, game.gems, game.coins, game.healthOrbs,
+                    game.chests, game.shrines, game.damageNumbers, game.rings,
+                ]) if (Array.isArray(list)) list.length = 0;
+                game.bossSummons.length = 0;
+                game._selfDetonated.length = 0;
+                game._hazardKilled.length = 0;
+                game.arena = null;
+                game.bossWarning = null;
+                game.lieutenantWarning = null;
+                game.activeLieutenantRef = null;
+                game.upgradeChoices = null;
+                game.chestReward = null;
+                game.altar = null;
+                game.player.damageTakenMul = 0;
+                game.player.damageMul = 0;
+                game.player.hp = game.player.maxHp;
+
+                // Unlock after displayed Vigil 3 while the player is away, then
+                // enter the authored focus ring through the live GameUpdate lane.
+                game._applyRuinBellOutput(director.update(0, {
+                    screen: 'gameplay',
+                    waveIndex: 3,
+                    playerPosition: { x: anchor.x + 4096, y: anchor.y + 4096 },
+                }));
+                game.player.x = anchor.x + 60;
+                game.player.y = anchor.y + 60;
+                game._updateRuinBell(QA_RUIN_BELL === 'arming' ? 0.62 : 0);
+
+                const beginAttempt = () => game._updateRuinBell(1.25);
+                const advanceFirstStage = () => game._updateRuinBell(3.5);
+                const advanceCrossfire = () => game._updateRuinBell(13.5);
+                const defeatActiveBellMembers = () => {
+                    const ids = [];
+                    for (const enemy of game.enemies) {
+                        if (!enemy.active || !enemy.ruinBellMemberId
+                            || enemy.ruinBellInstanceId !== director.instanceId) continue;
+                        enemy.active = false;
+                        ids.push(enemy.ruinBellMemberId);
+                    }
+                    game._ruinBellDefeatedIds.push(...ids);
+                    game._updateRuinBell(0);
+                    return ids;
+                };
+                const advanceLastBreach = () => {
+                    const retired = defeatActiveBellMembers();
+                    if (retired.length !== 7) {
+                        throw new Error(`expected seven crossfire members, got ${retired.length}`);
+                    }
+                    game._updateRuinBell(16);
+                };
+
+                if (QA_RUIN_BELL !== 'arming') beginAttempt();
+                if (QA_RUIN_BELL === 'technical') {
+                    const liveWaveState = game.waveState;
+                    try {
+                        game.waveState = { ...liveWaveState, maxAlive: 0 };
+                        advanceFirstStage();
+                    } finally {
+                        game.waveState = liveWaveState;
+                    }
+                } else if (['crossfire', 'breach', 'cleared', 'failed', 'ruined'].includes(QA_RUIN_BELL)) {
+                    advanceFirstStage();
+                    advanceCrossfire();
+                    if (['breach', 'cleared', 'failed', 'ruined'].includes(QA_RUIN_BELL)) {
+                        advanceLastBreach();
+                    }
+                    if (QA_RUIN_BELL === 'cleared') {
+                        const retired = defeatActiveBellMembers();
+                        if (retired.length !== 4) {
+                            throw new Error(`expected four breach members, got ${retired.length}`);
+                        }
+                        game._updateRuinBell(12);
+                    } else if (QA_RUIN_BELL === 'failed' || QA_RUIN_BELL === 'ruined') {
+                        game._updateRuinBell(27);
+                        if (QA_RUIN_BELL === 'ruined') {
+                            // Cooldown -> final activation. Stable defeated IDs
+                            // make the first seven members skip on retry; only the
+                            // four-body Last Breach is allowed to reform.
+                            game._updateRuinBell(8);
+                            game._updateRuinBell(1.25);
+                            game._updateRuinBell(3.5);
+                            game._updateRuinBell(13.5);
+                            game._updateRuinBell(16);
+                            game._updateRuinBell(27);
+                        }
+                    }
+                }
+
+                // Keep the final frame centered and expose the encounter through
+                // the existing single objective card + non-live accessibility
+                // node. Announcements are still recorded in the live region, but
+                // the transient banner is cleared so it cannot cover the HUD.
+                game.player.x = anchor.x + 60;
+                game.player.y = anchor.y + 60;
+                if (game.waveDirector) game.waveDirector.announcement = null;
+                game.camera.trauma = 0;
+                game.camera.update(0);
+                game.accessibility?.setObjective?.(buildUIState(game).runObjective);
+            } catch (e) {
+                ERR.push('ruinbell: ' + String(e && e.stack || e));
+            }
+        }
         // Teleport for close-ups (buildings live far from spawn), then settle
         // a few frames so the camera catches up before the final render.
         const TP = params.get('tp');
@@ -1074,6 +1251,14 @@ async function boot() {
         game.render();
     }
 
+    // Device receipts capture the settled shipped state after the initial
+    // 2.5-second orientation prompt: an upright, persistent compact pill in
+    // portrait and no orientation affordance in either landscape direction.
+    const qaRotateHint = document.getElementById('rotate-hint');
+    if (QA_DEVICE === 'mobile-portrait' && renderer.rotated && qaRotateHint) {
+        qaRotateHint.classList.add('show', 'hidden');
+    }
+
     // Verify every requested QA branch against production-owned state before
     // stamping the frame/title. This makes EXC:0 a receipt assertion, not only
     // an exception smoke: a query that silently stops staging its requested
@@ -1123,8 +1308,23 @@ async function boot() {
     const qaCompletionCaseTruth = game.ui?.menu?._lastCollectionCompletionCaseTruth || null;
     const qaCompletionMythic = qaCompletionCaseTruth?.rarities
         ?.find((row) => row.id === 'mythic') || null;
+    const qaRuinBellSnapshot = game.ruinBellDirector?.getSnapshot?.() || null;
+    const qaRuinBellUi = QA_RUIN_BELL ? buildUIState(game).runObjective : null;
+    const qaRuinBellReceipt = game._ruinBellReceipt || null;
+    const qaRuinBellEnemies = (game.enemies || []).filter((enemy) =>
+        enemy.active && enemy.ruinBellMemberId
+        && enemy.ruinBellInstanceId === qaRuinBellSnapshot?.instanceId);
+    const qaRuinBellRoles = [...new Set(qaRuinBellEnemies.map((enemy) =>
+        enemy.ruinBellRole || 'threshold'))].sort().join(',');
+    const qaRuinBellBlocked = qaRuinBellEnemies.filter((enemy) =>
+        game.obstacleSystem.isSpawnBlocked?.(
+            enemy.x,
+            enemy.y,
+            Math.max(8, Number(enemy.radius) || 0) + 6,
+        ) === true).length;
     const qaState = {
         inputModality: input.getModality(),
+        deviceProfile: QA_DEVICE || '',
         menuFocusKey: game.menuFocusKey || null,
         menuFocusVisible: game.screen === 'start'
             && input.getModality() === 'keyboard'
@@ -1227,6 +1427,40 @@ async function boot() {
         objectiveVariant: game.ui?._lastDrawReceipt?.objectiveVariant || 'hidden',
         objectiveTextComplete: game.ui?._lastDrawReceipt?.objectiveTextComplete === true,
         objectiveA11y: document.getElementById('game-objective')?.textContent || '',
+        ruinBellRequest: QA_RUIN_BELL || '',
+        ruinBellPhase: qaRuinBellSnapshot?.phase || '',
+        ruinBellHouseState: qaRuinBellSnapshot?.houseState || '',
+        ruinBellStructureState: game.ruinBellStructure?.state || '',
+        ruinBellAttempt: qaRuinBellSnapshot?.attempt ?? null,
+        ruinBellMaxAttempts: qaRuinBellSnapshot?.maxAttempts ?? null,
+        ruinBellAttemptsFailed: qaRuinBellSnapshot?.attemptsFailed ?? null,
+        ruinBellEventElapsed: qaRuinBellSnapshot?.eventElapsed ?? null,
+        ruinBellMembersDefeated: qaRuinBellSnapshot?.members?.defeated ?? null,
+        ruinBellMembersTotal: qaRuinBellSnapshot?.members?.total ?? null,
+        ruinBellMembersAlive: qaRuinBellSnapshot?.members?.alive ?? null,
+        ruinBellActiveTagged: qaRuinBellEnemies.length,
+        ruinBellUniqueTagged: new Set(qaRuinBellEnemies.map((enemy) =>
+            enemy.ruinBellMemberId)).size,
+        ruinBellActiveRoles: qaRuinBellRoles,
+        ruinBellBlockedActive: qaRuinBellBlocked,
+        ruinBellPending: !!qaRuinBellSnapshot?.pendingRequest,
+        ruinBellTechnicalDefers: qaRuinBellSnapshot?.technicalDefers ?? null,
+        ruinBellRewardEmitted: qaRuinBellSnapshot?.rewardEmitted === true,
+        ruinBellReceiptOk: qaRuinBellReceipt == null ? '' : String(qaRuinBellReceipt.ok === true),
+        ruinBellReceiptAttempt: qaRuinBellReceipt?.attempt ?? null,
+        ruinBellReceiptXp: qaRuinBellReceipt?.xp ?? null,
+        ruinBellReceiptChoice: qaRuinBellReceipt?.choice || '',
+        ruinBellReceiptRetry: qaRuinBellReceipt == null
+            ? '' : String(qaRuinBellReceipt.retryAvailable === true),
+        ruinBellReceiptText: qaRuinBellReceipt?.receipt || '',
+        ruinBellChestCount: game.chests?.length ?? 0,
+        ruinBellShrineCount: game.shrines?.length ?? 0,
+        ruinBellCoinCount: game.coins?.length ?? 0,
+        ruinBellObjectiveOwner: qaRuinBellUi?.owner || '',
+        ruinBellObjectiveRendered: game.ui?._lastDrawReceipt?.objective === true,
+        ruinBellObjectiveTextComplete: game.ui?._lastDrawReceipt?.objectiveTextComplete === true,
+        ruinBellObjectiveA11y: QA_RUIN_BELL
+            ? (document.getElementById('game-objective')?.textContent || '') : '',
         activeBossId: qaActiveBoss?.type || '',
         runMode: game._runObjectiveModeId?.() || '',
         bossRushActive: !!game.bossRush,
@@ -1243,6 +1477,18 @@ async function boot() {
         liveStatus: document.getElementById('game-status')?.textContent || '',
         viewportWidth: Math.round(window.innerWidth),
         viewportHeight: Math.round(window.innerHeight),
+        devicePixelRatio: Math.round((window.devicePixelRatio || 1) * 1000) / 1000,
+        userAgentMobile: /Mobile/i.test(navigator.userAgent || ''),
+        maxTouchPoints: Number(navigator.maxTouchPoints) || 0,
+        pointerCoarse: typeof window.matchMedia === 'function'
+            && window.matchMedia('(pointer: coarse)').matches,
+        screenOrientation: window.screen?.orientation?.type || '',
+        rendererRotated: renderer.rotated === true,
+        rotateHintText: qaRotateHint?.textContent?.trim() || '',
+        rotateHintVisible: qaRotateHint?.classList?.contains('show') === true,
+        rotateHintCompact: qaRotateHint?.classList?.contains('show') === true
+            && qaRotateHint?.classList?.contains('hidden') === true,
+        rotateHintOutsideStage: !!qaRotateHint && !qaRotateHint.closest('#stage'),
         rendererCssWidth: Math.round(renderer.cssWidth * 100) / 100,
         rendererCssHeight: Math.round(renderer.cssHeight * 100) / 100,
         rendererDpr: Math.round(renderer.dpr * 1000) / 1000,
@@ -1256,8 +1502,27 @@ async function boot() {
     if (ACTIVE_INPUT_MODE && qaState.inputModality !== ACTIVE_INPUT_MODE) {
         ERR.push(`receipt: input expected '${ACTIVE_INPUT_MODE}', got '${qaState.inputModality}'`);
     }
-    if (REDUCED && !qaState.reducedEffects) {
-        ERR.push('receipt: reduced=1 did not persist Reduced Effects');
+    if (QA_REDUCED != null && qaState.reducedEffects !== QA_REDUCED) {
+        ERR.push(`receipt: reduced=${QA_REDUCED ? 1 : 0} did not persist Reduced Effects`);
+    }
+    if (QA_DEVICE) {
+        const portrait = QA_DEVICE === 'mobile-portrait';
+        const expectedWidth = portrait ? 390 : 844;
+        const expectedHeight = portrait ? 844 : 390;
+        const expectedOrientation = portrait ? 'portrait-primary' : 'landscape-primary';
+        if (qaState.viewportWidth !== expectedWidth || qaState.viewportHeight !== expectedHeight
+            || qaState.devicePixelRatio !== 3 || !qaState.userAgentMobile
+            || qaState.maxTouchPoints !== 5 || !qaState.pointerCoarse
+            || qaState.screenOrientation !== expectedOrientation
+            || qaState.rendererRotated !== portrait) {
+            ERR.push(`device: ${QA_DEVICE} emulation drifted (${qaState.viewportWidth}x${qaState.viewportHeight}, dpr ${qaState.devicePixelRatio}, mobile ${qaState.userAgentMobile}, touch ${qaState.maxTouchPoints}, coarse ${qaState.pointerCoarse}, orientation ${qaState.screenOrientation}, rotated ${qaState.rendererRotated})`);
+        }
+        if (qaState.rotateHintText !== 'Rotate to landscape for the full HUD'
+            || !qaState.rotateHintOutsideStage
+            || qaState.rotateHintVisible !== portrait
+            || qaState.rotateHintCompact !== portrait) {
+            ERR.push(`device: ${QA_DEVICE} landscape-required affordance drifted (text '${qaState.rotateHintText}', visible ${qaState.rotateHintVisible}, compact ${qaState.rotateHintCompact}, upright ${qaState.rotateHintOutsideStage})`);
+        }
     }
     if (QA_UI_SCALE != null && qaState.uiScale !== QA_UI_SCALE) {
         ERR.push(`receipt: uiscale expected ${QA_UI_SCALE}, got ${qaState.uiScale}`);
@@ -1427,6 +1692,95 @@ async function boot() {
     if (QA_OBJECTIVE_PHASE && qaState.objectiveProgress !== qaState.objectiveExpectedProgress) {
         ERR.push(`receipt: objective progress expected ${qaState.objectiveExpectedProgress}, got ${qaState.objectiveProgress}`);
     }
+    if (QA_RUIN_BELL) {
+        const expected = {
+            arming: {
+                phase: 'arming', house: 'intact', attempt: 1,
+                attemptsFailed: 0, defeated: 0, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+            warning: {
+                phase: 'warning', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 0, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+            crossfire: {
+                phase: 'active', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 0, alive: 7, tagged: 7, defers: 0,
+                roles: 'door-runner,marksman,support,threshold',
+            },
+            breach: {
+                phase: 'active', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 7, alive: 4, tagged: 4, defers: 0,
+                roles: 'bomber,charger,threshold',
+            },
+            technical: {
+                phase: 'technical-defer', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 0, alive: 0, tagged: 0, defers: 1, roles: '',
+            },
+            cleared: {
+                phase: 'cleared', house: 'lit', attempt: 1,
+                attemptsFailed: 0, defeated: 11, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+            failed: {
+                phase: 'retry-cooldown', house: 'damaged', attempt: 1,
+                attemptsFailed: 1, defeated: 7, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+            ruined: {
+                phase: 'spent', house: 'ruined', attempt: 2,
+                attemptsFailed: 2, defeated: 7, alive: 0, tagged: 0, defers: 0, roles: '',
+            },
+        }[QA_RUIN_BELL];
+        const exactState = qaState.ruinBellPhase === expected.phase
+            && qaState.ruinBellHouseState === expected.house
+            && qaState.ruinBellStructureState === expected.house
+            && qaState.ruinBellAttempt === expected.attempt
+            && qaState.ruinBellMaxAttempts === 2
+            && qaState.ruinBellAttemptsFailed === expected.attemptsFailed
+            && qaState.ruinBellMembersDefeated === expected.defeated
+            && qaState.ruinBellMembersTotal === 11
+            && qaState.ruinBellMembersAlive === expected.alive
+            && qaState.ruinBellActiveTagged === expected.tagged
+            && qaState.ruinBellUniqueTagged === expected.tagged
+            && qaState.ruinBellActiveRoles === expected.roles
+            && qaState.ruinBellTechnicalDefers === expected.defers;
+        if (!exactState) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} state drifted (${qaState.ruinBellPhase}/${qaState.ruinBellHouseState}, attempt ${qaState.ruinBellAttempt}, members ${qaState.ruinBellMembersDefeated}/${qaState.ruinBellMembersTotal}/${qaState.ruinBellMembersAlive}, tagged ${qaState.ruinBellActiveTagged}, roles ${qaState.ruinBellActiveRoles}, defers ${qaState.ruinBellTechnicalDefers})`);
+        }
+        if (qaState.ruinBellPending || qaState.ruinBellBlockedActive !== 0) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} left a pending wave or blocked active spawn`);
+        }
+        if (qaState.ruinBellObjectiveOwner !== 'ruin-bell'
+            || !qaState.ruinBellObjectiveRendered
+            || !qaState.ruinBellObjectiveTextComplete
+            || !qaState.ruinBellObjectiveA11y) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} omitted its complete HUD/accessibility receipt`);
+        }
+        const cleanRewardBoard = qaState.ruinBellCoinCount === 0
+            && qaState.ruinBellChestCount === (QA_RUIN_BELL === 'cleared' ? 1 : 0)
+            && qaState.ruinBellShrineCount === (QA_RUIN_BELL === 'cleared' ? 1 : 0);
+        if (!cleanRewardBoard) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} reward board drifted (${qaState.ruinBellChestCount} chests, ${qaState.ruinBellShrineCount} shrines, ${qaState.ruinBellCoinCount} coins)`);
+        }
+        if (QA_RUIN_BELL === 'cleared') {
+            if (!qaState.ruinBellRewardEmitted
+                || qaState.ruinBellReceiptOk !== 'true'
+                || qaState.ruinBellReceiptAttempt !== 1
+                || qaState.ruinBellReceiptXp !== 32
+                || qaState.ruinBellReceiptChoice !== 'chest-or-wick-shrine') {
+                ERR.push('ruinbell: cleared reward was not exactly +32 XP and Chest or Wick Shrine');
+            }
+        } else if (QA_RUIN_BELL === 'failed' || QA_RUIN_BELL === 'ruined') {
+            const expectedRetry = QA_RUIN_BELL === 'failed' ? 'true' : 'false';
+            if (qaState.ruinBellRewardEmitted
+                || qaState.ruinBellReceiptOk !== 'false'
+                || qaState.ruinBellReceiptAttempt !== expected.attempt
+                || qaState.ruinBellReceiptRetry !== expectedRetry
+                || !qaState.ruinBellReceiptText.includes('NO COMPLETION REWARD')) {
+                ERR.push(`ruinbell: ${QA_RUIN_BELL} failure receipt drifted`);
+            }
+        } else if (qaState.ruinBellReceiptOk !== '' || qaState.ruinBellRewardEmitted) {
+            ERR.push(`ruinbell: ${QA_RUIN_BELL} emitted an early completion receipt`);
+        }
+    }
     if (QA_OBJECTIVE_PHASE && !(QA_PAUSED || QA_GAME_OVER || QA_VICTORY)
         && !qaState.objectiveRendered) {
         ERR.push('render: active Run Path card did not complete its draw call');
@@ -1495,6 +1849,7 @@ async function boot() {
     // inspect it even when their read-only world cannot see page-owned globals.
     const qaRoot = document.documentElement;
     qaRoot.dataset.qaInput = window.__qaState.inputModality;
+    qaRoot.dataset.qaDeviceProfile = window.__qaState.deviceProfile;
     qaRoot.dataset.qaFocus = window.__qaState.menuFocusKey || '';
     qaRoot.dataset.qaFocusVisible = String(window.__qaState.menuFocusVisible);
     qaRoot.dataset.qaReduced = String(window.__qaState.reducedEffects);
@@ -1587,6 +1942,47 @@ async function boot() {
     qaRoot.dataset.qaObjectiveVariant = window.__qaState.objectiveVariant;
     qaRoot.dataset.qaObjectiveTextComplete = String(window.__qaState.objectiveTextComplete);
     qaRoot.dataset.qaObjectiveA11y = window.__qaState.objectiveA11y;
+    qaRoot.dataset.qaRuinBellRequest = window.__qaState.ruinBellRequest;
+    qaRoot.dataset.qaRuinBellPhase = window.__qaState.ruinBellPhase;
+    qaRoot.dataset.qaRuinBellHouseState = window.__qaState.ruinBellHouseState;
+    qaRoot.dataset.qaRuinBellStructureState = window.__qaState.ruinBellStructureState;
+    qaRoot.dataset.qaRuinBellAttempt = window.__qaState.ruinBellAttempt == null
+        ? '' : String(window.__qaState.ruinBellAttempt);
+    qaRoot.dataset.qaRuinBellMaxAttempts = window.__qaState.ruinBellMaxAttempts == null
+        ? '' : String(window.__qaState.ruinBellMaxAttempts);
+    qaRoot.dataset.qaRuinBellAttemptsFailed = window.__qaState.ruinBellAttemptsFailed == null
+        ? '' : String(window.__qaState.ruinBellAttemptsFailed);
+    qaRoot.dataset.qaRuinBellEventElapsed = window.__qaState.ruinBellEventElapsed == null
+        ? '' : String(window.__qaState.ruinBellEventElapsed);
+    qaRoot.dataset.qaRuinBellMembersDefeated = window.__qaState.ruinBellMembersDefeated == null
+        ? '' : String(window.__qaState.ruinBellMembersDefeated);
+    qaRoot.dataset.qaRuinBellMembersTotal = window.__qaState.ruinBellMembersTotal == null
+        ? '' : String(window.__qaState.ruinBellMembersTotal);
+    qaRoot.dataset.qaRuinBellMembersAlive = window.__qaState.ruinBellMembersAlive == null
+        ? '' : String(window.__qaState.ruinBellMembersAlive);
+    qaRoot.dataset.qaRuinBellActiveTagged = String(window.__qaState.ruinBellActiveTagged);
+    qaRoot.dataset.qaRuinBellUniqueTagged = String(window.__qaState.ruinBellUniqueTagged);
+    qaRoot.dataset.qaRuinBellActiveRoles = window.__qaState.ruinBellActiveRoles;
+    qaRoot.dataset.qaRuinBellBlockedActive = String(window.__qaState.ruinBellBlockedActive);
+    qaRoot.dataset.qaRuinBellPending = String(window.__qaState.ruinBellPending);
+    qaRoot.dataset.qaRuinBellTechnicalDefers = window.__qaState.ruinBellTechnicalDefers == null
+        ? '' : String(window.__qaState.ruinBellTechnicalDefers);
+    qaRoot.dataset.qaRuinBellRewardEmitted = String(window.__qaState.ruinBellRewardEmitted);
+    qaRoot.dataset.qaRuinBellReceiptOk = window.__qaState.ruinBellReceiptOk;
+    qaRoot.dataset.qaRuinBellReceiptAttempt = window.__qaState.ruinBellReceiptAttempt == null
+        ? '' : String(window.__qaState.ruinBellReceiptAttempt);
+    qaRoot.dataset.qaRuinBellReceiptXp = window.__qaState.ruinBellReceiptXp == null
+        ? '' : String(window.__qaState.ruinBellReceiptXp);
+    qaRoot.dataset.qaRuinBellReceiptChoice = window.__qaState.ruinBellReceiptChoice;
+    qaRoot.dataset.qaRuinBellReceiptRetry = window.__qaState.ruinBellReceiptRetry;
+    qaRoot.dataset.qaRuinBellReceiptText = window.__qaState.ruinBellReceiptText;
+    qaRoot.dataset.qaRuinBellChestCount = String(window.__qaState.ruinBellChestCount);
+    qaRoot.dataset.qaRuinBellShrineCount = String(window.__qaState.ruinBellShrineCount);
+    qaRoot.dataset.qaRuinBellCoinCount = String(window.__qaState.ruinBellCoinCount);
+    qaRoot.dataset.qaRuinBellObjectiveOwner = window.__qaState.ruinBellObjectiveOwner;
+    qaRoot.dataset.qaRuinBellObjectiveRendered = String(window.__qaState.ruinBellObjectiveRendered);
+    qaRoot.dataset.qaRuinBellObjectiveTextComplete = String(window.__qaState.ruinBellObjectiveTextComplete);
+    qaRoot.dataset.qaRuinBellObjectiveA11y = window.__qaState.ruinBellObjectiveA11y;
     qaRoot.dataset.qaActiveBossId = window.__qaState.activeBossId;
     qaRoot.dataset.qaRunMode = window.__qaState.runMode;
     qaRoot.dataset.qaBossRushActive = String(window.__qaState.bossRushActive);
@@ -1601,6 +1997,16 @@ async function boot() {
     qaRoot.dataset.qaLiveStatus = window.__qaState.liveStatus;
     qaRoot.dataset.qaViewportWidth = String(window.__qaState.viewportWidth);
     qaRoot.dataset.qaViewportHeight = String(window.__qaState.viewportHeight);
+    qaRoot.dataset.qaDevicePixelRatio = String(window.__qaState.devicePixelRatio);
+    qaRoot.dataset.qaUserAgentMobile = String(window.__qaState.userAgentMobile);
+    qaRoot.dataset.qaMaxTouchPoints = String(window.__qaState.maxTouchPoints);
+    qaRoot.dataset.qaPointerCoarse = String(window.__qaState.pointerCoarse);
+    qaRoot.dataset.qaScreenOrientation = window.__qaState.screenOrientation;
+    qaRoot.dataset.qaRendererRotated = String(window.__qaState.rendererRotated);
+    qaRoot.dataset.qaRotateHintText = window.__qaState.rotateHintText;
+    qaRoot.dataset.qaRotateHintVisible = String(window.__qaState.rotateHintVisible);
+    qaRoot.dataset.qaRotateHintCompact = String(window.__qaState.rotateHintCompact);
+    qaRoot.dataset.qaRotateHintOutsideStage = String(window.__qaState.rotateHintOutsideStage);
     qaRoot.dataset.qaRendererCssWidth = String(window.__qaState.rendererCssWidth);
     qaRoot.dataset.qaRendererCssHeight = String(window.__qaState.rendererCssHeight);
     qaRoot.dataset.qaRendererDpr = String(window.__qaState.rendererDpr);

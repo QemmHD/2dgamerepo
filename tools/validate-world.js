@@ -11,6 +11,10 @@ import { MAP_ORDER, getMap } from '../src/content/maps.js';
 import {
     BIOME_THEME, MAP_OBJECTS, MAP_STRUCTURES, STRUCTURE_PLACEMENT,
 } from '../src/content/mapObjects.js';
+import {
+    getHouseBlueprint,
+    houseWallActive,
+} from '../src/content/houseBlueprints.js';
 import { MapRenderer } from '../src/systems/MapRenderer.js';
 import { ObstacleSystem } from '../src/systems/ObstacleSystem.js';
 
@@ -83,7 +87,10 @@ function validateStructureContract(mapId, obstacles, structures) {
     const ids = structures.map((structure) => structure.id);
     const idSet = new Set(ids);
     const buildingPieces = obstacles.filter((ob) => ob.type === 'buildingWall' || ob.type === 'buildingFloor');
+    const ownedPieces = obstacles.filter((ob) => !!ob.structureId);
     const allowedStyles = new Set(BIOME_THEME[mapId]?.structures || []);
+    const featuredStyle = BIOME_THEME[mapId]?.featuredStructure || null;
+    const featuredBlueprintId = MAP_STRUCTURES[featuredStyle]?.blueprintId || null;
 
     ok(structures.length === STRUCTURE_PLACEMENT.count,
         `${prefix}: expected ${STRUCTURE_PLACEMENT.count} records, found ${structures.length}`);
@@ -91,30 +98,44 @@ function validateStructureContract(mapId, obstacles, structures) {
     ok(ids.every((id) => typeof id === 'string' && id.length > 0), `${prefix}: missing structure id`);
     ok(structures.every((s, i) => i === 0 || structures[i - 1].frontBaseY <= s.frontBaseY),
         `${prefix}: records are not sorted by frontBaseY`);
-    ok(buildingPieces.length === structures.length * 7,
-        `${prefix}: expected seven owned pieces per record (${buildingPieces.length}/${structures.length * 7})`);
     ok(buildingPieces.every((ob) => idSet.has(ob.structureId)),
         `${prefix}: building piece has missing/unknown ownership`);
-    ok(obstacles.every((ob) => !ob.structureId || ob.type === 'buildingWall' || ob.type === 'buildingFloor'),
-        `${prefix}: non-building obstacle carries structure ownership`);
+    ok(ownedPieces.every((ob) => ['buildingWall', 'buildingFloor', 'buildingFurnishing'].includes(ob.type)),
+        `${prefix}: unsupported obstacle carries structure ownership`);
     for (const style of allowedStyles) {
         ok(structures.some((structure) => structure.styleType === style),
             `${prefix}: eligible style ${style} never appears in the deterministic layout`);
     }
+    if (featuredBlueprintId) {
+        ok(structures.filter((structure) => structure.blueprintId === featuredBlueprintId).length === 1,
+            `${prefix}: featured blueprint ${featuredBlueprintId} must appear exactly once`);
+    }
 
     for (const structure of structures) {
         const label = `${mapId} ${structure.id}`;
-        const blueprint = MAP_STRUCTURES[structure.styleType];
-        const owned = buildingPieces.filter((ob) => ob.structureId === structure.id);
+        const blueprint = getHouseBlueprint(structure.blueprintId);
+        const style = blueprint
+            ? MAP_STRUCTURES[featuredStyle]
+            : MAP_STRUCTURES[structure.styleType];
+        const owned = ownedPieces.filter((ob) => ob.structureId === structure.id);
         const walls = owned.filter((ob) => ob.type === 'buildingWall');
         const floors = owned.filter((ob) => ob.type === 'buildingFloor');
+        const furnishings = owned.filter((ob) => ob.type === 'buildingFurnishing');
         const floor = floors[0];
 
-        ok(!!blueprint, `${label}: unknown style ${structure.styleType}`);
+        ok(!!style, `${label}: unknown style ${structure.styleType}`);
         ok(allowedStyles.has(structure.styleType), `${label}: style is not allowed by ${mapId}`);
-        ok(owned.length === 7, `${label}: expected 7 owned pieces, found ${owned.length}`);
-        ok(walls.length === 6, `${label}: expected 6 owned walls, found ${walls.length}`);
+        const expectedOwned = blueprint
+            ? blueprint.walls.length + blueprint.furniture.length + 1
+            : 7;
+        const expectedWalls = blueprint ? blueprint.walls.length : 6;
+        ok(owned.length === expectedOwned,
+            `${label}: expected ${expectedOwned} owned pieces, found ${owned.length}`);
+        ok(walls.length === expectedWalls,
+            `${label}: expected ${expectedWalls} owned walls, found ${walls.length}`);
         ok(floors.length === 1, `${label}: expected 1 owned floor, found ${floors.length}`);
+        ok(furnishings.length === (blueprint?.furniture.length ?? 0),
+            `${label}: furnishing count differs from blueprint`);
         ok(owned.every((ob) => ob.def.styleType === structure.styleType),
             `${label}: owned piece style does not match record`);
         ok(walls.every((wall) => wall.def.blocksLOS === true && !wall.def.decorative),
@@ -123,19 +144,51 @@ function validateStructureContract(mapId, obstacles, structures) {
             `${label}: floor must remain visual-only`);
         ok(Number.isFinite(structure.x) && Number.isFinite(structure.y), `${label}: non-finite center`);
 
-        if (!blueprint || !floor) continue;
+        if (!style || !floor) continue;
 
-        ok(structure.interiorW === blueprint.interiorW
-            && structure.interiorH === blueprint.interiorH
-            && structure.wall === blueprint.wall
-            && structure.wallH === blueprint.wallH
-            && structure.door === blueprint.door,
+        const dimensions = blueprint?.dimensions || style;
+        ok(structure.interiorW === dimensions.interiorW
+            && structure.interiorH === dimensions.interiorH
+            && structure.wall === dimensions.wall
+            && structure.wallH === dimensions.wallH
+            && structure.door === (dimensions.mainDoor ?? dimensions.door),
         `${label}: record geometry does not match its style blueprint`);
         ok(floor.x === structure.x && floor.y === structure.y,
             `${label}: floor center does not match structure center`);
         ok(floor.def.col.hw === structure.interiorW / 2
             && floor.def.col.hh === structure.interiorH / 2,
         `${label}: floor footprint does not match interior metadata`);
+
+        if (blueprint) {
+            ok(structure.blueprint === blueprint && structure.blueprintVersion === blueprint.version,
+                `${label}: runtime blueprint/version identity drifted`);
+            ok(structure.state === 'intact', `${label}: generated House V2 must start intact`);
+            ok(structure.poiReservation === blueprint.encounter?.id,
+                `${label}: featured encounter reservation drifted`);
+            ok(structure.wallParts === blueprint.walls
+                && structure.doors === blueprint.doors
+                && structure.rooms === blueprint.rooms,
+            `${label}: renderer/navigation arrays are not shared blueprint truth`);
+            ok(walls.every((entry) => {
+                const def = blueprint.walls.find((part) => part.id === entry.wallId);
+                return !!def
+                    && entry.x === structure.x + def.x
+                    && entry.y === structure.y + def.y
+                    && entry.def.col.hw === def.hw
+                    && entry.def.col.hh === def.hh
+                    && entry.active === houseWallActive(blueprint, def, structure.state);
+            }), `${label}: authored wall id/geometry/state drifted`);
+            ok(furnishings.every((entry) => {
+                const def = blueprint.furniture.find((item) => item.id === entry.furnitureId);
+                return !!def && entry.x === structure.x + def.x && entry.y === structure.y + def.y;
+            }), `${label}: furnishing id/placement drifted`);
+            ok(Array.isArray(structure.spawnExclusions)
+                && structure.spawnExclusions === blueprint.spawnExclusions,
+            `${label}: spawn exclusions are not shared blueprint truth`);
+            ok(structure.roofCutaway === blueprint.roofCutaway,
+                `${label}: roof cutaway is not shared blueprint truth`);
+            continue;
+        }
 
         const iHW = structure.interiorW / 2;
         const iHH = structure.interiorH / 2;
@@ -152,12 +205,12 @@ function validateStructureContract(mapId, obstacles, structures) {
 
         const matches = (wall, x, y, hw, hh) => wall.x === x && wall.y === y
             && wall.def.col.hw === hw && wall.def.col.hh === hh;
-        const expectedWalls = [
+        const expectedLegacyWalls = [
             [leftX, northY, segHW, half], [rightX, northY, segHW, half],
             [leftX, southY, segHW, half], [rightX, southY, segHW, half],
             [westX, structure.y, half, iHH], [eastX, structure.y, half, iHH],
         ];
-        for (const [x, y, hw, hh] of expectedWalls) {
+        for (const [x, y, hw, hh] of expectedLegacyWalls) {
             ok(walls.filter((wall) => matches(wall, x, y, hw, hh)).length === 1,
                 `${label}: missing/duplicate wall at ${x.toFixed(1)},${y.toFixed(1)}`);
         }

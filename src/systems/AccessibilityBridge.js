@@ -43,7 +43,11 @@ function cleanText(value, fallback = 'Menu action') {
 }
 
 export function objectiveDescription(snapshot) {
-    return snapshot ? cleanText(runObjectiveAccessibilityText(snapshot), '') : '';
+    if (!snapshot) return '';
+    return cleanText(
+        snapshot.accessibilityText || runObjectiveAccessibilityText(snapshot),
+        '',
+    );
 }
 
 function stableValue(value) {

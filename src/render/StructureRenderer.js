@@ -6,6 +6,12 @@
 // anchors without changing collision, LOS, spawn clearance, or enemy routing.
 
 import { getWallPattern } from '../assets/ObstacleSprites.js';
+import {
+    houseDoorActive,
+    houseStateDefinition,
+    houseWallActive,
+    worldRoomAt,
+} from '../content/houseBlueprints.js';
 
 const STYLE = {
     cabin: {
@@ -74,9 +80,19 @@ function materialFor(structure) {
     return STYLE[structure.styleType] || DEFAULT_STYLE;
 }
 
+function entryShade(edge) {
+    return edge === 'west' ? 0.20 : 0.11;
+}
+
 export class StructureRenderer {
     _roofAlpha(structure, player) {
-        if (!player) return 0.88;
+        const cutaway = structure.blueprint?.roofCutaway;
+        const exteriorAlpha = cutaway?.exteriorAlpha ?? 0.88;
+        const interiorAlpha = cutaway?.interiorAlpha ?? 0.14;
+        if (!player) return exteriorAlpha;
+        if (structure.blueprint && worldRoomAt(structure, player.x, player.y, true)) {
+            return interiorAlpha;
+        }
         const dx = Math.max(0, Math.abs(player.x - structure.x) - structure.interiorW / 2);
         const dy = Math.max(0, Math.abs(player.y - structure.y) - structure.interiorH / 2);
         const distance = Math.hypot(dx, dy);
@@ -85,7 +101,16 @@ export class StructureRenderer {
         // Only the actual interior and immediate threshold become a cutaway.
         // At the standard exterior showcase/approach distance the roof is fully
         // authored and opaque enough to establish a strong house silhouette.
-        return 0.14 + smoothstep(8, 100, distance) * 0.74;
+        return interiorAlpha + smoothstep(8, cutaway?.nearDistance ?? 100, distance)
+            * (exteriorAlpha - interiorAlpha);
+    }
+
+    _doorFor(structure, kind) {
+        if (!structure.blueprint) return null;
+        return structure.blueprint.doors.find((entry) =>
+            entry.kind === 'exterior'
+            && houseDoorActive(entry, structure.state)
+            && (kind === 'north' ? entry.normal.y < 0 : entry.normal.y > 0)) || null;
     }
 
     drawGround(ctx, structure) {
@@ -111,6 +136,22 @@ export class StructureRenderer {
         ctx.closePath();
         ctx.fill();
 
+        // House V2 sits on one continuous foundation ring. It is intentionally
+        // authored here, once per structure, instead of being implied by the
+        // individual collision segments (which produced nested slab silhouettes).
+        if (structure.blueprint?.architecture?.foundation === 'continuous-stone-ring') {
+            const edge = 11;
+            ctx.fillStyle = m.trimDark;
+            ctx.fillRect(-outHW - edge, -outHH - edge, outHW * 2 + edge * 2, edge);
+            ctx.fillRect(-outHW - edge, outHH, outHW * 2 + edge * 2, edge);
+            ctx.fillRect(-outHW - edge, -outHH, edge, outHH * 2);
+            ctx.fillRect(outHW, -outHH, edge, outHH * 2);
+            ctx.strokeStyle = structure.palette?.top || m.trim;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-outHW - edge + 1, -outHH - edge + 1,
+                outHW * 2 + edge * 2 - 2, outHH * 2 + edge * 2 - 2);
+        }
+
         // A single footprint shadow replaces the six overlapping ellipses that
         // the individual collision-wall obstacles used to paint.
         // Keep this shallow and soft: a tall opaque ellipse reads as a pit in
@@ -125,7 +166,11 @@ export class StructureRenderer {
         // the previous opaque ramp + bars read as a giant ladder.
         const frontY = structure.interiorH / 2 + structure.wall;
         const bend = mirror * (10 + unit(structure.visualSeed, 22) * 18);
+        const frontDoor = this._doorFor(structure, 'south');
+        ctx.save();
+        if (frontDoor) ctx.translate(frontDoor.x, 0);
         this._drawApproach(ctx, structure, m, frontY, bend);
+        ctx.restore();
 
         ctx.restore();
     }
@@ -204,6 +249,10 @@ export class StructureRenderer {
     }
 
     drawRear(ctx, structure, player) {
+        // House V2 is a top-down cutaway. Its exact active wall obstacles paint
+        // in the standing queue, so a tall rear facade would duplicate the
+        // shell and cross the visible floor.
+        if (structure.blueprint?.architecture?.projection === 'top-down-cutaway') return;
         const m = materialFor(structure);
         const iHW = structure.interiorW / 2;
         const iHH = structure.interiorH / 2;
@@ -226,21 +275,33 @@ export class StructureRenderer {
         // Rear wall has the real north doorway/breach. Both halves are drawn in
         // one translated context, so texture courses align across the opening.
         this._drawSplitWall(ctx, structure, m, backY, false);
-        this._drawDoorFrame(ctx, structure, m, backY, false);
+        this._drawDoorFrame(ctx, structure, m, backY, false, this._doorFor(structure, 'north'));
         this._drawRearDetails(ctx, structure, m, backY);
 
-        // A thin roof ridge stays opaque in cutaway mode.
+        // A thin roof ridge stays opaque in cutaway mode, but state damage is
+        // structural: ruined cabins cannot retain a pristine full-width crown.
         ctx.strokeStyle = m.roofLight;
         ctx.lineWidth = 5;
         ctx.beginPath();
-        ctx.moveTo(-outHW - 10, backY - H - 5);
-        ctx.lineTo(outHW + 10, backY - H - 5);
+        if (structure.blueprint && structure.state === 'ruined') {
+            ctx.moveTo(-outHW - 10, backY - H - 5);
+            ctx.lineTo(-outHW * 0.12, backY - H - 5);
+        } else if (structure.blueprint && structure.state === 'damaged') {
+            ctx.moveTo(-outHW - 10, backY - H - 5);
+            ctx.lineTo(outHW * 0.42, backY - H - 5);
+        } else {
+            ctx.moveTo(-outHW - 10, backY - H - 5);
+            ctx.lineTo(outHW + 10, backY - H - 5);
+        }
         ctx.stroke();
 
         ctx.restore();
     }
 
     drawFront(ctx, structure) {
+        // See drawRear: authored shell pixels come from their collision records,
+        // not from a front-facing building card.
+        if (structure.blueprint?.architecture?.projection === 'top-down-cutaway') return;
         const m = materialFor(structure);
         const iHW = structure.interiorW / 2;
         const iHH = structure.interiorH / 2;
@@ -254,18 +315,25 @@ export class StructureRenderer {
         // Side faces belong to the front depth plane. Sorting this whole shell
         // at the front collision baseline makes it occlude actors inside/behind
         // the house while actors south of it paint over the shell exactly once.
-        this._drawSideFace(ctx, structure, m, -iHW - T, backY, frontY, H, true);
-        this._drawSideFace(ctx, structure, m, iHW, backY, frontY, H, false);
+        if (structure.blueprint) this._drawBlueprintSides(ctx, structure, m);
+        else {
+            this._drawSideFace(ctx, structure, m, -iHW - T, backY, frontY, H, true);
+            this._drawSideFace(ctx, structure, m, iHW, backY, frontY, H, false);
+        }
         this._drawSplitWall(ctx, structure, m, frontY, true);
-        this._drawDoorFrame(ctx, structure, m, frontY, true);
+        const frontDoor = this._doorFor(structure, 'south');
+        this._drawDoorFrame(ctx, structure, m, frontY, true, frontDoor);
         this._drawFrontDetails(ctx, structure, m, frontY);
+        this._drawDamageDetails(ctx, structure, m, frontY);
 
         // Bright threshold exactly spans the actual opening and makes the safe
         // route legible during a swarm.
         ctx.fillStyle = m.trim;
-        ctx.fillRect(-structure.door * 0.43, frontY - 3, structure.door * 0.86, 7);
+        const thresholdX = frontDoor?.x || 0;
+        const thresholdW = frontDoor?.width || structure.door;
+        ctx.fillRect(thresholdX - thresholdW * 0.43, frontY - 3, thresholdW * 0.86, 7);
         ctx.fillStyle = 'rgba(255, 235, 185, 0.26)';
-        ctx.fillRect(-structure.door * 0.34, frontY - 2, structure.door * 0.68, 2);
+        ctx.fillRect(thresholdX - thresholdW * 0.34, frontY - 2, thresholdW * 0.68, 2);
 
         ctx.restore();
     }
@@ -277,12 +345,13 @@ export class StructureRenderer {
         const mirror = structure.mirror || 1;
         // Priority 2 is intentionally below the player, projectiles, bosses,
         // candles, and pickups. Houses add mood but can never starve combat cues.
+        const stateLight = houseStateDefinition(structure.blueprint, structure.state)?.light ?? 0.46;
         lighting.addLight(
             structure.x + mirror * structure.interiorW * 0.18,
             structure.y - iHH + 26,
             m.glowRadius,
             m.glow,
-            structure.styleType === 'ruin' ? 0.30 : 0.46,
+            structure.styleType === 'ruin' ? 0.30 : stateLight,
             2,
         );
         // One restrained window glow gives the facade a readable warm point.
@@ -294,6 +363,17 @@ export class StructureRenderer {
             0.24,
             2,
         );
+        if (structure.blueprint && structure.state === 'lit') {
+            const bell = structure.blueprint.furniture.find((entry) => entry.id === 'ruin-bell');
+            if (bell) lighting.addLight(
+                structure.x + bell.x,
+                structure.y + bell.y - 26,
+                154,
+                '#ff8b42',
+                0.56,
+                2,
+            );
+        }
     }
 
     _fillMaterialRect(ctx, structure, m, x, y, w, h, shade = 0) {
@@ -317,6 +397,27 @@ export class StructureRenderer {
     }
 
     _drawSplitWall(ctx, s, m, baseY, front) {
+        if (s.blueprint) {
+            const edge = front ? 'south' : 'north';
+            const parts = s.blueprint.walls.filter((entry) =>
+                entry.kind === 'shell' && entry.edge === edge
+                && houseWallActive(s.blueprint, entry, s.state));
+            for (const part of parts) {
+                this._fillMaterialRect(
+                    ctx,
+                    s,
+                    m,
+                    part.x - part.hw,
+                    baseY - s.wallH,
+                    part.hw * 2,
+                    s.wallH,
+                    front ? 0.03 : 0.13,
+                );
+                ctx.fillStyle = s.palette?.top || m.trim;
+                ctx.fillRect(part.x - part.hw, baseY - s.wallH, part.hw * 2, 8);
+            }
+            return;
+        }
         const outHW = s.interiorW / 2 + s.wall;
         const gapHalf = s.door / 2;
         const H = s.wallH;
@@ -342,12 +443,32 @@ export class StructureRenderer {
         ctx.fillRect(left ? x + 2 : x + T - 5, backY - H + 8, 3, frontY - backY + H - 12);
     }
 
-    _drawDoorFrame(ctx, s, m, baseY, front) {
-        const gapHalf = s.door / 2;
+    _drawBlueprintSides(ctx, s, m) {
+        const parts = s.blueprint.walls.filter((entry) =>
+            entry.kind === 'shell'
+            && (entry.edge === 'west' || entry.edge === 'east')
+            && houseWallActive(s.blueprint, entry, s.state));
+        for (const part of parts) {
+            const x = part.x - part.hw;
+            const y = part.y - part.hh - s.wallH;
+            const w = part.hw * 2;
+            const h = part.hh * 2 + s.wallH;
+            this._fillMaterialRect(ctx, s, m, x, y, w, h, entryShade(part.edge));
+            ctx.fillStyle = s.palette?.top || m.trim;
+            ctx.fillRect(x, y, w, 7);
+            ctx.fillStyle = 'rgba(255,255,255,0.10)';
+            ctx.fillRect(part.edge === 'west' ? x + 2 : x + w - 5, y + 8, 3, h - 12);
+        }
+    }
+
+    _drawDoorFrame(ctx, s, m, baseY, front, door = null) {
+        const gapHalf = (door?.width || s.door) / 2;
         const H = s.wallH;
         const frameH = H * (front ? 0.76 : 0.68);
         const post = Math.max(7, s.wall * 0.34);
         const y = baseY - frameH;
+        ctx.save();
+        if (door) ctx.translate(door.x, 0);
         ctx.fillStyle = m.trimDark;
         ctx.fillRect(-gapHalf - post, y, post, frameH);
         ctx.fillRect(gapHalf, y, post, frameH);
@@ -368,6 +489,132 @@ export class StructureRenderer {
             ctx.lineTo(-gapHalf * 0.42, y + 10);
             ctx.stroke();
         }
+        ctx.restore();
+    }
+
+    // State marks and exterior thresholds belong above the material floor but
+    // below every standing actor. GameRender invokes this immediately after its
+    // decorative-floor pass, so the floor raster cannot erase breach damage.
+    drawFloorDetails(ctx, structure) {
+        if (!structure?.blueprint) return false;
+        const m = materialFor(structure);
+        const outHW = structure.interiorW / 2 + structure.wall;
+        ctx.save();
+        ctx.translate(structure.x, structure.y);
+        this._drawStateFootprint(ctx, structure, m, outHW);
+
+        for (const door of structure.blueprint.doors || []) {
+            if (door.kind === 'interior' || !houseDoorActive(door, structure.state)) continue;
+            const half = door.width * 0.43;
+            ctx.fillStyle = m.trimDark;
+            if (door.axis === 'horizontal') {
+                ctx.fillRect(door.x - half, door.y - 5, half * 2, 10);
+                ctx.fillStyle = m.trim;
+                ctx.fillRect(door.x - half + 4, door.y - 2, half * 2 - 8, 4);
+            } else {
+                ctx.fillRect(door.x - 5, door.y - half, 10, half * 2);
+                ctx.fillStyle = m.trim;
+                ctx.fillRect(door.x - 2, door.y - half + 4, 4, half * 2 - 8);
+            }
+        }
+        ctx.restore();
+        return true;
+    }
+
+    _drawStateFootprint(ctx, structure, m, outHW) {
+        if (!structure.blueprint || (structure.state !== 'damaged' && structure.state !== 'ruined')) return;
+        const ruined = structure.state === 'ruined';
+        const breachY = structure.blueprint.doors?.find((entry) => entry.kind === 'breach')?.y ?? -108;
+        ctx.save();
+
+        // Scorch belongs to the one foundation/floor plane. Damaged retains a
+        // contained stain; ruined tears it through the authored east opening.
+        ctx.fillStyle = ruined ? 'rgba(104, 42, 22, 0.30)' : 'rgba(92, 43, 25, 0.22)';
+        ctx.beginPath();
+        ctx.ellipse(outHW - (ruined ? 24 : 34), breachY,
+            ruined ? 58 : 42, ruined ? 55 : 38, -0.18, 0, Math.PI * 2);
+        ctx.fill();
+        if (ruined) {
+            ctx.beginPath();
+            ctx.moveTo(outHW - 52, breachY - 48);
+            ctx.lineTo(outHW + 34, breachY - 34);
+            ctx.lineTo(outHW + 28, breachY + 36);
+            ctx.lineTo(outHW - 50, breachY + 50);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Coordinate-seeded timbers are material fragments from this shell,
+        // never generic obstacle sprites or a second building silhouette.
+        const count = ruined ? 6 : 3;
+        for (let i = 0; i < count; i++) {
+            const u = unit(structure.visualSeed, 210 + i);
+            const v = unit(structure.visualSeed, 230 + i);
+            const x = outHW - 30 + u * (ruined ? 68 : 34);
+            const y = breachY - 43 + v * 86;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate((u - 0.5) * 1.15 + (i & 1 ? 0.32 : -0.24));
+            ctx.fillStyle = i % 3 ? m.roofDark : m.trimDark;
+            ctx.fillRect(-13 - v * 7, -3, 26 + v * 14, 6);
+            ctx.fillStyle = 'rgba(222, 155, 88, 0.18)';
+            ctx.fillRect(-11 - v * 5, -2, 22 + v * 10, 2);
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+
+    // Every House V2 shell/partition pixel is a low top-down plan segment drawn
+    // from the same obstacle that owns collision, LOS and navigation. Nothing
+    // rises above the footprint, so a divider cannot read as another facade.
+    drawBlueprintWall(ctx, obstacle) {
+        if (!obstacle?.def?.blueprintId || obstacle.active === false) return false;
+        const col = obstacle.def?.col;
+        if (!col || !Number.isFinite(col.hw) || !Number.isFinite(col.hh)) return false;
+        const p = obstacle.palette || obstacle.def.palette || {
+            base: '#6a513a', top: '#86643f', edge: '#3c2c1d',
+        };
+        const partition = obstacle.partition === true;
+        const vertical = col.hh > col.hw;
+        const length = (vertical ? col.hh : col.hw) * 2;
+        const thickness = (vertical ? col.hw : col.hh) * 2;
+        const pattern = getWallPattern(obstacle.def.styleType || 'cabin', ctx);
+
+        ctx.save();
+        ctx.translate(obstacle.x, obstacle.y);
+        if (vertical) ctx.rotate(Math.PI / 2);
+
+        // Two pixels of grounding separate timber from floor without making a
+        // standing wall. The source footprint itself stays the visible shape.
+        ctx.fillStyle = partition ? 'rgba(9, 6, 5, 0.20)' : 'rgba(7, 5, 5, 0.30)';
+        ctx.fillRect(-length / 2 + 2, -thickness / 2 + 3, length, thickness);
+        ctx.fillStyle = pattern || p.base;
+        ctx.fillRect(-length / 2, -thickness / 2, length, thickness);
+        if (pattern && obstacle.tint?.amt > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = Math.min(0.22, obstacle.tint.amt * 0.52);
+            ctx.fillStyle = obstacle.tint.color;
+            ctx.fillRect(-length / 2, -thickness / 2, length, thickness);
+            ctx.restore();
+        }
+
+        // Plan-view bevels plus visible end grain use one material language for
+        // the perimeter and the much thinner interior dividers.
+        ctx.fillStyle = p.top;
+        ctx.fillRect(-length / 2, -thickness / 2, length, Math.min(4, thickness));
+        ctx.fillStyle = p.edge;
+        ctx.fillRect(-length / 2, thickness / 2 - Math.min(5, thickness), length, Math.min(5, thickness));
+        ctx.fillRect(-length / 2, -thickness / 2, Math.min(4, length), thickness);
+        ctx.fillRect(length / 2 - Math.min(4, length), -thickness / 2, Math.min(4, length), thickness);
+        ctx.strokeStyle = p.edge;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-length / 2, -thickness / 2, length, thickness);
+        ctx.restore();
+        return true;
+    }
+
+    drawInteriorPartition(ctx, obstacle) {
+        return obstacle?.partition === true ? this.drawBlueprintWall(ctx, obstacle) : false;
     }
 
     _drawWindow(ctx, m, x, y, w, h, kind = 'square') {
@@ -401,6 +648,55 @@ export class StructureRenderer {
         if (s.styleType === 'cabin') {
             const peakX = mirror * (variant === 1 ? outHW * 0.18 : 0);
             const rise = 72 + variant * 10;
+            if (s.blueprint && s.state === 'ruined') {
+                // Exposed rafters replace the roof mass; the east breach below
+                // is simultaneously absent from collision/nav/LOS.
+                ctx.strokeStyle = m.roofDark;
+                ctx.lineWidth = 11;
+                ctx.lineCap = 'square';
+                ctx.beginPath();
+                ctx.moveTo(-outHW - 12, top + 20);
+                ctx.lineTo(peakX, top - rise + 8);
+                ctx.lineTo(outHW * 0.22, top + 18);
+                ctx.moveTo(-outHW * 0.64, top + 8);
+                ctx.lineTo(outHW * 0.46, top + 8);
+                ctx.stroke();
+                ctx.strokeStyle = m.roofLight;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(-outHW - 12, top + 17);
+                ctx.lineTo(peakX, top - rise + 5);
+                ctx.lineTo(outHW * 0.22, top + 15);
+                ctx.stroke();
+                return;
+            }
+            if (s.blueprint && s.state === 'damaged') {
+                // A missing east lean-to wedge changes the silhouette while
+                // retaining both authored escape doors.
+                ctx.fillStyle = m.roofDark;
+                ctx.beginPath();
+                ctx.moveTo(-outHW - 22, top + 14);
+                ctx.lineTo(peakX, top - rise);
+                ctx.lineTo(outHW * 0.48, top + 8);
+                ctx.lineTo(outHW * 0.30, top + 34);
+                ctx.lineTo(-outHW - 10, top + 34);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = m.roof;
+                ctx.beginPath();
+                ctx.moveTo(-outHW - 10, top + 10);
+                ctx.lineTo(peakX, top - rise + 8);
+                ctx.lineTo(peakX, top + 27);
+                ctx.lineTo(-outHW, top + 27);
+                ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = m.roofLight;
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(outHW * 0.33, top + 13);
+                ctx.lineTo(outHW * 0.54, top - 4);
+                ctx.lineTo(outHW * 0.43, top + 26);
+                ctx.stroke();
+                return;
+            }
             ctx.fillStyle = m.roofDark;
             ctx.beginPath();
             ctx.moveTo(-outHW - 22, top + 12);
@@ -584,6 +880,63 @@ export class StructureRenderer {
             ctx.quadraticCurveTo(mirror * outHW * 0.55, baseY - H * 0.55, mirror * outHW * 0.70, baseY - 18);
             ctx.stroke();
         }
+    }
+
+    _drawDamageDetails(ctx, s, m, baseY) {
+        if (!s.blueprint || (s.state !== 'damaged' && s.state !== 'ruined')) return;
+        const outHW = s.interiorW / 2 + s.wall;
+        const H = s.wallH;
+        ctx.save();
+        if (s.state === 'damaged') {
+            // The east facade is still a closed defensive shell, but its eave,
+            // brace, and window bay are visibly scorched and splintered.
+            ctx.fillStyle = 'rgba(22, 12, 12, 0.48)';
+            ctx.beginPath();
+            ctx.ellipse(outHW * 0.66, baseY - H * 0.48, 58, 70, 0.16, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#291813';
+            ctx.lineWidth = 9;
+            ctx.beginPath();
+            ctx.moveTo(outHW * 0.48, baseY - H * 0.82);
+            ctx.lineTo(outHW * 0.78, baseY - H * 0.16);
+            ctx.moveTo(outHW * 0.78, baseY - H * 0.76);
+            ctx.lineTo(outHW * 0.55, baseY - H * 0.36);
+            ctx.stroke();
+        } else {
+            // A full-height broken post and crossed collapse timbers frame the
+            // real disabled east wall. This is intentionally much stronger than
+            // the damaged scorch while collision/LOS/nav still come from that
+            // same authored wall's inactive state.
+            const breach = s.blueprint.doors?.find((entry) => entry.kind === 'breach');
+            const by = breach?.y ?? -108;
+            ctx.fillStyle = m.trimDark;
+            ctx.beginPath();
+            ctx.moveTo(outHW - 22, by - 104);
+            ctx.lineTo(outHW + 3, by - 96);
+            ctx.lineTo(outHW - 5, by - 18);
+            ctx.lineTo(outHW + 8, by + 14);
+            ctx.lineTo(outHW - 16, by + 96);
+            ctx.lineTo(outHW - 34, by + 74);
+            ctx.lineTo(outHW - 28, by - 72);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = m.roofDark;
+            ctx.lineWidth = 13;
+            ctx.lineCap = 'square';
+            ctx.beginPath();
+            ctx.moveTo(outHW - 78, by - 78);
+            ctx.lineTo(outHW + 52, by + 46);
+            ctx.moveTo(outHW - 58, by + 68);
+            ctx.lineTo(outHW + 62, by - 38);
+            ctx.stroke();
+            ctx.strokeStyle = m.roofLight;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(outHW - 72, by - 76);
+            ctx.lineTo(outHW + 48, by + 38);
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 }
 

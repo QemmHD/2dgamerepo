@@ -90,6 +90,9 @@ function normalizeStructures(source) {
     for (let i = 0; i < structures.length; i++) {
         const raw = structures[i];
         if (!raw || !Number.isFinite(raw.x) || !Number.isFinite(raw.y)) continue;
+        // Authored House V2 POIs own their focal prop/interaction and cannot
+        // also receive a random Hearth/Archive/Cache/Beacon in the same room.
+        if (raw.poiReservation) continue;
         const interiorW = finite(raw.interiorW);
         const interiorH = finite(raw.interiorH);
         if (interiorW < VIGIL_SITE_LIMITS.minInteriorW || interiorH < VIGIL_SITE_LIMITS.minInteriorH) continue;
@@ -139,6 +142,7 @@ export function vigilSiteSetpieceBusy(game) {
     // Boss Rush/Weekly Ember are continuous set pieces, including their short
     // prep windows; exploration rewards stay a standard/Daily/Rite-run verb.
     if (game.bossRush || game.arena || game.bossWarning || game.activeBossRef || game.lieutenantWarning) return true;
+    if (game.ruinBellDirector?.ownsStage?.()) return true;
     if (game.vigilEncounterBusy) return true;
     const encounterPhase = game.encounterDirector?.getSnapshot?.().phase;
     if (encounterPhase && encounterPhase !== 'idle') return true;
