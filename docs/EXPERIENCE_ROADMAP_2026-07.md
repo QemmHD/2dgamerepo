@@ -9,6 +9,24 @@ reconciles the current game with
 [The Long Vigil plan](MAJOR_UPDATE_PLAN.md), then sets a practical 30/60/90-day
 sequence.
 
+### House V2/Ruin Bell candidate boundary - 2026-07-15
+
+Candidate commit [`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837)
+on `feature/house-v2-ruin-bell`, based on `origin/main` at `3449a18`, is published in
+draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205) with the first original
+Emberwood House V2 cabin and Ruin Bell event. It is **not shipped**: hosted CI artifact,
+merge, Pages deployment, and public smoke are still open. All six named targeted
+local validators now pass, including 725 Ruin Bell encounter/defense/retry/reward-
+claim/UI/render/audio/dev checks; the full local gate is green at 36/36 validators plus
+Node/harness syntax, CI YAML parse, and diff check. Hosted and delivery proof remain open. Exact implemented
+behavior, reference-only image provenance, local validator results, eight-state visual
+gate, and delivery nonclaims are recorded in
+[`evidence/v1.1/house-v2-ruin-bell-candidate.md`](evidence/v1.1/house-v2-ruin-bell-candidate.md).
+
+This candidate changes no major-version status. House-kit multiplication, the complete
+six-event Waylight promise, the 100-seed/every-body/projectile/performance/device gates,
+1.0->2.0, every later arc, and the complete 1.0->10.0 roadmap remain open.
+
 ## Executive decision
 
 EMBERWAKE does not need another indiscriminate content dump. It already has a
@@ -68,7 +86,7 @@ bland maps, or unbalanced weapons.
 | Mobile high frame rate | Profile render interpolation, lighting/overdraw, and quality tiers; name the option **High Refresh** | 1.7 foundation, hardened in 3.8/7.8/9.8 | Fixed deterministic simulation and identical gameplay hashes at Standard/High Refresh; interpolated camera/entities; physical 60/90/120 Hz frame-pacing plus battery/thermal tests. Never promise 120 FPS because browser, display, power mode, and heat can limit cadence. |
 | Campaign unlock truth | **Shipped in PR #194:** save-v10 unique-per-map ledger, conservative legacy migration, centralized receipt/status UI, closed provenance, and a session-only credit-off `?dev=1` bypass. | 1.3 foundation shipped; extend through every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. Malformed current saves never regain lifetime-total access; QA bypass performs zero storage writes. |
 | Guided run tasks | **Shipped in PR #196:** seeded mode/capability-aware Orientation → Tactic → Climax director, one current task, exact progress/action/current potential coin reward, completed Run Path coins held for terminal settlement, terminal completed-phase Deeds XP, safe fallback, atomic coin-receipt ledger, active-task `O` recall, onboarding precedence, announcements, and responsive HUD. | Bounded 1.1 guidance foundation shipped; 1.3/later extension open | One current task shows progress, potential coin reward, and next action; impossible tasks cannot be selected. Debug Mode/`showDebug`, map bypass, and live debug actions disable Run Path coin settlement and objective-derived Deeds XP; `?dev=1`/QA alone does not. A non-terminal abort—including restart or pause-menu abandon—and reload forfeits held Run Path coins and never reaches objective-derived XP; a valid terminal resolution settles. Supported modes complete or substitute across the committed mode/capability/seed matrix. The 26 candidates shipped at main `5abd6fd` are a selection catalog, never 26 simultaneous chores. |
-| House V2 and map composition | One original Emberwood cabin blueprint plus macro-layout plan | 1.4, then packs/Atlas/Chronicle/Worldweave | One blueprint drives render, collision, nav, LOS, doors, spawn exclusion, room zones, roof cutaway, and damage state. The supplied rustic-house image informs room zoning/circulation only; no pixels or unverified art are copied. |
+| House V2 and map composition | **Local candidate, not shipped:** one original Emberwood cabin blueprint and one Ruin Bell event are implemented on `feature/house-v2-ruin-bell`; broader macro-layout and kit work remain planned | 1.4, then packs/Atlas/Chronicle/Worldweave | One blueprint drives render, collision, nav, LOS, doors, spawn exclusion, room zones, roof cutaway, and damage state. `C:\Downloads\IsZbjO.png` has no verified repository author/source/license and is reference-only for room zoning/circulation; no pixels, outline, palette, furniture coordinates, file copy, or other unverified art may ship. Preserve the green 36/36 local gate, then close hosted/evidence/delivery, 100-seed, every-body/projectile, performance, and device gates before promoting it. |
 | Graphics, boss models, wand VFX, and performance | Visual-noise budgets, boss silhouette/pose studies, frame/overdraw probes, one wand spectacle slice | 1.4–1.6, 3.3, 4.x, 6.x, definitive 9.x | Player, hostile tells, pickups, and objectives remain readable in grayscale, muted, reduced-effects, dense-swarm, phone, and minimum-tier captures; every effect stays inside particle/projectile/fill-rate budgets. |
 | Weapon classes, gear, and builds | Define player-facing Wand/Spellblade/Emberbow/Totem/Relic schema separately from runtime behavior kinds; graybox one missing class | Playable class slices in 2.x, 12-weapon expansion in 4.x, creator tools in 5.x, definitive balance in 9.x | Each class earns distinct control/targeting, upgrade path, VFX/SFX/access cues, gear interaction, and counter-build. Fixed-seed matrices and human runs show several viable archetypes and no universal best class. |
 | New maps, bosses, and minigames | Research briefs and one vertical slice at a time | Destination packs in 2.x; Forgeheart/story maps in 3.x; four-map waves in 4.x, 6.x, and 8.x | A map needs a routing verb, macro plan, three screenshot identities, House/POI chain, faction, formations, boss, score, build interaction, and perf/access proof. Minigames are non-wager mastery activities with deterministic scoring and no required power reward. |
@@ -773,6 +791,18 @@ reference informs spatial principles only—clear kitchen/hearth/dining/sleep/st
 zones and circulation around focal furniture. EMBERWAKE authors original geometry,
 palette, props, and pixels; no unverified reference art enters the repository.
 
+The current local candidate instantiates that contract as a 1.25-second bell dwell,
+460 px defend radius, six-second return grace, 3/4/4 role packages at 3.5/17/33
+seconds, earliest clear at 45 seconds, timeout at 60, and one retry after eight seconds.
+Stable IDs prevent defeated members from respawning on retry; partial placement becomes
+an attempt-preserving technical defer. A clear requests exactly +32 run XP plus one
+linked Chest-or-Wick-Shrine choice at authored sockets and zero direct coins; either
+failure path emits no completion reward. Claims are keyed by current Bell instance,
+stable reward id, and authored choice; generic/foreign/duplicate claims fail closed,
+and a valid claim removes the stale reward card while preserving cleared/lit art.
+These are implemented, targeted-validator-backed working-tree facts, not shipped,
+hosted, or deployed claims.
+
 1. A generated structure exposes a valid interaction point and safe approach; its
    door opening agrees across render, collision, nav, LOS, and spawn checks.
 2. Ringing the bell shows a clear risk/reward contract and starts a 45-60 second
@@ -793,6 +823,15 @@ The cabin gate includes same-state reference/final captures, 100 deterministic s
 all body/projectile sizes through each opening, roof transition readability, no spawn
 inside walls/furniture, and the 180-body frame budget. Only then does the kit multiply
 to other houses and biome materials.
+
+The candidate's authored CI matrix adds eight distinct receipts: arming, warning,
+crossfire at exact 667x375/touch/130%/Reduced Effects, breach at 130%/High Contrast,
+technical defer, clear, first failure, and final ruined state. Each must prove exact
+phase/house/attempt/member/role/objective/no-coin truth; clear must prove +32 XP and one
+Chest plus one Shrine choice, while failure states must prove neither reward exists.
+CI must verify exact PNG backing dimensions and eight unique hashes, followed by human
+review at original resolution. Until hosted CI and that review are recorded, this
+matrix is an authored gate rather than accepted visual evidence.
 
 ### P2.2 Deterministic simulation foundation
 

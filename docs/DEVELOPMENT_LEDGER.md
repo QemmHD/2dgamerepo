@@ -4,10 +4,10 @@
 evidence, and next action in the same PR as the work.
 
 **Last grounded:** 2026-07-15
-**Main baseline:** [`bbe2217`](https://github.com/QemmHD/2dgamerepo/commit/bbe2217c604816c0b22a6d8badb9a08585a9ab30) — merged [PR #203](https://github.com/QemmHD/2dgamerepo/pull/203), the bounded Collection Completion Truth and protected-transaction delivery
-**Active branch at grounding:** `docs/collection-completion-pr203-deploy` from `origin/main` at `bbe2217`; this branch records the shipped PR #203 boundary without promoting any broader milestone
+**Main baseline:** [`3449a18`](https://github.com/QemmHD/2dgamerepo/commit/3449a18cf4ada4eac0926f0259275fae558f622d) — documentation reconciliation [#204](https://github.com/QemmHD/2dgamerepo/pull/204) after the bounded PR #203 delivery; the latest shipped player feature remains `bbe2217`
+**Active branch at grounding:** `feature/house-v2-ruin-bell` at candidate commit [`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837), based on `origin/main` at `3449a18`; draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205) is open and the slice is not shipped
 **Latest shipped feature commit:** [`bbe2217`](https://github.com/QemmHD/2dgamerepo/commit/bbe2217c604816c0b22a6d8badb9a08585a9ab30)
-**Shipped ledger baseline before this tranche:** [`bbe2217`](https://github.com/QemmHD/2dgamerepo/commit/bbe2217c604816c0b22a6d8badb9a08585a9ab30); when this file is on `main`, its containing commit is the newer ledger truth
+**Shipped ledger baseline before this tranche:** [`3449a18`](https://github.com/QemmHD/2dgamerepo/commit/3449a18cf4ada4eac0926f0259275fae558f622d); when this file is on `main`, its containing commit is the newer ledger truth
 **1.1 foundation feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / merged [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
 **Product roadmap:** [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md)
 
@@ -245,6 +245,33 @@ not complete Collection Growth I, A11-13,
 full 1.1/1.2/1.6, Fair Forge, 2.0, 2.8, or either major arc. Exact hashes and limitations
 are recorded in [`evidence/v1.1/collection-completion-truth-pr203.md`](evidence/v1.1/collection-completion-truth-pr203.md).
 
+**House V2/Ruin Bell candidate - not shipped:** candidate commit
+[`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837)
+on `feature/house-v2-ruin-bell`, published in draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205), implements one original Last-Wick Cabin
+blueprint plus a deterministic Ruin Bell set piece. The current contract is wave-index
+3 unlock, 1.25-second focus dwell, a 460 px defend radius with six-second return grace,
+3/4/4 role packages at 3.5/17/33 seconds, earliest clear at 45 seconds, timeout at 60,
+one eight-second-cooldown retry, stable non-farmable member IDs, and exact all-or-none
+placement/technical defer. Success pays +32 run XP and one linked Chest-or-Wick-Shrine
+choice with zero direct coins; failure pays no completion reward. House state progresses
+through intact/lit/damaged/ruined truth and the final breach updates render, collision,
+LOS, grid, and navigation together. Four deterministic warning/escalation/clear/failure
+phrases quantize to the next tracker bar.
+
+At grounding, House V2 **901**, Ruin Bell **725**, navigation **73,773**, world
+**7,867**, Living Vigil integration **161**, and audio targeted validators exit 0. The
+Ruin Bell gate includes stable instance/reward-id/choice provenance, generic-loot and
+duplicate-claim rejection, both Chest/Shrine branches, exact runtime receipt, and
+post-claim no-stale-card truth while cleared/lit art remains. The full local gate is
+green at **36/36 validators** plus full Node syntax, harness-module syntax, CI YAML
+parse, and diff check. Hosted Chromium/Web Audio, eight unique PNG receipts, original-
+resolution review, performance/audio soak, merge, Pages, public
+smoke, and device/AT proof are unrecorded. Exact provenance,
+behavior, gates, and nonclaims are in
+[`evidence/v1.1/house-v2-ruin-bell-candidate.md`](evidence/v1.1/house-v2-ruin-bell-candidate.md).
+This row does not promote House V2 as a multi-kit system, full Waylight, 1.0->2.0, or
+any part of the 1.0->10.0 roadmap to shipped.
+
 **Developer Settings preservation:** `?dev=1` intentionally retains **Debug Mode**,
 **Unlock All Maps (testing)**, and the coin/item **CHEATS (TESTING)** controls inside
 Settings on desktop and phone while normal player URLs keep them gated. Unlock All Maps
@@ -298,12 +325,13 @@ link back to its acceptance metrics before shipping.
 | V1-PROG | Chapters/cosmetics/save | `[~] IN FLIGHT` | LV-03 Waylight/progression, PR #196 atomic Run Path settlement, PR #198/#200 Collection Growth I-A/I-B, and PR #203's completion/category/set/source receipts plus additive save-v10 `blueprintClaims` are shipped | Preserve Waylight, Run Path settlement, all-103 source truth, additive save-v10 migrations, and the selected-hero compatibility mirror. Add the permanent chapter shelf and export/recovery; do not recreate I-B or promote full Collection Growth I/2.8. | LV-03; PR #196; PR #198; PR #200; PR #203/main `bbe2217`; main CI `29387784394`; Pages `29387784422` |
 | V1-GUIDANCE | Guided Run Path | `[x] SHIPPED` | Exactly one deterministic current task is active at a time as the path advances Orientation → Tactic → Climax from the 26 candidates shipped at main `5abd6fd`; first-run onboarding owns the lane before the director starts. The active card shows exact progress/action/current potential coin reward; completed Run Path coins are held for terminal settlement, and eligible completed-phase Deeds XP is derived separately at terminal. Safe elapsed-time fallback, active-task `O` recall, announcements, one guidance owner, and bounded save-v10 coin receipts are integrated. | Preserve **93,139** objective checks, **14,001/180** HUD checks, the all-26 static wide-font next-action gate, seven representative Chromium scenarios, held Run Path coin authority, and terminal objective-count XP derivation. `?dev=1`/QA alone does not disable Run Path coin settlement or objective-derived XP; Debug Mode/`showDebug`, map bypass, and live debug actions do. A non-terminal abort—including restart or pause-menu abandon—and reload forfeits held Run Path coins and never reaches objective XP; a valid terminal resolution settles. Add candidates only with reachable metric/capability and settlement fixtures; do not flatten the catalog into simultaneous chores. | PR [#196](https://github.com/QemmHD/2dgamerepo/pull/196); main [`5abd6fd`](https://github.com/QemmHD/2dgamerepo/commit/5abd6fd1e0c5e06652a244951cb282d973a23f3c); PR CI `29363043049`; main CI `29363172352`; Pages `29363172362` |
 | V1-CAMPAIGN | Exact map unlocks | `[x] SHIPPED` | Save-v10 ledger records the three unique authored bosses per map; only eligible map-director deaths count; every menu, launch, victory, share-card, accessibility, migration, and QA path consumes the same receipt/predicate. | Preserve the **319** exact-gate checks, **40,960** corruption/idempotence probe, provenance/canonical-death fixtures, all-six-permutation coverage, and session-only `?dev=1` bypass; keep its authority independent from the separately shipped V1-GUIDANCE receipts. | PR #194; main `b1113cf`; PR CI `29342507445`; main CI `29342595438`; Pages `29342595535` |
-| V1-TACTICS | Encounters/enemies/navigation | `[~] IN FLIGHT` | LV-02 formations shipped | Preserve the twelve formation and navigation fixtures; implement role budgets, door tactics, and bounded stuck recovery next. | LV-02 |
+| V1-TACTICS | Encounters/enemies/navigation | `[~] IN FLIGHT` | LV-02 formations shipped; draft PR #205's Ruin Bell candidate adds six role labels, door/room/combat sockets, a charger lane, all-or-none wave placement, and House V2 route/stress fixtures | Preserve the twelve shipped formations and the candidate's stable member/route provenance. Keep the **725** targeted Bell checks green, then pass hosted visual/runtime and broader enemy-role gates before calling the tactic slice delivered. | LV-02; PR #205; [`house-v2-ruin-bell-candidate.md`](evidence/v1.1/house-v2-ruin-bell-candidate.md) |
+| V1-HOUSE-BELL | House V2/Ruin Bell vertical slice | `[~] IN FLIGHT` | LV-01/LV-02 foundations, shared guidance lane, adaptive score, and House V2 blueprint compiler | Candidate commit `04e1c96` and the complete **36/36** validator/syntax/YAML/diff gate are published in draft PR #205. Run hosted Chromium/Web Audio and eight-receipt gates; review original-resolution captures; then merge, deploy, and reconcile before saying shipped. Preserve reward claim/no-stale-card truth, the reference-only image rule, and keep 100-seed/every-body/projectile/performance/device gates open until separately proven. | Candidate `04e1c96` based on `3449a18`; draft PR #205; Ruin Bell **725**; local validators **36/36**; [`candidate evidence`](evidence/v1.1/house-v2-ruin-bell-candidate.md); hosted CI/artifact pending |
 | V1-BOSS | Boss choreography | `[ ] PLANNED` | V1-TACTICS collision truth | Rebuild one boss-family vertical slice: opener/phase/desperation/arena/scaling. | — |
-| V1-WORLD | Houses/maps/POIs | `[~] IN FLIGHT` | LV-01 four-site foundation shipped | Preserve the four Vigil-site fixtures; implement one modular house plus a six-event POI vertical slice next. | LV-01 |
+| V1-WORLD | Houses/maps/POIs | `[~] IN FLIGHT` | LV-01 four-site foundation shipped; one House V2 cabin/Ruin Bell candidate exists locally but is not delivered | Preserve the four Vigil-site fixtures; finish and deliver the single-cabin candidate. Do not multiply house kits or count the Ruin Bell as the still-open six-event POI promise until its complete gate passes. | LV-01; V1-HOUSE-BELL |
 | V1-HUD | Combat readability | `[~] IN FLIGHT` | LV-05 HUD/site/pack foundation plus PR #196's sole guidance-owner card, exact body/bar/footer lanes, 667×375 field/boss rails, 1280×581/720 wide-font proof, High Contrast, and Reduced Effects integration shipped | Preserve the Run Path/Living Vigil ownership and responsive action/reward completion receipts; the constrained boss edge rail intentionally omits secondary title/context. Add death-source/debrief receipts and complete physical-device/AT/zoom proof. | LV-05; PR #196; HUD **14,001/180** |
-| V1-AUDIO | Adaptive score/mix | `[~] IN FLIGHT` | Stable event vocabulary | Preserve the shipped 3 tracker menus + recorded feature, 2 songs/biome, 4 boss suites, independent Music/SFX/Voice buses, live mono switching, and mute-safe voice ducking; extend the graph/180-second continuity proof to the planned 30-minute physical-device background/restore soak. | PR #183; PR #190; LV-06 |
-| V1-ART | Heroes/bosses/houses | `[~] IN FLIGHT` | PR #192 shipped the six-hero deterministic Blender/animated-attachment foundation; PR #198 added eight I-A looks/two sets; PR #200 added I-B's 30 pieces/six sets, procedural fur materials, and full preview/live parity | Preserve the 18-sheet install manifest, exact head/shoulder/hand pose contract, protected face/accent classifier, bounded appearance cache, genuine silhouette/effect parity, Reduced Effects freeze, and six-hero browser matrix. Do not recreate I-B; produce the 12 boss identity sets and first modular House V2 kit next. | PR #192/main `e8ec79f`, historical **4,387** gate; PR #198/main `454e944`, **5,268**; PR #200/main `a34baca`, current **7,332** across 162 frames/810 points |
+| V1-AUDIO | Adaptive score/mix | `[~] IN FLIGHT` | Stable event vocabulary; the local Ruin Bell candidate adds deterministic warning/escalation/clear/failure tracker phrases | Preserve the shipped 3 tracker menus + recorded feature, 2 songs/biome, 4 boss suites, independent Music/SFX/Voice buses, live mono switching, and mute-safe voice ducking. Prove the candidate's next-bar/bounded/fallback contract in hosted Web Audio and complete the planned 30-minute physical-device background/restore and mix-mask soak. | PR #183; PR #190; LV-06; V1-HOUSE-BELL |
+| V1-ART | Heroes/bosses/houses | `[~] IN FLIGHT` | PR #192 shipped the six-hero deterministic Blender/animated-attachment foundation; PR #198 added eight I-A looks/two sets; PR #200 added I-B's 30 pieces/six sets, procedural fur materials, and full preview/live parity; one original House V2 cabin/prop candidate now exists locally | Preserve the 18-sheet install manifest, exact head/shoulder/hand pose contract, protected face/accent classifier, bounded appearance cache, genuine silhouette/effect parity, Reduced Effects freeze, and six-hero browser matrix. Validate/publish the first cabin without copying the unlicensed reference, then produce the still-open 12 boss identity sets and later modular kits. | PR #192/main `e8ec79f`, historical **4,387** gate; PR #198/main `454e944`, **5,268**; PR #200/main `a34baca`, current **7,332** across 162 frames/810 points; V1-HOUSE-BELL local candidate |
 | V1-OFFLINE | PWA/native candidate | `[ ] PLANNED` | V1-UX/V1-INPUT/V1-AUDIO/save portability | Service worker/update rollback, adapters, Capacitor candidate and store-policy matrix. | — |
 | V1-SHIP | 2.0 convergence | `[ ] PLANNED` | All V1 epics | Run 20 external first sessions and 2.0 cross-pillar ship gate. | — |
 
@@ -565,12 +593,15 @@ Update this block’s facts in the affected rows; do not merely append prose.
    157**, Blueprint **291**, attachment **7,332**, progression **5,892**, Run Path
    **93,140**, HUD **14,001/180**, gambling **674**, accessibility **310 + 125 save**,
    **34/34** validators, and syntax **183/183**.
-4. **Begin House V2/Ruin Bell next.** Preserve PR #192's
+4. **Finish and publish the House V2/Ruin Bell candidate next.** Preserve PR #192's
    pose/install/browser contract and PR #198/#200 paging, reachability, source,
    attachment, preset, atomicity, Reduced Effects, and no-power contracts, plus PR #203's
-   completion/Blueprint/protected-transaction boundary. Build one original Emberwood
-   cabin and one 45–60 second Ruin Bell encounter through shared render/collision/nav/
-   LOS/door/spawn/room/roof truth. Keep A11-11's tutorial/debrief moving in parallel; the
+   completion/Blueprint/protected-transaction boundary. The local branch now contains one
+   original Emberwood cabin and one 45-60 second Ruin Bell candidate through shared
+   render/collision/nav/LOS/door/spawn/room/roof truth, but it is not shipped. Preserve
+   the full green local gate, then pass the hosted/evidence/delivery gates in
+   V1-HOUSE-BELL, and reconcile the merge/deploy before multiplying content. Keep
+   A11-11's tutorial/debrief moving in parallel; the
    permanent chapter shelf, export/recovery, device/AT proof, High Refresh, new maps/
    classes, and full Fair Forge acceptance remain separate rows.
 
@@ -578,6 +609,7 @@ Update this block’s facts in the affected rows; do not merely append prose.
 
 | Date | Session/branch | Rows changed | Evidence | Next owner action |
 | --- | --- | --- | --- | --- |
+| 2026-07-15 | House V2/Ruin Bell candidate publication / `feature/house-v2-ruin-bell` | Added V1-HOUSE-BELL `[~] IN FLIGHT`; grounded one shared cabin blueprint, exact defense/timeline/retry/reward and claim provenance, role-aware navigation, adaptive event phrases, and the eight-state visual gate without claiming delivery or a completed major arc | Candidate [`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837) based on `3449a18`; draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205). House V2 **901**, Ruin Bell **725**, navigation **73,773**, world **7,867**, Living Vigil integration **161**, and audio targeted gates pass. The complete local gate is **36/36 validators** plus Node/harness syntax, CI YAML parse, and diff check. Reward claim proof rejects foreign/generic/duplicate claims, accepts both authored branches, records the choice, and removes stale objective truth. Hosted CI/artifact/merge/deploy remain open. Durable candidate record: [`evidence/v1.1/house-v2-ruin-bell-candidate.md`](evidence/v1.1/house-v2-ruin-bell-candidate.md) | Run hosted Chromium/Web Audio/eight-PNG gates; review originals; then merge, deploy, public/`?dev=1` smoke, and reconcile exact delivery identity. Keep 1.0->10.0 incomplete. |
 | 2026-07-13 | Roadmap expansion / `agent/living-vigil-content-update` | Created ledger; grounded VH-01 and LV-01–LV-08; planned V1–V9 registers through 10.0 | Main `9bb1ca2`, PR #184, working-tree source/validator anchors | Completed by the 1.0.2 delivery reconciliation below. |
 | 2026-07-13 | Evidence/count audit / `agent/living-vigil-content-update` | Grounded LV-01–LV-08 evidence; added menu row; raised Shared Flame, Rekindling, and Living Chronicle to the 46-addition floor | Eight targeted validators exit 0: **7,220 total checks** (HUD includes 36 scenarios); durable evidence index at [v1.0.2](evidence/v1.0.2/README.md); full local gate green at that boundary | Completed by the 1.0.2 delivery reconciliation below. |
 | 2026-07-13 | Draft publication / `agent/living-vigil-content-update` | Committed and pushed the verified 1.0.2 tranche; opened draft PR #185 | Feature `53db829`; ledger `377ad9b`; draft PR [#185](https://github.com/QemmHD/2dgamerepo/pull/185) | Completed by the 1.0.2 delivery reconciliation below. |
