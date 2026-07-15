@@ -58,6 +58,7 @@ export function buildUIState(game) {
         // Menu state consumed by MenuRenderer.
         base.menuTab = game.menuTab;
         base.settingsPane = game.settingsPane === 'accessibility' ? 'accessibility' : 'general';
+        base.characterPhonePane = game.characterPhonePane === 'rites' ? 'rites' : 'collection';
         // One campaign snapshot owns Home, Play, accessibility labels, launch
         // validation, and the session-only QA view. Renderers never infer map
         // access from lifetime stats or raw persisted selection again.

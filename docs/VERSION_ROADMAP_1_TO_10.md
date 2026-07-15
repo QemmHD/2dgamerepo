@@ -93,8 +93,8 @@ definitions, 12 bosses, 40 weapons, 11 evolutions, 15 fusions, 20 passives, 11
 roads, 26 relics, 14 pacts, 10 keystones, 18 rites, 21 gear pieces, 65 cosmetics in
 7 complete sets, 50 battle-pass levels, Daily Road, Rite Trial, Boss Rush, Weekly
 Ember, photo mode, recap cards, adaptive music, touch controls, and four generated
-structure styles. Current main `454e944` contains 73 cosmetics in 9 complete sets
-after the bounded Collection Growth I-A delivery described below.
+structure styles. Current main `a34baca` contains 103 cosmetics in 15 complete sets
+after the bounded Collection Growth I-A/I-B deliveries described below.
 
 The baseline is deep enough. Its weaknesses are cohesion and product finish:
 
@@ -163,8 +163,7 @@ convergence, or full 1.1. Exact evidence and remaining gates live in the ledger.
 
 **2026-07-14 shipped gameplay foundations:** [PR #192](https://github.com/QemmHD/2dgamerepo/pull/192)
 delivered the deterministic six-hero body/pose/attachment foundation at main `e8ec79f`;
-the separate first 30-look Collection Growth I-B pack, boss identities, and house kit
-remain open. [PR #194](https://github.com/QemmHD/2dgamerepo/pull/194)
+boss identities and the House V2 kit remain open. [PR #194](https://github.com/QemmHD/2dgamerepo/pull/194)
 delivered the save-v10 exact campaign-map gate at main `b1113cf`: three unique authored
 predecessor bosses, eligible map-director provenance, conservative legacy migration,
 fail-closed corruption repair, receipt-driven UI/victory/accessibility, and a
@@ -182,13 +181,23 @@ styles raised the inventory from 65 to 73 and complete sets from 7 to 9; determi
 8-item paging plus category/ownership/source filters and stable obtain routes make all
 73 cosmetics reachable; Collection and Boutique use the shared pose resolver while case
 reels render actual item silhouettes/effects; unknown grants fail closed; and cosmetics
-remain visual-only. This enabling
-slice does not complete 1.6, 1.1, 2.0, or reduce Collection Growth I-B's separate
-30-look pack.
+remain visual-only. This enabling slice does not complete 1.6, 1.1, or 2.0, and its
+eight looks did not reduce I-B's then-separate 30-look commitment.
+
+[PR #200](https://github.com/QemmHD/2dgamerepo/pull/200) then delivered bounded
+Collection Growth I-B at main `a34baca`: thirty genuine pieces across Kilnheart,
+Rimeglass, Thorncrown, Stormglass, Sunscar, and Gravebell raised the catalog from 73
+to 103 cosmetics and from 9 to 15 complete sets. Six per-hero presets, additive
+save-v10 migration, atomic full-look purchase/equip, persistent pursuit, owned/set/
+match totals, honest deterministic/random source guidance, protected procedural fur,
+and distinct cloak/hat/aura/trail rendering pass the **7,332-check** attachment gate.
+Cosmetics remain visual-only; Battle Pass/achievement rewards, case costs/odds/pity/
+unowned weighting, Mines stakes, and the 93% return did not change. This fulfills I-B
+only—not complete Collection Growth I, 1.1, 1.6, 2.0, or 2.8.
 
 ### 2026-07-14 additive scope allocation — staged delivery status
 
-The following work expands the roadmap and records the four shipped foundations above;
+The following work expands the roadmap and records the five shipped foundations above;
 every other capability remains partial or planned until its own acceptance passes. It
 does not inflate the existing
 46–60-addition contracts with recolors, refactors, or test fixtures. Wands remain the
@@ -197,7 +206,7 @@ without turning EMBERWAKE into a generic sword game.
 
 | Capability | First complete proof | Expansion arc | Acceptance before the roadmap may call it shipped |
 | --- | --- | --- | --- |
-| Cosmetic attachment rig and genuine collection growth | 1.6 rig shipped in PR #192; bounded 8-look reachability/source slice shipped as Collection Growth I-A in PR #198; Collection Growth I-B remains open | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows idle/walk/cast/hurt/dash/death/victory frames in every direction; no layer drifts from its pose-local anchor while the body animates. The future first 30-look silhouette/material pack is a separate I-B commitment: I-A's eight enabling looks neither count toward nor reduce it. It retains paging, filters, source labels, set preview, and no power. |
+| Cosmetic attachment rig and genuine collection growth | 1.6 rig shipped in PR #192; I-A reachability/source slice in PR #198; I-B's separate 30-piece/six-set pack, presets, pursuit, and atomic look transactions in PR #200 | 2.8, 4.6, 6.4, 9.7 | Gameplay and previews share one pose resolver with head, shoulders, hands, chest, and back anchors. Every equipped item follows every authored state/direction; no layer drifts while the body animates. Preserve the 103-item paging/filter/source contract, **7,332-check** attachment gate, genuine material/silhouette standard, visual-only rule, and save-v10 migration. Collection Completion Truth/Blueprint work and later destination sets remain open; do not recreate I-B. |
 | Mobile High Refresh mode | 1.7 | 3.8, 7.8, 9.8 | Settings says **High Refresh**, never promises 120 FPS. Simulation remains fixed and deterministic; interpolated render state is proven for camera and all high-motion entities; Standard and High Refresh produce the same gameplay hash. 90/120 Hz physical-device, battery/heat, backgrounding, reduced-effects, and fallback tests pass before store copy mentions supported high-frame-rate play. |
 | Exact campaign map unlocks | 1.3 foundation shipped in PR #194 | 2.7 onward | A destination unlocks only after the three unique authored bosses of its immediate predecessor are defeated in an eligible campaign run. Repeats, wrong-map bosses, Practice, Daily, Weekly, Rite Trial, and Boss Rush grant no campaign credit. Legacy unlocked maps migrate without relocking; malformed current ledgers fail closed; `?dev=1`/`unlockMaps` is session-only QA state and never writes false campaign progress. |
 | Guided, completable run objectives | Bounded 1.1 guidance foundation shipped in PR #196; 1.3 extension open | 2.1, 3.1, 4.5 | One current task moves through Orientation → Tactic → Climax with progress, current potential coin reward, next action, held Run Path coin settlement, and separately derived terminal completed-phase Deeds XP. The seeded director filters by mode, available systems, and finite capacity; invalid tasks substitute deterministically; coin receipts are atomic and idempotent. Supported modes complete or cleanly substitute across the committed mode/capability/seed matrix; later map-specific tasks and modes must add explicit fixtures. |
@@ -273,7 +282,7 @@ acceptance metric is met; an incomplete row ships under its current version numb
 | 2.5 | Two-Keeper | Two-player primary loop and 30-minute swarm/boss soak; independent remaps, drop-in/out, revive, and non-color identity cues pass. |
 | 2.6 | Archive Seasons | A chapter can be started, switched, completed, left for 90 simulated days, and resumed with no expired reward or punitive catch-up curve. |
 | 2.7 | Known-Content Packs | Install/remove/upgrade fixtures for every pack; exact product manifest; base save survives missing or downgraded optional content. |
-| 2.8 | Roster and Mastery | 2 gap-filling heroes, first 30-look silhouette pack, proven weapon-class/gear slices, authored Chronicle paths, sidegrade-only mastery, and bounded Blueprint import/export. |
+| 2.8 | Roster and Mastery | 2 gap-filling heroes, Collection Completion Truth/Blueprint work on PR #200's early-shipped 30-piece I-B substrate, proven weapon-class/gear slices, authored Chronicle paths, sidegrade-only mastery, and bounded Blueprint import/export. The I-B delivery alone does not promote 2.8. |
 | 2.9 | Common Hearth | Four local profiles, portable Hearth Bundles, private share surfaces, and a no-reward Memory Theatre with caption/audio/motion controls all pass network-blocked completion. |
 | 3.0 | The Shared Flame | 46 additions; determinism, ghost, couch, chapter, camp, and removable-pack gates pass together; at least 8 heroes and 6 mechanically distinct maps. |
 | 3.1 | Ember Pilgrimage | Complete deterministic 3-act expedition with consequences, recoverable sidegrade rewards, suspend/resume at every interlude, branch replay, and one-action Standard Run. |
@@ -538,6 +547,13 @@ captures one second apart keep decorative UI stable.
 - Add source filters: Pass, Cases, Boutique, Achievement, Boss, Rite, Map, and Set.
 - Make case odds, pity progress, duplicate conversion, and unowned weighting readable
   on one screen before opening.
+- Resolve PR #200's explicit Gravebell watchpoint before calling collection balance
+  complete. Its case-only Mythic `aura_requiem` currently has no deterministic ceiling:
+  1.5% Royal Mythic odds × 82% item branch and eight eligible Mythics imply about
+  365.9 cases/329,000 gross coins for a named target from a fresh pool, or about
+  81.3 cases/73,000 gross coins when it is the last unowned Mythic. Rare+ pity neither
+  targets Mythic nor caps that named-item tail. Decide an honest Blueprint/direct-price
+  ceiling without silently changing the shipped odds, pity, or Mines economy.
 - Replace misleading reel near-miss offsets with a reel that represents its real
   result neighborhood; keep anticipation through timing, lighting, audio, and a
   skippable reveal.
@@ -717,9 +733,14 @@ cloak/hat/aura/trail styles form Lanternward and Duskmoth sets, raising the coll
 to 73 cosmetics and 9 complete sets. Deterministic 8-item browsing, category/ownership/
 source filters, stable obtain routes, attachment-safe Collection/Boutique previews,
 actual case-reel silhouettes/effects, reduced-effects freezes, and fail-closed grants
-passed the current **5,268-check**
-attachment gate. The separate Collection Growth I-B 30-look pack, boss rebuilds, weapon
-taxonomy, and house kits remain open, so 1.6 is not complete.
+passed the then-current **5,268-check** attachment gate.
+
+**Delivered bounded Collection Growth I-B (PR #200/main `a34baca`):** thirty genuine
+pieces across six coherent sets raise the collection to 103 cosmetics/15 sets. Six
+per-hero presets, additive save-v10 migration, atomic look buy/equip, persistent pursuit,
+exact source partitions, protected procedural fur, and distinct cloak/hat/aura/trail
+rendering pass the current **7,332-check** attachment gate across 162 frames/810 points.
+Boss rebuilds, weapon taxonomy, and House V2 kits remain open, so 1.6 is not complete.
 
 - Preserve the six distinct Blender hero bodies on the shared 27-frame contract: idle,
   blink, three-step walk, cast, hurt, death, and victory in down/up/side.
@@ -752,8 +773,9 @@ fallbacks remain; source/rights are recorded; no new art breaks canonical palett
 An all-state/all-direction contact sheet and live capture prove that every equipped
 cosmetic follows the body, and Collection preview uses the same attachment resolver.
 Future bulk cosmetic production must keep that gate green and ship genuine silhouettes,
-not a recolor count presented as new variety. I-A's eight enabling looks do not count
-toward or reduce I-B's separate 30-look silhouette/material pack.
+not a recolor count presented as new variety. PR #200 fulfilled I-B's unreduced 30-piece
+commitment; later work preserves its quality/source/migration gates rather than
+recreating or double-counting it.
 
 ## 1.7 — ForgeGrip and Native Candidate
 
@@ -812,8 +834,9 @@ and fallback truth before any store-facing high-frame-rate claim.
 **2.0 ship gate:** 20 external first-session tests; 80% start a guided run without
 help, 70% identify the death cause, 90% find the next goal, zero save-loss defects,
 zero P0 accessibility blockers, and stable 30/60 FPS tiers on the defined device lab.
-The cosmetic attachment, boss-ledger, and bounded objective-substitution foundations
-are shipped, but their later-content extension gates, House V2, and fixed-simulation
+The cosmetic attachment/Collection Growth I-A/I-B, boss-ledger, and bounded objective-
+substitution foundations are shipped, but their later-content extension gates, House V2,
+and fixed-simulation
 High Refresh gates above must also pass; a 120 FPS promise is not required.
 
 ---
@@ -849,8 +872,8 @@ commitment.
 7. **Permanent Archive Chapters:** selectable non-expiring Battle Pass stories with
    weather, clauses, bosses, camp sets, cosmetics, lore, and rested progress.
 8. **Arsenal, collection, and store 2.0:** separate Known/Random/Earned shelves,
-   collection planner fulfillment, a first 30-look genuine-silhouette expansion on the
-   proven attachment rig, class/gear source routing, exact case pool completion,
+   collection planner/Blueprint fulfillment on the 30-piece I-B substrate pulled forward
+   in PR #200, class/gear source routing, exact case pool completion,
    deterministic duplicate redemption, a shareable Blueprint Desk for saved builds,
    and no random paid content.
 9. **Static content-pack/DLC platform:** versioned manifests, stable ids, checksums,
@@ -995,12 +1018,12 @@ its save records degrade to named placeholders rather than deleting unrelated pr
 ## 2.8 — Roster and Mastery
 
 - Add two monkey heroes only after their signatures fill real playstyle gaps.
-- Ship the first 30 genuinely distinct cosmetic looks only after the 1.6 attachment
-  validator is green. Require silhouette/material changes, collection paging, hero/set/
-  source filters, shared gameplay/preview anchors, and complete source metadata; palette
-  swaps alone do not satisfy the pack. This is Collection Growth I-B's separate 30-look
-  commitment; the eight enabling looks already shipped in I-A neither count toward nor
-  reduce it.
+- Preserve PR #200's early-shipped 30-piece Collection Growth I-B proof: genuine
+  silhouette/material changes, collection paging, hero/category/ownership/source
+  filters, per-hero presets, pursuit, shared gameplay/preview anchors, atomic look
+  transactions, and complete source metadata. This fulfills the pack but not 2.8;
+  Collection Completion Truth, Blueprint import/export, heroes, mastery, and Chronicle
+  work below remain open.
 - Promote each missing player-facing weapon class only through a complete vertical
   slice: base weapon, upgrade path, class-specific control/auto-target behavior,
   signature VFX/SFX, non-color cues, new sidegrade gear, and a fixed-seed balance card.
@@ -1718,11 +1741,12 @@ Release scorecard:
 5. Produce one House V2 Emberwood cabin/Ruin Bell vertical slice while 1.3 enemy roles
    navigate and fight through it; do not mass-produce house art before shared render,
    collision, nav, LOS, door, spawn, room, and roof truth passes.
-6. Continue Collection Growth I-B next: preserve PR #192's shipped attachment resolver,
-   PR #198's 73-item reachability/source truth, and all-state/all-direction proofs.
-   Deliver I-B's separate 30-look silhouette/material pack only through that pose/install
-   contract, with source labels, paging/filter proof, and no power; I-A's eight enabling
-   looks do not count toward or reduce those 30.
+6. Build Collection Completion Truth next; do not recreate I-B. Preserve PR #192's
+   attachment resolver and PR #198/#200's all-103 reachability/source/paging, six-hero
+   preset migration, pursuit, atomic look transaction, all-state/all-direction, Reduced
+   Effects, and no-power proofs. Add broader completion analytics/receipts and decide an
+   explicit Blueprint/direct-price ceiling for random-only Mythics without changing
+   currency, case odds/pity, Mines, Battle Pass, or promoting broader 2.8.
 7. Complete audio lifecycle/mix gates, one Blender boss-family batch, and one bounded
    wand/weapon-class spectacle slice with grayscale/reduced-effects/performance proof.
 8. Add Gamepad/PWA; profile lighting/fill rate and finish deterministic interpolation

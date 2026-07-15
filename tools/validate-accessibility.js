@@ -377,6 +377,39 @@ ok(paneFocusResets === 6
     && paneAnnouncements.slice(2).every((message) => message === 'General settings.'),
 'every invalid Settings pane resets focus and announces the sanitized General screen');
 
+// Phone Character's nested Hero Rites pane follows the same semantic-screen
+// and focus-scope contract, while remaining independent of relic ATTUNE.
+const phonePaneScreenStart = paneScreens.length;
+const phonePaneAnnouncementStart = paneAnnouncements.length;
+const phonePaneFocusStart = paneFocusResets;
+paneRouteGame.characterPhonePane = 'collection';
+GameInputActionMethods._menuAction.call(paneRouteGame, 'characterPhonePane', 'rites');
+ok(paneRouteGame.characterPhonePane === 'rites'
+    && paneFocusResets === phonePaneFocusStart + 1,
+'Hero Rites pane route resets the Character focus scope');
+ok(paneScreens[phonePaneScreenStart]?.[0] === 'start'
+    && paneScreens[phonePaneScreenStart]?.[1] === 'Hero Rites and Attunement.'
+    && paneAnnouncements[phonePaneAnnouncementStart] === 'Hero Rites and Attunement.',
+'Hero Rites pane route announces its semantic screen');
+GameInputActionMethods._menuAction.call(paneRouteGame, 'characterPhonePane', 'collection');
+ok(paneRouteGame.characterPhonePane === 'collection'
+    && paneScreens.at(-1)?.[1] === 'Character Collection.'
+    && paneAnnouncements.at(-1) === 'Character Collection.',
+'Hero Rites back route announces Character Collection');
+GameInputActionMethods._menuAction.call(paneRouteGame, 'characterPhonePane', '__invalid__');
+ok(paneRouteGame.characterPhonePane === 'collection',
+    'invalid Character pane fails closed to Collection');
+ok(gameSource.indexOf("this.characterPhonePane === 'rites'") >= 0
+    && gameSource.indexOf("this.characterPhonePane === 'rites'")
+        < gameSource.indexOf("this.menuTab !== 'home'"),
+'phone Hero Rites Escape is handled before the generic section-to-Home escape');
+includesAll(menuSource, [
+    "accessibleLabel: 'Open Rites and Hero Attunement'",
+    "accessibleLabel: 'Back to Character Collection'",
+    "action: 'characterPhonePane', arg: 'rites'",
+    "action: 'characterPhonePane', arg: 'collection'",
+], 'phone Character pane accessibility labels');
+
 const menu = new MenuRenderer({ safeArea: { top: 0, right: 0, bottom: 0, left: 0 } });
 menu._hot(10, 20, 100, 44, 'tab', 'play', 'Run setup');
 menu._hot(10, 70, 100, 44, 'tab', 'play', 'Run setup copy');
@@ -398,6 +431,34 @@ includesAll(menuSource, [
     'hotspot.label',
     'this.hotspots = []',
 ], 'MenuRenderer semantic hotspot/focus contract');
+
+// The visible helper may be wider than a small segmented hotspot, but it must
+// remain inside the safe canvas and preserve the full accessible label when
+// there is room. This catches the former "FOCUS · Show aura B..." clipping.
+const focusMenu = new MenuRenderer({ safeArea: { top: 0, right: 0, bottom: 0, left: 0 } });
+focusMenu._hot(1860, 400, 40, 44, 'collectionSource', 'achievement',
+    'Show achievement cosmetics in the Collection');
+const focusRects = [];
+const focusText = [];
+const focusCtx = {
+    font: '', fillStyle: '', strokeStyle: '', lineWidth: 1,
+    textAlign: '', textBaseline: '',
+    save() {}, restore() {}, beginPath() {}, stroke() {}, fill() {},
+    roundRect(x, y, w, h, r) { focusRects.push({ x, y, w, h, r }); },
+    measureText(value) { return { width: String(value ?? '').length * 8 }; },
+    fillText(value) { focusText.push(String(value)); },
+};
+focusMenu._drawKeyboardFocus(focusCtx, {
+    menuFocusVisible: true,
+    menuFocusKey: focusMenu.hotspots[0].key,
+    saveData: { settings: { highContrast: false } },
+});
+const focusLabelRect = focusRects.at(-1);
+ok(focusLabelRect.x >= 8 && focusLabelRect.x + focusLabelRect.w <= 1912,
+    'keyboard focus helper escapes the horizontal safe canvas');
+ok(focusLabelRect.w > focusMenu.hotspots[0].w
+    && focusText.at(-1).includes('Show achievement cosmetics in the Collection'),
+'keyboard focus helper still truncates a readable label to hotspot width');
 
 // Active modality is a real-input state machine, not a touch-capability alias.
 const oldWindow = globalThis.window;

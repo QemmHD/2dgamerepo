@@ -143,20 +143,25 @@ for all enemy/creature art:
   opening `?dev=1` or running the QA harness does not. A non-terminal abort—including
   restart or pause-menu abandon—and reload forfeits held Run Path coins and never
   reaches objective-derived terminal XP; a valid terminal resolution settles.
-- Collection Growth I-A: shipped by main `454e944`; `src/content/cosmetics.js` remains
-  catalog/source truth and `src/systems/CosmeticCollection.js` owns deterministic
-  eight-item category/ownership/source pages for all 73 cosmetics and nine sets.
-  `MenuRenderer.js`/`GameInputActions.js` own paged Collection/Boutique presentation and
-  focus-safe Character → Boutique routing; `CaseSystem.js` consumes the same exclusions.
-  Lanternward's four new pieces are Boutique-only, Duskmoth Court's four are case-only,
-  and unknown cosmetic grants fail closed. All real preview/reel/live silhouettes and
-  effects must retain the shared six-hero × 27-pose attachment contract and fully freeze
-  under Reduced Effects. This slice changes no save schema, power, case odds/pity, Mines
-  stakes, or return. Its eight enabling looks do not count toward or reduce Collection
-  Growth I-B's separate 30-look commitment; complete Collection Growth I, A11-13, 1.1,
-  the 1.0 → 2.0 arc, and 2.0 remain open. Durable Character/Lanternward Canvas proof,
-  pixel hashes, delivery IDs, and limitations live in
-  `docs/evidence/v1.1/collection-growth-ia-deployed-smoke.md`.
+- Collection Growth I-A/I-B: shipped through main `a34baca`; `src/content/cosmetics.js`
+  remains catalog/source truth and `src/systems/CosmeticCollection.js` owns deterministic
+  eight-item category/ownership/source pages for all 103 cosmetics and 15 sets.
+  `MenuRenderer.js`/`GameInputActions.js` own paged Collection/Boutique staging,
+  dispatch, pursuit presentation, and focus-safe Character → Boutique routing;
+  `SaveSystem.js` owns atomic full-look buy/equip and pursuit persistence, while
+  `CaseSystem.js` consumes the same exclusions. I-B's 30 pieces form Kilnheart,
+  Rimeglass, Thorncrown, Stormglass, Sunscar, and Gravebell. `SaveSystem.js` migrates
+  the selected look into six per-hero presets while preserving the legacy equipped
+  mirror; unknown cosmetic grants fail closed. All preview/reel/live silhouettes and
+  effects must retain the shared six-hero × 27-pose attachment contract and freeze
+  under Reduced Effects. Cosmetics remain visual-only; neither slice changed Battle
+  Pass/achievement rewards, case costs/odds/pity/unowned weighting, Mines stakes, or
+  the 93% return. Gravebell's case-only Mythic has no deterministic ceiling; preserve
+  that named watchpoint until a future Blueprint/direct-price decision. Complete
+  Collection Growth I, A11-13, 1.1, 1.6, the 1.0 → 2.0 arc, 2.0, and 2.8 remain open.
+  Durable visual, hash, delivery, hosted-source, and limitation receipts live in
+  `docs/evidence/v1.1/collection-growth-ia-deployed-smoke.md` and
+  `docs/evidence/v1.1/collection-growth-ib-deployed-smoke.md`.
 - Player is PROCEDURAL & animated (4-dir × idle/walk/cast/hurt) — never
   replace the hero with a flat AI sprite.
 - Enemy sprites resolve through layered fallbacks in `Enemy.js`

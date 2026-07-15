@@ -676,15 +676,38 @@ jobs:
             COLLECTION_IB_QUERY="$3"
             COLLECTION_IB_KIND="$4"
             COLLECTION_IB_DOM="/tmp/collection-growth-ib-${COLLECTION_IB_NAME}.html"
-            COLLECTION_IB_PROFILE=$(mktemp -d)
-            timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
-              --autoplay-policy=no-user-gesture-required \
-              --disable-background-networking --disable-component-update \
-              --force-device-scale-factor=1 --window-size="$COLLECTION_IB_WINDOW" \
-              --virtual-time-budget=7000 --user-data-dir="$COLLECTION_IB_PROFILE" \
-              --dump-dom \
-              "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&out=${COLLECTION_IB_NAME}.png&${COLLECTION_IB_QUERY}" \
-              > "$COLLECTION_IB_DOM"
+            COLLECTION_IB_WINDOW_WIDTH="${COLLECTION_IB_WINDOW%,*}"
+            COLLECTION_IB_WINDOW_HEIGHT="${COLLECTION_IB_WINDOW#*,}"
+            COLLECTION_IB_ATTEMPTS=1
+            if [[ "$COLLECTION_IB_KIND" == *-touch ]]; then
+              COLLECTION_IB_WINDOW_WIDTH=667
+              COLLECTION_IB_WINDOW_HEIGHT=375
+              COLLECTION_IB_ATTEMPTS=3
+            fi
+            # Headless Chrome inconsistently interprets --window-size as outer
+            # bounds vs content viewport. Calibrate the durable phone receipt to
+            # an honest canonical 667x375 inner viewport before saving its canvas.
+            for ((COLLECTION_IB_ATTEMPT=1; COLLECTION_IB_ATTEMPT<=COLLECTION_IB_ATTEMPTS; COLLECTION_IB_ATTEMPT++)); do
+              COLLECTION_IB_PROFILE=$(mktemp -d)
+              COLLECTION_IB_WINDOW="${COLLECTION_IB_WINDOW_WIDTH},${COLLECTION_IB_WINDOW_HEIGHT}"
+              timeout 30s "$CHROME" --headless=new --no-sandbox --disable-gpu --mute-audio \
+                --autoplay-policy=no-user-gesture-required \
+                --disable-background-networking --disable-component-update \
+                --force-device-scale-factor=1 --window-size="$COLLECTION_IB_WINDOW" \
+                --virtual-time-budget=7000 --user-data-dir="$COLLECTION_IB_PROFILE" \
+                --dump-dom \
+                "http://127.0.0.1:8909/tools/artshot/harness.html?seconds=0&out=${COLLECTION_IB_NAME}.png&${COLLECTION_IB_QUERY}" \
+                > "$COLLECTION_IB_DOM"
+              if [[ "$COLLECTION_IB_KIND" != *-touch ]]; then break; fi
+              COLLECTION_IB_VIEWPORT_WIDTH=$(grep -o 'data-qa-viewport-width="[0-9]*"' "$COLLECTION_IB_DOM" | head -1 | cut -d'"' -f2)
+              COLLECTION_IB_VIEWPORT_HEIGHT=$(grep -o 'data-qa-viewport-height="[0-9]*"' "$COLLECTION_IB_DOM" | head -1 | cut -d'"' -f2)
+              if [[ ! "$COLLECTION_IB_VIEWPORT_WIDTH" =~ ^[0-9]+$ || ! "$COLLECTION_IB_VIEWPORT_HEIGHT" =~ ^[0-9]+$ ]]; then
+                echo 'FAIL: Collection phone capture omitted numeric viewport metrics'; exit 1
+              fi
+              if (( COLLECTION_IB_VIEWPORT_WIDTH == 667 && COLLECTION_IB_VIEWPORT_HEIGHT == 375 )); then break; fi
+              COLLECTION_IB_WINDOW_WIDTH=$((COLLECTION_IB_WINDOW_WIDTH + 667 - COLLECTION_IB_VIEWPORT_WIDTH))
+              COLLECTION_IB_WINDOW_HEIGHT=$((COLLECTION_IB_WINDOW_HEIGHT + 375 - COLLECTION_IB_VIEWPORT_HEIGHT))
+            done
             COLLECTION_IB_TITLE=$(grep -o '<title>[^<]*</title>' "$COLLECTION_IB_DOM" | head -1)
             echo "Collection I-B ${COLLECTION_IB_NAME}: $COLLECTION_IB_TITLE"
             echo "$COLLECTION_IB_TITLE" | grep -q 'DONE EXC:0 ' \
@@ -707,32 +730,58 @@ jobs:
                 grep -q 'data-qa-input="touch"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-collection-category="fur"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-collection-page="2"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-phone-layout="true"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-touch-safe="true"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-nav-touch-safe="true"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-runtime-matches="true"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-collection-pursuit-guidance="true"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-viewport-width="667"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-viewport-height="375"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-renderer-css-width="667"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-renderer-css-height="375.19"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-renderer-dpr="1"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-renderer-safe-area="0.27,0,0.27,0"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-menu-content-rect="56,249.27,1808,790.46"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-canvas-backing="667x375"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-pursuit-set="stormglass"' "$COLLECTION_IB_DOM" || {
-                    echo 'FAIL: phone Collection receipt did not stage the touch pursuit state'; exit 1;
+                    echo 'FAIL: phone Collection receipt did not stage its touch-safe pursuit state'; exit 1;
+                  }
+                ;;
+              rites-touch)
+                grep -q 'data-qa-input="touch"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-character-phone-pane="rites"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-character-phone-pane-rendered="rites"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-character-phone-pane-touch-safe="true"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-character-hotspots-touch-safe="true"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-viewport-width="667"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-viewport-height="375"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-canvas-backing="667x375"' "$COLLECTION_IB_DOM" || {
+                    echo 'FAIL: phone Hero Rites receipt did not stage a touch-safe Character pane'; exit 1;
                   }
                 ;;
               stormglass)
                 grep -q 'data-qa-cosmetic-set="stormglass"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-boutique-category="cloak"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-boutique-trail-preview="true"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-boutique-set-page="5"' "$COLLECTION_IB_DOM" || {
-                    echo 'FAIL: Boutique receipt did not stage the Stormglass mixed-source set'; exit 1;
+                    echo 'FAIL: Boutique receipt did not render the Stormglass set and trail'; exit 1;
                   }
                 ;;
               gravebell)
                 grep -q 'data-qa-cosmetic-set="gravebell"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-boutique-category="cloak"' "$COLLECTION_IB_DOM" \
+                  && grep -q 'data-qa-boutique-trail-preview="true"' "$COLLECTION_IB_DOM" \
                   && grep -q 'data-qa-boutique-set-page="5"' "$COLLECTION_IB_DOM" || {
-                    echo 'FAIL: Boutique receipt did not stage the Gravebell case-only set'; exit 1;
+                    echo 'FAIL: Boutique receipt did not render the Gravebell set and trail'; exit 1;
                   }
                 ;;
             esac
             cp "__out/${COLLECTION_IB_NAME}.png" "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png"
-            if [ "$COLLECTION_IB_KIND" = collection-touch ]; then
-              # The production renderer intentionally drops its backing-store
-              # resolution on this phone viewport; validate that exact shipped
-              # performance tier instead of pretending it is a desktop canvas.
+            if [[ "$COLLECTION_IB_KIND" == *-touch ]]; then
+              # The viewport calibration above makes this the production canvas,
+              # not an outer-window crop mislabeled as a phone receipt.
               node tools/artshot/validate-receipt-png.mjs \
-                "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png" --width=439 --height=247
+                "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png" --width=667 --height=375
             else
               node tools/artshot/validate-receipt-png.mjs "$COLLECTION_IB_RECEIPTS/${COLLECTION_IB_NAME}.png"
             fi
@@ -741,9 +790,12 @@ jobs:
           capture_collection_ib collection-fur-page2-desktop 1600,900 \
             'screen=menu&tab=character&collectioncat=fur&collectionpage=2&pursuit=stormglass&input=keyboard&focus=collectionCategory%3Acloak%230' \
             collection-keyboard
-          capture_collection_ib collection-fur-page2-phone 844,390 \
+          capture_collection_ib collection-fur-page2-phone 667,375 \
             'screen=menu&tab=character&collectioncat=fur&collectionpage=2&pursuit=stormglass&input=touch' \
             collection-touch
+          capture_collection_ib character-hero-rites-phone 667,375 \
+            'screen=menu&tab=character&characterpane=rites&input=touch' \
+            rites-touch
           capture_collection_ib boutique-stormglass 1600,900 \
             'screen=menu&tab=boutique&tryset=stormglass&input=keyboard&focus=boutiqueCategory%3Aaura%230' \
             stormglass
@@ -751,8 +803,8 @@ jobs:
             'screen=menu&tab=boutique&tryset=gravebell&input=keyboard&focus=boutiqueCategory%3Aaura%230' \
             gravebell
 
-          [ "$(sha256sum "$COLLECTION_IB_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 4 ] || {
-            echo 'FAIL: Collection I-B visual receipts were not four distinct frames'; exit 1;
+          [ "$(sha256sum "$COLLECTION_IB_RECEIPTS"/*.png | awk '{print $1}' | sort -u | wc -l)" -eq 5 ] || {
+            echo 'FAIL: Collection I-B visual receipts were not five distinct frames'; exit 1;
           }
           echo "Harness render matrix OK (4 biomes, house branches, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, Collection, Boutique, menus, Mines)"
 

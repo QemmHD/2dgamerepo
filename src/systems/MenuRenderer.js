@@ -61,6 +61,9 @@ import { ritesFor, riteProgress, ritesCompletedCount } from '../content/rites.js
 import { HERO_ATTUNE_MAX, heroAttuneCost, heroAttuneRiteGate } from '../content/heroAttunement.js';
 import { getRoad } from '../content/roads.js';
 import { PATRONS, PATRON_IDS } from '../content/patrons.js';
+import { isPhoneLandscapeViewport } from './ResponsiveLayout.js';
+
+export { isPhoneLandscapeViewport } from './ResponsiveLayout.js';
 
 const FONT = '-apple-system, system-ui, Helvetica, Arial, sans-serif';
 // Display face (Cinzel, self-hosted OFL) for the forged headings — the
@@ -413,10 +416,309 @@ export function computePhoneAccessibilityLayout(content, options = {}) {
     };
 }
 
+function segmentedRects(rect, count, gap = 8) {
+    const safeCount = Math.max(1, Math.trunc(count || 0));
+    const segmentW = (rect.w - gap * (safeCount - 1)) / safeCount;
+    return Array.from({ length: safeCount }, (_, index) => ({
+        x: rect.x + index * (segmentW + gap),
+        y: rect.y,
+        w: segmentW,
+        h: rect.h,
+    }));
+}
+
+export function computePhoneSectionBarLayout(safeArea = {}, cssScale = 1) {
+    const scale = Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1;
+    const left = Number.isFinite(safeArea.left) ? safeArea.left : 0;
+    const top = Number.isFinite(safeArea.top) ? safeArea.top : 0;
+    const h = Math.max(100, Math.ceil(44 / scale));
+    const homeW = Math.max(120, h);
+    const gap = 12;
+    const tabW = 210;
+    const y = top + 104;
+    const home = { x: left + 56, y, w: homeW, h };
+    const firstTabX = home.x + home.w + 14;
+    const rawMinTouchCss = Math.min(home.w, home.h, tabW, h) * scale;
+    return {
+        phone: true,
+        cssScale: scale,
+        y,
+        h,
+        home,
+        homeW,
+        firstTabX,
+        tabW,
+        gap,
+        subRowH: h - 62,
+        minTouchCss: Math.round(rawMinTouchCss * 10) / 10,
+        touchSafe: rawMinTouchCss >= 44,
+        fontPx: Math.max(32, Math.ceil(13 / scale)),
+    };
+}
+
+// Landscape phones keep the authored 1920x1080 coordinate system. The rich
+// layout retains the live-look rail on canonical phones; compact mode uses the
+// full width and cycle controls so short/narrow phones keep eight cards and all
+// three filters without shrinking any action below 44 CSS pixels.
+export function computePhoneCharacterCollectionLayout(content, options = {}) {
+    const cssScale = Number.isFinite(options.cssScale) && options.cssScale > 0
+        ? options.cssScale : 1;
+    const compact = options.compact === true;
+    const touchH = Math.max(100, Math.ceil(44 / cssScale));
+    const edge = 8;
+    const paneGap = 18;
+    const previewW = compact ? 0
+        : Math.max(270, Math.min(330, Math.round(content.w * 0.17)));
+    const preview = compact ? null
+        : { x: content.x, y: content.y, w: previewW, h: content.h };
+    const collection = compact ? { ...content } : {
+        x: content.x + previewW + paneGap, y: content.y,
+        w: content.w - previewW - paneGap, h: content.h,
+    };
+    const inner = {
+        x: collection.x + edge,
+        y: collection.y + edge,
+        w: collection.w - edge * 2,
+        h: collection.h - edge * 2,
+    };
+    const rowGap = 6;
+    const compactControls = compact
+        ? segmentedRects({ x: inner.x, y: inner.y, w: inner.w, h: touchH }, 4, 8)
+        : [];
+    const categoryRow = compact ? compactControls[0]
+        : { x: inner.x, y: inner.y, w: inner.w, h: touchH };
+    const filterY = categoryRow.y + categoryRow.h + rowGap;
+    const splitGap = 10;
+    const ownershipW = compact ? 0 : Math.round((inner.w - splitGap) * 0.34);
+    const ownershipRow = compact ? compactControls[1] : {
+        x: inner.x, y: filterY, w: ownershipW, h: touchH,
+    };
+    const sourceRow = compact ? compactControls[2] : {
+        x: inner.x + ownershipW + splitGap, y: filterY,
+        w: inner.w - ownershipW - splitGap, h: touchH,
+    };
+    const ritesButton = compact ? compactControls[3] : null;
+    const footer = {
+        x: inner.x,
+        y: collection.y + collection.h - edge - touchH,
+        w: inner.w,
+        h: touchH,
+    };
+    const gridTop = compact
+        ? inner.y + touchH + rowGap
+        : filterY + touchH + 6;
+    const grid = {
+        x: inner.x,
+        y: gridTop,
+        w: inner.w,
+        h: Math.max(1, footer.y - 6 - gridTop),
+    };
+    const cardGap = 6;
+    const cols = 4;
+    const rows = 2;
+    const cardW = (grid.w - cardGap * (cols - 1)) / cols;
+    const cardH = (grid.h - cardGap * (rows - 1)) / rows;
+    const cards = Array.from({ length: 8 }, (_, index) => ({
+        x: grid.x + (index % cols) * (cardW + cardGap),
+        y: grid.y + Math.floor(index / cols) * (cardH + cardGap),
+        w: cardW,
+        h: cardH,
+    }));
+    const pagerW = Math.max(180, Math.round(touchH * 1.5));
+    const previousButton = { x: footer.x, y: footer.y, w: pagerW, h: touchH };
+    const nextButton = {
+        x: footer.x + footer.w - pagerW,
+        y: footer.y,
+        w: pagerW,
+        h: touchH,
+    };
+    const attuneButton = compact ? ritesButton : {
+        x: preview.x + edge, y: preview.y + preview.h - edge - touchH,
+        w: preview.w - edge * 2, h: touchH,
+    };
+    const avatarRadius = compact ? 0
+        : Math.max(62, Math.min(92, preview.w * 0.29, preview.h * 0.13));
+    const avatar = compact ? null : {
+        x: preview.x + preview.w / 2,
+        y: preview.y + Math.max(avatarRadius + 18, preview.h * 0.19),
+        r: avatarRadius,
+    };
+    const nameY = compact ? 0 : avatar.y + avatar.r + 38;
+    const metaY = compact ? 0 : nameY + Math.max(30, Math.ceil(12 / cssScale) + 6);
+    const slotTop = compact ? 0 : metaY + 16;
+    const slotGap = 6;
+    const slotH = compact ? 0
+        : Math.max(20, (attuneButton.y - 12 - slotTop - slotGap * 4) / 5);
+    const previewSlots = compact ? [] : Array.from({ length: 5 }, (_, index) => ({
+        x: preview.x + edge, y: slotTop + index * (slotH + slotGap),
+        w: preview.w - edge * 2, h: slotH,
+    }));
+    const previewSwatches = previewSlots.map((rect) => {
+        const size = Math.max(0, Math.min(52, rect.h - 10));
+        return { x: rect.x + 7, y: rect.y + (rect.h - size) / 2, w: size, h: size };
+    });
+
+    const categorySegments = compact ? [categoryRow] : segmentedRects(categoryRow, 5, 8);
+    const ownershipSegments = compact ? [ownershipRow] : segmentedRects(ownershipRow, 3, 8);
+    const sourceSegments = compact ? [sourceRow] : segmentedRects(sourceRow, 6, 8);
+    const touchRects = [
+        ...categorySegments, ...ownershipSegments, ...sourceSegments,
+        ...cards, previousButton, nextButton, attuneButton,
+    ];
+    const rawMinTouchCss = Math.min(...touchRects.map((rect) =>
+        Math.min(rect.w, rect.h) * cssScale));
+    const geometrySafe = content.w > 0 && content.h > 0
+        && inner.w > 0 && inner.h > 0 && grid.h > 0 && cardW > 0 && cardH > 0
+        && touchRects.every((rect) => Number.isFinite(rect.x + rect.y + rect.w + rect.h)
+            && rect.w > 0 && rect.h > 0
+            && rect.x >= content.x && rect.y >= content.y
+            && rect.x + rect.w <= content.x + content.w + 0.001
+            && rect.y + rect.h <= content.y + content.h + 0.001);
+    const minTouchCss = Math.round(rawMinTouchCss * 10) / 10;
+    const footerFontPx = Math.max(30, Math.ceil(12 / cssScale));
+    const trackingFontPx = Math.max(26, Math.ceil(10 / cssScale));
+    const footerSummaryY = footer.y + footer.h * 0.32;
+    const footerTrackingY = footer.y + footer.h * 0.72;
+    const footerLineClearanceCss = ((footerTrackingY - footerSummaryY)
+        - (footerFontPx + trackingFontPx) * 0.5) * cssScale;
+    return {
+        phone: true,
+        compact,
+        variant: compact ? 'compact' : 'rich',
+        cssScale,
+        touchH,
+        minTouchCss,
+        touchSafe: geometrySafe && rawMinTouchCss >= 44,
+        preview,
+        collection,
+        inner,
+        categoryRow,
+        ownershipRow,
+        sourceRow,
+        categorySegments,
+        ownershipSegments,
+        sourceSegments,
+        compactControls,
+        ritesButton,
+        grid,
+        cards,
+        footer,
+        previousButton,
+        nextButton,
+        attuneButton,
+        avatar,
+        nameY,
+        metaY,
+        previewSlots,
+        previewSwatches,
+        categoryFontPx: Math.max(32, Math.ceil(13 / cssScale)),
+        filterFontPx: Math.max(30, Math.ceil(12 / cssScale)),
+        cardTitleFontPx: Math.max(34, Math.ceil(14 / cssScale)),
+        cardMetaFontPx: Math.max(28, Math.ceil(11 / cssScale)),
+        footerFontPx,
+        trackingFontPx,
+        footerSummaryY,
+        footerTrackingY,
+        footerLineClearanceCss,
+        previewNameFontPx: Math.max(34, Math.ceil(14 / cssScale)),
+        previewMetaFontPx: Math.max(28, Math.ceil(11 / cssScale)),
+        previewSlotFontPx: Math.max(26, Math.ceil(11 / cssScale)),
+        buttonFontPx: Math.max(32, Math.ceil(13 / cssScale)),
+    };
+}
+
+// Phone-only Character sub-pane: one back target, three readable Rite cards,
+// and a dedicated hero-attunement card. The only purchase surface is sized by
+// the same CSS-pixel floor used everywhere else in the phone collection.
+export function computePhoneHeroRitesLayout(content, options = {}) {
+    const cssScale = Number.isFinite(options.cssScale) && options.cssScale > 0
+        ? options.cssScale : 1;
+    const touchH = Math.max(100, Math.ceil(44 / cssScale));
+    const edge = 8;
+    const gap = 8;
+    const inner = {
+        x: content.x + edge, y: content.y + edge,
+        w: content.w - edge * 2, h: content.h - edge * 2,
+    };
+    const header = { x: inner.x, y: inner.y, w: inner.w, h: touchH };
+    const backButton = {
+        x: header.x, y: header.y,
+        w: Math.min(header.w, Math.max(240, Math.round(touchH * 1.55))), h: touchH,
+    };
+    const body = {
+        x: inner.x, y: header.y + header.h + gap, w: inner.w,
+        h: Math.max(1, inner.y + inner.h - (header.y + header.h + gap)),
+    };
+    const cardW = (body.w - gap * 3) / 4;
+    const allCards = Array.from({ length: 4 }, (_, index) => ({
+        x: body.x + index * (cardW + gap), y: body.y, w: cardW, h: body.h,
+    }));
+    const riteCards = allCards.slice(0, 3);
+    const attunementCard = allCards[3];
+    const purchaseButton = {
+        x: attunementCard.x + gap,
+        y: attunementCard.y + attunementCard.h - gap - touchH,
+        w: attunementCard.w - gap * 2,
+        h: touchH,
+    };
+    const touchRects = [backButton, purchaseButton];
+    const rawMinTouchCss = Math.min(...touchRects.map((rect) =>
+        Math.min(rect.w, rect.h) * cssScale));
+    const geometrySafe = body.h > touchH + gap * 2 && cardW > 0
+        && allCards.every((rect) => Number.isFinite(rect.x + rect.y + rect.w + rect.h)
+            && rect.w > 0 && rect.h > 0
+            && rect.x >= content.x && rect.y >= content.y
+            && rect.x + rect.w <= content.x + content.w + 0.001
+            && rect.y + rect.h <= content.y + content.h + 0.001);
+    return {
+        phone: true,
+        cssScale,
+        touchH,
+        minTouchCss: Math.round(rawMinTouchCss * 10) / 10,
+        touchSafe: geometrySafe && rawMinTouchCss >= 44,
+        inner,
+        header,
+        backButton,
+        body,
+        riteCards,
+        attunementCard,
+        purchaseButton,
+        titleFontPx: Math.max(34, Math.ceil(14 / cssScale)),
+        cardTitleFontPx: Math.max(32, Math.ceil(13 / cssScale)),
+        bodyFontPx: Math.max(28, Math.ceil(11 / cssScale)),
+        smallFontPx: Math.max(26, Math.ceil(10 / cssScale)),
+        buttonFontPx: Math.max(32, Math.ceil(13 / cssScale)),
+    };
+}
+
+// A deterministic planted wake around the fitting-room pedestal. The points
+// are fed into the same drawTrailPoint renderer used by Player, so bespoke
+// trail silhouettes (candles, sparks, runes, paws, etc.) remain truthful.
+export function boutiqueTrailPreviewPoints(cx, groundY, avatarRadius) {
+    const b = Math.max(7, Math.round(avatarRadius * 0.11));
+    return [
+        { x: cx - avatarRadius * 1.12, y: groundY + avatarRadius * 0.10, b: b * 0.72, k: 0.48, alpha: 0.28, index: 0 },
+        { x: cx - avatarRadius * 0.70, y: groundY + avatarRadius * 0.24, b: b * 0.84, k: 0.64, alpha: 0.34, index: 1 },
+        { x: cx + avatarRadius * 0.62, y: groundY + avatarRadius * 0.24, b: b * 0.96, k: 0.82, alpha: 0.40, index: 2 },
+        { x: cx + avatarRadius * 1.08, y: groundY + avatarRadius * 0.08, b, k: 1, alpha: 0.46, index: 3 },
+    ];
+}
+
 export class MenuRenderer {
     constructor(renderer) {
         this.renderer = renderer;
         this.hotspots = [];
+        this._lastCollectionPhoneLayout = false;
+        this._lastCollectionTouchSafe = false;
+        this._lastCollectionMinTouchCss = 0;
+        this._lastCollectionPursuitGuidance = false;
+        this._lastCollectionNavTouchSafe = false;
+        this._lastCollectionNavMinTouchCss = 0;
+        this._lastCollectionRuntime = null;
+        this._lastCharacterPhonePane = null;
+        this._lastCharacterPhonePaneTouchSafe = false;
+        this._lastCharacterPhonePaneMinTouchCss = 0;
+        this._lastBoutiqueTrailPreview = false;
     }
 
     _sa() { return this.renderer.safeArea; }
@@ -793,6 +1095,17 @@ export class MenuRenderer {
     draw(ctx, state) {
         this.hotspots = [];
         this._attentionBadgeUsed = false;
+        this._lastCollectionPhoneLayout = false;
+        this._lastCollectionTouchSafe = false;
+        this._lastCollectionMinTouchCss = 0;
+        this._lastCollectionPursuitGuidance = false;
+        this._lastCollectionNavTouchSafe = false;
+        this._lastCollectionNavMinTouchCss = 0;
+        this._lastCollectionRuntime = null;
+        this._lastCharacterPhonePane = null;
+        this._lastCharacterPhonePaneTouchSafe = false;
+        this._lastCharacterPhonePaneMinTouchCss = 0;
+        this._lastBoutiqueTrailPreview = false;
         // Kick off the display-font load (idempotent, guarded); canvas text using
         // HEAD picks up Cinzel once ready, staying on the system fallback until then.
         ensureMenuFont();
@@ -862,8 +1175,14 @@ export class MenuRenderer {
 
         const label = `FOCUS · ${hotspot.label}`;
         ctx.font = `800 16px ${FONT}`;
-        const labelW = Math.min(w - 16, ctx.measureText(label).width + 24);
-        const labelX = x + 10, labelY = Math.max(this._sa().top + 4, y - 24);
+        const safe = this._sa();
+        const safeLeft = safe.left + 8;
+        const safeRight = INTERNAL_WIDTH - safe.right - 8;
+        const labelW = Math.min(safeRight - safeLeft,
+            Math.max(80, ctx.measureText(label).width + 24));
+        const labelX = Math.max(safeLeft, Math.min(x + 10, safeRight - labelW));
+        const labelY = Math.max(safe.top + 4,
+            Math.min(y - 24, INTERNAL_HEIGHT - safe.bottom - 30));
         roundRectPath(ctx, labelX, labelY, labelW, 26, 8);
         ctx.fillStyle = '#08090b'; ctx.fill();
         ctx.strokeStyle = contrast ? '#ffffff' : '#ffd27d'; ctx.lineWidth = 2; ctx.stroke();
@@ -898,14 +1217,24 @@ export class MenuRenderer {
         const groups = this._visibleGroups(save);
         const g = groups.find((gg) => gg.kids.includes(tabId));
         if (!g) return null;
-        const i = g.kids.indexOf(tabId);
         const sa = this._sa();
         // Mirrors _drawTabBar's geometry INCLUDING the ‹ HOME chip offset.
-        const homeW = 120;
-        const x0 = sa.left + 56 + homeW + 14;
-        const tabW = 210, gap = 12;
+        const cssScale = (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH;
+        const phone = isPhoneLandscapeViewport(
+            this.renderer.cssWidth ?? INTERNAL_WIDTH,
+            this.renderer.cssHeight ?? INTERNAL_HEIGHT,
+        ) && tabId === 'character';
+        const phoneBar = phone ? computePhoneSectionBarLayout(sa, cssScale) : null;
+        const h = phone ? phoneBar.h : 62;
+        const homeW = phone ? phoneBar.homeW : 120;
+        const kids = phone && g.kids.includes('character')
+            ? ['play', 'character']
+            : phone && !g.kids.includes('play') ? ['play', ...g.kids] : g.kids;
+        const i = kids.indexOf(tabId);
+        const x0 = phone ? phoneBar.firstTabX : sa.left + 56 + homeW + 14;
+        const tabW = phone ? phoneBar.tabW : 210, gap = phone ? phoneBar.gap : 12;
         const td = MENU_TABS.find((m) => m.id === tabId);
-        return { x: x0 + i * (tabW + gap), y: sa.top + 104, w: tabW, h: 62, accent: (td && td.accent) || g.accent };
+        return { x: x0 + i * (tabW + gap), y: phone ? phoneBar.y : sa.top + 104, w: tabW, h, accent: (td && td.accent) || g.accent };
     }
 
     // A downward-pointing "look here" chevron bouncing just outside a target
@@ -1571,32 +1900,49 @@ export class MenuRenderer {
         let bpClaimable = false;
         for (let lv = 1; lv <= bpLevel; lv++) { if (!bpClaimed.includes(lv)) { bpClaimable = true; break; } }
         const sa = this._sa();
-        const y = sa.top + 104;
-        const h = 62;
+        const cssScale = (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH;
+        const phone = isPhoneLandscapeViewport(
+            this.renderer.cssWidth ?? INTERNAL_WIDTH,
+            this.renderer.cssHeight ?? INTERNAL_HEIGHT,
+        ) && activeTab === 'character';
+        const phoneBar = phone ? computePhoneSectionBarLayout(sa, cssScale) : null;
+        const y = phone ? phoneBar.y : sa.top + 104;
+        const h = phone ? phoneBar.h : 62;
         const time = this._t || 0;
+        const navRects = [];
         // ‹ HOME chip at the far left — the only way OUT of a section
         // (Esc does the same).
-        const homeW = 120;
+        const homeW = phone ? phoneBar.homeW : 120;
         {
-            const hx0 = sa.left + 56;
+            const hx0 = phone ? phoneBar.home.x : sa.left + 56;
             roundRectPath(ctx, hx0, y, homeW, h, 12);
             ctx.fillStyle = 'rgba(20,15,13,0.8)'; ctx.fill();
             ctx.strokeStyle = 'rgba(255,206,122,0.45)'; ctx.lineWidth = 2; ctx.stroke();
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#ffce7a'; ctx.font = `700 20px ${FONT}`;
-            ctx.fillText('‹ HOME', hx0 + homeW / 2, y + h / 2 + 1);
+            ctx.fillStyle = '#ffce7a';
+            const homeLabel = phone ? 'HOME' : '‹ HOME';
+            this._fitFont(ctx, homeLabel, homeW - 18, 700,
+                phone ? phoneBar.fontPx : 20, FONT, 22);
+            ctx.fillText(homeLabel, hx0 + homeW / 2, y + h / 2 + 1);
             this._hot(hx0, y, homeW, h, 'tab', 'home');
+            navRects.push({ id: 'home', x: hx0, y, w: homeW, h });
         }
         const activeGroup = groups.find((g) => g.kids.includes(activeTab)) || groups[0] || { kids: [], accent: '#ffce54' };
-        const kids = activeGroup.kids;
-        const x0 = sa.left + 56 + homeW + 14;
-        const gap = 12, tabW = 210;
+        // Phone Character keeps PLAY as a durable escape beside CHARACTER.
+        // Relic ATTUNE remains a separately unlocked Home route; Hero Rites
+        // live inside Character and never impersonate that relic destination.
+        const kids = phone && activeTab === 'character'
+            ? ['play', 'character']
+            : phone && !activeGroup.kids.includes('play')
+                ? ['play', ...activeGroup.kids] : activeGroup.kids;
+        const x0 = phone ? phoneBar.firstTabX : sa.left + 56 + homeW + 14;
+        const gap = phone ? phoneBar.gap : 12, tabW = phone ? phoneBar.tabW : 210;
         // The inactive-pill fill is a constant vertical gradient (x-independent);
         // build it once per layout and reuse across pills + frames.
-        if (this._tabGradY !== y) {
+        if (this._tabGradY !== y || this._tabGradH !== h) {
             const tgr = ctx.createLinearGradient(0, y, 0, y + h);
             tgr.addColorStop(0, '#1c1614'); tgr.addColorStop(1, '#141010');
-            this._tabGrad = tgr; this._tabGradY = y;
+            this._tabGrad = tgr; this._tabGradY = y; this._tabGradH = h;
         }
         let activeX = x0;
         for (let i = 0; i < kids.length; i++) {
@@ -1631,7 +1977,9 @@ export class MenuRenderer {
                 ctx.beginPath(); ctx.moveTo(x + 12, y + 2.5); ctx.lineTo(x + tabW - 12, y + 2.5); ctx.stroke();
             }
             ctx.fillStyle = active ? accent : 'rgba(235,240,248,0.85)';
-            this._fitFont(ctx, td.label, tabW - 24, 700, 22);
+            this._fitFont(ctx, td.label, tabW - 24, 700,
+                phone ? phoneBar.fontPx : 22, HEAD,
+                phone ? 25 : 12);
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(td.label, x + tabW / 2, y + h / 2 + 1);
             if (!active) {
@@ -1639,6 +1987,7 @@ export class MenuRenderer {
                 ctx.fillRect(x + 14, y + h - 7, tabW - 28, 3); ctx.globalAlpha = 1;
             }
             this._hot(x, y, tabW, h, 'tab', id);
+            navRects.push({ id, x, y, w: tabW, h });
             // Badges: one-time NEW pill on a freshly unlocked sibling screen,
             // else an accent dot when the screen holds something actionable.
             const isNew = !active && !seen.includes(id) && id !== 'play' && id !== 'settings';
@@ -1661,8 +2010,18 @@ export class MenuRenderer {
         }
         ctx.fillStyle = activeGroup.accent || '#ffce54';
         ctx.fillRect(this._tabIndicX, y + h - 4, this._tabIndicW, 3);
-        // No separate sub-row any more — the section's screens ARE the bar.
-        this._subRowH = 0;
+        // Phone pills grow to the 44-CSS-px floor. Preserve the original 18px
+        // gap below the bar by pushing content down by exactly the height delta.
+        this._subRowH = phone ? phoneBar.subRowH : 0;
+        if (phone && activeTab === 'character') {
+            const required = ['home', 'play', 'character'];
+            const requiredRects = navRects.filter((rect) => required.includes(rect.id));
+            const complete = required.every((id) => requiredRects.some((rect) => rect.id === id));
+            const rawMinCss = Math.min(...requiredRects
+                .map((rect) => Math.min(rect.w, rect.h) * cssScale));
+            this._lastCollectionNavMinTouchCss = Math.round(rawMinCss * 10) / 10;
+            this._lastCollectionNavTouchSafe = complete && rawMinCss >= 44;
+        }
     }
 
     // ── PLAY ───────────────────────────────────────────────────────────
@@ -2789,28 +3148,33 @@ export class MenuRenderer {
     // Compact segmented controls shared by Collection and Boutique. Selected
     // state is communicated with fill + border + text (not color alone); every
     // other segment is a named Canvas hotspot for keyboard/pointer parity.
-    _segmentedRow(ctx, options, selected, x, y, w, h, action, accent = '#c08bff') {
-        const gap = 6;
+    _segmentedRow(ctx, options, selected, x, y, w, h, action, accent = '#c08bff', presentation = null) {
+        const gap = presentation?.gap ?? 6;
         const segW = (w - gap * (options.length - 1)) / Math.max(1, options.length);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         for (let i = 0; i < options.length; i++) {
             const option = options[i];
             const sx = x + i * (segW + gap);
             const active = option.id === selected;
-            roundRectPath(ctx, sx, y, segW, h, 8);
+            roundRectPath(ctx, sx, y, segW, h, presentation?.radius ?? 8);
             ctx.fillStyle = active ? 'rgba(192,139,255,0.18)' : 'rgba(255,255,255,0.035)';
             ctx.fill();
             ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.10)';
             ctx.lineWidth = active ? 2 : 1.25; ctx.stroke();
             ctx.fillStyle = active ? '#fff' : 'rgba(220,228,238,0.66)';
-            ctx.font = `800 ${Math.max(10, Math.min(14, Math.round(h * 0.38)))}px ${FONT}`;
+            const fontSize = presentation?.fontSize
+                ?? Math.max(10, Math.min(14, Math.round(h * 0.38)));
+            if (presentation?.fit === true) {
+                this._fitFont(ctx, option.label, segW - 14, 800, fontSize, FONT,
+                    presentation.fontFloor ?? 22);
+            } else ctx.font = `800 ${fontSize}px ${FONT}`;
             ctx.fillText(option.label, sx + segW / 2, y + h / 2 + 0.5);
             if (!active) this._hot(sx, y, segW, h, action, option.id,
                 option.accessibleLabel || '');
         }
     }
 
-    _drawCollectionCard(ctx, state, entry, rect, mode = 'collection') {
+    _drawCollectionCard(ctx, state, entry, rect, mode = 'collection', presentation = null) {
         const item = entry?.item;
         if (!item) return;
         const save = state.saveData;
@@ -2828,17 +3192,24 @@ export class MenuRenderer {
         ctx.strokeStyle = equipped ? '#ffce54' : tried ? '#ff7edb' : owned ? col : 'rgba(255,255,255,0.12)';
         ctx.lineWidth = equipped || tried ? 2.5 : 1.5; ctx.stroke();
 
-        const swatch = Math.max(34, Math.min(58, rect.h - 22));
+        const phone = presentation?.phone === true;
+        const swatch = phone
+            ? Math.max(68, Math.min(96, rect.h - 26))
+            : Math.max(34, Math.min(58, rect.h - 22));
         this._cosmeticSwatch(ctx, item.category, item,
             rect.x + 10, rect.y + (rect.h - swatch) / 2, swatch);
-        const tx = rect.x + swatch + 22;
-        const textW = Math.max(40, rect.w - swatch - 34);
+        const tx = rect.x + swatch + (phone ? 26 : 22);
+        const textW = Math.max(40, rect.w - swatch - (phone ? 40 : 34));
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#fff';
-        ctx.font = `800 ${rect.h < 86 ? 14 : 17}px ${FONT}`;
-        ctx.fillText(this._ellip(ctx, item.name, textW), tx, rect.y + Math.max(22, rect.h * 0.29));
-        ctx.fillStyle = col; ctx.font = `800 ${rect.h < 86 ? 10 : 12}px ${FONT}`;
-        ctx.fillText(rarityName(item.rarity).toUpperCase(), tx, rect.y + Math.max(38, rect.h * 0.48));
+        const titleSize = phone ? presentation.cardTitleFontPx : rect.h < 86 ? 14 : 17;
+        const metaSize = phone ? presentation.cardMetaFontPx : rect.h < 86 ? 10 : 12;
+        ctx.font = `800 ${titleSize}px ${FONT}`;
+        ctx.fillText(this._ellip(ctx, item.name, textW), tx,
+            rect.y + (phone ? rect.h * 0.31 : Math.max(22, rect.h * 0.29)));
+        ctx.fillStyle = col; ctx.font = `800 ${metaSize}px ${FONT}`;
+        ctx.fillText(rarityName(item.rarity).toUpperCase(), tx,
+            rect.y + (phone ? rect.h * 0.56 : Math.max(38, rect.h * 0.48)));
 
         let status = sourceLabel;
         let statusColor = 'rgba(205,214,226,0.64)';
@@ -2849,8 +3220,8 @@ export class MenuRenderer {
             statusColor = '#ffd86b';
         }
         ctx.fillStyle = statusColor;
-        this._fitFont(ctx, status, textW, 700, rect.h < 86 ? 10 : 12, FONT, 9);
-        ctx.fillText(status, tx, rect.y + rect.h - (rect.h < 86 ? 10 : 14));
+        this._fitFont(ctx, status, textW, 700, metaSize, FONT, phone ? 22 : 9);
+        ctx.fillText(status, tx, rect.y + rect.h - (phone ? rect.h * 0.12 : rect.h < 86 ? 10 : 14));
 
         let action = null, arg = null, label = '';
         if (mode === 'boutique') {
@@ -2871,8 +3242,9 @@ export class MenuRenderer {
     // Reachable, scalable Collection: exactly one selected category, explicit
     // ownership/source filters, and eight cards per page. This replaces the old
     // five shrinking columns that silently clipped ten live cosmetics.
-    _drawCosmeticCollection(ctx, state, rect) {
+    _drawCosmeticCollection(ctx, state, rect, presentation = null) {
         const save = state.saveData;
+        const phone = presentation?.phone === true;
         const view = state.collectionView || {};
         const model = buildCosmeticCollectionPage({
             category: view.category || 'fur',
@@ -2890,39 +3262,123 @@ export class MenuRenderer {
             { id: 'hat', label: 'ACCESSORY' }, { id: 'aura', label: 'AURA' },
             { id: 'trail', label: 'TRAIL' },
         ];
-        const ownership = [
+        const ownership = phone ? [
+            { id: 'all', label: 'ALL', accessibleLabel: 'All items' },
+            { id: 'owned', label: 'OWNED' }, { id: 'locked', label: 'LOCKED' },
+        ] : [
             { id: 'all', label: 'ALL ITEMS' }, { id: 'owned', label: 'OWNED' },
             { id: 'locked', label: 'LOCKED' },
         ];
-        const sources = [
+        const sources = phone ? [
+            { id: 'all', label: 'ALL', accessibleLabel: 'All sources' },
+            { id: 'starter', label: 'STARTER' },
+            { id: 'boutique', label: 'SHOP', accessibleLabel: 'Boutique source' },
+            { id: 'case', label: 'CASES' },
+            { id: 'achievement', label: 'ACHIEVE', accessibleLabel: 'Achievement source' },
+            { id: 'vigil', label: 'VIGIL', accessibleLabel: 'Vigil Path source' },
+        ] : [
             { id: 'all', label: 'ALL SOURCES' }, { id: 'starter', label: 'STARTER' },
             { id: 'boutique', label: 'BOUTIQUE' }, { id: 'case', label: 'CASES' },
             { id: 'achievement', label: 'ACHIEVEMENT' }, { id: 'vigil', label: 'VIGIL PATH' },
         ];
-        this._segmentedRow(ctx, categories, model.category, x, rect.y + 9, w, 32,
-            'collectionCategory', '#c08bff');
-        this._segmentedRow(ctx, ownership, model.ownership, x, rect.y + 47, w, 26,
-            'collectionOwnership', '#8fd0ff');
-        this._segmentedRow(ctx, sources, model.source, x, rect.y + 79, w, 26,
-            'collectionSource', '#ffb45f');
+        if (phone) {
+            this._lastCollectionPhoneLayout = true;
+            this._lastCollectionTouchSafe = presentation.touchSafe === true
+                && this._lastCollectionNavTouchSafe === true;
+            this._lastCollectionMinTouchCss = Math.min(
+                presentation.minTouchCss || 0,
+                this._lastCollectionNavMinTouchCss || 0,
+            );
+            if (presentation.compact) {
+                const nextOption = (options, selected) => {
+                    const index = Math.max(0, options.findIndex((option) => option.id === selected));
+                    return options[(index + 1) % options.length];
+                };
+                const currentCategory = categories.find((option) => option.id === model.category) || categories[0];
+                const currentOwnership = ownership.find((option) => option.id === model.ownership) || ownership[0];
+                const currentSource = sources.find((option) => option.id === model.source) || sources[0];
+                const nextCategory = nextOption(categories, model.category);
+                const nextOwnership = nextOption(ownership, model.ownership);
+                const nextSource = nextOption(sources, model.source);
+                this._button(ctx, presentation.categoryRow,
+                    `CATEGORY: ${currentCategory.label}`, {
+                        action: 'collectionCategory', arg: nextCategory.id,
+                        accent: 'rgba(88,48,118,0.95)', fontSize: presentation.filterFontPx,
+                        accessibleLabel: `Category ${currentCategory.label}. Change to ${nextCategory.label}`,
+                    });
+                this._button(ctx, presentation.ownershipRow,
+                    `SHOW: ${currentOwnership.label}`, {
+                        action: 'collectionOwnership', arg: nextOwnership.id,
+                        accent: 'rgba(35,76,106,0.95)', fontSize: presentation.filterFontPx,
+                        accessibleLabel: `Showing ${currentOwnership.label}. Change to ${nextOwnership.label}`,
+                    });
+                this._button(ctx, presentation.sourceRow,
+                    `SOURCE: ${currentSource.label}`, {
+                        action: 'collectionSource', arg: nextSource.id,
+                        accent: 'rgba(112,62,28,0.95)', fontSize: presentation.filterFontPx,
+                        accessibleLabel: `Source ${currentSource.label}. Change to ${nextSource.label}`,
+                    });
+                this._button(ctx, presentation.ritesButton, 'HERO RITES', {
+                    action: 'characterPhonePane', arg: 'rites',
+                    accent: 'rgba(88,48,118,0.95)', fontSize: presentation.filterFontPx,
+                    accessibleLabel: 'Open Rites and Hero Attunement',
+                });
+            } else {
+                this._segmentedRow(ctx, categories, model.category,
+                    presentation.categoryRow.x, presentation.categoryRow.y,
+                    presentation.categoryRow.w, presentation.categoryRow.h,
+                    'collectionCategory', '#c08bff', {
+                        gap: 8, radius: 12, fontSize: presentation.categoryFontPx,
+                        fit: true, fontFloor: 26,
+                    });
+                this._segmentedRow(ctx, ownership, model.ownership,
+                    presentation.ownershipRow.x, presentation.ownershipRow.y,
+                    presentation.ownershipRow.w, presentation.ownershipRow.h,
+                    'collectionOwnership', '#8fd0ff', {
+                        gap: 8, radius: 12, fontSize: presentation.filterFontPx,
+                        fit: true, fontFloor: 24,
+                    });
+                this._segmentedRow(ctx, sources, model.source,
+                    presentation.sourceRow.x, presentation.sourceRow.y,
+                    presentation.sourceRow.w, presentation.sourceRow.h,
+                    'collectionSource', '#ffb45f', {
+                        gap: 8, radius: 12, fontSize: presentation.filterFontPx,
+                        fit: true, fontFloor: 22,
+                    });
+            }
+        } else {
+            this._segmentedRow(ctx, categories, model.category, x, rect.y + 9, w, 32,
+                'collectionCategory', '#c08bff');
+            this._segmentedRow(ctx, ownership, model.ownership, x, rect.y + 47, w, 26,
+                'collectionOwnership', '#8fd0ff');
+            this._segmentedRow(ctx, sources, model.source, x, rect.y + 79, w, 26,
+                'collectionSource', '#ffb45f');
+        }
 
-        const footerH = 56;
-        const gridY = rect.y + 113;
-        const gridBottom = rect.y + rect.h - footerH - 8;
+        const footerH = phone ? presentation.footer.h : 56;
+        const gridY = phone ? presentation.grid.y : rect.y + 113;
+        const gridBottom = phone
+            ? presentation.grid.y + presentation.grid.h
+            : rect.y + rect.h - footerH - 8;
         const gridH = Math.max(1, gridBottom - gridY);
         const entries = Array.isArray(model.entries) ? model.entries : [];
         if (entries.length) {
-            const cols = w >= 720 ? 4 : 2;
-            const rows = Math.max(1, Math.ceil(8 / cols));
-            const gap = 8;
-            const cardW = (w - gap * (cols - 1)) / cols;
-            const cardH = (gridH - gap * (rows - 1)) / rows;
             for (let i = 0; i < entries.length; i++) {
-                const col = i % cols, row = Math.floor(i / cols);
-                this._drawCollectionCard(ctx, state, entries[i], {
-                    x: x + col * (cardW + gap), y: gridY + row * (cardH + gap),
-                    w: cardW, h: cardH,
-                });
+                if (phone) {
+                    this._drawCollectionCard(ctx, state, entries[i], presentation.cards[i],
+                        'collection', presentation);
+                } else {
+                    const cols = w >= 720 ? 4 : 2;
+                    const rows = Math.max(1, Math.ceil(8 / cols));
+                    const gap = 8;
+                    const cardW = (w - gap * (cols - 1)) / cols;
+                    const cardH = (gridH - gap * (rows - 1)) / rows;
+                    const col = i % cols, row = Math.floor(i / cols);
+                    this._drawCollectionCard(ctx, state, entries[i], {
+                        x: x + col * (cardW + gap), y: gridY + row * (cardH + gap),
+                        w: cardW, h: cardH,
+                    });
+                }
             }
         } else {
             const empty = typeof model.emptyState === 'string'
@@ -2931,7 +3387,8 @@ export class MenuRenderer {
                     ? `${model.emptyState.title}. ${model.emptyState.body}`
                     : 'No cosmetics match these filters.';
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = 'rgba(220,228,238,0.58)'; ctx.font = `700 17px ${FONT}`;
+            ctx.fillStyle = 'rgba(220,228,238,0.58)';
+            ctx.font = `700 ${phone ? presentation.cardTitleFontPx : 17}px ${FONT}`;
             ctx.fillText(empty, rect.x + rect.w / 2, gridY + gridH / 2);
         }
 
@@ -2939,14 +3396,20 @@ export class MenuRenderer {
         const pageCount = model.pageCount || 1;
         const hasPrev = model.hasPreviousPage ?? model.hasPrev ?? model.hasPrevious ?? page > 1;
         const hasNext = model.hasNextPage ?? model.hasNext ?? page < pageCount;
-        const fy = rect.y + rect.h - 50;
-        this._button(ctx, { x, y: fy + 5, w: 116, h: 38 }, '‹ PREV', {
+        const fy = phone ? presentation.footer.y : rect.y + rect.h - 50;
+        const previousButton = phone
+            ? presentation.previousButton : { x, y: fy + 5, w: 116, h: 38 };
+        const nextButton = phone
+            ? presentation.nextButton : { x: x + w - 116, y: fy + 5, w: 116, h: 38 };
+        this._button(ctx, previousButton, '‹ PREV', {
             enabled: hasPrev, action: hasPrev ? 'collectionPage' : null,
-            arg: page - 1, fontSize: 13, accessibleLabel: `Previous collection page, ${page - 1}`,
+            arg: page - 1, fontSize: phone ? presentation.buttonFontPx : 13,
+            accessibleLabel: `Previous collection page, ${page - 1}`,
         });
-        this._button(ctx, { x: x + w - 116, y: fy + 5, w: 116, h: 38 }, 'NEXT ›', {
+        this._button(ctx, nextButton, 'NEXT ›', {
             enabled: hasNext, action: hasNext ? 'collectionPage' : null,
-            arg: page + 1, fontSize: 13, accessibleLabel: `Next collection page, ${page + 1}`,
+            arg: page + 1, fontSize: phone ? presentation.buttonFontPx : 13,
+            accessibleLabel: `Next collection page, ${page + 1}`,
         });
         const total = model.totalItems ?? model.totalCount ?? model.filteredCount
             ?? model.total ?? entries.length;
@@ -2971,9 +3434,19 @@ export class MenuRenderer {
                 return progress > bestProgress && progress < COSMETIC_CATEGORIES.length ? set : best;
             }, null);
         }
-        ctx.fillStyle = 'rgba(220,228,238,0.72)'; ctx.font = `800 12px ${FONT}`;
-        ctx.fillText(`PAGE ${page}/${pageCount} · ${total} MATCHES  |  OWNED ${ownedIds.size}/${COSMETIC_LIST.length} · SETS ${completedSets}/${COSMETIC_SETS.length}`,
-            rect.x + rect.w / 2, fy + 12);
+        const summary = `PAGE ${page}/${pageCount} · ${total} MATCHES  |  OWNED ${ownedIds.size}/${COSMETIC_LIST.length} · SETS ${completedSets}/${COSMETIC_SETS.length}`;
+        ctx.fillStyle = 'rgba(220,228,238,0.72)';
+        ctx.font = `800 ${phone ? presentation.footerFontPx : 12}px ${FONT}`;
+        const phoneSummaryLeft = phone ? previousButton.x + previousButton.w + 18 : 0;
+        const phoneSummaryRight = phone ? nextButton.x - 18 : 0;
+        if (phone) {
+            ctx.fillText(this._ellip(ctx, summary,
+                Math.max(80, phoneSummaryRight - phoneSummaryLeft)),
+            (phoneSummaryLeft + phoneSummaryRight) / 2,
+            presentation.footerSummaryY);
+        } else {
+            ctx.fillText(summary, rect.x + rect.w / 2, fy + 12);
+        }
         if (focusSet) {
             const progress = COSMETIC_CATEGORIES.filter((category) => ownedIds.has(focusSet.pieces[category])).length;
             const missingCategory = COSMETIC_CATEGORIES.find((category) => !ownedIds.has(focusSet.pieces[category]));
@@ -2989,10 +3462,20 @@ export class MenuRenderer {
                 else if (routes.includes('case')) next = `NEXT ${missing.name}: RANDOM cosmetic case drop`;
                 else next = `NEXT ${missing.name}: ${getCosmeticSourceLabel(missing)}`;
             }
-            ctx.fillStyle = focusSet.color; ctx.font = `800 11px ${FONT}`;
-            ctx.fillText(this._ellip(ctx,
-                `${pursued ? 'TRACKING' : 'CLOSEST'} ${focusSet.name} ${progress}/5 · ${next}`,
-                Math.max(120, w - 260)), rect.x + rect.w / 2, fy + 33);
+            const pursuitLine = `${pursued ? 'TRACKING' : 'CLOSEST'} ${focusSet.name} ${progress}/5 · ${next}`;
+            if (phone) {
+                ctx.fillStyle = focusSet.color;
+                ctx.font = `800 ${presentation.trackingFontPx}px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, pursuitLine,
+                    Math.max(80, phoneSummaryRight - phoneSummaryLeft)),
+                (phoneSummaryLeft + phoneSummaryRight) / 2,
+                presentation.footerTrackingY);
+                this._lastCollectionPursuitGuidance = true;
+            } else {
+                ctx.fillStyle = focusSet.color; ctx.font = `800 11px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, pursuitLine,
+                    Math.max(120, w - 260)), rect.x + rect.w / 2, fy + 33);
+            }
         }
     }
 
@@ -3215,11 +3698,265 @@ export class MenuRenderer {
         }
     }
 
+    _drawPhoneCharacter(ctx, state, c) {
+        const save = state.saveData;
+        const cssScale = (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH;
+        const pane = state.characterPhonePane === 'rites' ? 'rites' : 'collection';
+        this._lastCharacterPhonePane = pane;
+        if (pane === 'rites') {
+            this._drawPhoneHeroRites(ctx, state, c, cssScale);
+            return;
+        }
+        const richLayout = computePhoneCharacterCollectionLayout(c, { cssScale });
+        const compact = (this.renderer.cssWidth || INTERNAL_WIDTH) <= 600
+            || !richLayout.touchSafe;
+        const layout = compact
+            ? computePhoneCharacterCollectionLayout(c, { cssScale, compact: true })
+            : richLayout;
+        this._lastCollectionRuntime = {
+            cssWidth: this.renderer.cssWidth || 0,
+            cssHeight: this.renderer.cssHeight || 0,
+            dpr: this.renderer.dpr || 0,
+            content: { x: c.x, y: c.y, w: c.w, h: c.h },
+            touchH: layout.touchH,
+            layoutMinTouchCss: layout.minTouchCss,
+            variant: layout.variant,
+        };
+        this._lastCharacterPhonePaneTouchSafe = layout.touchSafe === true
+            && this._lastCollectionNavTouchSafe === true;
+        this._lastCharacterPhonePaneMinTouchCss = Math.min(
+            layout.minTouchCss || 0,
+            this._lastCollectionNavMinTouchCss || 0,
+        );
+        // A failed geometry receipt must never become live UI. Required phone
+        // sizes all have a safe rich or compact branch; this is fail-closed for
+        // unknown tiny canvases rather than painting clipped hotspots.
+        if (!layout.touchSafe) {
+            this._panel(ctx, c.x, c.y, c.w, c.h,
+                'rgba(20,16,28,0.88)', 'rgba(255,122,122,0.42)');
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffd6d6';
+            ctx.font = `800 ${Math.max(32, Math.ceil(14 / cssScale))}px ${FONT}`;
+            ctx.fillText('Rotate or enlarge the window to open Character.',
+                c.x + c.w / 2, c.y + c.h / 2);
+            return;
+        }
+        if (layout.compact) {
+            this._drawCosmeticCollection(ctx, state, layout.collection, layout);
+            return;
+        }
+        const p = layout.preview;
+        this._panel(ctx, p.x, p.y, p.w, p.h,
+            'rgba(20,16,28,0.88)', 'rgba(192,139,255,0.28)');
+        const ch = getCharacter(save.selectedCharacter);
+        const ap = resolveAppearance(save.cosmetics.equipped);
+        const avatarAp = { ...ap, furColor: ap.furColor || ch.palette.fur };
+        let avatarPose = null;
+        const avatarState = (this._t % 4.0) > 3.4 ? 'cast' : 'idle';
+        try {
+            const frames = getHeroFrames(ch.id, ch, ap,
+                !!ap.hatShape && ap.hatShape !== 'none');
+            avatarPose = resolveHeroPose(frames, 'down', avatarState, 0);
+        } catch (e) { avatarPose = null; }
+        const heldProp = resolveWeaponProp(resolveStartingWeapon(save));
+        const a = layout.avatar;
+        ctx.save();
+        ctx.translate(a.x, a.y + a.r * 0.92); ctx.scale(1, 0.3);
+        ctx.fillStyle = 'rgba(192,139,255,0.14)';
+        ctx.beginPath(); ctx.arc(0, 0, a.r * 0.92, 0, TAU); ctx.fill();
+        ctx.restore();
+        ctx.save();
+        ctx.beginPath(); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip();
+        this._drawAvatar(ctx, a.x, a.y, a.r, avatarAp, avatarPose, null, this._t,
+            heldProp, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
+        ctx.restore();
+
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#fff';
+        this._fitFont(ctx, ch.name, p.w - 24, 800, layout.previewNameFontPx, FONT, 26);
+        ctx.fillText(ch.name, a.x, layout.nameY);
+        const lookLabel = ap.set ? `${ap.set.name} · SET COMPLETE` : 'LIVE EQUIPPED LOOK';
+        ctx.fillStyle = ap.set?.color || 'rgba(192,139,255,0.95)';
+        this._fitFont(ctx, lookLabel, p.w - 24, 800, layout.previewMetaFontPx, FONT, 22);
+        ctx.fillText(lookLabel, a.x, layout.metaY);
+
+        for (let i = 0; i < COSMETIC_CATEGORIES.length; i++) {
+            const category = COSMETIC_CATEGORIES[i];
+            const rect = layout.previewSlots[i];
+            const item = COSMETICS[save.cosmetics.equipped[category]] || { name: 'None' };
+            roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 9);
+            ctx.fillStyle = 'rgba(255,255,255,0.045)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(192,139,255,0.20)'; ctx.lineWidth = 1.5; ctx.stroke();
+            const swatchRect = layout.previewSwatches[i];
+            if (swatchRect.w >= 12) {
+                this._cosmeticSwatch(ctx, category, item,
+                    swatchRect.x, swatchRect.y, swatchRect.w);
+            }
+            const tx = swatchRect.w >= 12
+                ? swatchRect.x + swatchRect.w + 9 : rect.x + 8;
+            const textW = Math.max(40, rect.x + rect.w - 8 - tx);
+            const slotLabel = `${COSMETIC_CATEGORY_LABELS[category].toUpperCase()} · ${item.name || 'None'}`;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff';
+            this._fitFont(ctx, slotLabel, textW, 700,
+                layout.previewSlotFontPx, FONT, 22);
+            ctx.fillText(this._ellip(ctx, slotLabel, textW), tx,
+                rect.y + rect.h / 2);
+        }
+        this._button(ctx, layout.attuneButton, 'HERO RITES', {
+            action: 'characterPhonePane', arg: 'rites', primary: false, accent: 'rgba(88,48,118,0.95)',
+            fontSize: layout.buttonFontPx,
+            accessibleLabel: 'Open Rites and Hero Attunement',
+        });
+        this._drawCosmeticCollection(ctx, state, layout.collection, layout);
+    }
+
     // ── CHARACTER — a live customizer: the model on the LEFT updates the
     // instant you click an item; the cosmetic pickers sit on the RIGHT, on the
     // SAME page (no drilling into a separate preview screen). ────────────────
+    _drawPhoneHeroRites(ctx, state, c, cssScale) {
+        const save = state.saveData;
+        const layout = computePhoneHeroRitesLayout(c, { cssScale });
+        this._lastCharacterPhonePaneTouchSafe = layout.touchSafe === true
+            && this._lastCollectionNavTouchSafe === true;
+        this._lastCharacterPhonePaneMinTouchCss = Math.min(
+            layout.minTouchCss || 0,
+            this._lastCollectionNavMinTouchCss || 0,
+        );
+        this._lastCollectionRuntime = {
+            cssWidth: this.renderer.cssWidth || 0,
+            cssHeight: this.renderer.cssHeight || 0,
+            dpr: this.renderer.dpr || 0,
+            content: { x: c.x, y: c.y, w: c.w, h: c.h },
+            touchH: layout.touchH,
+            layoutMinTouchCss: layout.minTouchCss,
+            variant: 'hero-rites',
+        };
+        if (!layout.touchSafe) {
+            this._panel(ctx, c.x, c.y, c.w, c.h,
+                'rgba(24,16,12,0.9)', 'rgba(255,122,122,0.42)');
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffd6d6';
+            ctx.font = `800 ${layout.titleFontPx}px ${FONT}`;
+            ctx.fillText('Rotate or enlarge the window to open Hero Rites.',
+                c.x + c.w / 2, c.y + c.h / 2);
+            return;
+        }
+
+        this._panel(ctx, c.x, c.y, c.w, c.h,
+            'rgba(24,16,12,0.88)', 'rgba(255,154,74,0.30)');
+        this._button(ctx, layout.backButton, 'BACK', {
+            action: 'characterPhonePane', arg: 'collection',
+            accent: 'rgba(74,48,42,0.96)', fontSize: layout.buttonFontPx,
+            accessibleLabel: 'Back to Character Collection',
+        });
+
+        const heroId = save.selectedCharacter;
+        const hero = getCharacter(heroId);
+        const rites = ritesFor(heroId).slice(0, 3);
+        const done = ritesCompletedCount(save, heroId);
+        const titleLeft = layout.backButton.x + layout.backButton.w + 24;
+        const titleW = Math.max(80, layout.header.x + layout.header.w - titleLeft - 12);
+        const title = `${hero.name.toUpperCase()} HERO RITES  |  ${done}/3 COMPLETE`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd8b0';
+        this._fitFont(ctx, title, titleW, 800, layout.titleFontPx, FONT, 26);
+        ctx.fillText(title, titleLeft + titleW / 2,
+            layout.header.y + layout.header.h / 2);
+
+        for (let index = 0; index < layout.riteCards.length; index++) {
+            const card = layout.riteCards[index];
+            const rite = rites[index];
+            if (!rite) continue;
+            const progress = riteProgress(save, heroId, rite.id);
+            const complete = progress >= rite.goal;
+            const fraction = rite.goal > 0
+                ? Math.max(0, Math.min(1, progress / rite.goal)) : 0;
+            this._panel(ctx, card.x, card.y, card.w, card.h,
+                complete ? 'rgba(28,62,37,0.72)' : 'rgba(255,255,255,0.035)',
+                complete ? 'rgba(95,211,106,0.62)' : 'rgba(255,154,74,0.22)');
+            const cx = card.x + card.w / 2;
+            const textW = card.w - 24;
+            const riteTitle = `${complete ? 'COMPLETE - ' : ''}${rite.name}`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = complete ? '#8ff29a' : '#fff';
+            this._fitFont(ctx, riteTitle, textW, 800,
+                layout.cardTitleFontPx, FONT, 24);
+            ctx.fillText(riteTitle, cx, card.y + card.h * 0.17);
+            ctx.fillStyle = 'rgba(235,239,244,0.72)';
+            ctx.font = `600 ${layout.bodyFontPx}px ${FONT}`;
+            this._wrapText(ctx, rite.desc, cx, card.y + card.h * 0.36,
+                textW, layout.bodyFontPx * 1.14, 2);
+            ctx.fillStyle = complete ? '#8ff29a' : '#ffd8b0';
+            ctx.font = `800 ${layout.bodyFontPx}px ${FONT}`;
+            ctx.fillText(`${Math.min(progress, rite.goal).toLocaleString()} / ${rite.goal.toLocaleString()}`,
+                cx, card.y + card.h * 0.72);
+            const bar = {
+                x: card.x + 16, y: card.y + card.h * 0.82,
+                w: card.w - 32, h: Math.max(10, Math.ceil(4 / cssScale)),
+            };
+            roundRectPath(ctx, bar.x, bar.y, bar.w, bar.h, bar.h / 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fill();
+            if (fraction > 0) {
+                roundRectPath(ctx, bar.x, bar.y, bar.w * fraction, bar.h, bar.h / 2);
+                ctx.fillStyle = complete ? '#5fd36a' : '#ff9a4a'; ctx.fill();
+            }
+        }
+
+        const card = layout.attunementCard;
+        const level = save.heroAttunement?.[heroId] ?? 0;
+        const maxed = level >= HERO_ATTUNE_MAX;
+        const nextGate = maxed ? 0 : heroAttuneRiteGate(level + 1);
+        const gateMet = done >= nextGate;
+        const cost = maxed ? 0 : heroAttuneCost(level);
+        const afford = !maxed && (save.totalCoins ?? 0) >= cost;
+        const canBuy = !maxed && gateMet && afford;
+        this._panel(ctx, card.x, card.y, card.w, card.h,
+            'rgba(76,40,22,0.42)', 'rgba(255,206,84,0.38)');
+        const cx = card.x + card.w / 2;
+        const textW = card.w - 24;
+        const attuneTitle = `HERO ATTUNEMENT  LV ${level}/${HERO_ATTUNE_MAX}`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd86b';
+        this._fitFont(ctx, attuneTitle, textW, 800,
+            layout.cardTitleFontPx, FONT, 24);
+        ctx.fillText(attuneTitle, cx, card.y + card.h * 0.15);
+        ctx.fillStyle = 'rgba(245,238,226,0.82)';
+        ctx.font = `700 ${layout.bodyFontPx}px ${FONT}`;
+        this._wrapText(ctx, maxed ? 'Fully attuned.' : this._heroAttuneEffectLabel(level + 1),
+            cx, card.y + card.h * 0.32, textW, layout.bodyFontPx * 1.14, 2);
+        ctx.fillStyle = gateMet ? '#9fe7a7' : '#ffb0a0';
+        const gateLabel = maxed ? 'ALL FIVE LEVELS FORGED'
+            : `RITE GATE ${done}/${nextGate}  |  BALANCE ${(save.totalCoins ?? 0).toLocaleString()}`;
+        this._fitFont(ctx, gateLabel, textW, 700,
+            layout.smallFontPx, FONT, 22);
+        ctx.fillText(gateLabel, cx, card.y + card.h * 0.57);
+        const buttonLabel = maxed ? 'MAX ATTUNEMENT'
+            : !gateMet ? `COMPLETE ${nextGate} RITE${nextGate === 1 ? '' : 'S'}`
+                : !afford ? `NEED ${cost.toLocaleString()} COINS`
+                    : `ATTUNE - ${cost.toLocaleString()} COINS`;
+        this._button(ctx, layout.purchaseButton, buttonLabel, {
+            enabled: canBuy,
+            action: canBuy ? 'buyHeroAttune' : null,
+            arg: heroId,
+            primary: canBuy,
+            accent: canBuy ? '#2e6b3f' : 'rgba(70,54,44,0.92)',
+            fontSize: layout.buttonFontPx,
+            accessibleLabel: canBuy
+                ? `Attune ${hero.name} to level ${level + 1} for ${cost} coins`
+                : buttonLabel,
+        });
+    }
+
     _drawCharacter(ctx, state) {
         const c = this._contentRect();
+        if (isPhoneLandscapeViewport(
+            this.renderer.cssWidth ?? INTERNAL_WIDTH,
+            this.renderer.cssHeight ?? INTERNAL_HEIGHT,
+        )) {
+            this._drawPhoneCharacter(ctx, state, c);
+            return;
+        }
         const save = state.saveData;
         const avW = Math.min(560, Math.max(360, c.w * 0.33));
         const gap = 32;
@@ -3576,6 +4313,26 @@ export class MenuRenderer {
     // piece. One honest purchase affordance — BUY LOOK — buys every unowned
     // coin piece currently tried on (and equips the whole look); pieces that
     // can't be bought (case/achievement drops) preview fine but are labelled.
+    _drawBoutiqueTrailPreview(ctx, appearance, cx, groundY, avatarRadius, t, clipRect) {
+        if (!appearance?.trailColor) return false;
+        const points = boutiqueTrailPreviewPoints(cx, groundY, avatarRadius);
+        ctx.save();
+        if (clipRect) {
+            ctx.beginPath();
+            ctx.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h);
+            ctx.clip();
+        }
+        for (const point of points) {
+            ctx.globalAlpha = point.alpha;
+            drawTrailPoint(ctx, point.x, point.y, point.b, point.k,
+                appearance.trailColor, appearance.trailFx, t, point.index,
+                this._reducedMotion);
+        }
+        ctx.restore();
+        this._lastBoutiqueTrailPreview = true;
+        return true;
+    }
+
     _drawBoutique(ctx, state) {
         const c = this._contentRect();
         const save = state.saveData;
@@ -3604,13 +4361,20 @@ export class MenuRenderer {
         const avCy = c.y + c.h * 0.24;
         const pedSc = Math.max(0.5, Math.min(0.9, c.h / 720));
         this._pedestal(ctx, mcx, avCy + avR * 0.86, t, '#ff7edb', pedSc);
+        const trailPreviewed = this._drawBoutiqueTrailPreview(
+            ctx, avatarAp, mcx, avCy + avR * 0.88, avR, t,
+            { x: c.x, y: c.y, w: mw, h: c.h },
+        );
         this._drawAvatar(ctx, mcx, avCy, avR, avatarAp, avatarPose, null, t, null, resolveCharacterHold(ch.id), ch.palette && ch.palette.face);
         const capY = Math.max(c.y + c.h * 0.42, avCy + avR * 1.25 + 22);
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#ff7edb'; ctx.font = `800 22px ${HEAD}`;
         ctx.fillText('FITTING ROOM', mcx, capY);
         ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 15px ${FONT}`;
-        ctx.fillText(trying ? 'Previewing your try-on look' : 'Tap pieces or a set to try them on', mcx, capY + 24);
+        const fittingCopy = trying ? 'Previewing your try-on look'
+            : 'Tap pieces or a set to try them on';
+        ctx.fillText(trailPreviewed ? `${fittingCopy} · trail marks appear while moving` : fittingCopy,
+            mcx, capY + 24);
 
         // Tried-on pieces, listed with their path (price / owned / drop-only).
         let total = 0, equippableN = 0;

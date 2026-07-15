@@ -969,6 +969,9 @@ export class SaveSystem {
     attuneRelic(id) {
         const def = getAttunable(id);
         if (!def) return false;
+        // UI visibility is not authority: direct callers may only strengthen a
+        // relic already claimed into this save's codex.
+        if (!this.getDiscoveredRelics().includes(id)) return false;
         const levels = this.getRelicAttunements();
         const cur = levels[id] ?? 0;
         if (cur >= def.max) return false;

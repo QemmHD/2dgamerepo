@@ -129,6 +129,7 @@ import { HealthOrb } from '../../src/entities/HealthOrb.js';
 import { DamageNumber } from '../../src/entities/DamageNumber.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
 import { photoFilterIndexById } from '../../src/content/photoFilters.js';
+import { isPhoneLandscapeViewport } from '../../src/systems/ResponsiveLayout.js';
 
 const ERR = [];
 window.__ERR = ERR;
@@ -212,6 +213,10 @@ const QA_HIGH_CONTRAST = CONTRAST_REQUEST === '1'
 const SETTINGS_PANE_REQUEST = params.has('settingspane') ? params.get('settingspane') : null;
 const QA_SETTINGS_PANE = ['general', 'accessibility'].includes(SETTINGS_PANE_REQUEST)
     ? SETTINGS_PANE_REQUEST
+    : null;
+const CHARACTER_PANE_REQUEST = params.has('characterpane') ? params.get('characterpane') : null;
+const QA_CHARACTER_PANE = ['collection', 'rites'].includes(CHARACTER_PANE_REQUEST)
+    ? CHARACTER_PANE_REQUEST
     : null;
 const CAPTIONS_REQUEST = params.has('captions') ? params.get('captions') : null;
 const QA_CAPTIONS = CAPTIONS_REQUEST === '1'
@@ -375,6 +380,7 @@ async function boot() {
         return liveHapticPulse(kind);
     };
     if (QA_SETTINGS_PANE) game.settingsPane = QA_SETTINGS_PANE;
+    if (QA_CHARACTER_PANE) game.characterPhonePane = QA_CHARACTER_PANE;
     if (ACTIVE_INPUT_MODE) input.setModality(ACTIVE_INPUT_MODE);
 
     // Campaign QA uses the production policy API, not direct save mutation.
@@ -401,6 +407,9 @@ async function boot() {
     }
     if (SETTINGS_PANE_REQUEST != null && QA_SETTINGS_PANE == null) {
         ERR.push(`settingspane: expected 'general' or 'accessibility', got '${SETTINGS_PANE_REQUEST}'`);
+    }
+    if (CHARACTER_PANE_REQUEST != null && QA_CHARACTER_PANE == null) {
+        ERR.push(`characterpane: expected 'collection' or 'rites', got '${CHARACTER_PANE_REQUEST}'`);
     }
     if (CAPTIONS_REQUEST != null && QA_CAPTIONS == null) {
         ERR.push(`captions: expected 1 or 0, got '${CAPTIONS_REQUEST}'`);
@@ -438,6 +447,9 @@ async function boot() {
     if (MENU_FOCUS && SCREEN !== 'menu') ERR.push('focus: menu hotspot selection requires screen=menu');
     if (QA_SETTINGS_PANE && (SCREEN !== 'menu' || TAB !== 'settings')) {
         ERR.push('settingspane: selection requires screen=menu and tab=settings');
+    }
+    if (QA_CHARACTER_PANE && (SCREEN !== 'menu' || TAB !== 'character')) {
+        ERR.push('characterpane: selection requires screen=menu and tab=character');
     }
     if (QA_STATUSES && SCREEN === 'menu') ERR.push('statuses: showcase requires a gameplay frame');
     if (QA_CAPTION && SCREEN === 'menu') ERR.push('caption: fixture requires a gameplay frame');
@@ -964,6 +976,12 @@ async function boot() {
         ['cheatUnlockAll', null],
     ];
     const menuHotspots = game.ui?.menu?.hotspots || [];
+    const qaPhoneLandscape = isPhoneLandscapeViewport(renderer.cssWidth, renderer.cssHeight);
+    const qaMenuCssScale = renderer.cssWidth / 1920;
+    const qaCharacterMinHotspotCss = menuHotspots.length
+        ? Math.min(...menuHotspots.map((hotspot) =>
+            Math.min(hotspot.w, hotspot.h) * qaMenuCssScale))
+        : 0;
     const devControlCount = requiredDevControls.filter(([action, arg]) => menuHotspots.some(
         (hotspot) => hotspot.action === action && hotspot.arg === arg,
     )).length;
@@ -972,6 +990,15 @@ async function boot() {
         && !game.gameOver && !game.upgradeChoices && !game.chestReward && !game.altar
         && !game.paused && !game.victory && !game.waveDirector?.announcement;
     const qaActiveBoss = game.enemies?.find((enemy) => enemy.active && enemy.boss) || null;
+    const qaMenuContent = game.ui?.menu?._contentRect?.() || null;
+    const qaCollectionRuntime = game.ui?.menu?._lastCollectionRuntime || null;
+    const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 0.01;
+    const qaCollectionRuntimeMatches = !!qaCollectionRuntime && !!qaMenuContent
+        && near(qaCollectionRuntime.cssWidth, renderer.cssWidth)
+        && near(qaCollectionRuntime.cssHeight, renderer.cssHeight)
+        && near(qaCollectionRuntime.dpr, renderer.dpr)
+        && ['x', 'y', 'w', 'h'].every((key) =>
+            near(qaCollectionRuntime.content?.[key], qaMenuContent[key]));
     const qaState = {
         inputModality: input.getModality(),
         menuFocusKey: game.menuFocusKey || null,
@@ -1004,14 +1031,28 @@ async function boot() {
             `${status.mapId}:${status.defeatedCount}/${status.requiredCount}:${status.campaignUnlocked ? 'open' : 'locked'}`
         ).join(','),
         settingsPane: game.settingsPane === 'accessibility' ? 'accessibility' : 'general',
+        characterPhonePane: game.characterPhonePane === 'rites' ? 'rites' : 'collection',
+        characterPhonePaneRendered: game.ui?.menu?._lastCharacterPhonePane || '',
+        characterPhonePaneTouchSafe: game.ui?.menu?._lastCharacterPhonePaneTouchSafe === true,
+        characterPhonePaneMinTouchCss: Number(game.ui?.menu?._lastCharacterPhonePaneMinTouchCss) || 0,
+        characterMinHotspotCss: Math.round(qaCharacterMinHotspotCss * 10) / 10,
+        characterHotspotsTouchSafe: !qaPhoneLandscape || qaCharacterMinHotspotCss >= 44,
         cosmeticSet: QA_TRY_SET && Object.entries(QA_TRY_SET.pieces).every(
             ([category, id]) => game.tryOn?.[category] === id,
         ) ? QA_TRY_SET.id : '',
         collectionCategory: game.collectionView?.category || '',
         collectionPage: Number(game.collectionView?.page) || 0,
+        collectionPhoneLayout: game.ui?.menu?._lastCollectionPhoneLayout === true,
+        collectionTouchSafe: game.ui?.menu?._lastCollectionTouchSafe === true,
+        collectionMinTouchCss: Number(game.ui?.menu?._lastCollectionMinTouchCss) || 0,
+        collectionPursuitGuidance: game.ui?.menu?._lastCollectionPursuitGuidance === true,
+        collectionNavTouchSafe: game.ui?.menu?._lastCollectionNavTouchSafe === true,
+        collectionNavMinTouchCss: Number(game.ui?.menu?._lastCollectionNavMinTouchCss) || 0,
+        collectionRuntimeMatches: qaCollectionRuntimeMatches,
         pursuitSet: game.saveSystem.data.cosmetics.pursuitSetId || '',
         boutiqueCategory: game.boutiqueView?.category || '',
         boutiqueSetPage: Number(game.boutiqueView?.setPage) || 0,
+        boutiqueTrailPreview: game.ui?.menu?._lastBoutiqueTrailPreview === true,
         statuses: allStatusTimersActive ? 'all' : '',
         minesFocusIndex: game.minigame?.mines ? game.minesFocusIndex : null,
         objectivePhase: qaObjective?.phase || '',
@@ -1044,6 +1085,15 @@ async function boot() {
         liveStatus: document.getElementById('game-status')?.textContent || '',
         viewportWidth: Math.round(window.innerWidth),
         viewportHeight: Math.round(window.innerHeight),
+        rendererCssWidth: Math.round(renderer.cssWidth * 100) / 100,
+        rendererCssHeight: Math.round(renderer.cssHeight * 100) / 100,
+        rendererDpr: Math.round(renderer.dpr * 1000) / 1000,
+        rendererSafeArea: ['top', 'right', 'bottom', 'left']
+            .map((key) => Math.round((renderer.safeArea?.[key] || 0) * 100) / 100).join(','),
+        menuContentRect: qaMenuContent
+            ? ['x', 'y', 'w', 'h'].map((key) => Math.round(qaMenuContent[key] * 100) / 100).join(',')
+            : '',
+        canvasBacking: `${canvas.width}x${canvas.height}`,
     };
     if (ACTIVE_INPUT_MODE && qaState.inputModality !== ACTIVE_INPUT_MODE) {
         ERR.push(`receipt: input expected '${ACTIVE_INPUT_MODE}', got '${qaState.inputModality}'`);
@@ -1108,6 +1158,17 @@ async function boot() {
     if (QA_SETTINGS_PANE && qaState.settingsPane !== QA_SETTINGS_PANE) {
         ERR.push(`receipt: settingspane expected '${QA_SETTINGS_PANE}', got '${qaState.settingsPane}'`);
     }
+    if (QA_CHARACTER_PANE && qaState.characterPhonePane !== QA_CHARACTER_PANE) {
+        ERR.push(`receipt: characterpane expected '${QA_CHARACTER_PANE}', got '${qaState.characterPhonePane}'`);
+    }
+    if (QA_CHARACTER_PANE && ACTIVE_INPUT_MODE === 'touch' && qaPhoneLandscape
+        && (qaState.characterPhonePaneRendered !== QA_CHARACTER_PANE
+            || !qaState.characterPhonePaneTouchSafe
+            || !qaState.characterHotspotsTouchSafe
+            || qaState.characterPhonePaneMinTouchCss < 44
+            || qaState.characterMinHotspotCss < 44)) {
+        ERR.push(`render: phone Character ${QA_CHARACTER_PANE} is not touch-safe (${qaState.characterMinHotspotCss} CSS px)`);
+    }
     if (QA_TRY_SET && qaState.cosmeticSet !== QA_TRY_SET.id) {
         ERR.push(`receipt: tryset expected '${QA_TRY_SET.id}', got '${qaState.cosmeticSet}'`);
     }
@@ -1117,8 +1178,21 @@ async function boot() {
     if (QA_COLLECTION_PAGE != null && qaState.collectionPage !== QA_COLLECTION_PAGE) {
         ERR.push(`receipt: collectionpage expected ${QA_COLLECTION_PAGE}, got ${qaState.collectionPage}`);
     }
+    if (QA_COLLECTION_CATEGORY && ACTIVE_INPUT_MODE === 'touch' && qaPhoneLandscape
+        && (!qaState.collectionPhoneLayout || !qaState.collectionTouchSafe
+            || !qaState.collectionNavTouchSafe || !qaState.collectionRuntimeMatches
+            || qaState.collectionMinTouchCss < 44 || qaState.collectionNavMinTouchCss < 44)) {
+        ERR.push(`render: phone Collection is not touch-safe (${qaState.collectionMinTouchCss} CSS px)`);
+    }
     if (QA_PURSUIT_SET && qaState.pursuitSet !== QA_PURSUIT_SET.id) {
         ERR.push(`receipt: pursuit expected '${QA_PURSUIT_SET.id}', got '${qaState.pursuitSet}'`);
+    }
+    if (QA_PURSUIT_SET && qaState.collectionPhoneLayout
+        && !qaState.collectionPursuitGuidance) {
+        ERR.push(`render: tracked ${QA_PURSUIT_SET.id} next-source guidance was not drawn`);
+    }
+    if (QA_TRY_SET && !qaState.boutiqueTrailPreview) {
+        ERR.push(`render: ${QA_TRY_SET.id} fitting-room trail preview was not drawn`);
     }
     if (QA_STATUSES === 'all' && qaState.statuses !== 'all') {
         ERR.push('receipt: statuses=all did not stage all seven combat statuses');
@@ -1237,12 +1311,26 @@ async function boot() {
     qaRoot.dataset.qaCampaignReceipts = window.__qaState.campaignReceipts;
     qaRoot.dataset.qaCampaignStatus = window.__qaState.campaignStatus;
     qaRoot.dataset.qaSettingsPane = window.__qaState.settingsPane;
+    qaRoot.dataset.qaCharacterPhonePane = window.__qaState.characterPhonePane;
+    qaRoot.dataset.qaCharacterPhonePaneRendered = window.__qaState.characterPhonePaneRendered;
+    qaRoot.dataset.qaCharacterPhonePaneTouchSafe = String(window.__qaState.characterPhonePaneTouchSafe);
+    qaRoot.dataset.qaCharacterPhonePaneMinTouchCss = String(window.__qaState.characterPhonePaneMinTouchCss);
+    qaRoot.dataset.qaCharacterMinHotspotCss = String(window.__qaState.characterMinHotspotCss);
+    qaRoot.dataset.qaCharacterHotspotsTouchSafe = String(window.__qaState.characterHotspotsTouchSafe);
     qaRoot.dataset.qaCosmeticSet = window.__qaState.cosmeticSet;
     qaRoot.dataset.qaCollectionCategory = window.__qaState.collectionCategory;
     qaRoot.dataset.qaCollectionPage = String(window.__qaState.collectionPage);
+    qaRoot.dataset.qaCollectionPhoneLayout = String(window.__qaState.collectionPhoneLayout);
+    qaRoot.dataset.qaCollectionTouchSafe = String(window.__qaState.collectionTouchSafe);
+    qaRoot.dataset.qaCollectionMinTouchCss = String(window.__qaState.collectionMinTouchCss);
+    qaRoot.dataset.qaCollectionPursuitGuidance = String(window.__qaState.collectionPursuitGuidance);
+    qaRoot.dataset.qaCollectionNavTouchSafe = String(window.__qaState.collectionNavTouchSafe);
+    qaRoot.dataset.qaCollectionNavMinTouchCss = String(window.__qaState.collectionNavMinTouchCss);
+    qaRoot.dataset.qaCollectionRuntimeMatches = String(window.__qaState.collectionRuntimeMatches);
     qaRoot.dataset.qaPursuitSet = window.__qaState.pursuitSet;
     qaRoot.dataset.qaBoutiqueCategory = window.__qaState.boutiqueCategory;
     qaRoot.dataset.qaBoutiqueSetPage = String(window.__qaState.boutiqueSetPage);
+    qaRoot.dataset.qaBoutiqueTrailPreview = String(window.__qaState.boutiqueTrailPreview);
     qaRoot.dataset.qaStatuses = window.__qaState.statuses;
     qaRoot.dataset.qaMinesFocus = window.__qaState.minesFocusIndex == null
         ? ''
@@ -1278,6 +1366,12 @@ async function boot() {
     qaRoot.dataset.qaLiveStatus = window.__qaState.liveStatus;
     qaRoot.dataset.qaViewportWidth = String(window.__qaState.viewportWidth);
     qaRoot.dataset.qaViewportHeight = String(window.__qaState.viewportHeight);
+    qaRoot.dataset.qaRendererCssWidth = String(window.__qaState.rendererCssWidth);
+    qaRoot.dataset.qaRendererCssHeight = String(window.__qaState.rendererCssHeight);
+    qaRoot.dataset.qaRendererDpr = String(window.__qaState.rendererDpr);
+    qaRoot.dataset.qaRendererSafeArea = window.__qaState.rendererSafeArea;
+    qaRoot.dataset.qaMenuContentRect = window.__qaState.menuContentRect;
+    qaRoot.dataset.qaCanvasBacking = window.__qaState.canvasBacking;
     qaRoot.dataset.qaErrorKeys = [...new Set(ERR.map((entry) => String(entry).split(':', 1)[0]))]
         .sort()
         .join(',');
