@@ -846,7 +846,7 @@ includesAll(gameSource, [
 includesAll(actionSource, [
     "case 'setCaptionDetail': this._setCaptionDetail(arg); break",
     "case 'setVibration': this._setVibration(arg); break",
-    "if (key === 'monoAudio') this.audio.setMonoAudio(!cur)",
+    "if (key === 'monoAudio') this.audio.setMonoAudio(next)",
     "if (key === 'captions')",
     'this.captionSystem?.setPreferences?.(',
     "this.haptics?.setStrength?.(this.saveSystem.getSetting('vibration'))",

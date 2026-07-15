@@ -435,9 +435,9 @@ try {
     const firstDurableRaw = pair.storage.getItem(SAVE_KEY);
     const beforeStaleAddWrites = pair.storage.saveWrites;
     const beforeStaleAddAttempts = pair.storage.saveWriteAttempts;
-    secondInstance.addCoins(1);
-    check(secondInstance.data.totalCoins === 200001,
-        'stale ordinary-save fixture did not exercise the addCoins mutation path');
+    const staleCredit = secondInstance.addCoins(1);
+    check(staleCredit === 0 && secondInstance.data.totalCoins === 200000,
+        'stale addCoins did not report zero credit and exactly roll back memory');
     check(pair.storage.getItem(SAVE_KEY) === firstDurableRaw,
         'stale addCoins overwrote the first Blueprint transaction payload');
     check(pair.storage.saveWrites === beforeStaleAddWrites

@@ -458,6 +458,71 @@ function rollRarity(odds) {
     return listed[listed.length - 1] ?? 'common';
 }
 
+function cloneCaseTransactionData(value, seen = new Map()) {
+    if (!value || typeof value !== 'object') return value;
+    if (seen.has(value)) return seen.get(value);
+    const copy = Array.isArray(value) ? [] : {};
+    seen.set(value, copy);
+    if (Array.isArray(value)) {
+        for (const entry of value) copy.push(cloneCaseTransactionData(entry, seen));
+    } else {
+        for (const [key, entry] of Object.entries(value)) {
+            copy[key] = cloneCaseTransactionData(entry, seen);
+        }
+    }
+    return copy;
+}
+
+function caseSaveFailure(save, fallback = 'save-unavailable') {
+    const failure = save?.getLastSaveFailureReason?.();
+    return {
+        ok: false,
+        reason: failure === 'external-save-changed' ? 'save-changed' : fallback,
+    };
+}
+
+// Cheap, RNG-free guard shared by the deterministic resolver and the browser
+// exclusive entrypoint. This is only an early UX rejection: openCase repeats
+// every check inside SaveSystem's origin-wide exclusive transaction so a tab
+// cannot pass here, go stale, and then overwrite newer durable authority.
+export function caseOpenPreflight(save, caseType, opts = {}) {
+    const def = CASES[caseType];
+    if (!def) return { ok: false, reason: 'unknown' };
+    if (!save?.data || typeof save.save !== 'function') {
+        return { ok: false, reason: 'save-unavailable' };
+    }
+    if (!opts.free && save.data.totalCoins < def.cost) {
+        return { ok: false, reason: 'cost' };
+    }
+    if (typeof save._storageUnchangedSinceLastWrite === 'function') {
+        const storageState = save._storageUnchangedSinceLastWrite();
+        if (!storageState?.ok) {
+            return {
+                ok: false,
+                reason: storageState?.reason === 'external-save-changed'
+                    ? 'save-changed' : 'save-unavailable',
+            };
+        }
+    } else if (save.available === false) {
+        return { ok: false, reason: 'save-unavailable' };
+    }
+    return { ok: true };
+}
+
+// Build the complete case result against a detached save draft. SaveSystem's
+// existing mutation helpers remain the authority for coin caps, unlock rules,
+// duplicate stats, and battle-pass caches, while their eager save() calls are
+// deliberately absorbed by this draft. The live SaveSystem receives exactly
+// one whole-save commit after the reward is fully resolved.
+function caseTransactionDraft(save, data) {
+    const draft = Object.create(save);
+    Object.defineProperties(draft, {
+        data: { configurable: true, enumerable: true, writable: true, value: data },
+        save: { configurable: true, writable: false, value: () => true },
+    });
+    return draft;
+}
+
 // Returns a reward descriptor (and applies its effects to the save):
 //   { ok, kind: 'gear'|'cosmetic'|'coins'|'duplicate', rarity, id?, name?,
 //     category?, amount?, label }
@@ -465,41 +530,96 @@ function rollRarity(odds) {
 // when it can't be opened. Failed paid entry is always mutation-free.
 export function openCase(save, caseType, opts = {}) {
     const def = CASES[caseType];
-    if (!def) return { ok: false, reason: 'unknown' };
+    const preflight = caseOpenPreflight(save, caseType, opts);
+    if (!preflight.ok) return preflight;
 
     const free = !!opts.free;
-    if (!free) {
-        if (save.data.totalCoins < def.cost) return { ok: false, reason: 'cost' };
-        if (!save.spendCoins(def.cost)) {
-            const failure = save.getLastSaveFailureReason?.();
-            return {
-                ok: false,
-                reason: failure === 'external-save-changed'
-                    ? 'save-changed' : failure ? 'save-unavailable' : 'cost',
-            };
-        }
-    }
-    save.incrementStat('casesOpened', 1);
 
-    // Per-case pity: track opens since this case last paid Rare+; once the cap
-    // is reached, FORCE a Rare+ (then reset). A natural Rare+ also resets it.
-    if (!save.data.casePity) save.data.casePity = {};
-    const cap = CASE_PITY[def.id] || 12;
-    const count = save.data.casePity[def.id] || 0;
-    const rareIdx = RARITY_ORDER.indexOf('rare');
-    let rarity, pity = false;
-    if (count + 1 >= cap) {
-        rarity = rarityAtLeast('rare', def.odds);
-        pity = true;
-        save.data.casePity[def.id] = 0;
-    } else {
-        rarity = rollRarity(def.odds);
-        save.data.casePity[def.id] = RARITY_ORDER.indexOf(rarity) >= rareIdx ? 0 : count + 1;
+    const liveData = save.data;
+    let transaction;
+    try {
+        transaction = caseTransactionDraft(save, cloneCaseTransactionData(liveData));
+        if (!free && !transaction.spendCoins(def.cost)) {
+            return { ok: false, reason: 'cost' };
+        }
+        transaction.incrementStat('casesOpened', 1);
+
+        // Per-case pity: track opens since this case last paid Rare+; once the
+        // cap is reached, FORCE a Rare+ (then reset). A natural Rare+ resets it.
+        if (!transaction.data.casePity) transaction.data.casePity = {};
+        const cap = CASE_PITY[def.id] || 12;
+        const count = transaction.data.casePity[def.id] || 0;
+        const rareIdx = RARITY_ORDER.indexOf('rare');
+        let rarity;
+        let pity = false;
+        if (count + 1 >= cap) {
+            rarity = rarityAtLeast('rare', def.odds);
+            pity = true;
+            transaction.data.casePity[def.id] = 0;
+        } else {
+            rarity = rollRarity(def.odds);
+            transaction.data.casePity[def.id] = RARITY_ORDER.indexOf(rarity) >= rareIdx ? 0 : count + 1;
+        }
+        const result = grantRarityReward(transaction, rarity, def.poolKind ?? null);
+        if (!result?.ok) return result ?? { ok: false, reason: 'save-unavailable' };
+        result.pity = pity;
+
+        // Swap in the fully resolved draft only for the single durable commit.
+        // A failed/throwing write restores the exact live object, so the wallet,
+        // stat, pity, unlock, duplicate, XP, and cache fields cannot diverge.
+        save.data = transaction.data;
+        let committed = false;
+        try {
+            committed = save.save() === true;
+        } catch (error) {
+            console.warn('[CaseSystem] transaction commit failed', error);
+        }
+        if (!committed) {
+            save.data = liveData;
+            return caseSaveFailure(save);
+        }
+        return result;
+    } catch (error) {
+        save.data = liveData;
+        console.warn('[CaseSystem] transaction failed', error);
+        return caseSaveFailure(save);
     }
-    const res = grantRarityReward(save, rarity, def.poolKind ?? null);
-    if (res.ok) res.pity = pity;
-    save.save();     // persist the pity counter
-    return res;
+}
+
+// Production browser entrypoint. Reward RNG and every wallet/stat/pity/unlock
+// mutation run only after SaveSystem has excluded all other live save
+// participants. The detached openCase seam absorbs its eager save calls; the
+// exclusive boundary performs the sole real write before this Promise can
+// expose a successful reward to the menu.
+export function openCaseAtomic(save, caseType, opts = {}) {
+    // Snapshot the only supported option before crossing an async boundary;
+    // callers cannot turn a paid request into a free one after preflight.
+    const atomicOpts = Object.freeze({ free: opts?.free === true });
+    const preflight = caseOpenPreflight(save, caseType, atomicOpts);
+    if (!preflight.ok) return Promise.resolve(Object.freeze(preflight));
+    if (typeof save?.runExclusiveSaveTransaction !== 'function') {
+        return Promise.resolve(Object.freeze({
+            ok: false,
+            reason: 'transaction-lock-unavailable',
+        }));
+    }
+    try {
+        return Promise.resolve(save.runExclusiveSaveTransaction((draft) =>
+            openCase(draft, caseType, atomicOpts))).then((result) => {
+            if (!result || typeof result !== 'object' || Array.isArray(result)) {
+                return Object.freeze({ ok: false, reason: 'transaction-lock-failed' });
+            }
+            return Object.isFrozen(result) ? result : Object.freeze({ ...result });
+        }).catch(() => Object.freeze({
+            ok: false,
+            reason: 'transaction-lock-failed',
+        }));
+    } catch (error) {
+        return Promise.resolve(Object.freeze({
+            ok: false,
+            reason: 'transaction-lock-failed',
+        }));
+    }
 }
 
 // Resolve + apply the reward for a rolled rarity.

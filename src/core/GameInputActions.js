@@ -12,8 +12,17 @@
 
 import { DEV_MODE, SCREEN_SHAKE } from '../config/GameConfig.js';
 import { clamp } from './MathUtils.js';
-import { claim as claimBattlePass, claimAll as claimAllBattlePass } from '../systems/BattlePassSystem.js';
-import { openCase, MINES } from '../systems/CaseSystem.js';
+import {
+    claimAtomic as claimBattlePassAtomic,
+    claimAllAtomic as claimAllBattlePassAtomic,
+} from '../systems/BattlePassSystem.js';
+import {
+    purchaseCoinCosmetic,
+    purchaseCoinCosmeticAtomic,
+    purchasePermanentUpgrade,
+    purchasePermanentUpgradeAtomic,
+} from '../systems/ShopTransaction.js';
+import { MINES } from '../systems/CaseSystem.js';
 import {
     COSMETICS,
     COSMETIC_BLUEPRINT_IDS,
@@ -22,7 +31,7 @@ import {
     cosmeticById,
     cosmeticCoinCost,
 } from '../content/cosmetics.js';
-import { PERMANENT_UPGRADES, nextCost } from '../content/permanentUpgrades.js';
+import { PERMANENT_UPGRADES } from '../content/permanentUpgrades.js';
 import { MAPS } from '../content/maps.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
 import { menuHotspotLabel } from '../systems/AccessibilityBridge.js';
@@ -199,6 +208,198 @@ function completeBlueprintPurchase(game, item, cost, result) {
     return false;
 }
 
+function battlePassFailureText(result) {
+    const reason = typeof result?.reason === 'string' ? result.reason : '';
+    if (reason === 'nothing-to-claim') return 'Nothing to claim';
+    if (reason === 'claimed') return 'Reward already claimed';
+    if (reason === 'locked') return 'Reward is still locked';
+    if (reason === 'invalid') return 'Cannot claim that reward';
+    if (reason === 'transaction-busy') {
+        return 'Another game tab is active — reward remains unclaimed';
+    }
+    if (reason === 'external-save-changed') {
+        return 'Save changed in another tab — reload, then claim again';
+    }
+    if (reason === 'transaction-lock-unavailable') {
+        return 'Secure save protection is unavailable — reward remains unclaimed';
+    }
+    if (reason === 'persistence-unavailable' || reason === 'persistence-failed') {
+        return 'Save failed — reward remains unclaimed';
+    }
+    return 'Reward was not claimed — try again';
+}
+
+function startBattlePassClaim(game, kind, level = null) {
+    if (game.battlePassClaimPending) {
+        game._setToast?.('Reward save already in progress', false);
+        game.accessibility?.announce?.('Battle Pass reward save is still being secured.');
+        return false;
+    }
+    const serial = (Number.isSafeInteger(game._battlePassClaimSerial)
+        ? game._battlePassClaimSerial : 0) + 1;
+    game._battlePassClaimSerial = serial;
+    game.battlePassClaimPending = Object.freeze({ kind, level, serial });
+    game._setToast?.(kind === 'all' ? 'Securing all rewards…' : 'Securing reward…', false);
+    game.accessibility?.announce?.(
+        kind === 'all'
+            ? 'Securing all reached Battle Pass rewards across game tabs.'
+            : `Securing Battle Pass level ${level} reward across game tabs.`,
+    );
+
+    let operation;
+    try {
+        operation = kind === 'all'
+            ? claimAllBattlePassAtomic(game.saveSystem)
+            : claimBattlePassAtomic(game.saveSystem, level);
+    } catch (error) {
+        operation = { ok: false, reason: 'transaction-lock-failed' };
+    }
+    const settle = (rawResult) => {
+        const result = rawResult && typeof rawResult === 'object'
+            ? rawResult : { ok: false, reason: 'transaction-lock-failed' };
+        if (game.battlePassClaimPending?.serial !== serial) return result;
+        game.battlePassClaimPending = null;
+        game.menuFocusNeedsRefresh = true;
+        if (result.ok) {
+            if (kind === 'all') {
+                const labels = Array.isArray(result.labels) ? result.labels : [];
+                const recent = labels.slice(-2).join(' · ');
+                const count = Number.isSafeInteger(result.count) ? result.count : labels.length;
+                const message = `Claimed ${count} reward${count === 1 ? '' : 's'}`
+                    + (recent ? ` · ${recent}` : '');
+                game._setToast?.(message, false);
+                game.accessibility?.announce?.(message);
+            } else {
+                const message = `Claimed: ${result.label}`;
+                game._setToast?.(message, false);
+                game.accessibility?.announce?.(message);
+            }
+        } else {
+            const message = battlePassFailureText(result);
+            game._setToast?.(message, false);
+            game.accessibility?.announce?.(message);
+        }
+        return result;
+    };
+    const task = Promise.resolve(operation).then(
+        settle,
+        () => settle({ ok: false, reason: 'transaction-lock-failed' }),
+    );
+    game._battlePassClaimTask = task;
+    task.finally(() => {
+        if (game._battlePassClaimTask === task) game._battlePassClaimTask = null;
+    });
+    return true;
+}
+
+function shopPurchaseFailureText(result, label) {
+    const reason = typeof result?.reason === 'string' ? result.reason : '';
+    if (reason === 'insufficient-coins') return 'Not enough coins';
+    if (reason === 'maxed') return `${label} is already maxed`;
+    if (reason === 'already-owned') return `${label} is already owned`;
+    if (reason === 'not-coin-item') return `${label} must be earned, not purchased`;
+    if (reason === 'transaction-busy') return 'Another game tab is active — purchase not charged';
+    if (reason === 'external-save-changed') return 'Save changed — reload before purchasing';
+    if (reason === 'transaction-lock-unavailable') {
+        return 'Secure save protection unavailable — purchase not charged';
+    }
+    if (reason === 'persistence-unavailable' || reason === 'persistence-failed'
+        || reason === 'save-unavailable') return 'Save failed — purchase not charged';
+    return `${label} purchase was not completed`;
+}
+
+function reportSaveMutationFailure(game, action = 'Change') {
+    const reason = game.saveSystem?.getLastSaveFailureReason?.();
+    const message = reason === 'external-save-changed'
+        ? 'Save changed in another tab — reload before changing this'
+        : `${action} was not saved — try again`;
+    game.audio?.deny?.();
+    game._setToast?.(message);
+    return false;
+}
+
+export function hasPendingSecureMenuSave(game) {
+    return !!(
+        game?.blueprintPurchasePending
+        || game?.battlePassClaimPending
+        || game?.shopPurchasePending
+        || game?.minigame?._caseOpenTask
+        || game?.minigame?._minesStartTask
+        || game?.minigame?._minesCashoutTask
+    );
+}
+
+function blockMenuDuringSecureSave(game) {
+    if (!hasPendingSecureMenuSave(game)) return false;
+    game._setToast?.('Finishing secure save — please wait');
+    return true;
+}
+
+function startShopPurchase(game, kind, id, label) {
+    if (game.shopPurchasePending) {
+        game._setToast?.('Another purchase is still being secured');
+        return false;
+    }
+    const serial = (Number.isSafeInteger(game._shopPurchaseSerial)
+        ? game._shopPurchaseSerial : 0) + 1;
+    game._shopPurchaseSerial = serial;
+    game.shopPurchasePending = Object.freeze({ kind, id, serial });
+    game._setToast?.(`Securing ${label}…`);
+
+    const browserRuntime = typeof globalThis.window !== 'undefined';
+    let operation;
+    try {
+        if (kind === 'upgrade') {
+            operation = browserRuntime
+                ? purchasePermanentUpgradeAtomic(game.saveSystem, id)
+                : purchasePermanentUpgrade(game.saveSystem, id);
+        } else {
+            operation = browserRuntime
+                ? purchaseCoinCosmeticAtomic(game.saveSystem, id)
+                : purchaseCoinCosmetic(game.saveSystem, id);
+        }
+    } catch (error) {
+        operation = { ok: false, reason: 'transaction-lock-failed' };
+    }
+
+    const settle = (rawResult) => {
+        const result = rawResult && typeof rawResult === 'object'
+            ? rawResult : { ok: false, reason: 'transaction-lock-failed' };
+        if (game.shopPurchasePending?.serial !== serial) return result;
+        game.shopPurchasePending = null;
+        game.menuFocusNeedsRefresh = true;
+        if (result.ok) {
+            if (kind === 'upgrade') {
+                game.audio?.purchase?.();
+                game._setToast?.(`${result.name} level ${result.levelAfter} secured`);
+            } else {
+                game.audio?.cosmeticReward?.();
+                game._setToast?.(`Unlocked ${result.name}`);
+            }
+        } else {
+            game.audio?.deny?.();
+            game._setToast?.(shopPurchaseFailureText(result, label));
+        }
+        return result;
+    };
+
+    // Internal/Node seams remain synchronous for deterministic validators;
+    // production browser transactions own a task and suppress duplicate taps.
+    if (!browserRuntime && !(operation && typeof operation.then === 'function')) {
+        const result = settle(operation);
+        return result.ok === true;
+    }
+    const task = Promise.resolve(operation).then(
+        settle,
+        () => settle({ ok: false, reason: 'transaction-lock-failed' }),
+    );
+    game._shopPurchaseTask = task;
+    task.finally(() => {
+        if (game._shopPurchaseTask === task) game._shopPurchaseTask = null;
+    });
+    return true;
+}
+
 // Commands routed by Game's keydown listener are edge-triggered. Browser
 // key-repeat must not turn one held press into two destructive confirmations,
 // cross an overlay boundary, or toggle pause straight back off. Tab/arrows and
@@ -312,6 +513,7 @@ export const GameInputActionMethods = {
     },
 
     _menuKeyboardActivate() {
+        if (blockMenuDuringSecureSave(this)) return 'pending';
         // A named Canvas control always owns activation once focus is visible.
         if (this.menuFocusKey && this._menuActivateFocus()) return 'focused';
         if (this.menuTour) {
@@ -445,8 +647,12 @@ export const GameInputActionMethods = {
         return true;
     },
     toggleScreenShake() {
-        this.shakeEnabled = !this.shakeEnabled;
-        this.saveSystem.setSetting('screenShake', this.shakeEnabled);
+        const next = !this.shakeEnabled;
+        if (this.saveSystem.setSetting('screenShake', next) !== next) {
+            return reportSaveMutationFailure(this, 'Screen shake change');
+        }
+        this.shakeEnabled = next;
+        return true;
     },
     // Re-roll the current level-up offer (costs one reroll charge).
     rerollChoices() {
@@ -487,18 +693,7 @@ export const GameInputActionMethods = {
         if (!upgrade) return false;
         const cur = this.saveSystem.getUpgradeLevel(id);
         if (cur >= upgrade.maxLevel) return false;
-        // Use nextCost (NOT costAt) so the deducted price matches what the shop
-        // shows — both carry the deep-level steepening.
-        const cost = nextCost(upgrade, cur);
-        if (!this.saveSystem.spendCoins(cost)) { this.audio.deny(); return false; }
-        // Refund if the persist step can't apply (e.g. an upgrade id missing
-        // from the save schema) so coins are never taken without an upgrade.
-        if (!this.saveSystem.incrementUpgrade(id)) {
-            this.saveSystem.addCoins(cost);
-            return false;
-        }
-        this.audio.purchase();
-        return true;
+        return startShopPurchase(this, 'upgrade', id, upgrade.name);
     },
     // Buy the next Relic Attunement level (coin sink). SaveSystem.attuneRelic
     // does the spend+apply atomically (spendCoins only deducts on success), so
@@ -529,16 +724,17 @@ export const GameInputActionMethods = {
         const item = COSMETICS[arg && arg.id];
         if (!item) return false;
         if (this.saveSystem.isCosmeticUnlocked(item.id)) {
-            this.saveSystem.equipCosmetic(item.category, item.id); this.audio.equip(); return true;
+            if (!this.saveSystem.equipCosmetic(item.category, item.id)) {
+                this.audio.deny();
+                this._setToast('Save changed — cosmetic was not equipped');
+                return false;
+            }
+            this.audio.equip();
+            return true;
         }
         const price = cosmeticCoinCost(item);
         if (!price) return false;                                 // not a coin item
-        if (!this.saveSystem.spendCoins(price)) { this.audio.deny(); this._setToast('Not enough coins'); return false; }
-        if (!this.saveSystem.unlockCosmetic(item.id)) { this.saveSystem.addCoins(price); return false; }
-        this.saveSystem.equipCosmetic(item.category, item.id);
-        this.audio.cosmeticReward();          // celebratory fanfare on a NEW unlock
-        this._setToast(`Unlocked ${item.name}`);
-        return true;
+        return startShopPurchase(this, 'cosmetic', item.id, item.name);
     },
     // BOUTIQUE — buy every unowned coin-priced piece in the try-on look with
     // ONE spend (all-or-nothing so a partial look can't half-charge), then
@@ -598,7 +794,17 @@ export const GameInputActionMethods = {
     },
     requestResetSave() {
         if (this.resetConfirming) {
-            this.saveSystem.reset();
+            const persisted = this.saveSystem.reset();
+            // SaveSystem intentionally supports memory-only play when browser
+            // storage is unavailable. In that mode reset still applies fresh
+            // runtime defaults but cannot persist them; resynchronize every
+            // live preference and disclose that exact limitation.
+            const memoryOnly = persisted !== true && this.saveSystem.available === false;
+            if (!persisted && !memoryOnly) {
+                this.resetConfirming = false;
+                this.resetConfirmTimer = 0;
+                return reportSaveMutationFailure(this, 'Save reset');
+            }
             this.audio.setVolumes(
                 this.saveSystem.getSetting('volMusic'),
                 this.saveSystem.getSetting('volSfx'),
@@ -614,6 +820,9 @@ export const GameInputActionMethods = {
             this.resetConfirmTimer = 0;
             resetCollectionCompletionFlow(this);
             this.characterPhonePane = 'collection';
+            if (memoryOnly) {
+                this._setToast('Reset for this session — browser storage is unavailable');
+            }
             return true;
         }
         this.resetConfirming = true;
@@ -627,6 +836,11 @@ export const GameInputActionMethods = {
         // every interaction a click sound.
         this.audio.resume();
         this.audio.click();
+        // Paid/reward transactions finish against the menu state that started
+        // them. Do not launch a run or switch surfaces while a durable receipt
+        // is in flight; otherwise a committed case reel or Mines board could
+        // become invisible in gameplay and reappear stale on the next menu.
+        if (blockMenuDuringSecureSave(this)) return false;
         const hadBlueprintConfirm = this.blueprintConfirm !== null
             && this.blueprintConfirm !== undefined;
         // Every menu route except the matching second purchase press cancels an
@@ -938,8 +1152,14 @@ export const GameInputActionMethods = {
                 break;
             }
             case 'resetSave': this._pressFeedback('reset'); this.requestResetSave(); break;
-            case 'equipGear': this.saveSystem.equipGear(arg.category, arg.id); this.audio.equip(); break;
-            case 'equipCosmetic': this.saveSystem.equipCosmetic(arg.category, arg.id); this.audio.equip(); break;
+            case 'equipGear':
+                if (this.saveSystem.equipGear(arg.category, arg.id)) this.audio.equip();
+                else reportSaveMutationFailure(this, 'Gear change');
+                break;
+            case 'equipCosmetic':
+                if (this.saveSystem.equipCosmetic(arg.category, arg.id)) this.audio.equip();
+                else reportSaveMutationFailure(this, 'Cosmetic change');
+                break;
             case 'buyCosmetic': this._pressFeedback(`cos:${arg && arg.id}`); this._buyCosmetic(arg); break;
             // Collection Growth I-A — every browse action is session-only and
             // fail-closed. Filter changes return to page one; page hotspots pass
@@ -1046,7 +1266,12 @@ export const GameInputActionMethods = {
                 break;
             }
             case 'buyTryOn': this._pressFeedback('trybuy'); this.buyTryOn(); break;
-            case 'selectCharacter': this._pressFeedback(`char:${arg.id}`); this.saveSystem.setSelectedCharacter(arg.id); break;
+            case 'selectCharacter':
+                this._pressFeedback(`char:${arg.id}`);
+                if (!this.saveSystem.setSelectedCharacter(arg.id)) {
+                    reportSaveMutationFailure(this, 'Character change');
+                }
+                break;
             case 'selectMap': {
                 this._pressFeedback(`map:${arg.id}`);
                 const status = this.saveSystem.getMapUnlockStatus(arg.id);
@@ -1084,34 +1309,34 @@ export const GameInputActionMethods = {
             case 'volDown': this._adjustVolume(arg, -0.1); break;
             case 'openCase': this._resetMenuFocus(); this.minigame.openCaseFlow(arg); break;
             case 'openMines': this._resetMenuFocus(); this.minesFocusIndex = 0; this.minigame.openMines(arg); break;
-            case 'claimBP': {
-                const r = claimBattlePass(this.saveSystem, arg);
-                this._setToast(r.ok ? `Claimed: ${r.label}` : 'Cannot claim');
-                break;
-            }
-            case 'claimAllBP': {
-                const r = claimAllBattlePass(this.saveSystem);
-                const recent = r.labels.slice(-2).join(' · ');
-                this._setToast(r.count > 0
-                    ? `Claimed ${r.count} reward${r.count > 1 ? 's' : ''}${recent ? ` · ${recent}` : ''}`
-                    : 'Nothing to claim');
-                break;
-            }
+            case 'claimBP': startBattlePassClaim(this, 'single', arg); break;
+            case 'claimAllBP': startBattlePassClaim(this, 'all'); break;
             case 'caseContinue': this.minigame.dismissCase(); this._resetMenuFocus(); break;
             case 'replayTutorial':
-                this.saveSystem.setTourDone(false);
-                this._forceRunHints = true;      // next run re-teaches the loop
-                this._armMenuTour();
+                if (this.saveSystem.setTourDone(false)) {
+                    this._forceRunHints = true;      // next run re-teaches the loop
+                    this._armMenuTour();
+                } else {
+                    reportSaveMutationFailure(this, 'Tutorial reset');
+                }
                 break;
             case 'cheatCoins':
                 if (!DEV_MODE) break;
-                this.saveSystem.addCoins(arg);
-                this._setToast(`+${arg} coins`);
+                {
+                    const added = this.saveSystem.addCoins(arg);
+                    if (added > 0) this._setToast(`+${added} coins`);
+                    else if (this.saveSystem.getLastSaveFailureReason?.()) {
+                        reportSaveMutationFailure(this, 'Developer coin grant');
+                    } else this._setToast('Coin wallet already full');
+                }
                 break;
             case 'cheatUnlockAll': {
                 if (!DEV_MODE) break;
                 const n = this.saveSystem.cheatUnlockAll();
-                this._setToast(n > 0 ? `Unlocked ${n} item${n > 1 ? 's' : ''}` : 'Everything already unlocked');
+                if (n > 0) this._setToast(`Unlocked ${n} item${n > 1 ? 's' : ''}`);
+                else if (this.saveSystem.getLastSaveFailureReason?.()) {
+                    reportSaveMutationFailure(this, 'Developer unlock');
+                } else this._setToast('Everything already unlocked');
                 break;
             }
             default: break;
@@ -1122,35 +1347,44 @@ export const GameInputActionMethods = {
         // Guard the action itself so direct dispatch cannot bypass hidden UI.
         if ((key === 'unlockMaps' || key === 'debug') && !DEV_MODE) return false;
         const cur = this.saveSystem.getSetting(key) === true;
-        this.saveSystem.setSetting(key, !cur);
+        const next = !cur;
+        if (this.saveSystem.setSetting(key, next) !== next) {
+            return reportSaveMutationFailure(this, 'Setting change');
+        }
         if (key === 'debug') {
-            this.showDebug = !cur;
+            this.showDebug = next;
             this.profiler.enabled = this.showDebug;
             if (this.showDebug) this._taintCampaignRun?.('debug-mode');
         }
-        if (key === 'monoAudio') this.audio.setMonoAudio(!cur);
+        if (key === 'monoAudio') this.audio.setMonoAudio(next);
         if (key === 'captions') {
-            this.captionSystem?.setPreferences?.(!cur, this.saveSystem.getSetting('captionDetail'));
+            this.captionSystem?.setPreferences?.(next, this.saveSystem.getSetting('captionDetail'));
         }
-        this.accessibility?.announce?.(`${menuHotspotLabel('toggleSetting', key)}: ${!cur ? 'on' : 'off'}.`);
+        this.accessibility?.announce?.(`${menuHotspotLabel('toggleSetting', key)}: ${next ? 'on' : 'off'}.`);
         return true;
     },
     _setUiScale(value) {
         const scale = normalizeUiScale(value);
-        this.saveSystem.setSetting('uiScale', scale);
+        if (this.saveSystem.setSetting('uiScale', scale) !== scale) {
+            return reportSaveMutationFailure(this, 'HUD size change');
+        }
         this.accessibility?.announce?.(`Combat HUD size: ${scale} percent.`);
         return scale;
     },
     _setCaptionDetail(value) {
         const detail = normalizeCaptionDetail(value);
-        this.saveSystem.setSetting('captionDetail', detail);
+        if (this.saveSystem.setSetting('captionDetail', detail) !== detail) {
+            return reportSaveMutationFailure(this, 'Caption detail change');
+        }
         this.captionSystem?.setPreferences?.(this.saveSystem.getSetting('captions'), detail);
         this.accessibility?.announce?.(`Caption detail: ${detail}.`);
         return detail;
     },
     _setVibration(value) {
         const strength = normalizeVibrationStrength(value);
-        this.saveSystem.setSetting('vibration', strength);
+        if (this.saveSystem.setSetting('vibration', strength) !== strength) {
+            return reportSaveMutationFailure(this, 'Vibration change');
+        }
         this.haptics?.setStrength?.(strength);
         const supported = this.haptics?.supported?.() === true;
         if (strength !== 'off' && supported) this.haptics?.pulse?.('preview');
@@ -1160,7 +1394,10 @@ export const GameInputActionMethods = {
     },
     _adjustVolume(key, delta) {
         const cur = typeof this.saveSystem.getSetting(key) === 'number' ? this.saveSystem.getSetting(key) : 0.7;
-        this.saveSystem.setSetting(key, clamp(cur + delta, 0, 1));
+        const next = clamp(cur + delta, 0, 1);
+        if (this.saveSystem.setSetting(key, next) !== next) {
+            return reportSaveMutationFailure(this, 'Volume change');
+        }
         this.audio.setVolumes(
             this.saveSystem.getSetting('volMusic'),
             this.saveSystem.getSetting('volSfx'),
@@ -1168,6 +1405,7 @@ export const GameInputActionMethods = {
         );
         const value = Math.round((this.saveSystem.getSetting(key) || 0) * 100);
         this.accessibility?.announce?.(`${menuHotspotLabel(delta > 0 ? 'volUp' : 'volDown', key)}: ${value} percent.`);
+        return next;
     },
     selectUpgrade(idx) {
         if (!this.upgradeChoices) return;

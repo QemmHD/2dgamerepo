@@ -522,6 +522,15 @@ check(award.gained === award.breakdown.total, 'award receipt total does not matc
 const visibleAward = battlePassRunReceipt(award);
 check(visibleAward.reconciles && visibleAward.additiveTotal === visibleAward.gained,
     'visible battle-pass additive buckets do not reconcile to the displayed total');
+const failedAwardSave = {
+    xp: 250,
+    getBattlePassXp() { return this.xp; },
+    addBattlePassXp() { return { added: 0, everflameCaches: 0, everflameCoins: 0 }; },
+};
+const failedAward = awardRun(failedAwardSave, normalRun, { bonus: 0.5 });
+check(failedAward.gained === 0 && failedAward.attempted === failedAward.breakdown.total
+    && failedAward.persisted === false && failedAward.levelBefore === failedAward.levelAfter,
+    'failed Battle Pass persistence still reports authored XP as durably gained');
 const visibleWaylight = battlePassRunReceipt({ gained: livingVigilRun.total, breakdown: livingVigilRun });
 check(visibleWaylight.waylightWithinDeeds === livingVigilRun.livingVigil
     && visibleWaylight.additiveTotal === visibleWaylight.gained,
@@ -595,34 +604,40 @@ for (const key of ['vigilSitesActivated', 'vigilSiteKindsMastered', 'encountersC
 }
 check(save._validate({ stats: { vigilSiteKindsMastered: 999 } }).stats.vigilSiteKindsMastered === 4,
     'tampered site-kind mastery was not clamped during load');
-save.data = save._validate({ stats: {} });
-save.recordRun({ time: 80, vigilSitesActivated: 3, vigilSiteKindsMastered: 3, encountersCleared: 2, guardianPacksDefeated: 1 });
-save.recordRun({ time: 90, vigilSitesActivated: 2, vigilSiteKindsMastered: 99, encountersCleared: 4, guardianPacksDefeated: 2 });
-check(save.data.stats.vigilSitesActivated === 5, 'site activations did not accumulate exactly');
-check(save.data.stats.vigilSiteKindsMastered === 4, 'site-kind mastery did not clamp to four');
-check(save.data.stats.encountersCleared === 6, 'encounter clears did not accumulate exactly');
-check(save.data.stats.guardianPacksDefeated === 3, 'guardian packs did not accumulate exactly');
-save.recordRun({ vigilSitesActivated: -5, encountersCleared: -5, guardianPacksDefeated: -5 });
-check(save.data.stats.vigilSitesActivated === 5 && save.data.stats.encountersCleared === 6
-    && save.data.stats.guardianPacksDefeated === 3, 'negative Living Vigil summary values reduced lifetime totals');
+// Use a fresh authority instance. Earlier fixtures intentionally advance the
+// shared localStorage payload; reusing `save` here would now (correctly) trip
+// the stale-writer rollback guard instead of proving run-summary arithmetic.
+const vigilSave = new SaveSystem();
+vigilSave.data = vigilSave._validate({ stats: {} });
+check(vigilSave.save(), 'Living Vigil fixture could not seed durable authority');
+vigilSave.recordRun({ time: 80, vigilSitesActivated: 3, vigilSiteKindsMastered: 3, encountersCleared: 2, guardianPacksDefeated: 1 });
+vigilSave.recordRun({ time: 90, vigilSitesActivated: 2, vigilSiteKindsMastered: 99, encountersCleared: 4, guardianPacksDefeated: 2 });
+check(vigilSave.data.stats.vigilSitesActivated === 5, 'site activations did not accumulate exactly');
+check(vigilSave.data.stats.vigilSiteKindsMastered === 4, 'site-kind mastery did not clamp to four');
+check(vigilSave.data.stats.encountersCleared === 6, 'encounter clears did not accumulate exactly');
+check(vigilSave.data.stats.guardianPacksDefeated === 3, 'guardian packs did not accumulate exactly');
+vigilSave.recordRun({ vigilSitesActivated: -5, encountersCleared: -5, guardianPacksDefeated: -5 });
+check(vigilSave.data.stats.vigilSitesActivated === 5 && vigilSave.data.stats.encountersCleared === 6
+    && vigilSave.data.stats.guardianPacksDefeated === 3, 'negative Living Vigil summary values reduced lifetime totals');
 
 // Save normalization enforces authored upgrade caps, and live increments cannot
 // step past them even if a caller bypasses the shop UI.
-const overcapped = save._validate({ upgrades: Object.fromEntries(PERMANENT_UPGRADES.map((u) => [u.id, 999999])) });
+const catalogSave = new SaveSystem();
+const overcapped = catalogSave._validate({ upgrades: Object.fromEntries(PERMANENT_UPGRADES.map((u) => [u.id, 999999])) });
 for (const u of PERMANENT_UPGRADES) {
     check(overcapped.upgrades[u.id] === u.maxLevel, `${u.id} was not clamped to its authored max`);
 }
 const maxHpUpgrade = PERMANENT_UPGRADES.find((u) => u.id === 'maxHp');
-save.data.upgrades.maxHp = maxHpUpgrade.maxLevel;
-check(save.incrementUpgrade('maxHp') === false && save.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
+catalogSave.data.upgrades.maxHp = maxHpUpgrade.maxLevel;
+check(catalogSave.incrementUpgrade('maxHp') === false && catalogSave.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
     'a permanent upgrade incremented past its cap');
-save.data.upgrades.maxHp = maxHpUpgrade.maxLevel - 1;
-check(save.incrementUpgrade('maxHp') === true && save.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
+catalogSave.data.upgrades.maxHp = maxHpUpgrade.maxLevel - 1;
+check(catalogSave.incrementUpgrade('maxHp') === true && catalogSave.data.upgrades.maxHp === maxHpUpgrade.maxLevel,
     'a valid final permanent-upgrade increment was rejected');
 
 // Equipment APIs reject cross-slot ids immediately, and the run-start bridge
 // independently ignores a malformed raw loadout instead of applying its buffs.
-const validLegacyCosmetics = save._validate({ cosmetics: {
+const validLegacyCosmetics = catalogSave._validate({ cosmetics: {
     unlocked: ['hat_wool', 'cloak_crimson'],
     equipped: { hat: 'hat_wool', cloak: 'cloak_crimson' },
 } });
@@ -631,43 +646,43 @@ check(validLegacyCosmetics.cosmetics.unlocked.includes('hat_wool')
     && validLegacyCosmetics.cosmetics.equipped.hat === 'hat_wool'
     && validLegacyCosmetics.cosmetics.equipped.cloak === 'cloak_crimson',
 'valid pre-growth cosmetic saves no longer round-trip');
-const invalidEquippedCosmetic = save._validate({ cosmetics: {
+const invalidEquippedCosmetic = catalogSave._validate({ cosmetics: {
     unlocked: ['hat_wool', 'not_a_cosmetic'],
     equipped: { hat: 'not_a_cosmetic' },
 } });
 check(invalidEquippedCosmetic.cosmetics.equipped.hat === 'hat_none',
     'unknown equipped cosmetic escaped the existing slot fallback');
-const unlockedBeforeUnknownGrant = [...save.data.cosmetics.unlocked];
-check(save.unlockCosmetic('not_a_cosmetic') === false
-    && save.unlockCosmetic('__proto__') === false
-    && save.unlockCosmetic(null) === false,
+const unlockedBeforeUnknownGrant = [...catalogSave.data.cosmetics.unlocked];
+check(catalogSave.unlockCosmetic('not_a_cosmetic') === false
+    && catalogSave.unlockCosmetic('__proto__') === false
+    && catalogSave.unlockCosmetic(null) === false,
 'public cosmetic grant accepted an unknown/prototype/non-string id');
-check(save.unlockCosmeticSilent('not_a_cosmetic') === false
-    && save.unlockCosmeticSilent('constructor') === false,
+check(catalogSave.unlockCosmeticSilent('not_a_cosmetic') === false
+    && catalogSave.unlockCosmeticSilent('constructor') === false,
 'silent cosmetic grant accepted an unknown/prototype id');
-check(JSON.stringify(save.data.cosmetics.unlocked) === JSON.stringify(unlockedBeforeUnknownGrant),
+check(JSON.stringify(catalogSave.data.cosmetics.unlocked) === JSON.stringify(unlockedBeforeUnknownGrant),
     'rejected cosmetic grant mutated the owned catalog');
-check(save.unlockCosmetic('cloak_splitwatch') === true
-    && save.unlockCosmetic('cloak_splitwatch') === false,
+check(catalogSave.unlockCosmetic('cloak_splitwatch') === true
+    && catalogSave.unlockCosmetic('cloak_splitwatch') === false,
 'valid Collection Growth cosmetic grant is not new-once idempotent');
-check(save.unlockCosmeticSilent('hat_waylantern') === true
-    && save.unlockCosmeticSilent('hat_waylantern') === false,
+check(catalogSave.unlockCosmeticSilent('hat_waylantern') === true
+    && catalogSave.unlockCosmeticSilent('hat_waylantern') === false,
 'valid silent Collection Growth grant is not new-once idempotent');
-save.unlockGear('t_emberband');
-const armorBefore = save.data.gear.equipped.armor;
-check(save.equipGear('armor', 't_emberband') === false && save.data.gear.equipped.armor === armorBefore,
+catalogSave.unlockGear('t_emberband');
+const armorBefore = catalogSave.data.gear.equipped.armor;
+check(catalogSave.equipGear('armor', 't_emberband') === false && catalogSave.data.gear.equipped.armor === armorBefore,
     'wrong-slot gear was equipped');
-check(save.equipGear('trinket', 't_emberband') === true, 'valid trinket equip was rejected');
-save.unlockCosmetic('hat_wool');
-const cloakBefore = save.data.cosmetics.equipped.cloak;
-check(save.equipCosmetic('cloak', 'hat_wool') === false && save.data.cosmetics.equipped.cloak === cloakBefore,
+check(catalogSave.equipGear('trinket', 't_emberband') === true, 'valid trinket equip was rejected');
+catalogSave.unlockCosmetic('hat_wool');
+const cloakBefore = catalogSave.data.cosmetics.equipped.cloak;
+check(catalogSave.equipCosmetic('cloak', 'hat_wool') === false && catalogSave.data.cosmetics.equipped.cloak === cloakBefore,
     'wrong-slot cosmetic was equipped');
-check(save.equipCosmetic('hat', 'hat_wool') === true, 'valid hat equip was rejected');
+check(catalogSave.equipCosmetic('hat', 'hat_wool') === true, 'valid hat equip was rejected');
 
 // I-B per-hero looks are additive and preserve the old global equipped map as
 // the selected hero's compatibility mirror. Legacy looks seed every hero;
 // malformed presets/pursuits fail closed without deleting valid ownership.
-const migratedPresetSave = save._validate({
+const migratedPresetSave = catalogSave._validate({
     selectedCharacter: 'elf',
     cosmetics: {
         unlocked: ['hat_wool', 'cloak_crimson'],
@@ -683,9 +698,9 @@ for (const heroId of CHARACTER_IDS) {
 }
 check(migratedPresetSave.cosmetics.equipped.hat === 'hat_wool',
     'selected-hero compatibility mirror changed during preset migration');
-check(save._validate({ cosmetics: { pursuitSetId: '__unknown__' } }).cosmetics.pursuitSetId === null,
+check(catalogSave._validate({ cosmetics: { pursuitSetId: '__unknown__' } }).cosmetics.pursuitSetId === null,
     'unknown cosmetic pursuit escaped save validation');
-check(save._validate({ cosmetics: { pursuitSetId: 'stormglass' } }).cosmetics.pursuitSetId === 'stormglass',
+check(catalogSave._validate({ cosmetics: { pursuitSetId: 'stormglass' } }).cosmetics.pursuitSetId === 'stormglass',
     'valid cosmetic pursuit did not survive save validation');
 
 storage.clear();
