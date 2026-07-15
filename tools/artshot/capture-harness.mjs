@@ -54,13 +54,23 @@ class CdpConnection {
     }
 
     async open(timeoutMs) {
-        await Promise.race([
-            new Promise((resolveOpen, rejectOpen) => {
-                this.socket.addEventListener('open', resolveOpen, { once: true });
-                this.socket.addEventListener('error', () => rejectOpen(new Error('DevTools WebSocket failed')), { once: true });
-            }),
-            delay(timeoutMs).then(() => { throw new Error('DevTools WebSocket timed out'); }),
-        ]);
+        let timeoutId;
+        try {
+            await Promise.race([
+                new Promise((resolveOpen, rejectOpen) => {
+                    this.socket.addEventListener('open', resolveOpen, { once: true });
+                    this.socket.addEventListener('error', () => rejectOpen(new Error('DevTools WebSocket failed')), { once: true });
+                }),
+                new Promise((_, rejectTimeout) => {
+                    timeoutId = setTimeout(
+                        () => rejectTimeout(new Error('DevTools WebSocket timed out')),
+                        timeoutMs,
+                    );
+                }),
+            ]);
+        } finally {
+            clearTimeout(timeoutId);
+        }
         this.socket.addEventListener('message', (event) => {
             let message;
             try { message = JSON.parse(String(event.data)); } catch { return; }
@@ -116,6 +126,7 @@ async function main() {
         url,
     ];
     const child = spawn(chrome, browserArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const childExit = new Promise((resolveExit) => child.once('exit', resolveExit));
     let diagnostics = '';
     const captureDiagnostic = (chunk) => {
         diagnostics = (diagnostics + String(chunk)).slice(-12000);
@@ -180,13 +191,14 @@ async function main() {
         cdp?.close();
         let exited = child.exitCode !== null || child.signalCode !== null;
         if (!exited) child.kill();
+        let exitTimeoutId;
         await Promise.race([
-            new Promise((resolveExit) => child.once('exit', () => {
-                exited = true;
-                resolveExit();
-            })),
-            delay(2000),
+            childExit.then(() => { exited = true; }),
+            new Promise((resolveTimeout) => {
+                exitTimeoutId = setTimeout(resolveTimeout, 2000);
+            }),
         ]);
+        clearTimeout(exitTimeoutId);
         if (!exited) child.kill('SIGKILL');
     }
 }
