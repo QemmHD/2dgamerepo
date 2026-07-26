@@ -376,6 +376,56 @@ corner (§0.5) — shoot brand/layout evidence **without** the badge and correct
 
 ---
 
+## 5a. What actually shipped, where it differs from this spec
+
+Recorded during implementation so the spec stays honest rather than aspirational.
+
+**PR1 — as specced.** `computeRunBonus()` landed in `GameConfig.js`; `Game._startRun` calls it.
+The verification went further than planned: `tools/validate-run-bonus.js` walks **all 1536**
+`difficulty × Trial-subset` combinations against the original engine expression lifted verbatim,
+so "behaviour unchanged" is proven exhaustively rather than sampled. 40 assertions total.
+
+**PR2 — one addition.** The column header still read `Equipped Loadout` after the gear rows
+collapsed, which both duplicated the summary row's own kicker and mislabelled a column that now
+holds biome/patron/difficulty/trials/rewards. Renamed to **`Run Setup`**. Trial reward text also
+went 11px → 12px (there was room). Everything else landed as budgeted: measured `698 ≤ 708`,
+`s = 1`, no shrink.
+
+**PR3 — three changes the spec did not anticipate**, all found by screenshotting the
+returning-player path rather than assuming it matched the first-run path:
+
+1. *The veteran hook panel is ~26px shorter* (five nav rows above it, not three), so the
+   fixed `hookH >= 196` threshold silently dropped it to the compact fallback. Row fit is now
+   **measured against the actual band** (`bandAvail >= beats.length * 30`) instead of a
+   hard-coded height.
+2. *The compact fallback drew the row's status word*, so a veteran saw three identical
+   `TODAY` labels with the challenge names lost. Beats now carry a separate `short` field that
+   stands alone.
+3. *Beat lighting used `index < done`* — which lights the first N rows regardless of which
+   challenges were actually finished. Invisible before only because the labels were generic
+   (`START`/`BUILD`/`SURVIVE`); once the rows became named challenges it would have been a
+   visible lie. Each row is now lit by **its own** completion.
+
+To buy the veteran rows their room, the flavour title (`BUILD. SURVIVE. RETURN.`) and the
+generic summary line are dropped on that branch only — the kicker already reads
+`TODAY'S CHALLENGES n/3`, and three real challenge names beat two lines of filler.
+
+**Harness additions (dev tooling, not shipped surface):** `?difficulty=`, `?trials=` and
+`?runs=` stage pre-run setup and the lifetime run count through the *real* action handlers, plus
+a `runBonus` QA receipt exposing `expected` vs `applied`. Before this, a fresh profile is always
+`runs === 0`, which left every returning-player branch on HOME unreachable from a screenshot.
+
+**Measured results:**
+
+| Case | menu `expected` | engine `applied` |
+|---|---|---|
+| Nightmare, no Trials | `xp 0.500` | `xp 0.500` |
+| Nightmare + Glass + Frenzy | `xp 0.950, coin 0.250` | `xp 0.950, coin 0.250` |
+| Recruit + all 9 Trials | `xp 1.850, coin 1.220` | `xp 1.850, coin 1.220` |
+
+`EXC:0` on first-run HOME, veteran HOME, PLAY, phone-landscape PLAY and HOME, and a live run.
+**37/37 validators pass** (36 pre-existing + the new one).
+
 ## 6. Out of scope
 
 - No new logo/wordmark art (owner chose to restage the existing assets).

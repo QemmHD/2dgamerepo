@@ -1,4 +1,4 @@
-# EMBERWAKE — Detailed Update Specs (#2–#17)
+# EMBERWAKE — Detailed Update Specs (#2–#18)
 
 *Generated 2026-07-04 from a 16-author + 2-judge planning workflow. Each spec is code-grounded (file:line citations), PR-by-PR, with tunable starting numbers. The cross-spec rulings below are BINDING — they resolve every overlap found between independently-authored specs. See `docs/ROADMAP.md` for the 20-update overview.*
 
@@ -20,6 +20,7 @@
 | 15 | ASHBOUND — The Ash Ranks | IMPROVES | [15-ashbound.md](15-ashbound.md) |
 | 16 | NIGHTFALL CYCLES — The Rekindling | IMPROVES | [16-nightfall-cycles.md](16-nightfall-cycles.md) |
 | 17 | THE SEALED STORM — Forge Your Trial | ADDS | [17-the-sealed-storm.md](17-the-sealed-storm.md) |
+| 18 | THE CLEAR VIGIL — Say What It Does | IMPROVES | [18-the-clear-vigil.md](18-the-clear-vigil.md) |
 
 ## Binding cross-spec rulings (all 15)
 
