@@ -1545,18 +1545,26 @@ export class MenuRenderer {
         // Compact crest + wordmark lockup. Keeping the emblem beside the title
         // leaves the lower two-thirds free for the actual choices while still
         // giving the brand a premium, unmistakable first read.
-        const titleH = 96;
+        // The crest is a 512x512 emblem and was drawn at 78px — 15% scale, at
+        // which its forged rune-band aliases into noise instead of reading as
+        // the game's mark. At 168px (33%) the ring resolves and the lockup
+        // carries the screen. The wordmark grows with it so the emblem doesn't
+        // dwarf the name.
+        const titleH = 120;
         const titleW = ui.title ? ui.title.width * (titleH / ui.title.height) : 620;
-        const crestS = ui.logo ? 78 : 0;
-        const lockGap = ui.logo ? 18 : 0;
+        const crestS = ui.logo ? 168 : 0;
+        const lockGap = ui.logo ? 24 : 0;
         const lockW = crestS + lockGap + titleW;
         const lockX = visibleMid - lockW / 2;
         const titleY = sa.top + 54;
+        // Crest is taller than the wordmark now, so centre it on the wordmark's
+        // optical middle rather than hanging it off the top edge.
+        const crestY = titleY + titleH / 2 - crestS / 2;
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        this._ember(ctx, visibleMid, titleY + titleH * 0.56, 300, '#ff7a1e', 0.22 + Math.sin(t * 1.2) * 0.05);
-        if (ui.logo) this._ember(ctx, lockX + crestS / 2, titleY + crestS / 2, crestS * 0.78, '#ff8a3a', 0.17 + Math.sin(t * 1.7) * 0.04);
+        this._ember(ctx, visibleMid, titleY + titleH * 0.56, 340, '#ff7a1e', 0.22 + Math.sin(t * 1.2) * 0.05);
+        if (ui.logo) this._ember(ctx, lockX + crestS / 2, crestY + crestS / 2, crestS * 0.62, '#ff8a3a', 0.17 + Math.sin(t * 1.7) * 0.04);
         ctx.restore(); ctx.globalAlpha = 1;
-        if (ui.logo) ctx.drawImage(ui.logo, lockX, titleY + 6, crestS, crestS);
+        if (ui.logo) ctx.drawImage(ui.logo, lockX, crestY, crestS, crestS);
         const lx = lockX + crestS + lockGap;
         if (ui.title) {
             ctx.drawImage(ui.title, lx, titleY, titleW, titleH);
@@ -1575,8 +1583,10 @@ export class MenuRenderer {
         ruleG.addColorStop(0, 'rgba(255,122,30,0)'); ruleG.addColorStop(0.5, 'rgba(255,173,92,0.68)'); ruleG.addColorStop(1, 'rgba(255,122,30,0)');
         ctx.fillStyle = ruleG; ctx.fillRect(visibleMid - ruleW / 2, titleY + titleH + 10, ruleW, 2);
         ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#ffd28f'; ctx.font = `700 14px ${FONT}`;
-        ctx.fillText('HOLD THE LAST LIGHT', visibleMid, titleY - 10);
+        // One tagline, not two. 'HOLD THE LAST LIGHT' sat directly above the
+        // wordmark and duplicated the document title / manifest string, so the
+        // top of the screen carried three competing brand lines. The subtitle
+        // below says the same thing with more warmth; keep only that.
         ctx.fillStyle = 'rgba(255,230,195,0.78)'; ctx.font = `500 18px ${FONT}`;
         ctx.fillText('Survive the night. Keep the last light burning.', visibleMid, titleY + titleH + 38);
 
@@ -1597,8 +1607,12 @@ export class MenuRenderer {
         // desktop. Respect the real available height; the hook below may drop
         // out, and the keeper stage scales, instead of forcing content offscreen.
         const mainH = Math.max(500, mainBottom - mainTop);
-        const navW = 570;
-        const heroW = 650;
+        // Widened toward the middle: at 570/650 the nav panel ended at x=720
+        // and the hero panel began at x=1144, leaving a 424px hole down the
+        // centre of the title screen (22% of the canvas). 660/720 closes it to
+        // 264px, which reads as deliberate breathing room around the lockup.
+        const navW = 660;
+        const heroW = 720;
         const navX = left + 70;
         const heroX = right - heroW - 70;
         this._panel(ctx, navX - 24, mainTop, navW + 48, mainH, 'rgba(10,8,9,0.70)', 'rgba(255,158,80,0.22)', { corners: true });
@@ -1647,12 +1661,18 @@ export class MenuRenderer {
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
             const playTitle = isFirst ? 'START FIRST RUN' : 'START RUN';
             ctx.fillStyle = '#ffffff'; this._fitFont(ctx, playTitle, playR.w - 150, 800, 38);
-            ctx.fillText(playTitle, playR.x + 32, playR.y + 45);
+            ctx.fillText(playTitle, playR.x + 32, playR.y + 46);
+            // Two lines, not three. The first-run variant used to add a third
+            // ('OPEN RUN SETUP') that just restated the subtitle above it and
+            // crowded a 116px button. The returning-player third line carried
+            // the real shortcut, so that one survives as the subtitle.
             ctx.font = `600 16px ${FONT}`; ctx.fillStyle = 'rgba(255,247,231,0.88)';
             ctx.fillText(isFirst ? 'Guided setup · tips appear during play' : 'Choose Hero, Map & Difficulty',
-                playR.x + 32, playR.y + 78);
-            ctx.fillStyle = 'rgba(255,240,208,0.58)'; ctx.font = `700 13px ${FONT}`;
-            ctx.fillText(isFirst ? 'OPEN RUN SETUP' : 'SPACE / ENTER  •  QUICK START', playR.x + 32, playR.y + 99);
+                playR.x + 32, playR.y + 80);
+            if (!isFirst) {
+                ctx.fillStyle = 'rgba(255,240,208,0.58)'; ctx.font = `700 13px ${FONT}`;
+                ctx.fillText('SPACE / ENTER  •  QUICK START', playR.x + 32, playR.y + 100);
+            }
             const pcx = playR.x + playR.w - 58, pcy = playR.y + playR.h / 2;
             ctx.beginPath(); ctx.arc(pcx, pcy, 31, 0, TAU);
             ctx.fillStyle = 'rgba(24,10,6,0.48)'; ctx.fill();
@@ -1764,32 +1784,98 @@ export class MenuRenderer {
             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
             ctx.fillStyle = '#ffad55'; ctx.font = `800 12px ${FONT}`;
             ctx.fillText(isFirst ? 'HOW A RUN WORKS' : `TODAY'S CHALLENGES  ${done}/${dailyTotal}`, navX + 22, hookY + 30);
-            ctx.fillStyle = '#fff0d7';
-            const hookTitle = isFirst ? 'SURVIVE ABOUT 15 MINUTES.' : 'BUILD. SURVIVE. RETURN.';
-            this._fitFont(ctx, hookTitle, navW - 44, 700, 24);
-            ctx.fillText(hookTitle, navX + 22, hookY + 62);
-            ctx.fillStyle = 'rgba(244,230,210,0.62)'; ctx.font = `500 14px ${FONT}`;
-            const hookCopy = isFirst
-                ? 'Move, collect XP, choose powers, and survive Emberwood until dawn.'
-                : 'Finish daily challenges, improve your build, and start another run.';
-            this._fitFont(ctx, hookCopy, navW - 44, 500, 14, FONT, 11);
-            ctx.fillText(hookCopy, navX + 22, hookY + 88);
+            // The veteran panel is ~26px shorter (five nav rows above it) and
+            // its kicker already reads "TODAY'S CHALLENGES n/3", so the flavour
+            // title is redundant there. Dropping it buys the room the three
+            // real challenge rows need to breathe.
+            if (isFirst) {
+                ctx.fillStyle = '#fff0d7';
+                this._fitFont(ctx, 'SURVIVE ABOUT 15 MINUTES.', navW - 44, 700, 24);
+                ctx.fillText('SURVIVE ABOUT 15 MINUTES.', navX + 22, hookY + 62);
+            }
+            // A new player needs the summary line; a returning one does not —
+            // "Finish daily challenges, improve your build, and start another
+            // run" is filler next to the actual challenge names, and the
+            // veteran deck has five nav rows so the hook panel is ~26px
+            // shorter. Spending that line on real content is the better trade.
+            if (isFirst) {
+                ctx.fillStyle = 'rgba(244,230,210,0.62)'; ctx.font = `500 14px ${FONT}`;
+                const hookCopy = 'Move, collect XP, choose powers, and survive Emberwood until dawn.';
+                this._fitFont(ctx, hookCopy, navW - 44, 500, 14, FONT, 11);
+                ctx.fillText(hookCopy, navX + 22, hookY + 88);
+            }
 
-            if (hookH >= 132) {
-                const beats = isFirst ? ['MOVE', 'LEVEL UP', 'SURVIVE'] : ['START', 'BUILD', 'SURVIVE'];
+            // The three beats used to be a horizontal dot-timeline pinned to the
+            // panel's bottom edge, leaving ~150px of nothing between the copy
+            // and them. Stack them as rows spread through that space, each with
+            // the one-line gloss it never had. A new player's most common
+            // question is "what do I actually DO?" — answer it here.
+            // For a returning player the rows ARE today's challenges, so each
+            // one is lit by ITS OWN completion — not by "index < done", which
+            // would light the first N rows regardless of which were actually
+            // finished. (The old horizontal timeline did exactly that, but its
+            // labels were generic so nothing looked wrong.)
+            const doneIds = (daily.day === day && Array.isArray(daily.completed))
+                ? new Set(daily.completed) : new Set();
+            // `short` is what the compact fallback shows when the panel is too
+            // shallow for full rows — it must stand alone, so it can't be the
+            // status word ('TODAY'/'DONE') that only makes sense beside a name.
+            const beats = isFirst
+                ? [
+                    { label: 'MOVE', short: 'MOVE', gloss: 'WASD or arrows. You attack automatically.', lit: true },
+                    { label: 'LEVEL UP', short: 'LEVEL UP', gloss: 'Grab XP shards, then pick a new power.', lit: true },
+                    { label: 'SURVIVE', short: 'SURVIVE', gloss: 'Last until dawn. Bosses come as it deepens.', lit: true },
+                ]
+                : dailyPicked.slice(0, 3).map((ch) => ({
+                    label: doneIds.has(ch?.id) ? 'DONE' : 'TODAY',
+                    short: ch?.name || '—',
+                    gloss: ch?.name || '—',
+                    lit: doneIds.has(ch?.id),
+                }));
+            // Measure the real band instead of hard-coding a height threshold:
+            // the veteran deck is two nav rows taller, so its hook panel is
+            // shorter, and a fixed cutoff silently dropped it to the fallback.
+            const bandTop = hookY + (isFirst ? 108 : 52);
+            const bandAvail = (hookY + hookH - 16) - bandTop;
+            // 30px is the real floor: a row is an 11px label at cy-5 over a
+            // 13px gloss at cy+11, so anything tighter makes consecutive rows
+            // collide. Below it, fall back to the compact horizontal strip.
+            const rowsFit = beats.length > 0 && bandAvail >= beats.length * 30;
+            if (rowsFit) {
+                const rowH = bandAvail / beats.length;
+                for (let i = 0; i < beats.length; i++) {
+                    const cy = bandTop + rowH * (i + 0.5);
+                    const lit = beats[i].lit;
+                    ctx.beginPath(); ctx.arc(navX + 28, cy, 5, 0, TAU);
+                    ctx.fillStyle = lit ? '#ff8a3a' : 'rgba(255,255,255,0.18)'; ctx.fill();
+                    // Connector to the next beat, so it still reads as a sequence.
+                    if (i < beats.length - 1) {
+                        ctx.fillStyle = 'rgba(255,154,74,0.18)';
+                        ctx.fillRect(navX + 27, cy + 8, 2, rowH - 16);
+                    }
+                    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+                    ctx.fillStyle = lit ? 'rgba(255,239,218,0.86)' : 'rgba(255,255,255,0.34)';
+                    ctx.font = `800 11px ${FONT}`;
+                    ctx.fillText(beats[i].label, navX + 44, cy - 5);
+                    ctx.fillStyle = 'rgba(238,224,208,0.60)'; ctx.font = `500 13px ${FONT}`;
+                    ctx.fillText(this._ellip(ctx, beats[i].gloss, navW - 70), navX + 44, cy + 11);
+                }
+            } else if (hookH >= 132) {
+                // Short panel (phone safe-areas): fall back to the compact
+                // horizontal timeline rather than overflowing.
                 const beatY = hookY + hookH - 30;
                 const beatW = (navW - 44) / beats.length;
                 for (let i = 0; i < beats.length; i++) {
                     const bx = navX + 22 + i * beatW;
                     ctx.beginPath(); ctx.arc(bx + 6, beatY, 4, 0, TAU);
-                    ctx.fillStyle = isFirst || i < done ? '#ff8a3a' : 'rgba(255,255,255,0.18)'; ctx.fill();
+                    ctx.fillStyle = beats[i].lit ? '#ff8a3a' : 'rgba(255,255,255,0.18)'; ctx.fill();
                     if (i < beats.length - 1) {
                         ctx.fillStyle = 'rgba(255,154,74,0.18)';
                         ctx.fillRect(bx + 18, beatY - 1, beatW - 26, 2);
                     }
                     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
                     ctx.fillStyle = 'rgba(255,239,218,0.70)'; ctx.font = `800 10px ${FONT}`;
-                    ctx.fillText(beats[i], bx + 16, beatY + 1);
+                    ctx.fillText(this._ellip(ctx, beats[i].short, beatW - 26), bx + 16, beatY + 1);
                 }
             }
         }

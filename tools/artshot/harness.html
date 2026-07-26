@@ -224,6 +224,12 @@ const QA_MAP_BYPASS = MAP_BYPASS_REQUEST === '1';
 // state. Needed because the readout's whole job is to agree with the engine's
 // applied bonus, and the interesting case (Nightmare's +50% XP with NO Trials
 // active) is unreachable from a default profile.
+// ?runs=<n> seeds the lifetime run count so the RETURNING-player branches
+// (HOME's veteran deck + daily-challenge rows, the non-first START button) can
+// be shot. A fresh harness profile always has runs === 0, which meant half of
+// HOME's code was unreachable from a screenshot.
+const QA_RUNS_REQUEST = params.has('runs') ? params.get('runs') : null;
+const QA_RUNS = QA_RUNS_REQUEST == null ? null : Number.parseInt(QA_RUNS_REQUEST, 10);
 const QA_DIFFICULTY = params.has('difficulty') ? params.get('difficulty') : null;
 const QA_TRIALS_REQUEST = params.has('trials') ? params.get('trials') : null;
 const QA_TRIALS = QA_TRIALS_REQUEST == null
@@ -624,6 +630,12 @@ async function boot() {
         }
     }
 
+    if (QA_RUNS_REQUEST != null && (!Number.isFinite(QA_RUNS) || QA_RUNS < 0)) {
+        ERR.push(`runs: '${QA_RUNS_REQUEST}' is not a non-negative integer`);
+    } else if (QA_RUNS != null) {
+        game.saveSystem.data.stats = game.saveSystem.data.stats || {};
+        game.saveSystem.data.stats.runs = QA_RUNS;
+    }
     if (QA_DIFFICULTY != null && !DIFFICULTY[QA_DIFFICULTY]) {
         ERR.push(`difficulty: '${QA_DIFFICULTY}' is not one of ${Object.keys(DIFFICULTY).join('|')}`);
     }
