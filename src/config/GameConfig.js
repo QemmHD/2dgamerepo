@@ -1254,7 +1254,43 @@ export const RUN_MODIFIERS = [
 // Raised from 1.0 so a deep Pact (many curses) keeps paying more — the climb
 // has somewhere to go. Coins fund only cosmetics + the shop (no pay-to-win),
 // so a generous ceiling is safe.
+//
+// NOTE (measured, not assumed): with the table above this ceiling is currently
+// UNREACHABLE. Summing every entry gives xpBonus 1.85 and coinBonus 1.22, so
+// even all nine Trials on Nightmare peaks at 0.5 + 1.85 = 2.35 XP. The clamp is
+// kept as insurance against a future retune, not because it binds today —
+// don't "fix" a readout by chasing this number.
 export const RUN_MODIFIER_MAX_BONUS = 2.5;
+
+// ── The pre-run XP/coin bonus — SINGLE SOURCE OF TRUTH ───────────────────
+// Both the PLAY-screen readout and the engine's applied bonus MUST come from
+// here. They used to be two separate expressions and they disagreed: the menu
+// summed only the Trials from zero while Game seeded the accumulator with
+// DIFFICULTY[].xpBonus, so Nightmare silently granted +50% Pass XP that the
+// menu never showed (and the two clamps differed too — 2.5 vs 2.5 + 0.5).
+// Keeping one function is what makes that class of drift impossible rather
+// than merely fixed once.
+//
+// Pure: no engine state, no save access, safe to call every frame from a draw
+// path. `modifierIds` accepts an array or a Set (Game holds a Set).
+// `difficultyXp` is returned separately so the UI can ATTRIBUTE the total
+// ("Nightmare +50%") instead of showing an unexplained number.
+export function computeRunBonus(difficultyId, modifierIds = []) {
+    const diff = DIFFICULTY[difficultyId] || DIFFICULTY.normal;
+    const ids = modifierIds instanceof Set ? modifierIds : new Set(modifierIds || []);
+    const difficultyXp = diff.xpBonus || 0;
+    let xp = difficultyXp, coin = 0;
+    for (const m of RUN_MODIFIERS) {
+        if (!ids.has(m.id)) continue;
+        xp += m.xpBonus || 0;
+        coin += m.coinBonus || 0;
+    }
+    return {
+        xp: Math.min(xp, RUN_MODIFIER_MAX_BONUS + difficultyXp),
+        coin: Math.min(coin, RUN_MODIFIER_MAX_BONUS),
+        difficultyXp,
+    };
+}
 
 // Pact Intensity tier label, keyed off how many Trials are active. Pure
 // labelling for the menu readout (the real reward is the summed xp/coinBonus).

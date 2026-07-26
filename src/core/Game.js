@@ -61,7 +61,7 @@ import { resolveStartingWeapon, applyLoadout } from '../systems/LoadoutSystem.js
 import { resolveWeaponSkin, isMeleeWeapon } from '../content/weaponSkins.js';
 import { evaluateAchievements } from '../content/achievements.js';
 import { evaluateDaily, currentDayNumber } from '../content/dailyChallenges.js';
-import { DIFFICULTY, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS } from '../config/GameConfig.js';
+import { DIFFICULTY, RUN_MODIFIERS, computeRunBonus } from '../config/GameConfig.js';
 import { applyCharacter } from '../systems/CharacterSystem.js';
 import { CHARACTERS, CHARACTER_IDS } from '../content/characters.js';
 import { getBorderStrip, getBorderPattern } from '../assets/ObstacleSprites.js';
@@ -1057,7 +1057,7 @@ export class Game {
         const mods = RUN_MODIFIERS.filter((m) => this.selectedModifiers.has(m.id));
         this.activeModifiers = mods;
         let hp = diff.hp, speed = diff.speed, damage = diff.damage, elite = diff.elite, cap = 1, interval = 1;
-        let pDamage = 1, pPickup = 1, pIncoming = 1, xpBonus = diff.xpBonus || 0, coinBonus = 0;
+        let pDamage = 1, pPickup = 1, pIncoming = 1;
         for (const m of mods) {
             if (m.hp) hp *= m.hp;
             if (m.speed) speed *= m.speed;
@@ -1068,8 +1068,6 @@ export class Game {
             if (m.playerDamage) pDamage *= m.playerDamage;
             if (m.playerPickup) pPickup *= m.playerPickup;
             if (m.playerIncoming) pIncoming *= m.playerIncoming;
-            xpBonus += m.xpBonus || 0;
-            coinBonus += m.coinBonus || 0;
         }
         this.runScale = { hp, speed, damage, elite, cap, interval };
         // Per-map difficulty rung: later maps' TRASH is a little tougher too, so
@@ -1081,10 +1079,11 @@ export class Game {
             this.runScale.damage *= 1 + (_mt - 1) * 0.08;
             this.runScale.speed *= 1 + (_mt - 1) * 0.03;
         }
-        this.runBonus = {
-            xp: Math.min(xpBonus, RUN_MODIFIER_MAX_BONUS + (diff.xpBonus || 0)),
-            coin: Math.min(coinBonus, RUN_MODIFIER_MAX_BONUS),
-        };
+        // XP/coin reward comes from the SHARED helper so the PLAY-screen readout
+        // and the applied bonus can never disagree again (see GameConfig.js).
+        // `this.difficulty` is already resolved above, so dailyMode's forced
+        // 'normal' is honoured here without a second branch.
+        this.runBonus = computeRunBonus(this.difficulty, this.selectedModifiers);
         // Apply player-side modifiers (compose onto loadout/character values).
         this.player.damageMul = (this.player.damageMul ?? 1) * pDamage;
         this.player.pickupRange *= pPickup;
