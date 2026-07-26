@@ -162,6 +162,7 @@ import { Coin } from '../../src/entities/Coin.js';
 import { HealthOrb } from '../../src/entities/HealthOrb.js';
 import { DamageNumber } from '../../src/entities/DamageNumber.js';
 import { WEAPON_AURA } from '../../src/content/weapons.js';
+import { DIFFICULTY, RUN_MODIFIERS, computeRunBonus } from '../../src/config/GameConfig.js';
 import { photoFilterIndexById } from '../../src/content/photoFilters.js';
 import { isPhoneLandscapeViewport } from '../../src/systems/ResponsiveLayout.js';
 import { buildUIState } from '../../src/systems/UIStateBuilder.js';
@@ -218,6 +219,16 @@ const CAMPAIGN_BOSS_TOKENS = CAMPAIGN_BOSS_REQUEST == null
     : CAMPAIGN_BOSS_REQUEST.split(',').map((value) => value.trim()).filter(Boolean);
 const MAP_BYPASS_REQUEST = params.has('mapbypass') ? params.get('mapbypass') : null;
 const QA_MAP_BYPASS = MAP_BYPASS_REQUEST === '1';
+// ?difficulty=easy|normal|hard and ?trials=<csv of RUN_MODIFIERS ids> stage the
+// pre-run setup so the PLAY screen's Run Rewards readout can be shot in a known
+// state. Needed because the readout's whole job is to agree with the engine's
+// applied bonus, and the interesting case (Nightmare's +50% XP with NO Trials
+// active) is unreachable from a default profile.
+const QA_DIFFICULTY = params.has('difficulty') ? params.get('difficulty') : null;
+const QA_TRIALS_REQUEST = params.has('trials') ? params.get('trials') : null;
+const QA_TRIALS = QA_TRIALS_REQUEST == null
+    ? null
+    : QA_TRIALS_REQUEST.split(',').map((value) => value.trim()).filter(Boolean);
 const LOCAL_QA_ORIGIN = location.hostname === 'localhost'
     || location.hostname === '127.0.0.1'
     || location.hostname === '[::1]';
@@ -613,9 +624,27 @@ async function boot() {
         }
     }
 
+    if (QA_DIFFICULTY != null && !DIFFICULTY[QA_DIFFICULTY]) {
+        ERR.push(`difficulty: '${QA_DIFFICULTY}' is not one of ${Object.keys(DIFFICULTY).join('|')}`);
+    }
+    if (QA_TRIALS) {
+        for (const id of QA_TRIALS) {
+            if (!RUN_MODIFIERS.some((m) => m.id === id)) ERR.push(`trials: unknown Trial id '${id}'`);
+        }
+    }
+
     if (SCREEN === 'menu') {
         game.screen = 'start';
         game.menuTab = TAB;
+        // Stage pre-run setup through the REAL action handlers, so the shot
+        // exercises the same path a tap does (no direct state pokes).
+        if (QA_DIFFICULTY != null) game._menuAction('setDifficulty', QA_DIFFICULTY);
+        if (QA_TRIALS) {
+            for (const m of RUN_MODIFIERS) {
+                const want = QA_TRIALS.includes(m.id);
+                if (want !== game.selectedModifiers.has(m.id)) game._menuAction('toggleModifier', m.id);
+            }
+        }
         if (QA_TRY_SET) {
             const setIndex = COSMETIC_SETS.findIndex((set) => set.id === QA_TRY_SET.id);
             game.tryOn = { ...QA_TRY_SET.pieces };
@@ -763,6 +792,16 @@ async function boot() {
         else if (QA_RUN_MODE === 'rite-trial') game.riteTrialMode = true;
         else if (QA_RUN_MODE === 'boss-rush') game.bossRushMode = true;
         else if (QA_RUN_MODE === 'weekly') game.weeklyEmberMode = true;
+        // Stage the same pre-run setup the menu path stages, BEFORE _startRun,
+        // so a run shot can prove game.runBonus equals what the PLAY readout
+        // promised for the identical (difficulty, Trials) pair.
+        if (QA_DIFFICULTY != null) game._menuAction('setDifficulty', QA_DIFFICULTY);
+        if (QA_TRIALS) {
+            for (const m of RUN_MODIFIERS) {
+                const want = QA_TRIALS.includes(m.id);
+                if (want !== game.selectedModifiers.has(m.id)) game._menuAction('toggleModifier', m.id);
+            }
+        }
         game._startRun();                // default hero (monkey "Pyra"), requested mode/map
         game.player.damageTakenMul = 0;  // harness godmode: survive the swarm for the shot
         if (QA_BOSS_WARNING) game._startBossWarning('stormwingAlpha');
@@ -1462,6 +1501,18 @@ async function boot() {
         ruinBellObjectiveA11y: QA_RUIN_BELL
             ? (document.getElementById('game-objective')?.textContent || '') : '',
         activeBossId: qaActiveBoss?.type || '',
+        // Pre-run reward truth. `expected` is what the shared helper says the
+        // run will pay; `applied` is what the engine actually banked into
+        // game.runBonus at _startRun. On the menu there is no run yet, so
+        // applied stays null and only `expected` is meaningful.
+        runBonusDifficulty: game.saveSystem.getDifficulty(),
+        runBonusTrials: [...game.selectedModifiers].sort().join(','),
+        runBonusExpected: (() => {
+            const b = computeRunBonus(game.saveSystem.getDifficulty(), game.selectedModifiers);
+            return `xp:${b.xp.toFixed(3)},coin:${b.coin.toFixed(3)},diffXp:${b.difficultyXp.toFixed(3)}`;
+        })(),
+        runBonusApplied: game.runBonus
+            ? `xp:${game.runBonus.xp.toFixed(3)},coin:${game.runBonus.coin.toFixed(3)}` : '',
         runMode: game._runObjectiveModeId?.() || '',
         bossRushActive: !!game.bossRush,
         gauntletMetricSafe: !qaObjective
@@ -1984,6 +2035,10 @@ async function boot() {
     qaRoot.dataset.qaRuinBellObjectiveTextComplete = String(window.__qaState.ruinBellObjectiveTextComplete);
     qaRoot.dataset.qaRuinBellObjectiveA11y = window.__qaState.ruinBellObjectiveA11y;
     qaRoot.dataset.qaActiveBossId = window.__qaState.activeBossId;
+    qaRoot.dataset.qaRunBonusDifficulty = window.__qaState.runBonusDifficulty;
+    qaRoot.dataset.qaRunBonusTrials = window.__qaState.runBonusTrials;
+    qaRoot.dataset.qaRunBonusExpected = window.__qaState.runBonusExpected;
+    qaRoot.dataset.qaRunBonusApplied = window.__qaState.runBonusApplied;
     qaRoot.dataset.qaRunMode = window.__qaState.runMode;
     qaRoot.dataset.qaBossRushActive = String(window.__qaState.bossRushActive);
     qaRoot.dataset.qaGauntletMetricSafe = String(window.__qaState.gauntletMetricSafe);

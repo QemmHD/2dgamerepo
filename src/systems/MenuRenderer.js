@@ -9,7 +9,7 @@
 // one place (here) and is never duplicated for hit-testing.
 
 import { roundRectPath, clamp01, easeOutCubic } from '../render/DrawUtils.js';
-import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, RUN_MODIFIER_MAX_BONUS, DEV_MODE, pactTier } from '../config/GameConfig.js';
+import { INTERNAL_WIDTH, INTERNAL_HEIGHT, DIFFICULTY, DIFFICULTY_ORDER, RUN_MODIFIERS, computeRunBonus, DEV_MODE, pactTier } from '../config/GameConfig.js';
 import { rarityColor, rarityName, RARITIES } from '../content/rarities.js';
 import { getRarityIcon } from '../assets/CustomIcons.js';
 import { getCloakSprite } from '../assets/LpcSprites.js';
@@ -148,7 +148,7 @@ export const MENU_GROUPS = [
 // One-line plain-English description per screen — drawn in the header strip so
 // every screen says what it IS (the tour teaches once; this stays forever).
 export const TAB_DESCRIPTIONS = {
-    play: 'Pick your hero, biome and difficulty — then START RUN.',
+    play: 'Set up a run: hero, biome, difficulty and optional Trials.',
     modes: 'Special ways to play: daily and weekly challenges with their own records.',
     skills: 'Permanent upgrades bought with run coins — they apply to every future run.',
     loadout: 'Gear won from cases, worn in four slots — each piece is a small permanent bonus.',
@@ -2315,21 +2315,31 @@ export class MenuRenderer {
         const innerX = rx + 28, innerW = rw - 56;
         this._panel(ctx, rx, c.y, rw, c.h, null, undefined, { corners: true });
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        // The column header names the WHOLE column. It used to read "Equipped
+        // Loadout", which was true when four gear rows opened it and stopped
+        // being true once biome/patron/difficulty/trials/rewards followed.
         ctx.fillStyle = '#cdd6e2'; ctx.font = `700 24px ${HEAD}`;
-        ctx.fillText('Equipped Loadout', innerX, c.y + 38);
+        ctx.fillText('Run Setup', innerX, c.y + 38);
 
         const eq = save.gear.equipped;
         const curDiff = state.difficulty || 'normal';
         const activeMods = state.selectedModifiers || [];
 
-        // START reserved at the bottom; the four sections fit in the gap above.
+        // START reserved at the bottom; the sections fit in the gap above.
         const startH = clamp(c.h * 0.12, 56, 84);
         const startY = c.y + c.h - startH;
         const top = c.y + 52;
         const avail = startY - top - 12;
-        const nGear = GEAR_CATEGORIES.length;
-        const tRows = Math.ceil(RUN_MODIFIERS.length / 3); // Trials chip grid rows (3 cols)
-        const N = { gearRow: 52, gearGap: 9, sec: 18, lbl: 30, biome: 60, diff: 46, chip: 38, chipGap: 8 };
+        // Trials run 2-WIDE so every chip can state what it does AND what it
+        // pays on one line. The four read-only gear rows that used to eat 235px
+        // (32% of this budget) collapsed to a single summary row to fund it —
+        // they were never clickable, and on a fresh save the LOADOUT tab they
+        // describe is still locked. Measured budget at s=1: 70 + 104 + 94 + 114
+        // + 280 + 36 = 698 ≤ 708 avail, so this screen no longer shrinks on
+        // desktop (it used to solve to s≈0.974 before any of this was added).
+        const TRIAL_COLS = 2;
+        const tRows = Math.ceil(RUN_MODIFIERS.length / TRIAL_COLS);
+        const N = { gearRow: 52, sec: 18, lbl: 30, biome: 56, diff: 46, diffDesc: 20, chip: 40, chipGap: 8, rewards: 36 };
         // The TRUE laid-out height for a given scale. Labels + chip rows have
         // their own lower floors (so text stays legible), which is exactly why
         // a naive avail/needed under-budgets — so we MEASURE with the real
@@ -2337,13 +2347,18 @@ export class MenuRenderer {
         // keeps the stated "always fits c.h" invariant on any panel (the floors
         // only affect how big things look when there's room, never overlap).
         const lblScale = (s) => Math.max(s, 0.82);
-        const chipScale = (s) => Math.max(s, 0.8);
+        // Chip floor raised 0.8 → 0.86: chips now carry BODY TEXT (each Trial's
+        // effect + reward), not just a name, so they must never shrink to the
+        // point that the explanation this screen exists to show stops being
+        // readable. Everything else compresses first.
+        const chipScale = (s) => Math.max(s, 0.86);
         const fitH = (s) =>
-            nGear * N.gearRow * s + (nGear - 1) * N.gearGap * s + N.sec * s
-            + N.lbl * lblScale(s) + N.biome * s + N.sec * s
-            + N.lbl * lblScale(s) + N.diff * s + N.sec * s   // Patron row (reuses diff height)
-            + N.lbl * lblScale(s) + N.diff * s + N.sec * s
-            + N.lbl * lblScale(s) + (tRows * N.chip * chipScale(s) + (tRows - 1) * N.chipGap * s) + N.sec * s;
+            N.gearRow * s + N.sec * s                                        // loadout summary (1 row)
+            + N.lbl * lblScale(s) + N.biome * s + N.sec * s                  // biome
+            + N.lbl * lblScale(s) + N.diff * s + N.sec * s                   // patron (blurb rides the label)
+            + N.lbl * lblScale(s) + N.diff * s + N.diffDesc * lblScale(s) + N.sec * s   // difficulty + its desc
+            + N.lbl * lblScale(s) + (tRows * N.chip * chipScale(s) + (tRows - 1) * N.chipGap * s) + N.sec * s
+            + N.rewards * s;                                                 // Run Rewards bar
         let s = 1;
         // Floor: low enough that even a degenerate ultra-short panel keeps every
         // section's row from overlapping the next (the label/chip legibility
@@ -2357,27 +2372,64 @@ export class MenuRenderer {
         }
         s = clamp(s, S_FLOOR, 1);
         const lblS = lblScale(s);                     // labels shrink less (stay legible)
-        const gearRow = N.gearRow * s, gearGap = N.gearGap * s, sec = N.sec * s,
+        const gearRow = N.gearRow * s, sec = N.sec * s,
             lbl = N.lbl * lblS, biomeRow = N.biome * s, diffRow = N.diff * s,
-            chipRow = N.chip * chipScale(s), chipGap = N.chipGap * s;
+            diffDescH = N.diffDesc * lblS,
+            chipRow = N.chip * chipScale(s), chipGap = N.chipGap * s,
+            rewardsH = N.rewards * s;
         const fs = (px) => Math.round(px * lblS);     // font-size scaler
+        const cfs = (px) => Math.round(px * chipScale(s));   // chip body-text scaler
 
         let y = top;
-        // Loadout rows.
-        for (const cat of GEAR_CATEGORIES) {
-            const item = GEAR[eq[cat]];
-            const col = item ? rarityColor(item.rarity) : 'rgba(255,255,255,0.25)';
+        // ── Loadout summary (ONE row) ────────────────────────────────────
+        // This used to be four full-height rows that registered no hotspot —
+        // pure display eating a third of the column. Worse on a fresh save:
+        // three of them read "— empty —" while the LOADOUT tab that fills them
+        // is still locked behind the first gear case, so the player was shown
+        // slots they could neither click here nor fill anywhere. Now it's one
+        // honest line that says what you're carrying and, once LOADOUT is
+        // reachable, actually goes there.
+        {
+            const loadoutOpen = tabUnlocked('loadout', save);
+            const worn = GEAR_CATEGORIES.map((cat) => GEAR[eq[cat]]).filter(Boolean);
+            const weapon = GEAR[eq.weapon];
+            const empties = GEAR_CATEGORIES.filter((cat) => cat !== 'weapon' && !GEAR[eq[cat]]);
+            // Name the weapon (it always exists and it matters), then summarise
+            // the three accessory slots rather than listing three "— empty —"s.
+            const parts = [weapon ? weapon.name : 'no weapon'];
+            const filled = worn.filter((g) => g !== weapon);
+            if (filled.length) parts.push(...filled.map((g) => g.name));
+            if (empties.length) parts.push(`${empties.length} empty slot${empties.length > 1 ? 's' : ''}`);
+            const accent = weapon ? rarityColor(weapon.rarity) : 'rgba(255,255,255,0.25)';
             roundRectPath(ctx, innerX, y, innerW, gearRow, 10);
             ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
-            ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+            ctx.strokeStyle = loadoutOpen ? accent : 'rgba(255,255,255,0.14)';
+            ctx.lineWidth = 2; ctx.stroke();
+            ctx.globalAlpha = loadoutOpen ? 1 : 0.62;
             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 ${fs(16)}px ${FONT}`;
-            ctx.fillText(GEAR_CATEGORY_LABELS[cat], innerX + 16, y + gearRow * 0.40);
-            ctx.fillStyle = '#fff'; ctx.font = `700 ${fs(21)}px ${FONT}`;
-            ctx.fillText(item ? item.name : '— empty —', innerX + 16, y + gearRow * 0.82);
-            y += gearRow + gearGap;
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `600 ${fs(15)}px ${FONT}`;
+            ctx.fillText('Equipped Loadout', innerX + 16, y + gearRow * 0.38);
+            ctx.fillStyle = '#fff'; ctx.font = `700 ${fs(19)}px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, parts.join(' · '), innerW - 210), innerX + 16, y + gearRow * 0.80);
+            // Right edge: the affordance, or the reason there isn't one.
+            ctx.textAlign = 'right';
+            if (loadoutOpen) {
+                ctx.fillStyle = '#ffce54'; ctx.font = `700 ${fs(15)}px ${FONT}`;
+                ctx.fillText('CHANGE ›', innerX + innerW - 16, y + gearRow * 0.62);
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = `600 ${fs(13)}px ${FONT}`;
+                ctx.fillText('unlocks with your first gear case', innerX + innerW - 16, y + gearRow * 0.62);
+            }
+            ctx.globalAlpha = 1;
+            ctx.textAlign = 'left';
+            // Only register a hotspot when there's somewhere to go — a dead
+            // click that silently does nothing is worse than no affordance.
+            if (loadoutOpen) {
+                this._hot(innerX, y, innerW, gearRow, 'tab', 'loadout',
+                    'Open Loadout to change your gear.');
+            }
+            y += gearRow + sec;
         }
-        y += sec - gearGap;
 
         // Biome selector.
         ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(20)}px ${HEAD}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -2434,8 +2486,32 @@ export class MenuRenderer {
         // draft toward its element/role. Tapping the active Patron clears it.
         const selPatron = state.selectedPatron || null;
         const pdef = selPatron ? PATRONS[selPatron] : null;
-        ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText(pdef ? `Patron — ${pdef.name}, ${pdef.title}` : 'Patron — none (balanced draft)', innerX, y + lbl * 0.72);
+        // The five Patron buttons used to be five bare names with nothing
+        // saying what committing to one DOES. Each already ships an authored
+        // blurb in content/patrons.js that was never drawn — surface it on the
+        // label line (free: no extra row), and drop the word "draft", which is
+        // jargon nobody outside the codebase shares.
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        {
+            const py = y + lbl * 0.72;
+            if (pdef) {
+                ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`;
+                const head = `Patron — ${pdef.name}, ${pdef.title}`;
+                ctx.fillText(head, innerX, py);
+                const headW = ctx.measureText(head).width;
+                ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.font = `500 ${fs(15)}px ${FONT}`;
+                ctx.fillText(this._ellip(ctx, ` · ${pdef.blurb}`, innerW - headW - 8), innerX + headW, py);
+            } else {
+                ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`;
+                const head = 'Patron — none';
+                ctx.fillText(head, innerX, py);
+                const headW = ctx.measureText(head).width;
+                ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 ${fs(15)}px ${FONT}`;
+                ctx.fillText(this._ellip(ctx,
+                    ' · optional — pick one to steer your level-up choices toward its element',
+                    innerW - headW - 8), innerX + headW, py);
+            }
+        }
         y += lbl;
         const pW = (innerW - 10 * (PATRON_IDS.length - 1)) / PATRON_IDS.length;
         for (let i = 0; i < PATRON_IDS.length; i++) {
@@ -2457,6 +2533,11 @@ export class MenuRenderer {
         ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${HEAD}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         ctx.fillText('Difficulty', innerX, y + lbl * 0.72);
         y += lbl;
+        // Each tile stacks the PLAIN tier over the flavour name: "Recruit",
+        // "Vigil" and "Nightmare" alone never said which was which, and HOME
+        // already prints "Normal · Vigil", so the two screens disagreed. The
+        // selected tier's authored desc (GameConfig.js) prints under the row —
+        // one shared line rather than three, which is what makes it affordable.
         const dW = (innerW - 20) / 3;
         for (let i = 0; i < DIFFICULTY_ORDER.length; i++) {
             const d = DIFFICULTY[DIFFICULTY_ORDER[i]];
@@ -2466,49 +2547,127 @@ export class MenuRenderer {
             ctx.fillStyle = sel ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)'; ctx.fill();
             if (sel) this._selGlow(ctx, dx, y, dW, diffRow, 9, d.color, t);
             ctx.strokeStyle = sel ? d.color : 'rgba(255,255,255,0.14)'; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
-            ctx.fillStyle = sel ? d.color : '#fff'; ctx.font = `700 ${fs(17)}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(d.label, dx + dW / 2, y + diffRow / 2);
-            this._hot(dx, y, dW, diffRow, 'setDifficulty', d.id);
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = sel ? d.color : 'rgba(255,255,255,0.58)';
+            ctx.font = `800 ${fs(12)}px ${FONT}`;
+            ctx.fillText(d.id.toUpperCase(), dx + dW / 2, y + diffRow * 0.31);
+            ctx.fillStyle = sel ? d.color : '#fff'; ctx.font = `700 ${fs(17)}px ${FONT}`;
+            ctx.fillText(d.label, dx + dW / 2, y + diffRow * 0.68);
+            this._hot(dx, y, dW, diffRow, 'setDifficulty', d.id,
+                `${d.id} difficulty, ${d.label}. ${d.desc}`);
         }
-        y += diffRow + sec;
+        y += diffRow;
+        {
+            const dSel = DIFFICULTY[curDiff] || DIFFICULTY.normal;
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+            ctx.fillStyle = 'rgba(255,255,255,0.66)'; ctx.font = `500 ${fs(14)}px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, dSel.desc || '', innerW), innerX, y + diffDescH * 0.74);
+        }
+        y += diffDescH + sec;
 
-        // Trials toggles. Each active one stacks into a "Pact" — the label shows
-        // the live Pact tier + the (capped) XP & coin reward the stack pays.
+        // ── Trials ────────────────────────────────────────────────────────
+        // Nine chips that used to show a bare name each ("Glass", "Enfeebled")
+        // with no way to tell a self-nerf from an enemy buff — while every one
+        // of them already carried an authored `desc` in GameConfig.js that was
+        // never drawn. Two columns give each chip room to state its effect AND
+        // its payout on one line. "Pact" is explained rather than assumed.
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        const sumBonus = (key) => activeMods.reduce((a, id) => {
-            const m = RUN_MODIFIERS.find((x) => x.id === id); return a + (m ? (m[key] || 0) : 0);
-        }, 0);
-        const xpPct = Math.round(Math.min(sumBonus('xpBonus'), RUN_MODIFIER_MAX_BONUS) * 100);
-        const coinPct = Math.round(Math.min(sumBonus('coinBonus'), RUN_MODIFIER_MAX_BONUS) * 100);
         const tier = pactTier(activeMods.length);
         if (activeMods.length > 0) {
             ctx.fillStyle = '#ffce54'; ctx.font = `800 ${fs(19)}px ${FONT}`;
-            ctx.fillText(`Trials — PACT ${tier}`, innerX, y + lbl * 0.72);
-            ctx.textAlign = 'right'; ctx.fillStyle = '#5fd36a'; ctx.font = `700 ${fs(16)}px ${FONT}`;
-            ctx.fillText(`+${xpPct}% XP   +${coinPct}% coins`, innerX + innerW, y + lbl * 0.72);
-            ctx.textAlign = 'left';
+            const head = `Trials — PACT ${tier}`;
+            ctx.fillText(head, innerX, y + lbl * 0.72);
+            const headW = ctx.measureText(head).width;
+            ctx.fillStyle = 'rgba(255,255,255,0.58)'; ctx.font = `500 ${fs(15)}px ${FONT}`;
+            ctx.fillText(this._ellip(ctx,
+                ` · ${activeMods.length} curse${activeMods.length > 1 ? 's' : ''} active`,
+                innerW - headW - 8), innerX + headW, y + lbl * 0.72);
         } else {
             ctx.fillStyle = '#cdd6e2'; ctx.font = `700 ${fs(19)}px ${FONT}`;
-            ctx.fillText('Trials — stack curses to forge a Pact', innerX, y + lbl * 0.72);
+            const head = 'Trials — optional';
+            ctx.fillText(head, innerX, y + lbl * 0.72);
+            const headW = ctx.measureText(head).width;
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `500 ${fs(15)}px ${FONT}`;
+            ctx.fillText(this._ellip(ctx,
+                ' · each one makes the run harder and pays more XP and coins',
+                innerW - headW - 8), innerX + headW, y + lbl * 0.72);
         }
         y += lbl;
-        const tcols = 3, tgap = 8;
-        const tW = (innerW - tgap * (tcols - 1)) / tcols;
+        const tgap = 8;
+        const tW = (innerW - tgap * (TRIAL_COLS - 1)) / TRIAL_COLS;
         for (let i = 0; i < RUN_MODIFIERS.length; i++) {
             const m = RUN_MODIFIERS[i];
-            const col = i % tcols, row = Math.floor(i / tcols);
+            const col = i % TRIAL_COLS, row = Math.floor(i / TRIAL_COLS);
             const mx = innerX + col * (tW + tgap), my = y + row * (chipRow + chipGap);
             const on = activeMods.includes(m.id);
             roundRectPath(ctx, mx, my, tW, chipRow, 8);
             ctx.fillStyle = on ? 'rgba(255,206,84,0.16)' : 'rgba(255,255,255,0.03)'; ctx.fill();
             if (on) this._selGlow(ctx, mx, my, tW, chipRow, 8, '#ffce54', t);
             ctx.strokeStyle = on ? '#ffce54' : 'rgba(255,255,255,0.12)'; ctx.lineWidth = on ? 3 : 2; ctx.stroke();
-            ctx.fillStyle = on ? '#ffce54' : '#cdd6e2'; ctx.font = `700 ${fs(14)}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(m.name, mx + tW / 2, my + chipRow / 2);
-            this._hot(mx, my, tW, chipRow, 'toggleModifier', m.id);
+            // Reward on the right first, so the name+effect can be measured
+            // against the space that's actually left.
+            const reward = `+${Math.round((m.xpBonus || 0) * 100)}% XP · +${Math.round((m.coinBonus || 0) * 100)}% coins`;
+            ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = on ? '#8ce89a' : 'rgba(120,200,135,0.72)';
+            ctx.font = `600 ${cfs(12)}px ${FONT}`;
+            ctx.fillText(reward, mx + tW - 12, my + chipRow / 2);
+            const rewardW = ctx.measureText(reward).width;
+            ctx.textAlign = 'left';
+            ctx.fillStyle = on ? '#ffce54' : '#cdd6e2'; ctx.font = `700 ${cfs(13)}px ${FONT}`;
+            ctx.fillText(m.name, mx + 12, my + chipRow / 2);
+            const nameW = ctx.measureText(m.name).width;   // measured in the NAME font
+            ctx.fillStyle = on ? 'rgba(255,238,196,0.90)' : 'rgba(255,255,255,0.60)';
+            ctx.font = `500 ${cfs(12)}px ${FONT}`;
+            ctx.fillText(this._ellip(ctx, ` — ${m.desc}`, tW - nameW - rewardW - 34),
+                mx + 12 + nameW, my + chipRow / 2);
+            this._hot(mx, my, tW, chipRow, 'toggleModifier', m.id,
+                `${m.name}. ${m.desc} Rewards ${reward}. ${on ? 'Active' : 'Inactive'}.`);
         }
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         y += tRows * chipRow + (tRows - 1) * chipGap + sec;
+
+        // ── Run Rewards ───────────────────────────────────────────────────
+        // ALWAYS visible, and fed by the same computeRunBonus() the engine
+        // uses at run start, so the number here is the number you get. The old
+        // readout only appeared once a Trial was toggled and summed from zero,
+        // which hid Nightmare's +50% Pass XP entirely.
+        {
+            const bonus = computeRunBonus(curDiff, activeMods);
+            const xpPct = Math.round(bonus.xp * 100);
+            const coinPct = Math.round(bonus.coin * 100);
+            const any = xpPct > 0 || coinPct > 0;
+            roundRectPath(ctx, innerX, y, innerW, rewardsH, 9);
+            ctx.fillStyle = any ? 'rgba(95,211,106,0.10)' : 'rgba(255,255,255,0.03)'; ctx.fill();
+            ctx.strokeStyle = any ? 'rgba(95,211,106,0.42)' : 'rgba(255,255,255,0.10)';
+            ctx.lineWidth = 2; ctx.stroke();
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(200,214,226,0.85)'; ctx.font = `800 ${fs(13)}px ${FONT}`;
+            ctx.fillText('RUN REWARDS', innerX + 14, y + rewardsH / 2);
+            const labelW = ctx.measureText('RUN REWARDS').width;
+            if (any) {
+                ctx.textAlign = 'right';
+                ctx.fillStyle = '#5fd36a'; ctx.font = `800 ${fs(17)}px ${FONT}`;
+                const total = `+${xpPct}% XP   +${coinPct}% coins`;
+                ctx.fillText(total, innerX + innerW - 14, y + rewardsH / 2);
+                const totalW = ctx.measureText(total).width;
+                // Attribute the difficulty share so the number is explainable
+                // rather than merely correct.
+                if (bonus.difficultyXp > 0) {
+                    const dLabel = (DIFFICULTY[curDiff] || DIFFICULTY.normal).label;
+                    ctx.textAlign = 'left';
+                    ctx.fillStyle = 'rgba(255,255,255,0.52)'; ctx.font = `500 ${fs(12)}px ${FONT}`;
+                    ctx.fillText(this._ellip(ctx,
+                        `includes ${dLabel} +${Math.round(bonus.difficultyXp * 100)}% XP`,
+                        innerW - labelW - totalW - 48), innerX + labelW + 24, y + rewardsH / 2);
+                }
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.48)'; ctx.font = `500 ${fs(13)}px ${FONT}`;
+                ctx.fillText(this._ellip(ctx,
+                    'stack Trials or raise Difficulty to earn more',
+                    innerW - labelW - 40), innerX + labelW + 24, y + rewardsH / 2);
+            }
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        }
 
         // CTA: the big START RUN, full width. PLAY is run setup ONLY — the
         // mode launchers live on MODES and the daily trials moved there too
