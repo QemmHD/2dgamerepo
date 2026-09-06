@@ -1,0 +1,414 @@
+{
+  "baseCommit": "244fcd94d88f3ac1d25ae7e8a19acbab5c059cfc",
+  "scenario": {
+    "hero": "monkey",
+    "heroName": "Pyra",
+    "map": "emberwood",
+    "difficulty": "normal",
+    "loadout": "default",
+    "seed": 207001,
+    "viewport": [
+      1280,
+      720
+    ],
+    "onboarding": "skip via test-page query",
+    "renderSchedule": "once after all ticks",
+    "id": "normal-desktop",
+    "ticks": 600,
+    "actions": [
+      {
+        "tick": 0,
+        "action": "move",
+        "x": 1,
+        "y": 0
+      }
+    ]
+  },
+  "node": {
+    "sameSeedRepeats": 3,
+    "changedSeed": 207002,
+    "changedGameplayState": true,
+    "receipt": {
+      "version": 1,
+      "runtime": "canvas",
+      "scenario": "normal-desktop",
+      "seed": 207001,
+      "simulationTicks": 600,
+      "simulationSeconds": 10,
+      "environment": {
+        "kind": "node-procedural-stubs",
+        "storage": "memory-only",
+        "audio": "disabled",
+        "locks": "disabled",
+        "viewport": [
+          1920,
+          1080
+        ],
+        "renderSchedule": "final-only"
+      },
+      "player": {
+        "hero": "monkey",
+        "x": 3550,
+        "y": 49.42471474334597,
+        "hp": 81.30401083333314,
+        "maxHp": 100,
+        "level": 1,
+        "xp": 2,
+        "xpNext": 6,
+        "coins": 1,
+        "kindle": 28.599999999999998,
+        "blinkCooldown": 0
+      },
+      "kindle": {
+        "max": 100,
+        "cost": 100,
+        "ready": false,
+        "aiming": false,
+        "aimKind": null
+      },
+      "run": {
+        "time": 10.000000000000076,
+        "map": "emberwood",
+        "difficulty": "normal",
+        "wave": 0,
+        "bosses": 0,
+        "kills": 3,
+        "blinks": 0,
+        "kindleReleases": 0,
+        "screen": "gameplay",
+        "paused": false,
+        "gameOver": false
+      },
+      "counts": {
+        "enemies": 7,
+        "bosses": 0,
+        "projectiles": 0,
+        "enemyProjectiles": 0,
+        "hazards": 0,
+        "gems": 1,
+        "coins": 0,
+        "healthOrbs": 0,
+        "chests": 0,
+        "shrines": 0
+      },
+      "build": {
+        "weapons": [
+          {
+            "id": "arcaneBolt",
+            "level": 1
+          }
+        ],
+        "passives": [],
+        "appliedCounts": {},
+        "relics": [],
+        "pacts": [],
+        "patrons": [],
+        "road": null
+      },
+      "boss": null,
+      "bossWarning": null,
+      "arena": null,
+      "overlays": {
+        "upgradeChoices": null,
+        "pendingLevelUps": 0,
+        "chest": false,
+        "altar": false,
+        "victory": false,
+        "photo": false
+      },
+      "enemySamples": [
+        {
+          "type": "slime",
+          "x": 1964.886767177779,
+          "y": -304.71619581883823,
+          "hp": 34,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 918.5505963315181,
+          "y": -193.45164115492565,
+          "hp": 34.02036222222222,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 2937.7492842800716,
+          "y": -343.80683676440816,
+          "hp": 34.11082866666666,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 3263.965780038967,
+          "y": -710.6343079968959,
+          "hp": 34.226228444444445,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 2561.297127354206,
+          "y": 397.36436320385894,
+          "hp": 34.33618444444444,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 3264.9814733637413,
+          "y": 946.1502080797732,
+          "hp": 34.33901022222223,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 3532.148242061949,
+          "y": 1281.4476346382182,
+          "hp": 34.349980888888894,
+          "elite": false,
+          "boss": false
+        }
+      ],
+      "progression": null,
+      "observations": {
+        "startPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "actions": [
+          {
+            "tick": 0,
+            "action": "move",
+            "x": 1,
+            "y": 0
+          }
+        ],
+        "maxPlayerProjectiles": 1,
+        "controlledPackDamaged": 0,
+        "bossWarningTick": null,
+        "firstBossWarningId": null,
+        "bossSpawnTick": null,
+        "firstBossId": null,
+        "firstBossProvenance": null,
+        "modalChoices": 0,
+        "rngCallsBeforeRender": 1240,
+        "actionsConsumed": 1,
+        "blinks": 0,
+        "ultsReleased": 0,
+        "renderOnly": {
+          "simulationTicks": 0,
+          "gameTimeBefore": 10.000000000000076,
+          "gameTimeAfter": 10.000000000000076
+        },
+        "rngCallsAfterRender": 1240
+      },
+      "errors": [],
+      "exceptionCount": 0,
+      "unhandledRejectionCount": 0
+    }
+  },
+  "browser": {
+    "sameSeedRepeats": 3,
+    "receipt": {
+      "version": 1,
+      "runtime": "canvas",
+      "scenario": "normal-desktop",
+      "seed": 207001,
+      "simulationTicks": 600,
+      "simulationSeconds": 10,
+      "environment": {
+        "kind": "browser-assets",
+        "storage": "memory-only",
+        "audio": "disabled",
+        "locks": "disabled",
+        "viewport": [
+          1280,
+          720
+        ],
+        "renderSchedule": "final-only",
+        "storageWrites": 3
+      },
+      "player": {
+        "hero": "monkey",
+        "x": 3550,
+        "y": 49.42471474334597,
+        "hp": 81.30401083333314,
+        "maxHp": 100,
+        "level": 1,
+        "xp": 2,
+        "xpNext": 6,
+        "coins": 1,
+        "kindle": 28.599999999999998,
+        "blinkCooldown": 0
+      },
+      "kindle": {
+        "max": 100,
+        "cost": 100,
+        "ready": false,
+        "aiming": false,
+        "aimKind": null
+      },
+      "run": {
+        "time": 10.000000000000076,
+        "map": "emberwood",
+        "difficulty": "normal",
+        "wave": 0,
+        "bosses": 0,
+        "kills": 3,
+        "blinks": 0,
+        "kindleReleases": 0,
+        "screen": "gameplay",
+        "paused": false,
+        "gameOver": false
+      },
+      "counts": {
+        "enemies": 7,
+        "bosses": 0,
+        "projectiles": 0,
+        "enemyProjectiles": 0,
+        "hazards": 0,
+        "gems": 1,
+        "coins": 0,
+        "healthOrbs": 0,
+        "chests": 0,
+        "shrines": 0
+      },
+      "build": {
+        "weapons": [
+          {
+            "id": "arcaneBolt",
+            "level": 1
+          }
+        ],
+        "passives": [],
+        "appliedCounts": {},
+        "relics": [],
+        "pacts": [],
+        "patrons": [],
+        "road": null
+      },
+      "boss": null,
+      "bossWarning": null,
+      "arena": null,
+      "overlays": {
+        "upgradeChoices": null,
+        "pendingLevelUps": 0,
+        "chest": false,
+        "altar": false,
+        "victory": false,
+        "photo": false
+      },
+      "enemySamples": [
+        {
+          "type": "slime",
+          "x": 1964.886767177779,
+          "y": -304.71619581883823,
+          "hp": 34,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 918.5505963315181,
+          "y": -193.45164115492565,
+          "hp": 34.02036222222222,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 2937.7492842800716,
+          "y": -343.80683676440816,
+          "hp": 34.11082866666666,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 3263.965780038967,
+          "y": -710.6343079968959,
+          "hp": 34.226228444444445,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 2561.2971273542066,
+          "y": 397.3643632038589,
+          "hp": 34.33618444444444,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 3264.9814733637413,
+          "y": 946.1502080797732,
+          "hp": 34.33901022222223,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 3532.148242061949,
+          "y": 1281.4476346382182,
+          "hp": 34.349980888888894,
+          "elite": false,
+          "boss": false
+        }
+      ],
+      "progression": null,
+      "observations": {
+        "startPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "actions": [
+          {
+            "tick": 0,
+            "action": "move",
+            "x": 1,
+            "y": 0
+          }
+        ],
+        "maxPlayerProjectiles": 1,
+        "controlledPackDamaged": 0,
+        "bossWarningTick": null,
+        "firstBossWarningId": null,
+        "bossSpawnTick": null,
+        "firstBossId": null,
+        "firstBossProvenance": null,
+        "modalChoices": 0,
+        "rngCallsBeforeRender": 1240,
+        "actionsConsumed": 1,
+        "blinks": 0,
+        "ultsReleased": 0,
+        "renderOnly": {
+          "simulationTicks": 0,
+          "gameTimeBefore": 10.000000000000076,
+          "gameTimeAfter": 10.000000000000076
+        },
+        "rngCallsAfterRender": 1240
+      },
+      "errors": [],
+      "exceptionCount": 0,
+      "unhandledRejectionCount": 0
+    }
+  },
+  "screenshots": {
+    "produced": true,
+    "committed": false,
+    "path": "__out/migration/normal-desktop-1.png",
+    "goldenImage": false
+  },
+  "limitations": [
+    "Semantic fixture, not universal deterministic replay.",
+    "Node and browser environments are separate baselines; asset decode, fonts, audio and GPU output are not proven equivalent.",
+    "Exactly one final render; no claim for arbitrary render cadence.",
+    "Fresh memory profile; no real browser save storage or Web Locks."
+  ]
+}

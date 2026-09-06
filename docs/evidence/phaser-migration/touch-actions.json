@@ -1,0 +1,511 @@
+{
+  "baseCommit": "244fcd94d88f3ac1d25ae7e8a19acbab5c059cfc",
+  "scenario": {
+    "hero": "monkey",
+    "heroName": "Pyra",
+    "map": "emberwood",
+    "difficulty": "normal",
+    "loadout": "default",
+    "seed": 207001,
+    "viewport": [
+      844,
+      390
+    ],
+    "onboarding": "skip via test-page query",
+    "renderSchedule": "once after all ticks",
+    "id": "touch-actions",
+    "ticks": 360,
+    "touch": true,
+    "kindleReady": true,
+    "actions": [
+      {
+        "tick": 0,
+        "action": "move",
+        "x": 1,
+        "y": 0
+      },
+      {
+        "tick": 20,
+        "offsetMs": 2,
+        "action": "blink"
+      },
+      {
+        "tick": 60,
+        "offsetMs": 2,
+        "action": "kindlePress"
+      },
+      {
+        "tick": 60,
+        "offsetMs": 8,
+        "action": "kindleRelease"
+      },
+      {
+        "tick": 120,
+        "action": "move",
+        "x": 0,
+        "y": 1
+      },
+      {
+        "tick": 180,
+        "action": "kindlePress"
+      },
+      {
+        "tick": 210,
+        "action": "kindleRelease"
+      },
+      {
+        "tick": 240,
+        "action": "move",
+        "x": 0,
+        "y": 0
+      }
+    ],
+    "limitations": [
+      "Initial Kindle fill is set to the real ult cost to exercise quick-tap release.",
+      "Handler adapter covers current Input semantics, not trusted OS touch dispatch or device latency."
+    ]
+  },
+  "node": {
+    "sameSeedRepeats": 3,
+    "changedSeed": 207002,
+    "changedGameplayState": true,
+    "receipt": {
+      "version": 1,
+      "runtime": "canvas",
+      "scenario": "touch-actions",
+      "seed": 207001,
+      "simulationTicks": 360,
+      "simulationSeconds": 6,
+      "environment": {
+        "kind": "node-procedural-stubs",
+        "storage": "memory-only",
+        "audio": "disabled",
+        "locks": "disabled",
+        "viewport": [
+          1920,
+          1080
+        ],
+        "renderSchedule": "final-only"
+      },
+      "player": {
+        "hero": "monkey",
+        "x": 1066.9514664839621,
+        "y": 834.9091526975856,
+        "hp": 100,
+        "maxHp": 100,
+        "level": 1,
+        "xp": 0,
+        "xpNext": 6,
+        "coins": 0,
+        "kindle": 0,
+        "blinkCooldown": 0.3333333333333496
+      },
+      "kindle": {
+        "max": 100,
+        "cost": 100,
+        "ready": false,
+        "aiming": false,
+        "aimKind": null
+      },
+      "run": {
+        "time": 5.999999999999984,
+        "map": "emberwood",
+        "difficulty": "normal",
+        "wave": 0,
+        "bosses": 0,
+        "kills": 0,
+        "blinks": 1,
+        "kindleReleases": 1,
+        "screen": "gameplay",
+        "paused": false,
+        "gameOver": false
+      },
+      "counts": {
+        "enemies": 6,
+        "bosses": 0,
+        "projectiles": 0,
+        "enemyProjectiles": 0,
+        "hazards": 0,
+        "gems": 0,
+        "coins": 0,
+        "healthOrbs": 0,
+        "chests": 0,
+        "shrines": 0
+      },
+      "build": {
+        "weapons": [
+          {
+            "id": "arcaneBolt",
+            "level": 1
+          }
+        ],
+        "passives": [],
+        "appliedCounts": {},
+        "relics": [],
+        "pacts": [],
+        "patrons": [],
+        "road": null
+      },
+      "boss": null,
+      "bossWarning": null,
+      "arena": null,
+      "overlays": {
+        "upgradeChoices": null,
+        "pendingLevelUps": 0,
+        "chest": false,
+        "altar": false,
+        "victory": false,
+        "photo": false
+      },
+      "enemySamples": [
+        {
+          "type": "slime",
+          "x": 1261.8017033603774,
+          "y": -314.7788078444928,
+          "hp": 34,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 853.8171538597111,
+          "y": -521.9566756769078,
+          "hp": 34.02036222222222,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 1350.8917352675583,
+          "y": 1389.1889990756363,
+          "hp": 34.058759555555554,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 1537.0751558243592,
+          "y": 1710.6823165789442,
+          "hp": 34.11373755555555,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 302.7711797650765,
+          "y": 1471.162919443407,
+          "hp": 34.18238733333333,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 0.1731342013874697,
+          "y": 141.18697935067516,
+          "hp": 34.25220066666666,
+          "elite": false,
+          "boss": false
+        }
+      ],
+      "progression": null,
+      "observations": {
+        "startPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "actions": [
+          {
+            "tick": 0,
+            "action": "move",
+            "x": 1,
+            "y": 0
+          },
+          {
+            "tick": 20,
+            "offsetMs": 2,
+            "action": "blink"
+          },
+          {
+            "tick": 60,
+            "offsetMs": 2,
+            "action": "kindlePress"
+          },
+          {
+            "tick": 60,
+            "offsetMs": 8,
+            "action": "kindleRelease"
+          },
+          {
+            "tick": 120,
+            "action": "move",
+            "x": 0,
+            "y": 1
+          },
+          {
+            "tick": 180,
+            "action": "kindlePress"
+          },
+          {
+            "tick": 210,
+            "action": "kindleRelease"
+          },
+          {
+            "tick": 240,
+            "action": "move",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "maxPlayerProjectiles": 0,
+        "controlledPackDamaged": 0,
+        "bossWarningTick": null,
+        "firstBossWarningId": null,
+        "bossSpawnTick": null,
+        "firstBossId": null,
+        "firstBossProvenance": null,
+        "modalChoices": 0,
+        "rngCallsBeforeRender": 539,
+        "actionsConsumed": 8,
+        "blinks": 1,
+        "ultsReleased": 1,
+        "renderOnly": {
+          "simulationTicks": 0,
+          "gameTimeBefore": 5.999999999999984,
+          "gameTimeAfter": 5.999999999999984
+        },
+        "rngCallsAfterRender": 539
+      },
+      "errors": [],
+      "exceptionCount": 0,
+      "unhandledRejectionCount": 0
+    }
+  },
+  "browser": {
+    "sameSeedRepeats": 3,
+    "receipt": {
+      "version": 1,
+      "runtime": "canvas",
+      "scenario": "touch-actions",
+      "seed": 207001,
+      "simulationTicks": 360,
+      "simulationSeconds": 6,
+      "environment": {
+        "kind": "browser-assets",
+        "storage": "memory-only",
+        "audio": "disabled",
+        "locks": "disabled",
+        "viewport": [
+          844,
+          390
+        ],
+        "renderSchedule": "final-only",
+        "storageWrites": 3
+      },
+      "player": {
+        "hero": "monkey",
+        "x": 1066.9514664838873,
+        "y": 834.9091526975856,
+        "hp": 100,
+        "maxHp": 100,
+        "level": 1,
+        "xp": 0,
+        "xpNext": 6,
+        "coins": 0,
+        "kindle": 0,
+        "blinkCooldown": 0.3333333333333496
+      },
+      "kindle": {
+        "max": 100,
+        "cost": 100,
+        "ready": false,
+        "aiming": false,
+        "aimKind": null
+      },
+      "run": {
+        "time": 5.999999999999984,
+        "map": "emberwood",
+        "difficulty": "normal",
+        "wave": 0,
+        "bosses": 0,
+        "kills": 0,
+        "blinks": 1,
+        "kindleReleases": 1,
+        "screen": "gameplay",
+        "paused": false,
+        "gameOver": false
+      },
+      "counts": {
+        "enemies": 6,
+        "bosses": 0,
+        "projectiles": 0,
+        "enemyProjectiles": 0,
+        "hazards": 0,
+        "gems": 0,
+        "coins": 0,
+        "healthOrbs": 0,
+        "chests": 0,
+        "shrines": 0
+      },
+      "build": {
+        "weapons": [
+          {
+            "id": "arcaneBolt",
+            "level": 1
+          }
+        ],
+        "passives": [],
+        "appliedCounts": {},
+        "relics": [],
+        "pacts": [],
+        "patrons": [],
+        "road": null
+      },
+      "boss": null,
+      "bossWarning": null,
+      "arena": null,
+      "overlays": {
+        "upgradeChoices": null,
+        "pendingLevelUps": 0,
+        "chest": false,
+        "altar": false,
+        "victory": false,
+        "photo": false
+      },
+      "enemySamples": [
+        {
+          "type": "slime",
+          "x": 1261.801703360352,
+          "y": -314.77880784450446,
+          "hp": 34,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 853.8171538596364,
+          "y": -521.9566756769085,
+          "hp": 34.02036222222222,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 1350.8917352674825,
+          "y": 1389.1889990756295,
+          "hp": 34.058759555555554,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 1537.0751558242841,
+          "y": 1710.6823165789442,
+          "hp": 34.11373755555555,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 302.7711797650017,
+          "y": 1471.162919443407,
+          "hp": 34.18238733333333,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 0.17313420131266377,
+          "y": 141.18697935067516,
+          "hp": 34.25220066666666,
+          "elite": false,
+          "boss": false
+        }
+      ],
+      "progression": null,
+      "observations": {
+        "startPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "actions": [
+          {
+            "tick": 0,
+            "action": "move",
+            "x": 1,
+            "y": 0
+          },
+          {
+            "tick": 20,
+            "offsetMs": 2,
+            "action": "blink"
+          },
+          {
+            "tick": 60,
+            "offsetMs": 2,
+            "action": "kindlePress"
+          },
+          {
+            "tick": 60,
+            "offsetMs": 8,
+            "action": "kindleRelease"
+          },
+          {
+            "tick": 120,
+            "action": "move",
+            "x": 0,
+            "y": 1
+          },
+          {
+            "tick": 180,
+            "action": "kindlePress"
+          },
+          {
+            "tick": 210,
+            "action": "kindleRelease"
+          },
+          {
+            "tick": 240,
+            "action": "move",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "maxPlayerProjectiles": 0,
+        "controlledPackDamaged": 0,
+        "bossWarningTick": null,
+        "firstBossWarningId": null,
+        "bossSpawnTick": null,
+        "firstBossId": null,
+        "firstBossProvenance": null,
+        "modalChoices": 0,
+        "rngCallsBeforeRender": 539,
+        "actionsConsumed": 8,
+        "blinks": 1,
+        "ultsReleased": 1,
+        "renderOnly": {
+          "simulationTicks": 0,
+          "gameTimeBefore": 5.999999999999984,
+          "gameTimeAfter": 5.999999999999984
+        },
+        "rngCallsAfterRender": 539
+      },
+      "errors": [],
+      "exceptionCount": 0,
+      "unhandledRejectionCount": 0
+    }
+  },
+  "screenshots": {
+    "produced": true,
+    "committed": false,
+    "path": "__out/migration/touch-actions-1.png",
+    "goldenImage": false
+  },
+  "limitations": [
+    "Semantic fixture, not universal deterministic replay.",
+    "Node and browser environments are separate baselines; asset decode, fonts, audio and GPU output are not proven equivalent.",
+    "Exactly one final render; no claim for arbitrary render cadence.",
+    "Fresh memory profile; no real browser save storage or Web Locks.",
+    "Initial Kindle fill is set to the real ult cost to exercise quick-tap release.",
+    "Handler adapter covers current Input semantics, not trusted OS touch dispatch or device latency."
+  ]
+}
