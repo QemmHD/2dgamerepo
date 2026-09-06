@@ -18,6 +18,10 @@ file owns execution truth.
 
 ## Current bounded tranche — migration PR 1
 
+**Implementation/delivery record:** [PR #208](https://github.com/QemmHD/2dgamerepo/pull/208).
+Its checks, merge state and post-merge delivery comment are the authoritative
+remote status; a copy of this document on a feature branch is not proof of merge.
+
 Read [the result and handoff](PHASER_MIGRATION_PR1.md) and
 [the four semantic baselines](evidence/phaser-migration/README.md) before resuming.
 This implementation adds tools-only fixed ticks, seeded unified RNG/wall time,

@@ -7,7 +7,8 @@ This is testability and evidence work only. **No Phaser dependency, engine entry
 - Audited base: [`244fcd94d88f3ac1d25ae7e8a19acbab5c059cfc`](https://github.com/QemmHD/2dgamerepo/commit/244fcd94d88f3ac1d25ae7e8a19acbab5c059cfc), merged [PR #207](https://github.com/QemmHD/2dgamerepo/pull/207).
 - Architecture context: [Phaser migration audit](PHASER_MIGRATION_AUDIT.md).
 - Implementation branch: `codex/migration-pr1-baseline`.
-- Local implementation and verification are complete. This document does not invent a PR number or merge/deploy receipt: PR CI, merge, main CI, and Pages are separate delivery gates recorded in the [shared ledger](DEVELOPMENT_LEDGER.md).
+- Implementation/delivery record: [PR #208](https://github.com/QemmHD/2dgamerepo/pull/208), initial implementation commit `5c64979`.
+- Local implementation and verification are complete. PR checks, merge state and the post-merge delivery comment provide remote delivery receipts; they are separate from local verification and are linked from the [shared ledger](DEVELOPMENT_LEDGER.md).
 
 `src/`, the existing production entry, `styles.css`, manifest, existing artshot harness/capture driver, and Pages workflow remain unchanged against the base. Weapon/enemy numbers, spawn rates, boss timing, XP, coin rewards, progression, difficulty/Trials, collision, saves, input, graphics, audio, and menu/HUD visuals are deliberately unchanged.
 
