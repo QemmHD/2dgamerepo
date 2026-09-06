@@ -1,17 +1,18 @@
-# House V2 and Ruin Bell local candidate
+# House V2 and Ruin Bell bounded delivery
 
-Status: **corrected and committed as `662cdc9`, published in draft PR #205, locally
-validated, and accepted by post-correction hosted CI plus independent original-resolution
-review, but not yet merged, deployed, publicly smoked, or shipped**.
+Status: **bounded slice shipped in PR #205 at main
+`70b25e1165ba32aecfcd02838a22adccbe141670`; local, PR, post-merge CI, immutable
+visual, Pages, and cache-busted public/`?dev=1` gates passed**.
 
-This record describes the bounded candidate on
-`feature/house-v2-ruin-bell`, based on `origin/main` at
+This record describes the bounded candidate developed on
+`feature/house-v2-ruin-bell`, based on the pre-merge `origin/main` at
 `3449a18cf4ada4eac0926f0259275fae558f622d`. The exact corrected code candidate is
 [`662cdc93ec273be7fcae063fc93dc8b63347eb1a`](https://github.com/QemmHD/2dgamerepo/commit/662cdc93ec273be7fcae063fc93dc8b63347eb1a)
-in draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205). Hosted run
+and it shipped through merged [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205)
+as [`70b25e1`](https://github.com/QemmHD/2dgamerepo/commit/70b25e1165ba32aecfcd02838a22adccbe141670). Hosted run
 [`29399841105`](https://github.com/QemmHD/2dgamerepo/actions/runs/29399841105) and its
-immutable visual artifact are accepted below. No merge, Pages deployment, or public
-smoke is recorded yet, so this is candidate evidence rather than delivery evidence.
+immutable visual artifact are accepted below. Post-merge CI, Pages, and public smoke
+are reconciled in the delivery section.
 
 ## Reference-image provenance boundary
 
@@ -189,8 +190,9 @@ cues; portrait kept the complete upright landscape prompt and readable rotated H
 
 ## Local validation snapshot - 2026-07-14
 
-These commands were run locally against the code now identified by candidate commit
-`662cdc9`; they are immutable code identity but not hosted or release evidence:
+These commands were run locally against the code identified by candidate commit
+`662cdc9`; they are immutable local code identity and are paired with hosted/release
+evidence elsewhere in this record:
 
 | Command | Observed result |
 | --- | --- |
@@ -208,13 +210,31 @@ receipts under `artifacts/mobile-hud-rail/` remain development aids; the hosted
 identity and review above are the accepted browser evidence. Long-run
 performance/audio soak and physical-device/assistive-technology checks remain open.
 
-## Delivery and roadmap nonclaims
+## Delivery reconciliation
 
-Before anyone says this bounded slice shipped, it still needs a merge SHA, post-merge
-`main` CI, Pages deploy, cache-busted player and `?dev=1` smoke, and a delivery
-reconciliation update to this record.
+| Delivery fact | Accepted value |
+| --- | --- |
+| Pull request | [#205](https://github.com/QemmHD/2dgamerepo/pull/205), squash merged |
+| Main commit | [`70b25e1165ba32aecfcd02838a22adccbe141670`](https://github.com/QemmHD/2dgamerepo/commit/70b25e1165ba32aecfcd02838a22adccbe141670) |
+| Final evidence-only PR CI | [`29400738072`](https://github.com/QemmHD/2dgamerepo/actions/runs/29400738072), job `87304452526`, 48/48 steps |
+| Post-merge main CI | [`29401126345`](https://github.com/QemmHD/2dgamerepo/actions/runs/29401126345), job `87305673883`, 48/48 steps |
+| Main visual artifact | `ruin-bell-visual-receipts`, ID `8337140625`, 18,086,664 bytes, digest `sha256:fe196dfbaae6892936e23f00fb58f513d85db9e9af11d3d066bc6a93d695fd43` |
+| Pages | [`29401126366`](https://github.com/QemmHD/2dgamerepo/actions/runs/29401126366), success |
+| Public build | [qemmhd.github.io/2dgamerepo](https://qemmhd.github.io/2dgamerepo/) |
 
-Even after that bounded delivery, it would not complete House V2 as a multi-kit system,
+At `2026-07-15T08:44:36Z`, cache-busted requests returned HTTP 200 for the player,
+`?dev=1`, six House/Bell/HUD/render sources, both developer-control authorities, and
+three new PNG assets. Every response matched the exact `70b25e1` Git blob byte for
+byte. The player and `?dev=1` index shared SHA-256
+`5b8acdd7a7db199f2271f4715a53c56f9c05b990e0f279e4110df7be38d85324`.
+The deployed sources retained the strict `dev=1` gate and the five controls: Debug
+Mode, Unlock All Maps (testing), +1,000, +10,000, and Unlock All Items. They also
+retained the upright rotate cue, `top-down-cutaway` House V2 projection, Ruin Bell
+cabin id, and phone `objectiveVariant = 'rail'` path.
+
+## Roadmap nonclaims
+
+This bounded delivery does not complete House V2 as a multi-kit system,
 the six-event Waylight promise, all enemy-role work, physical-device/AT acceptance,
 First Light, Fair Forge, High Refresh, boss identity rebuilds, new maps/classes/story,
 the 1.0->2.0 arc, any later major arc, or the overall 1.0->10.0 roadmap.

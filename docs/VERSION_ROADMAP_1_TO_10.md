@@ -10,21 +10,33 @@ This is the release roadmap. `ROADMAP.md` remains the long-range idea bank and
 document turns those materials into nine major-version arcs with clear player
 promises, dependencies, exit gates, and content budgets.
 
-### Current House V2/Ruin Bell candidate boundary
+### House V2/Ruin Bell bounded shipped boundary
 
-Candidate commit [`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837)
-on `feature/house-v2-ruin-bell`, based on `origin/main` at `3449a18`, is published in
-draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205) with the first one-cabin/one-event implementation candidate. Its local
-gate is green at **36/36 validators**, including **725** Ruin Bell checks, plus full Node
-syntax, harness-module syntax, CI YAML parse, and diff check. It is still not a release:
-hosted CI/artifact, original-resolution visual review, merge, Pages deploy, and public
-smoke remain open. See the
-[`candidate evidence record`](evidence/v1.1/house-v2-ruin-bell-candidate.md) for exact
-behavior, reference-image restrictions, local results, visual gates, and nonclaims.
+[PR #205](https://github.com/QemmHD/2dgamerepo/pull/205) delivered corrected code
+[`662cdc9`](https://github.com/QemmHD/2dgamerepo/commit/662cdc93ec273be7fcae063fc93dc8b63347eb1a)
+to `main` as [`70b25e1`](https://github.com/QemmHD/2dgamerepo/commit/70b25e1165ba32aecfcd02838a22adccbe141670): one original Last-Wick Cabin blueprint
+and one deterministic Ruin Bell event. The accepted boundary is **36/36 validators**
+and **189/189 syntax checks**: Ruin Bell **782**, House V2 **1,049** plus **101,937**
+stress probes, navigation **73,444** plus **86,488** stress probes, HUD **14,180/180**,
+and Run Path **93,140**.
 
-No major arc is promoted by this local work. The 1.0->2.0 arc and every later arc through
-10.0 remain incomplete, including the broader House V2 kits, six Waylight POIs, enemy-
-role program, device/AT/performance proof, and release convergence gates.
+PR visual CI [29399841105](https://github.com/QemmHD/2dgamerepo/actions/runs/29399841105)
+job `87301636711` accepted all **11** original-resolution frames in artifact `8336657384`
+(`sha256:648e0ba86aa2970f93196c22dbf825353bd04d8f0c138896fbc2ab7308312991`), followed by
+evidence-only CI `29400738072`. Post-merge main CI
+[29401126345](https://github.com/QemmHD/2dgamerepo/actions/runs/29401126345) job
+`87305673883` accepted artifact `8337140625`
+(`sha256:fe196dfbaae6892936e23f00fb58f513d85db9e9af11d3d066bc6a93d695fd43`), Pages
+[29401126366](https://github.com/QemmHD/2dgamerepo/actions/runs/29401126366) passed, and
+cache-busted player, `?dev=1`, relevant source, and asset requests returned HTTP 200
+with deployed bytes matching merge `70b25e1`. See the
+[`delivery evidence record`](evidence/v1.1/house-v2-ruin-bell-candidate.md) for exact
+behavior, reference-image restrictions, visual proof, and nonclaims.
+
+Only this bounded one-cabin/one-event slice is shipped. Multi-kit House V2, the
+100-seed and every-body/projectile matrices, long-run performance, physical-device/AT
+proof, complete First Light, the 1.0->2.0 arc, and the complete 1.0->10.0 roadmap remain
+open.
 
 ## 1. Product contract that survives every version
 
@@ -1777,19 +1789,19 @@ Release scorecard:
    forfeits held Run Path coins and never reaches objective XP; a valid terminal resolution
    settles. Add no objective pool or map-specific task without
    reachable-metric and settlement fixtures.
-5. Finish, validate, and publish the local House V2 Emberwood cabin/Ruin Bell candidate
-   while 1.3 enemy roles navigate and fight through it. Do not call it shipped before
-   its targeted/full/hosted/evidence/delivery gates are recorded, and do not mass-produce
-   house art before shared render, collision, nav, LOS, door, spawn, room, roof, 100-seed,
-   every-body/projectile, performance, and device truth passes.
+5. Preserve PR #205/main `70b25e1`'s shipped bounded Last-Wick Cabin/Ruin Bell slice
+   while 1.3 enemy roles navigate and fight through it. Do not mass-produce house art
+   before the still-open multi-kit, 100-seed, every-body/projectile, long-run
+   performance, and physical-device/AT gates pass; one delivered cabin is not the full
+   House V2 program.
 6. Preserve PR #203's shipped bounded Collection Completion Truth; do not recreate I-B.
    Preserve PR #192's attachment resolver and PR #198/#200's all-103
    reachability/source/paging, six-hero preset migration, pursuit, atomic look
    transaction, all-state/all-direction, Reduced Effects, and no-power proofs. Preserve
    PR #203's exactly two 72,000 earned-coin Blueprints and protected transactions without
    changing currency, Case rules, Mines, Battle Pass balance, or promoting full 1.2,
-   broader 2.8, or either major arc. Continue the House V2/Ruin Bell vertical slice and
-   remaining First Light gates.
+   broader 2.8, or either major arc. Preserve the bounded PR #205 cabin/Bell delivery
+   while continuing the remaining First Light gates.
 7. Complete audio lifecycle/mix gates, one Blender boss-family batch, and one bounded
    wand/weapon-class spectacle slice with grayscale/reduced-effects/performance proof.
 8. Add Gamepad/PWA; profile lighting/fill rate and finish deterministic interpolation

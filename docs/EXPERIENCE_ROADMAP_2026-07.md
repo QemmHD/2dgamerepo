@@ -9,23 +9,36 @@ reconciles the current game with
 [The Long Vigil plan](MAJOR_UPDATE_PLAN.md), then sets a practical 30/60/90-day
 sequence.
 
-### House V2/Ruin Bell candidate boundary - 2026-07-15
+### House V2/Ruin Bell bounded delivery - 2026-07-15
 
-Candidate commit [`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837)
-on `feature/house-v2-ruin-bell`, based on `origin/main` at `3449a18`, is published in
-draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205) with the first original
-Emberwood House V2 cabin and Ruin Bell event. It is **not shipped**: hosted CI artifact,
-merge, Pages deployment, and public smoke are still open. All six named targeted
-local validators now pass, including 725 Ruin Bell encounter/defense/retry/reward-
-claim/UI/render/audio/dev checks; the full local gate is green at 36/36 validators plus
-Node/harness syntax, CI YAML parse, and diff check. Hosted and delivery proof remain open. Exact implemented
-behavior, reference-only image provenance, local validator results, eight-state visual
-gate, and delivery nonclaims are recorded in
+[PR #205](https://github.com/QemmHD/2dgamerepo/pull/205) is merged and shipped on
+`main` at [`70b25e1`](https://github.com/QemmHD/2dgamerepo/commit/70b25e1165ba32aecfcd02838a22adccbe141670).
+Its exact corrected code commit is
+[`662cdc9`](https://github.com/QemmHD/2dgamerepo/commit/662cdc93ec273be7fcae063fc93dc8b63347eb1a).
+This bounded slice delivers the first original Emberwood House V2 cabin, its Ruin Bell
+event, authored top-down room props and state changes, the unobstructed phone command
+rail and portrait rotation guidance, and visibly distinct normal/Reduced Effects
+mobile pairs.
+
+Accepted PR visual proof is run
+[`29399841105`](https://github.com/QemmHD/2dgamerepo/actions/runs/29399841105), artifact
+`8336657384`, digest
+`sha256:648e0ba86aa2970f93196c22dbf825353bd04d8f0c138896fbc2ab7308312991`,
+with eleven frames across eight states. Evidence-only CI `29400738072`, post-merge
+`main` CI `29401126345` with artifact `8337140625`, and Pages run `29401126366` all
+passed. Cache-busted player, `?dev=1`, source, and asset requests returned HTTP 200 and
+byte-matched deployed `main`.
+
+The accepted gate is 36/36 validators and 189/189 JavaScript syntax checks, including
+Ruin Bell 782, House V2 1,049 plus 101,937 stress probes, navigation 73,444 plus 86,488
+stress probes, HUD 14,180 across 180 scenarios, and Guided Run Path 93,140 checks.
+Exact behavior, reference-only image provenance, and immutable proof are recorded in
 [`evidence/v1.1/house-v2-ruin-bell-candidate.md`](evidence/v1.1/house-v2-ruin-bell-candidate.md).
 
-This candidate changes no major-version status. House-kit multiplication, the complete
-six-event Waylight promise, the 100-seed/every-body/projectile/performance/device gates,
-1.0->2.0, every later arc, and the complete 1.0->10.0 roadmap remain open.
+This bounded delivery does not close a major version. House-kit multiplication, the
+complete six-event Waylight promise, the 100-seed/every-body/projectile/performance/
+physical-device gates, First Light convergence, 1.0->2.0, every later arc, and the
+complete 1.0->10.0 roadmap remain open.
 
 ## Executive decision
 
@@ -51,9 +64,9 @@ The recommended next releases are therefore:
 - **31-60 days - Hunters at the Door:** give the 20 existing enemies authored
   roles and house-aware tactics, deepen boss identity, modernize existing
   upgrades/cosmetic collection UX, and ship full controller accessibility.
-- **61-90 days - The Living Road Slice:** extend the shipped Vigil Site/formation
-  framework with one deeper replayable Ruin Bell event, add deterministic run
-  seeds/challenge codes, and expand only what measured playtests prove is weak.
+- **61-90 days - The Living Road Slice:** measure the shipped Vigil Site/formation/
+  Ruin Bell foundation, add deterministic run seeds/challenge codes, and extend
+  Waylight only where measured playtests prove the bounded event is worth multiplying.
 
 ### Status language
 
@@ -67,16 +80,16 @@ The recommended next releases are therefore:
 ### Additive expansion decision — staged delivery status
 
 The latest scope is accepted as a staged expansion of the existing Ten Fires plan.
-The deployed baseline contains five early bounded foundations plus the follow-on PR #201
-and PR #203 slices: PR #192's six-hero animated cosmetic pose
-contract, PR #194's exact per-map campaign ledger, PR #196's deterministic Guided Run
+The deployed baseline contains eight bounded foundations: PR #192's six-hero animated
+cosmetic pose contract, PR #194's exact per-map campaign ledger, PR #196's deterministic Guided Run
 Path, PR #198's Collection Growth I-A reachability/source slice, and PR #200's
 Collection Growth I-B 30-piece/preset/pursuit slice. PR #201 also ships their bounded
 phone Character/Hero Rites and relic-authority correction. PR #203 now ships bounded
 Collection Completion Truth, two fixed-price Mythic Blueprints, and protected earned-
-coin/once-only transactions. High Refresh, House V2,
-new weapon classes, destinations, minigames, boss art, and story remain partial or
-planned exactly as described below. Research and grayboxes can run early, but content
+coin/once-only transactions. PR #205 ships the bounded first House V2 cabin and Ruin
+Bell event. High Refresh, broader House V2 kit/macro-map work, new weapon classes,
+destinations, minigames, boss art, and story remain partial or planned exactly as
+described below. Research and grayboxes can run early, but content
 production follows the dependency gates instead of multiplying detached cosmetics,
 bland maps, or unbalanced weapons.
 
@@ -86,7 +99,7 @@ bland maps, or unbalanced weapons.
 | Mobile high frame rate | Profile render interpolation, lighting/overdraw, and quality tiers; name the option **High Refresh** | 1.7 foundation, hardened in 3.8/7.8/9.8 | Fixed deterministic simulation and identical gameplay hashes at Standard/High Refresh; interpolated camera/entities; physical 60/90/120 Hz frame-pacing plus battery/thermal tests. Never promise 120 FPS because browser, display, power mode, and heat can limit cadence. |
 | Campaign unlock truth | **Shipped in PR #194:** save-v10 unique-per-map ledger, conservative legacy migration, centralized receipt/status UI, closed provenance, and a session-only credit-off `?dev=1` bypass. | 1.3 foundation shipped; extend through every later destination | The next map requires the three unique bosses of the immediately prior map in eligible campaign play. Repeats and Daily/Weekly/Rite/Boss Rush/Practice do not count. Malformed current saves never regain lifetime-total access; QA bypass performs zero storage writes. |
 | Guided run tasks | **Shipped in PR #196:** seeded mode/capability-aware Orientation → Tactic → Climax director, one current task, exact progress/action/current potential coin reward, completed Run Path coins held for terminal settlement, terminal completed-phase Deeds XP, safe fallback, atomic coin-receipt ledger, active-task `O` recall, onboarding precedence, announcements, and responsive HUD. | Bounded 1.1 guidance foundation shipped; 1.3/later extension open | One current task shows progress, potential coin reward, and next action; impossible tasks cannot be selected. Debug Mode/`showDebug`, map bypass, and live debug actions disable Run Path coin settlement and objective-derived Deeds XP; `?dev=1`/QA alone does not. A non-terminal abort—including restart or pause-menu abandon—and reload forfeits held Run Path coins and never reaches objective-derived XP; a valid terminal resolution settles. Supported modes complete or substitute across the committed mode/capability/seed matrix. The 26 candidates shipped at main `5abd6fd` are a selection catalog, never 26 simultaneous chores. |
-| House V2 and map composition | **Local candidate, not shipped:** one original Emberwood cabin blueprint and one Ruin Bell event are implemented on `feature/house-v2-ruin-bell`; broader macro-layout and kit work remain planned | 1.4, then packs/Atlas/Chronicle/Worldweave | One blueprint drives render, collision, nav, LOS, doors, spawn exclusion, room zones, roof cutaway, and damage state. `C:\Downloads\IsZbjO.png` has no verified repository author/source/license and is reference-only for room zoning/circulation; no pixels, outline, palette, furniture coordinates, file copy, or other unverified art may ship. Preserve the green 36/36 local gate, then close hosted/evidence/delivery, 100-seed, every-body/projectile, performance, and device gates before promoting it. |
+| House V2 and map composition | **Bounded slice shipped in PR #205:** one original Emberwood cabin blueprint, Ruin Bell event, top-down room props/states, phone command-rail objective, portrait rotation cue, and normal/Reduced Effects visual pairs are deployed; broader macro-layout and kit work remain planned | Bounded 1.x cabin/event shipped; additional kits in packs/Atlas/Chronicle/Worldweave | One blueprint drives render, collision, nav, LOS, doors, spawn exclusion, room zones, roof cutaway, and damage state. `C:\Downloads\IsZbjO.png` has no verified repository author/source/license and remains reference-only for room zoning/circulation; no pixels, outline, palette, furniture coordinates, file copy, or other unverified art may ship. Preserve the accepted local/hosted/Pages/deployed proof. Before multiplying the kit, close the 100-seed, every-body/projectile-size, measured-performance, and physical-device/AT gates. |
 | Graphics, boss models, wand VFX, and performance | Visual-noise budgets, boss silhouette/pose studies, frame/overdraw probes, one wand spectacle slice | 1.4–1.6, 3.3, 4.x, 6.x, definitive 9.x | Player, hostile tells, pickups, and objectives remain readable in grayscale, muted, reduced-effects, dense-swarm, phone, and minimum-tier captures; every effect stays inside particle/projectile/fill-rate budgets. |
 | Weapon classes, gear, and builds | Define player-facing Wand/Spellblade/Emberbow/Totem/Relic schema separately from runtime behavior kinds; graybox one missing class | Playable class slices in 2.x, 12-weapon expansion in 4.x, creator tools in 5.x, definitive balance in 9.x | Each class earns distinct control/targeting, upgrade path, VFX/SFX/access cues, gear interaction, and counter-build. Fixed-seed matrices and human runs show several viable archetypes and no universal best class. |
 | New maps, bosses, and minigames | Research briefs and one vertical slice at a time | Destination packs in 2.x; Forgeheart/story maps in 3.x; four-map waves in 4.x, 6.x, and 8.x | A map needs a routing verb, macro plan, three screenshot identities, House/POI chain, faction, formations, boss, score, build interaction, and perf/access proof. Minigames are non-wager mastery activities with deterministic scoring and no required power reward. |
@@ -99,8 +112,8 @@ objective, or story progress.
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At current shipped main `bbe2217`, `src/` contains 307 files,
-including 139 JavaScript modules and about 60,204 nonblank lines of JavaScript. Raw
+planning documents. At current shipped main `70b25e1`, `src/` contains 319 files,
+including 143 JavaScript modules and about 64,775 nonblank lines of JavaScript. Raw
 file counts are inventory context, not a quality claim.
 
 ### Exact playable/content inventory
@@ -199,9 +212,10 @@ transactions, persistent pursuit, and honest next-source guidance. PR #201 then 
 that same system honest at 667px, compact/touch-safe at 568/480px, separates Hero Rites
 from relic ATTUNE, and rejects undiscovered relic spends in save authority. PR #203
 resolves the named random-only Mythic ceiling with exactly two fixed 72,000-coin
-Blueprints while leaving every Case rule unchanged. The next credible world slice is
-one original House V2 Emberwood cabin plus a Ruin Bell encounter—not another detached
-cosmetic system or recolor-heavy count.
+Blueprints while leaving every Case rule unchanged. PR #205 now ships the first
+original House V2 Emberwood cabin and its bounded Ruin Bell encounter. The next
+credible world expansion is evidence-led house-kit and Waylight multiplication—not
+another detached cosmetic system or recolor-heavy count.
 
 ### Audio now
 
@@ -327,7 +341,7 @@ bank, not be interpreted as a release log.
 | 6 UNDERTOW | **Planned:** no Descent mode, drowned family, or Tidewarden. |
 | 7 THRESHOLDS | **Partial:** adaptive scene music and four boss-family suites now ship; 12 signature weather/monument/theme packages do not. |
 | 8 GLOAMCALL | **Planned:** no playable Umbral element, Gloamwell, or sixth patron. |
-| 9 WAYLIGHT | **Partial shipped foundation:** PR #185 delivered `VigilSiteSystem`, four interactive sites, a Gloam Beacon guardian event, and twelve formations; rescue, waystone, caravan, and a deeper Ruin Bell event remain. |
+| 9 WAYLIGHT | **Partial shipped foundation:** PR #185 delivered `VigilSiteSystem`, four interactive sites, a Gloam Beacon guardian event, and twelve formations; PR #205 adds the bounded Ruin Bell event and first House V2 cabin. Rescue, waystone, caravan, and the complete six-event Waylight promise remain open. |
 | 10 SEVENTH/EIGHTH WICKS | **Planned:** roster remains 6; no hero Chronicle chains. |
 | 11 FORGEHEART | **Planned:** no fifth biome or three-boss forge family. |
 | 12 CINDERS & SCRIPTURE | **Planned/partial art foundation:** no full Codex/Bestiary/archive progression. |
@@ -342,8 +356,9 @@ bank, not be interpreted as a release log.
 
 Decision: do not begin Updates 5, 6, 8, 10, 11, 13, 16, 19, or 20 during this
 90-day roadmap. First prove that the current combat, presentation, and retention
-loops deserve more content. Update 9 receives one deeper Ruin Bell expansion atop the
-shipped Vigil Site/formation foundation only;
+loops deserve more content. Update 9 now has one bounded shipped Ruin Bell slice atop
+the Vigil Site/formation foundation; any further Waylight expansion waits for its
+playtest, performance, and device evidence;
 Update 17 receives only the deterministic foundation that improves testing and
 shareability.
 
@@ -777,61 +792,68 @@ reachable completion or a named deterministic substitute.
 
 ## 7. 61-90 days - The Living Road Slice
 
-### P2.1 One deeper Waylight POI vertical slice
+### P2.1 Bounded Waylight POI shipped; expansion gates remain
 
-Extend the shipped `VigilSiteSystem`/formation seams and ship only one deeper polished
-Emberwood event: the **Ruin Bell**. Do not recreate the four existing sites, Gloam
-Beacon guardian flow, or twelve formation packs.
+PR #205 extends the shipped `VigilSiteSystem`/formation seams with one deeper polished
+Emberwood event: the **Ruin Bell**. This bounded delivery is now the baseline; do not
+recreate the four existing sites, Gloam Beacon guardian flow, twelve formation packs,
+or the delivered Bell as parallel systems.
 
-Build the event on the first **House V2** cabin rather than another decorative box.
+The event is built on the first **House V2** cabin rather than another decorative box.
 One data blueprint owns exterior/interior render pieces, thick perimeter walls,
 doors/windows, collision, navigation openings, line of sight, spawn exclusion, room
 zones, roof cutaway, and intact/damaged/lit/ruined state. The supplied rustic-house
 reference informs spatial principles only—clear kitchen/hearth/dining/sleep/storage
-zones and circulation around focal furniture. EMBERWAKE authors original geometry,
-palette, props, and pixels; no unverified reference art enters the repository.
+zones and circulation around focal furniture. EMBERWAKE's shipped geometry, palette,
+top-down props, and pixels are original; no unverified reference art entered the
+repository.
 
-The current local candidate instantiates that contract as a 1.25-second bell dwell,
-460 px defend radius, six-second return grace, 3/4/4 role packages at 3.5/17/33
-seconds, earliest clear at 45 seconds, timeout at 60, and one retry after eight seconds.
-Stable IDs prevent defeated members from respawning on retry; partial placement becomes
-an attempt-preserving technical defer. A clear requests exactly +32 run XP plus one
-linked Chest-or-Wick-Shrine choice at authored sockets and zero direct coins; either
-failure path emits no completion reward. Claims are keyed by current Bell instance,
-stable reward id, and authored choice; generic/foreign/duplicate claims fail closed,
-and a valid claim removes the stale reward card while preserving cleared/lit art.
-These are implemented, targeted-validator-backed working-tree facts, not shipped,
-hosted, or deployed claims.
+The shipped contract uses a 1.25-second bell dwell, 460 px defend radius, six-second
+return grace, 3/4/4 role packages at 3.5/17/33 seconds, earliest clear at 45 seconds,
+timeout at 60, and one retry after eight seconds. Stable IDs prevent defeated members
+from respawning on retry; partial placement becomes an attempt-preserving technical
+defer. A clear requests exactly +32 run XP plus one linked Chest-or-Wick-Shrine choice
+at authored sockets and zero direct coins; either failure path emits no completion
+reward. Claims are keyed by current Bell instance, stable reward id, and authored
+choice; generic/foreign/duplicate claims fail closed, and a valid claim removes the
+stale reward card while preserving cleared/lit art.
+
+The bounded delivery establishes:
 
 1. A generated structure exposes a valid interaction point and safe approach; its
    door opening agrees across render, collision, nav, LOS, and spawn checks.
 2. Ringing the bell shows a clear risk/reward contract and starts a 45-60 second
    authored encounter beat.
-3. Enemy roles converge through valid routes; house walls remain authoritative.
-4. The music enters a quantized event variation, not generic permanent
-   Onslaught.
-5. Completion grants a choice from existing rewards; failure ends cleanly and
+3. Six enemy roles converge through authored routes while house walls remain
+   authoritative.
+4. The music enters quantized Bell variations instead of generic permanent Onslaught.
+5. Completion grants one linked choice from existing rewards; failure ends cleanly and
    never traps the run.
-6. The QA trace stores seed, blueprint/state, room transitions, role package,
-   completion time, stalls, and frame-time percentiles.
+6. Real phone presentation keeps the objective in the unobstructed command rail,
+   preserves an upright portrait rotation cue, and retains primary combat truth in
+   Reduced Effects and High Contrast.
 
-Only after the Ruin Bell passes its gates should the same seam host waystones,
-rescues, or caravans. This is the safest way to make houses feel alive without
-starting the full Troop, Last Hearth, or Waylight epics simultaneously.
+Exact corrected code `662cdc9` passed 36/36 validators and 189/189 syntax checks. The
+feature gates include Bell 782, House V2 1,049 plus 101,937 stress probes, navigation
+73,444 plus 86,488 stress probes, HUD 14,180/180, and Run Path 93,140. PR visual run
+`29399841105` accepted artifact `8336657384`; evidence CI `29400738072`, post-merge
+`main` CI `29401126345` with artifact `8337140625`, Pages `29401126366`, and
+cache-busted deployed player/`?dev=1`/source/asset byte checks all passed.
 
-The cabin gate includes same-state reference/final captures, 100 deterministic seeds,
-all body/projectile sizes through each opening, roof transition readability, no spawn
-inside walls/furniture, and the 180-body frame budget. Only then does the kit multiply
-to other houses and biome materials.
+The accepted visual matrix contains eleven frames across eight states: arming, warning,
+crossfire in normal/Reduced Effects at real 390x844 portrait and 844x390 landscape
+viewports with DPR 3, breach at 130%/High Contrast, technical defer, clear, first
+failure, and final ruined state. Seven desktop frames are 1280x720, two portrait frames
+are 1170x2532, and two landscape frames are 2532x1170; all eleven hashes are unique.
+Original-resolution review accepted the top-down cabin, unclipped mobile rail, upright
+portrait guidance, reward/failure truth, and visibly quieter Reduced Effects pair.
 
-The candidate's authored CI matrix adds eight distinct receipts: arming, warning,
-crossfire at exact 667x375/touch/130%/Reduced Effects, breach at 130%/High Contrast,
-technical defer, clear, first failure, and final ruined state. Each must prove exact
-phase/house/attempt/member/role/objective/no-coin truth; clear must prove +32 XP and one
-Chest plus one Shrine choice, while failure states must prove neither reward exists.
-CI must verify exact PNG backing dimensions and eight unique hashes, followed by human
-review at original resolution. Until hosted CI and that review are recorded, this
-matrix is an authored gate rather than accepted visual evidence.
+This bounded acceptance does not authorize automatic content multiplication. Before
+the same seam hosts additional waystones, rescues, caravans, house kits, or biome
+materials, close the stable 100-seed fixture, every supported body/projectile size,
+measured frame-percentile and 180-body performance budgets, and physical-device/
+assistive-technology review. The broader House V2 system and complete six-event
+Waylight promise remain open.
 
 ### P2.2 Deterministic simulation foundation
 
@@ -895,7 +917,7 @@ This is scheduling intent, not shipped inventory:
 
 | Major arc | Expansion focus |
 | --- | --- |
-| 1.0 → 2.0 | Fix cosmetic attachments; exact three-unique-boss map gates; completable guided objectives; first House V2 cabin and macro-map plan; visual/performance budgets; one weapon-class schema/spectacle slice; truthful High Refresh foundation. |
+| 1.0 → 2.0 | PR #192/#194/#196/#205 ship the bounded cosmetic-attachment, exact map-gate, Guided Run Path, and first House V2 cabin/Ruin Bell groundwork. The arc remains open for the macro-map plan, broader House kits/Waylight, visual/performance budgets, one weapon-class schema/spectacle slice, and truthful High Refresh foundation. |
 | 2.0 → 3.0 | Named deterministic RNG streams; PR #203's bounded Collection Completion Truth/two-Blueprint delivery pulled groundwork onto the PR #200 I-B substrate without closing 2.8 or this arc; class/gear vertical slices; destination packs; two non-wager mastery minigames; Chronicle prologue data. |
 | 3.0 → 4.0 | Three-act deterministic branching Pilgrimage; choice consequences and sidegrade rewards; Forgeheart map/faction/boss-model family; balanced cross-class builds. |
 | 4.0 → 5.0 | Four new macro-distinct maps, twelve House V2 interiors, Apex Hunt, Nightfall Siege, twelve gap-filling weapons, destination gear/cosmetic families. |
@@ -973,7 +995,7 @@ These are local/QA metrics unless the player explicitly exports a trace.
 | High Refresh | Standard/High fixed-input gameplay hashes match; all high-motion entities interpolate; physical 60/90/120 Hz frame pacing, backgrounding, battery/thermal notes, and truthful fallback copy pass; no guaranteed-120 claim |
 | Population | Keep the 180-enemy cap. Add a measured live player-projectile budget/adaptive fallback before intentionally increasing projectile density |
 | Navigation | 100 seeded worlds x all 4 structure styles; 99.5% of motile enemies make goal progress within a rolling 3-second window when a route exists; zero wall-contained spawns after correction |
-| House V2 | Blueprint render/collision/nav/LOS/door/spawn/room/roof state agrees; 100 seeds, all body/projectile sizes, roof cutaway, and 180-body stress pass before additional kits |
+| House V2 | Bounded PR #205 baseline: one blueprint agrees across render/collision/nav/LOS/door/spawn/room/roof state and the shipped cabin/event/mobile receipts pass. Before additional kits: 100 seeds, every supported body/projectile size, measured roof transitions/frame percentiles, 180-body performance, and physical-device/AT review pass |
 | Encounters | No unsupported role exceeds its sub-cap; a cleared peak produces a measurable 3-8 second relief beat; off-screen count alone cannot trigger Onslaught |
 | Music | Quantized transitions with controlled tails; <=2 non-boss scene switches/10 s; no scheduler duplication after pause/tab/audio unlock; no clipped offline stress capture |
 | Bosses | 100 commits/boss with no consecutive same ID/kind; every damaging move telegraphs; every signature has a recovery; owned entities clear on defeat |
@@ -1015,9 +1037,10 @@ Preserve the delivered gates, then add the remaining coverage in this order:
    Next add gamepad/touch hybrid-device proof, dead-zone/remap persistence, and manual
    physical-device/assistive-tech review.
 7. **Visual/browser matrix:** desktop menu, 185-enemy house swarm, boss cast,
-   second act, full SFX reel, and live score lifecycle are covered. Add narrow
-   mobile, notched safe area, 115/130% Combat HUD size, reduced effects, high contrast, and
-   20-minute/Boss Rush/case/BP/Ruin Bell scenarios.
+   second act, full SFX reel, live score lifecycle, and PR #205's eleven-frame/eight-
+   state Ruin Bell desktop/phone/Reduced Effects/High Contrast matrix are covered. Add
+   the remaining narrow/notched-safe-area, 115% Combat HUD, 20-minute, Boss Rush, case,
+   and BP scenarios plus physical-device review.
 8. **Determinism:** same seed/content version produces the same gameplay event
    log; different visual randomness does not alter that log.
 9. **Cosmetic attachment:** every hero × direction × shipped animation × compatible
@@ -1034,8 +1057,10 @@ Preserve the delivered gates, then add the remaining coverage in this order:
     **14,001/180** and seven representative real-Chromium scenarios cover exact
     desktop/tablet/phone/boss states. Preserve both scopes as later modes and maps add
     explicit capabilities; never turn the catalog into simultaneous chores.
-12. **House V2:** blueprint mutation propagates to render/collision/nav/LOS/spawn/roof
-    fixtures; door sides and room zones cannot disagree; all body/projectile sizes pass.
+12. **House V2 (bounded delivered baseline):** PR #205 covers **1,049** structure
+    checks plus **101,937** stress probes, Bell **782**, navigation **73,444** plus
+    **86,488** stress probes, and the accepted eleven-frame hosted matrix. Next add the
+    stable 100-seed/every-supported-size/performance/device gates before another kit.
 13. **High Refresh:** identical input traces match simulation hashes across render
     cadences; interpolation reset fixtures cover teleport, pause, background, resize,
     quality change, and dropped frames.
@@ -1064,7 +1089,7 @@ Preserve the delivered gates, then add the remaining coverage in this order:
 | Reference-driven house art copies unverified work | Visual similarity can create provenance and identity risk | Use room zoning/circulation principles only; author original geometry/pixels; record source/rights for every shipped asset |
 | Too many currencies/chores | Retention systems can become work | No new currency; permanent/selectable pass; objectives reward normal play |
 | Gambling presentation narrows audience | Coin-only Mines still models house-edge betting | Prefer skill-based replacement; never gate power/pass/cosmetics behind it |
-| Accessibility arrives after layouts | Retrofitting focus/text scale is expensive | Gamepad/focus/text presets land before Ruin Bell/Codex screens |
+| Accessibility arrives after layouts | Retrofitting focus/text scale is expensive | Preserve the shipped Ruin Bell keyboard/touch/accessibility proof; land gamepad/focus/text presets before additional House/Waylight or Codex screens |
 | Roadmap scope expands again | Twenty old epics can consume polish capacity | One 30-day release at a time; next phase starts only after gates and playtest review |
 
 ## 12. Research basis
@@ -1118,9 +1143,9 @@ task at a time, understand exactly which of the previous map's three Keepers sti
 blocks the next map, and share/replay a deterministic challenge. The cosmetic rig,
 bounded Collection Growth I-A browsing/source slice, I-B 30-piece/preset/pursuit slice,
 campaign gate, Guided Run Path, and PR #203's bounded Completion Truth/protected-
-transaction work are shipped foundations; the House V2 cabin, playable tutorial/
-debrief, and later destination-specific guidance
-remain required.
+transaction work and PR #205's bounded House V2 cabin/Ruin Bell slice are shipped
+foundations; broader House kits/Waylight, a playable tutorial/debrief, and later
+destination-specific guidance remain required.
 High Refresh may be called shipped only if interpolation and
 physical-device gates are complete.
 
