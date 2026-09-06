@@ -1411,10 +1411,10 @@ export const GameInputActionMethods = {
         if (!this.upgradeChoices) return;
         const upgrade = this.upgradeChoices[idx];
         if (!upgrade) return;
-        // First level-up pick made — move on to the meta lessons (coins,
-        // combo, shrines, boss). Later picks (step already past 3) don't reset.
-        if (this.onboarding && this.onboarding.step === 3) this._advanceOnboarding();
         this.upgradeSystem.apply(upgrade, this);
+        // Remember the committed choice even if an earlier lesson is current.
+        // The director gives every lesson its own read time when play resumes.
+        this.onboarding?.record?.('upgrade');
         this.audio.upgrade();
         this.setUpgradeChoices(null);
         // Drain pending level-ups first, then move on to any queued chests /
@@ -1427,12 +1427,12 @@ export const GameInputActionMethods = {
         if (!this.altar) return;
         const choice = this.altar.choices[idx];
         if (!choice) return;
-        // First shrine claimed — the shrine lesson is learned. (Event-driven,
-        // mirroring selectUpgrade: the overlay gate keeps _tickOnboarding from
-        // ever observing this.altar, so the tick can't do this itself.) The ✓
-        // flash shows for a beat once the overlay closes.
-        if (this.onboarding && this.onboarding.step === 6) this._completeOnboardingStep();
+        const alreadyHadRelic = choice.relicId && this._runRelics?.includes(choice.relicId);
         choice.apply(this);
+        // Fusions, pacts, and roads share this overlay but do not teach claiming
+        // a relic. Credit only a newly committed relic in the run inventory.
+        if (choice.kind === 'relic' && choice.relicId && !alreadyHadRelic
+            && this._runRelics?.includes(choice.relicId)) this.onboarding?.record?.('relic');
         // Flavor-matched pick cues: fusion = forge slam, pact = dark bargain,
         // everything else keeps the standard upgrade chirp.
         if (choice.kind === 'fusion') this.audio.fusionForge();

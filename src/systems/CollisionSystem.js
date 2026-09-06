@@ -220,6 +220,7 @@ export class CollisionSystem {
         // take the strongest overlap plus a capped fraction of the rest, so
         // a swarm genuinely hurts while a single touch is unchanged.
         let contact = false;
+        let contactCount = 0;
         let strongest = 0;
         let strongestEnemy = null;
         let rest = 0;
@@ -227,6 +228,7 @@ export class CollisionSystem {
             if (!e.active) continue;
             if (!circleOverlap(player.x, player.y, player.radius, e.x, e.y, e.radius)) continue;
             contact = true;
+            contactCount++;
             if (e.contactDamage > strongest) {
                 rest += strongest;
                 strongest = e.contactDamage;
@@ -277,9 +279,13 @@ export class CollisionSystem {
         let strongestHit = null;
         if (playerHit && strongestEnemy) {
             strongestHit = {
-                label: strongestEnemy.def?.label ?? strongestEnemy.name,
+                label: strongestEnemy.def?.label ?? strongestEnemy.name ?? 'an enemy',
                 epithet: strongestEnemy.epithet ?? null,
                 boss: !!strongestEnemy.boss,
+                kind: 'contact',
+                contactCount,
+                lethal: player.hp <= 0,
+                fresh: player.hp <= 0,
             };
         }
 

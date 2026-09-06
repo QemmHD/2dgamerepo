@@ -131,6 +131,7 @@ window.webkitAudioContext = undefined;
 import { Renderer } from '../../src/systems/Renderer.js';
 import { GameLoop } from '../../src/core/GameLoop.js';
 import { Game } from '../../src/core/Game.js';
+import { stageFirstLightScenario, verifyFirstLightScenario } from './first-light-scenarios.js';
 import { SaveSystem } from '../../src/systems/SaveSystem.js';
 import { Input } from '../../src/core/Input.js';
 import { KeyboardInput } from '../../src/core/KeyboardInput.js';
@@ -1274,6 +1275,8 @@ async function boot() {
                 if (game.waveDirector) game.waveDirector.announcement = null;
             } catch (e) { ERR.push('objective: ' + String(e && e.stack || e)); }
         }
+        try { stageFirstLightScenario(game, params); }
+        catch (e) { ERR.push(String(e?.stack || e)); }
         if (QA_GAME_OVER) {
             game._enterGameOver();
             game.update(2); // clear the death beat and settle the full summary
@@ -1301,6 +1304,9 @@ async function boot() {
         game.captionSystem.update(1);
         game.render();
     }
+
+    try { verifyFirstLightScenario(game, params); }
+    catch (e) { ERR.push(String(e?.stack || e)); }
 
     // Device receipts capture the settled shipped state after the initial
     // 2.5-second orientation prompt: an upright, persistent compact pill in

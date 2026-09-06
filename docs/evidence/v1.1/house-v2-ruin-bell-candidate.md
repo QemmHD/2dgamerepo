@@ -160,7 +160,7 @@ visual artifact.
 | Hosted run head | `6e3dfbd88ec14073d6ff236c5e158312d0a32f5e` |
 | Artifact | `ruin-bell-visual-receipts`, ID `8336657384`, 18,085,984 bytes |
 | Artifact digest | `sha256:648e0ba86aa2970f93196c22dbf825353bd04d8f0c138896fbc2ab7308312991` |
-| Retention | Not expired at acceptance; GitHub expiry `2026-08-14T08:13:20Z` |
+| Retention | Accepted before expiry; GitHub now reports `expired: true` (checked 2026-09-06), with expiry `2026-08-14T08:13:20Z` |
 | Integrity | Exactly 11 expected PNGs, no extras, 11 unique SHA-256 hashes |
 | Dimensions | Seven desktop frames at 1280x720; two landscape frames at 2532x1170; two portrait frames at 1170x2532 |
 

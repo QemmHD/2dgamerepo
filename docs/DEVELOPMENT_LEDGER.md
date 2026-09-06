@@ -3,11 +3,11 @@
 **Canonical handoff:** read this file before planning or editing; update status,
 evidence, and next action in the same PR as the work.
 
-**Last grounded:** 2026-07-15
-**Main baseline:** [`70b25e1`](https://github.com/QemmHD/2dgamerepo/commit/70b25e1165ba32aecfcd02838a22adccbe141670) — bounded House V2/Ruin Bell delivery from merged [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205)
-**Active branch at grounding:** `docs/house-v2-ruin-bell-delivery`, reconciling the already deployed `70b25e1` boundary without adding player code or closing a broader roadmap row
-**Latest shipped feature commit:** [`70b25e1`](https://github.com/QemmHD/2dgamerepo/commit/70b25e1165ba32aecfcd02838a22adccbe141670)
-**Shipped ledger baseline before this documentation tranche:** [`70b25e1`](https://github.com/QemmHD/2dgamerepo/commit/70b25e1165ba32aecfcd02838a22adccbe141670); when this file is on `main`, its containing commit is the newer ledger truth
+**Last grounded:** 2026-09-06
+**Main baseline:** [`9ac5435`](https://github.com/QemmHD/2dgamerepo/commit/9ac5435a92e6e9fe153ee4bcd8d20ef95b505f4e) — merged PR #206, following House V2/Ruin Bell PR #205
+**Active branch at grounding:** `docs/house-v2-ruin-bell-delivery`, reconciling historical PR #205 delivery evidence; tracked player code is unchanged from this main baseline
+**Latest merged feature commit:** [`9ac5435`](https://github.com/QemmHD/2dgamerepo/commit/9ac5435a92e6e9fe153ee4bcd8d20ef95b505f4e)
+**Shipped ledger baseline before this documentation tranche:** `9ac5435`; this record preserves each release's own validation and deployment identity
 **1.1 foundation feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / merged [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
 **Product roadmap:** [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md)
 
@@ -15,6 +15,11 @@ This ledger answers four questions for the next Codex or Claude session: what is
 actually shipped, what exists only on a working branch, what proof is missing, and
 what exact action should happen next. The roadmap owns product intent and scope; this
 file owns execution truth.
+
+PR #205 counts, screenshots, and public-smoke results below describe its July 15
+delivery at `70b25e1`; they are not a fresh acceptance run against current main.
+PR #206 subsequently merged as `9ac5435`. Its post-merge CI `30192861364` and
+Pages run `30192861343` succeeded.
 
 ## Status and evidence contract
 
@@ -201,7 +206,7 @@ rejected with zero state mutation and zero save writes. UI state, semantic actio
 accessibility labels, Escape/back behavior, and the guided-tour route use the same
 authority; unsafe layouts fail closed.
 
-The current integrated boundary is **198,687 assertions**: Collection **10,249**;
+The PR #201 integrated acceptance boundary was **198,687 assertions**: Collection **10,249**;
 attachment **7,332** across 162 frames/810 points; progression **5,865**; Run Path
 **93,139**; HUD **14,001/180**; gambling **644**; UX **109**; accessibility **310**;
 validators **25/25**; and syntax **170/170**. Accepted PR CI

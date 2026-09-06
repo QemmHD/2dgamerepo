@@ -1,5 +1,11 @@
 # First Light bounded web evidence
 
+PR #205 counts, screenshots, and public-smoke results below describe its July 15
+delivery at `70b25e1`; they are not a fresh acceptance run against current main.
+PR #206 subsequently merged as `9ac5435`. Its post-merge CI `30192861364` and
+Pages run `30192861343` succeeded. The two recorded PR #205 visual artifacts now
+report expired; IDs, hashes, and findings preserve historical acceptance only.
+
 ## House V2 and Ruin Bell - bounded PR #205 delivery
 
 - [Delivery contract, provenance boundary, validation, immutable visual evidence,

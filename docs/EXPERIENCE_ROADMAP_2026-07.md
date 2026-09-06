@@ -112,8 +112,8 @@ objective, or story progress.
 ## 1. Audited current state
 
 The audit covered the runtime, content registries, assets, tools, CI, and all
-planning documents. At current shipped main `70b25e1`, `src/` contains 319 files,
-including 143 JavaScript modules and about 64,775 nonblank lines of JavaScript. Raw
+planning documents. At main `9ac5435`, `src/` contains 319 files,
+including 143 JavaScript modules and 65,053 nonblank lines of JavaScript. Raw
 file counts are inventory context, not a quality claim.
 
 ### Exact playable/content inventory

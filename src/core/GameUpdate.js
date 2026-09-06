@@ -51,6 +51,12 @@ export function gemLightColor(tier) {
 
 export const GameUpdateMethods = {
     update(dt) {
+        // Attribution survives for the legacy recap; debrief authority does not
+        // survive healing or revival into another active frame.
+        if (this.player?.hp > 0 && this.lastHitBy?.fresh === true) {
+            this.lastHitBy.lethal = false;
+            this.lastHitBy.fresh = false;
+        }
         // Feedback flashes + press states tick on every screen so they
         // animate even while gameplay is frozen behind an overlay.
         this._updateFeedback(dt);
@@ -1197,7 +1203,10 @@ export const GameUpdateMethods = {
                 : f === 'right' ? 0 : Math.PI / 2;
         }
         const primaryWeapon = this.weaponSystem.owned[0];
-        if (primaryWeapon && primaryWeapon.firedThisFrame) this.player.triggerCast();
+        if (primaryWeapon && primaryWeapon.firedThisFrame) {
+            this.player.triggerCast();
+            this.onboarding?.record?.('attack');
+        }
         return weaponResult;
     },
 
@@ -1382,7 +1391,15 @@ export const GameUpdateMethods = {
             // overlap, so cover can never be damaged through on this frame.
             const dealt = ep.update(dt, this.player, this.obstacleSystem);
             if (dealt > 0) {
-                if (ep.sourceLabel) this.lastHitBy = ep.sourceLabel;   // death-card attribution
+                const source = ep.sourceLabel;
+                this.lastHitBy = {
+                    label: typeof source === 'string' ? source : source?.label || 'an enemy projectile',
+                    epithet: typeof source === 'object' ? source?.epithet ?? null : null,
+                    boss: !!source?.boss,
+                    kind: 'projectile',
+                    lethal: this.player.hp <= 0,
+                    fresh: this.player.hp <= 0,
+                };
                 this._shake(SCREEN_SHAKE.intensity, SCREEN_SHAKE.duration);
                 this._pushFeedback('hit', 0.32);
                 this.damageNumbers.push(new DamageNumber(
@@ -1406,6 +1423,7 @@ export const GameUpdateMethods = {
         }
         if (xpCollected > 0) {
             const levels = this.player.gainXP(xpCollected);
+            this.onboarding?.record?.('shard', xpCollected);
             if (levels > 0) {
                 this.pendingLevelUps += levels;
                 this._pushFeedback('levelup', 0.5);
@@ -1432,6 +1450,7 @@ export const GameUpdateMethods = {
             const got = c.update(dt, this.player);
             if (got > 0) {
                 this.player.coins = (this.player.coins ?? 0) + got;
+                this.onboarding?.record?.('coin', got);
                 this.particles.pickupSparkle(c.x, c.y, LIGHT_COLORS.coin);
                 this.audio.coin();
             }
@@ -1716,6 +1735,10 @@ export const GameUpdateMethods = {
 
         this.camera.update(dt);
 
+        if (this.player.hp > 0 && this.lastHitBy?.fresh === true) {
+            this.lastHitBy.lethal = false;
+            this.lastHitBy.fresh = false;
+        }
         if (this.player.isDead()) {
             this._enterGameOver();
         }

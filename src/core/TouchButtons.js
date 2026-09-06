@@ -208,7 +208,7 @@ export class TouchButtons {
         const aiming = !!i.aiming;
         const col = i.ultColor || '#ff8c4a';
         this._drawButton(ctx, L.kindle, col, aiming ? 1 : (i.fill ?? 0),
-            aiming ? 'AIM' : 'ULT', aiming || !!i.ready, aiming, reducedMotion);
+            aiming ? 'AIM' : 'KINDLE', aiming || !!i.ready, aiming, reducedMotion);
     }
 
     _drawButton(ctx, c, color, frac, label, ready, active, reducedMotion = false) {

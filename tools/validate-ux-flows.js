@@ -103,8 +103,8 @@ for (const key of ['upgradeChoices', 'chestReward', 'altar', 'paused', 'victory'
     ok(onboardingModalActive({ [key]: true }), `${key} must suppress onboarding guidance`);
 }
 const stateSource = fs.readFileSync(path.join(ROOT, 'src/systems/UIStateBuilder.js'), 'utf8');
-ok(stateSource.includes('game.onboarding.step === 3 && game.upgradeChoices'),
-    'level-up reassurance must appear only on onboarding step 3');
+ok(stateSource.includes('(game.onboarding.counts?.upgradesChosen ?? 0) === 0 && game.upgradeChoices'),
+    'first-pick reassurance must stop after a committed upgrade, independent of lesson timing');
 const uiSource = fs.readFileSync(path.join(ROOT, 'src/systems/UISystem.js'), 'utf8');
 ok(uiSource.includes('Choose your first upgrade — every choice helps'),
     'first level-up guidance belongs in the normal subtitle');

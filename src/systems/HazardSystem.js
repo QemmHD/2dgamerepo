@@ -45,6 +45,9 @@ function stampHazardKiller(game, hz) {
     game.lastHitBy = {
         label: HAZARD_LABELS[hz.kind] || 'the hazards',
         epithet: null, boss: false, hazard: true,
+        kind: 'hazard', hazardKind: hz.kind || 'unknown',
+        lethal: game.player.hp <= 0,
+        fresh: game.player.hp <= 0,
     };
 }
 

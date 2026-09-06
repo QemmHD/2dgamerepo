@@ -304,6 +304,21 @@ export class UISystem {
         };
     }
 
+    _debriefLayout() {
+        const sa = this.renderer.safeArea;
+        const u = Math.max(1, INTERNAL_WIDTH / (this.renderer.cssWidth || INTERNAL_WIDTH));
+        const w = Math.min(800 * u, INTERNAL_WIDTH - sa.left - sa.right - 32 * u);
+        const h = Math.min(340 * u, INTERNAL_HEIGHT - sa.top - sa.bottom - 24 * u);
+        const x = sa.left + (INTERNAL_WIDTH - sa.left - sa.right - w) / 2;
+        const y = sa.top + (INTERNAL_HEIGHT - sa.top - sa.bottom - h) / 2;
+        const pad = 24 * u;
+        const rightX = x + w * 0.60;
+        return { x, y, w, h, u, pad, rightX,
+            button: { x: rightX, y: y + h - 68 * u, w: w * 0.40 - pad, h: 48 * u } };
+    }
+
+    getDebriefButtonRect() { return this._debriefLayout().button; }
+
     // EMBERGLASS: SHARE CARD button, bottom-right (below the minted-card
     // thumbnail), clear of the centered RESTART / RETURN TO SHOP row.
     getShareCardButtonRect() {
@@ -496,6 +511,8 @@ export class UISystem {
         receipt.objectiveTextComplete = false;
         receipt.pause = false;
         receipt.gameOver = false;
+        receipt.onboarding = null;
+        receipt.debrief = null;
         this._activeUiScale = uiScaleFactor(gameState.saveData?.settings?.uiScale);
         this._highContrast = gameState.saveData?.settings?.highContrast === true;
         this._reducedEffects = gameState.saveData?.settings?.reducedEffects === true;
@@ -545,7 +562,7 @@ export class UISystem {
         this._drawControlHint(ctx, gameState);
 
         if (!gameState.gameOver && !gameState.upgradeChoices && !gameState.chestReward && !gameState.altar) {
-            this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
+            if (!gameState.onboardingLesson) this._drawWaveAnnouncement(ctx, gameState.waveAnnouncement);
             this._drawBossWarning(ctx, gameState);
             this._drawBossRushHud(ctx, gameState, hud);
         }
@@ -2910,7 +2927,8 @@ export class UISystem {
 
     _drawControlHint(ctx, state) {
         if (state.upgradeChoices || state.gameOver || state.chestReward || state.altar
-            || state.paused || state.victory || state.photoMode) return;
+            || state.paused || state.victory || state.photoMode || state.bossWarning
+            || state.activeBoss || state.activeLieutenant) return;
         const sa = this.renderer.safeArea;
         // First-run TUTORIAL banner — a framed, clearly-labelled "LESSON n/9"
         // card with progress dots + a ✓ done-flash, plus a world pointer at the
@@ -2919,66 +2937,38 @@ export class UISystem {
         const lesson = state.onboardingLesson;
         if (lesson) {
             this._drawTutorialPointer(ctx, state);
-            const t = performanceNowSafe() * 0.001;
-            const done = lesson.done;
-            const accent = done ? '#5fd36a' : '#ffd166';
-            const label = `TUTORIAL  ·  LESSON ${lesson.n} / ${lesson.total}`;
-            // Hint text can be multi-line (\n): the non-gamer copy runs long, so
-            // it's authored as 1–2 lines and drawn line-by-line (fillText ignores
-            // \n). The done-flash is always a single short line.
-            let bodyLines = done ? ['✓  Nice!'] : String(lesson.text).split('\n');
-            if (state.touchMode && !done && lesson.n === 1) {
-                bodyLines = [
-                    'Drag the left side to move. Enemies chase you — keep moving.',
-                    'Tap the right side to focus; use BLINK when you get surrounded.',
-                ];
-            } else if (!state.touchMode && !done && lesson.n === 9) {
-                bodyLines = [
-                    'Space blinks out of danger. Hold Q to aim, then release Kindle.',
-                    'Press Tab to focus a priority enemy; press again to cycle targets.',
-                ];
-            }
-            const bodyFontPx = done ? 27 : 22;
+            const scale = Math.max(0.1, (this.renderer.cssWidth || INTERNAL_WIDTH) / INTERNAL_WIDTH);
+            const u = Math.max(1, 1 / scale);
+            const phone = isPhoneLandscapeViewport(this.renderer.cssWidth, this.renderer.cssHeight);
+            const accent = lesson.done ? '#83e6b0' : lesson.outcome === 'deferred' ? '#aeb9ca' : '#ffd166';
+            const cw = Math.min((phone ? 760 : 700) * u, INTERNAL_WIDTH - sa.left - sa.right - 32 * u);
+            const body = (lesson.resultText || lesson.text).replace(/\n/g, ' ');
             ctx.save();
-            ctx.textAlign = 'center';
-            ctx.font = `bold ${bodyFontPx}px ${FONT}`;
-            let bodyW = 0;
-            for (const ln of bodyLines) bodyW = Math.max(bodyW, ctx.measureText(ln).width);
-            const cw = Math.max(bodyW + 72, 420);
-            const lineGap = 27;
-            const chh = 74 + bodyLines.length * lineGap;
-            const cx0 = INTERNAL_WIDTH / 2 - cw / 2;
-            const y0 = INTERNAL_HEIGHT - chh - 108 - sa.bottom;   // clears the bottom bars
-            // Card + pulsing accent border.
-            roundRectPath(ctx, cx0, y0, cw, chh, 16);
-            ctx.fillStyle = 'rgba(8,7,12,0.9)'; ctx.fill();
-            ctx.save();
-            ctx.globalAlpha = this._reducedEffects ? 1 : 0.7 + 0.3 * Math.sin(t * 4);
-            roundRectPath(ctx, cx0, y0, cw, chh, 16);
-            ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+            ctx.font = `600 ${14 * u}px ${FONT}`;
+            const measured = wrapText({ measureText: (text) => ctx.measureText(text), fillText() {} },
+                body, 0, 0, cw - 32 * u, 18 * u, phone ? 2 : 3);
             ctx.restore();
-            // "TUTORIAL · LESSON n/total" label strip.
-            ctx.textBaseline = 'middle';
-            ctx.font = `700 15px ${FONT}`;
-            ctx.fillStyle = accent;
-            ctx.fillText(label, INTERNAL_WIDTH / 2, y0 + 20);
-            // Progress dots (done = green, current = accent, upcoming = faint).
-            const dn = lesson.total, dotsW = dn * 16;
-            for (let i = 0; i < dn; i++) {
-                const dx = INTERNAL_WIDTH / 2 - dotsW / 2 + i * 16 + 8;
-                ctx.beginPath();
-                ctx.arc(dx, y0 + 42, i === lesson.n - 1 ? 5 : 3.5, 0, Math.PI * 2);
-                ctx.fillStyle = i < lesson.n - 1 ? 'rgba(95,211,106,0.75)'
-                    : i === lesson.n - 1 ? accent : 'rgba(255,255,255,0.22)';
-                ctx.fill();
-            }
-            // The lesson line(s) (or ✓ Nice! on the done-flash).
-            ctx.font = `bold ${bodyFontPx}px ${FONT}`;
-            ctx.fillStyle = done ? '#c9f5cf' : '#ffe9b0';
-            const bodyTop = y0 + 62;
-            for (let i = 0; i < bodyLines.length; i++) {
-                ctx.fillText(bodyLines[i], INTERNAL_WIDTH / 2, bodyTop + i * lineGap);
-            }
+            const ch = (42 + measured.lines.length * 18) * u;
+            const x = sa.left + (INTERNAL_WIDTH - sa.left - sa.right - cw) / 2;
+            const hud = this._layoutFor(state);
+            const top = Math.max(hud.header.y + hud.header.h, hud.vitals.y + hud.vitals.h,
+                hud.loadout.y + hud.loadout.h, hud.pause.y + hud.pause.h,
+                state.activeBoss ? hud.boss.y + hud.boss.h : 0,
+                state.activeLieutenant ? hud.lieutenant.y + hud.lieutenant.h : 0);
+            const y = phone ? top + 8 * u : INTERNAL_HEIGHT - sa.bottom - ch - 80 * u;
+            ctx.save();
+            roundRectPath(ctx, x, y, cw, ch, 12 * u);
+            ctx.fillStyle = 'rgba(10,14,22,0.96)'; ctx.fill();
+            ctx.strokeStyle = accent; ctx.lineWidth = 1.5 * u; ctx.stroke();
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.font = `700 ${12 * u}px ${FONT}`; ctx.fillStyle = accent;
+            const status = lesson.done ? 'COMPLETED' : lesson.outcome === 'deferred' ? 'TRY LATER' : 'FIRST RUN';
+            ctx.fillText(`${status}  ·  ${lesson.n}/${lesson.total}  ·  ${lesson.title}`, x + 16 * u, y + 18 * u);
+            ctx.font = `600 ${14 * u}px ${FONT}`; ctx.fillStyle = '#f1eee6';
+            const wrapped = wrapText(ctx, body, x + 16 * u, y + 40 * u,
+                cw - 32 * u, 18 * u, phone ? 2 : 3);
+            this._lastDrawReceipt.onboarding = { id: lesson.id, outcome: lesson.outcome,
+                rect: { x, y, w: cw, h: ch }, textComplete: !wrapped.truncated, fontCssPx: 14 };
             ctx.restore();
             return;
         }
@@ -3380,6 +3370,7 @@ export class UISystem {
     }
 
     _drawGameOverOverlay(ctx, state) {
+        if (state.runDebrief?.firstDeath) return this._drawFirstDeathDebrief(ctx, state);
         const summary = state.runSummary;
         const sa = this.renderer.safeArea;
         const reduced = this._reducedEffects === true;
@@ -3449,7 +3440,7 @@ export class UISystem {
             ['Level', `Lv ${summary.level}`],
             ['Score', `${summary.bossRushScore ?? 0}`],
             ['Run Path', pathValue],
-            ['Coins earned', summary.coinsEarned],
+            ['Run coins banked', summary.runCoinsBanked ?? summary.coinsEarned],
         ] : [
             ['Survived', formatTime(summary.time)],
             ['Final Wave', `${summary.finalWave}` + (summary.finalWaveName ? `  •  ${summary.finalWaveName}` : '')],
@@ -3460,7 +3451,7 @@ export class UISystem {
             ['Vigil sites', `${summary.vigilSitesActivated ?? 0}  •  ${summary.vigilSiteKindsMastered ?? 0}/4 kinds`],
             ['Tactical packs', summary.encountersCleared ?? 0],
             ['Beacon packs', summary.guardianPacksDefeated ?? 0],
-            ['Coins earned', summary.coinsEarned],
+            ['Run coins banked', summary.runCoinsBanked ?? summary.coinsEarned],
         ];
         const statsStartY = 240 + sa.top;
         const lineH = 44;
@@ -3612,7 +3603,7 @@ export class UISystem {
         this._drawSummaryButton(ctx, restartBtn, 'RESTART', '#5fe87a',
             `rgba(95, 232, 122, ${0.32 * pulse})`,
             this._pressAmt(state, 'restart'), true);
-        this._drawSummaryButton(ctx, shopBtn, 'RETURN TO SHOP', '#5fc7ff',
+        this._drawSummaryButton(ctx, shopBtn, 'RETURN HOME', '#5fc7ff',
             'rgba(95, 199, 255, 0.10)',
             this._pressAmt(state, 'returnShop'), false);
 
@@ -3641,8 +3632,8 @@ export class UISystem {
         ctx.textAlign = 'center';
         ctx.fillText(
             card && card.canvas
-                ? 'R / Enter restart   •   B / Esc shop   •   S share'
-                : 'R / Enter restart   •   B / Esc shop',
+                ? 'R / Enter restart   •   B / Esc home   •   S share'
+                : 'R / Enter restart   •   B / Esc home',
             INTERNAL_WIDTH / 2,
             restartBtn.y + restartBtn.h + 36
         );
@@ -3671,6 +3662,59 @@ export class UISystem {
         }
 
         ctx.restore();
+        return true;
+    }
+
+    _drawFirstDeathDebrief(ctx, state) {
+        const rawAge = state.gameOverAge ?? 0;
+        if (rawAge < 0.6) return false;
+        const d = state.runDebrief;
+        const r = this._debriefLayout();
+        const { x, y, w, h, u, pad, rightX } = r;
+        const short = h / u < 310;
+        ctx.save();
+        ctx.globalAlpha = this._reducedEffects ? 1 : clamp01((rawAge - 0.6) / 0.3);
+        ctx.fillStyle = 'rgba(4,8,15,0.87)';
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        const gradient = ctx.createLinearGradient(x, y, x + w, y + h);
+        gradient.addColorStop(0, '#222435'); gradient.addColorStop(1, '#101923');
+        roundRectPath(ctx, x, y, w, h, 18 * u);
+        ctx.fillStyle = gradient; ctx.fill();
+        ctx.strokeStyle = '#8b6b4e'; ctx.lineWidth = u; ctx.stroke();
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffd08a'; ctx.font = `700 ${12 * u}px ${FONT}`;
+        ctx.fillText('FIRST LIGHT  /  RUN ENDED', x + pad, y + 24 * u);
+        ctx.fillStyle = '#fff4e2'; ctx.font = `700 ${27 * u}px ${FONT}`;
+        ctx.fillText(d.title, x + pad, y + (short ? 48 : 56) * u);
+        ctx.strokeStyle = '#465164';
+        ctx.beginPath(); ctx.moveTo(x + pad, y + (short ? 70 : 84) * u); ctx.lineTo(x + w - pad, y + (short ? 70 : 84) * u); ctx.stroke();
+        const leftW = rightX - x - pad - 28 * u;
+        ctx.fillStyle = '#ffb3a4'; ctx.font = `700 ${11 * u}px ${FONT}`;
+        ctx.fillText('WHAT ENDED THE RUN', x + pad, y + (short ? 84 : 108) * u);
+        ctx.fillStyle = '#f3f1ed'; ctx.font = `600 ${(short ? 14 : 16) * u}px ${FONT}`;
+        const cause = wrapText(ctx, d.cause.text, x + pad, y + (short ? 100 : 132) * u, leftW, (short ? 16 : 20) * u, short ? 4 : 3);
+        ctx.fillStyle = '#8fddd4'; ctx.font = `700 ${11 * u}px ${FONT}`;
+        ctx.fillText('NEXT TIME', x + pad, y + (short ? 165 : 204) * u);
+        ctx.fillStyle = '#d8e1eb'; ctx.font = `500 ${(short ? 14 : 15) * u}px ${FONT}`;
+        const hint = wrapText(ctx, d.hint.text, x + pad, y + (short ? 188 : 228) * u, leftW, (short ? 18 : 20) * u, short ? 3 : 4);
+        const numbers = [[d.rewards.coins, d.rewards.coinLabel, '#ffcf70'], [d.rewards.passXp, d.rewards.passXpLabel, '#bfa7ff']];
+        for (let i = 0; i < numbers.length; i++) {
+            const yy = y + (short ? 82 + i * 46 : 110 + i * 66) * u;
+            ctx.fillStyle = numbers[i][2]; ctx.font = `700 ${28 * u}px ${MONO}`;
+            ctx.fillText(`+${numbers[i][0].toLocaleString('en-US')}`, rightX, yy + 7 * u, r.button.w);
+            ctx.fillStyle = '#c2cfdf'; ctx.font = `500 ${12 * u}px ${FONT}`;
+            ctx.fillText(numbers[i][1], rightX, yy + 33 * u);
+        }
+        const buttonReady = rawAge >= 1.6;
+        ctx.globalAlpha = buttonReady ? 1 : 0.38;
+        roundRectPath(ctx, r.button.x, r.button.y, r.button.w, r.button.h, 10 * u);
+        ctx.fillStyle = '#efd29b'; ctx.fill();
+        ctx.fillStyle = '#17202a'; ctx.textAlign = 'center'; ctx.font = `700 ${15 * u}px ${FONT}`;
+        ctx.fillText(d.action.label, r.button.x + r.button.w / 2, r.button.y + r.button.h / 2);
+        ctx.restore();
+        this._lastDrawReceipt.debrief = { rect: { x, y, w, h }, button: r.button,
+            textComplete: !cause.truncated && !hint.truncated, ready: buttonReady,
+            cause: d.cause.text, hint: d.hint.id, coins: d.rewards.coins, passXp: d.rewards.passXp };
         return true;
     }
 

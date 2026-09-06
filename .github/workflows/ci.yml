@@ -86,6 +86,18 @@ jobs:
       - name: Validate UX flows
         run: node tools/validate-ux-flows.js
 
+      - name: Validate first-run action lessons
+        run: node tools/validate-onboarding.js
+
+      - name: Validate truthful run debrief and first-death save handling
+        run: node tools/validate-run-debrief.js
+
+      - name: Validate lethal damage provenance and pickup actions
+        run: node tools/validate-damage-context.js
+
+      - name: Validate first-run and debrief responsive layout
+        run: node tools/validate-first-light-ui.js
+
       - name: Validate accessibility and input contracts
         run: node tools/validate-accessibility.js
 

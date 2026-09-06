@@ -91,6 +91,8 @@ import { HapticsSystem } from '../systems/HapticsSystem.js';
 import { buildUIState, ruinBellObjectiveSnapshot } from '../systems/UIStateBuilder.js';
 import { isPhoneLandscapeViewport } from '../systems/ResponsiveLayout.js';
 import { TOUR_STEPS } from '../content/tutorialTour.js';
+import { OnboardingDirector } from '../systems/OnboardingDirector.js';
+import { buildRunDebrief } from '../systems/RunDebrief.js';
 import { getCardCompositor } from '../systems/CardCompositor.js';
 import { EMBERGLASS, VICTORY_BEAT } from '../config/GameConfig.js';
 import { PhotoModeMethods } from './PhotoModeController.js';   // photo mode split out; methods spliced onto the prototype below
@@ -506,6 +508,12 @@ export class Game {
                 return;
             }
             if (this.screen === 'gameOver') {
+                e.preventDefault();
+                if (!this._gameOverInputReady()) return;
+                if (this.runDebrief?.firstDeath) {
+                    if (['Enter', 'Space', 'Escape', 'KeyB'].includes(e.code)) this._acknowledgeRunDebrief();
+                    return;
+                }
                 if (e.code === 'KeyR' || e.code === 'Enter') {
                     e.preventDefault();
                     this.restart();
@@ -768,8 +776,12 @@ export class Game {
             // tap still falling on the death moment can't instantly restart /
             // leave before the player has even seen the summary. Taps are
             // consumed (not passed through) so nothing behind the overlay fires.
-            if (this.gameOverAge < 0.7) return true;
+            if (!this._gameOverInputReady()) return true;
             const pos = this.renderer.clientToInternal(clientX, clientY);
+            if (this.runDebrief?.firstDeath) {
+                if (inRect(pos, this.ui.getDebriefButtonRect(), 0)) this._acknowledgeRunDebrief();
+                return true;
+            }
             const rRestart = this.ui.getRestartButtonRect();
             if (inRect(pos, rRestart)) { this._pressFeedback('restart'); this.restart(); return true; }
             const rShop = this.ui.getReturnToShopButtonRect();
@@ -1211,9 +1223,12 @@ export class Game {
         // non-blocking hint sequence — move → auto-attack → shards → first
         // level-up pick — ticked by _tickOnboarding, drawn as a HUD pill by
         // UISystem. Never a modal wall; gameplay is untouched.
+        this._replayRunDebrief = !!this._forceRunHints;
+        this.runDebrief = null;
+        this._runBaseCoinsCredited = 0;
         this.onboarding = (!SKIP_ONBOARDING && !this._bossRushConfig
             && ((this.saveSystem.data.stats?.runs ?? 0) === 0 || this._forceRunHints))
-            ? { step: 0, timer: 0, moved: 0, armed: true }
+            ? new OnboardingDirector({ x: this.player.x, y: this.player.y })
             : null;
         this._forceRunHints = false;   // Replay-Tutorial re-teach is one run only
         // BOSSFORGE — gauntlet head-start (Boss Rush + Weekly Ember): grant the
@@ -1333,83 +1348,23 @@ export class Game {
     _tickOnboarding(dt) {
         const ob = this.onboarding;
         if (!ob || this.gameOver) return;
-        // Lesson-complete flash: hold the green ✓ banner for a beat before
-        // moving on, so the player SEES that what they just did was the lesson.
-        if (ob.done) {
-            ob.doneTimer -= dt;
-            this._tutorialTarget = null;   // stop pointing once the lesson lands
-            if (ob.doneTimer <= 0) this._advanceOnboarding();
-            return;
+        const event = ob.update(dt, {
+            x: this.player.x, y: this.player.y,
+            comboPeak: this.comboBest ?? this.combo,
+            blinks: this.blinks, ultsReleased: this.ultsReleased,
+        }, { blocked: !!(this.bossWarning || this.activeBossRef?.active || this.activeLieutenantRef?.active) });
+        this._tutorialTarget = ob.outcome ? null : this._onboardingTarget();
+        if (event?.type === 'tutorial-finished') {
+            this.onboardingSummary = ob.summary();
+            this.onboarding = null;
+            this._tutorialTarget = null;
+            this._beginRunObjectives();
+        } else if (event) {
+            const lesson = this._onboardingLessonState();
+            if (lesson) this.accessibility?.announce?.(
+                `${lesson.title}. ${lesson.resultText || lesson.text.replace(/\n/g, ' ')}`,
+            );
         }
-        ob.timer += dt;
-        // World-space pointer target for the current lesson — the HUD draws a
-        // bouncing chevron over it so the hint points AT the thing it teaches.
-        this._tutorialTarget = this._onboardingTarget();
-        switch (ob.step) {
-            case 0: {  // teach movement — advance once they've actually walked a bit
-                const dx = this.player.x - (ob.px ?? this.player.x);
-                const dy = this.player.y - (ob.py ?? this.player.y);
-                ob.px = this.player.x; ob.py = this.player.y;
-                ob.moved += Math.hypot(dx, dy);
-                if (ob.moved > 140) this._completeOnboardingStep();
-                else if (ob.timer > 10) this._advanceOnboarding();
-                break;
-            }
-            case 1:    // the wand auto-fires — a beat to watch it happen
-                if (ob.timer > 5) this._advanceOnboarding();
-                break;
-            case 2:    // XP shards — wait for one to exist so the hint points at something
-                if (!ob.seenGem && this.gems.length > 0) { ob.seenGem = true; ob.timer = 0; }
-                if ((ob.seenGem && ob.timer > 6) || this.player.level > 1) this._completeOnboardingStep();
-                else if (ob.timer > 20) this._advanceOnboarding();
-                break;
-            case 3: break;  // waits on the first level-up pick (selectUpgrade advances)
-            // Steps 4-7 hold a minimum 2.5s read time before their trigger can
-            // advance them — a trigger that's ALREADY true at step entry (e.g.
-            // coins seeded by the run-start-coins perk on a Replay-Tutorial run)
-            // would otherwise flash the pill for a single frame.
-            case 4:    // coins — advance once one is picked up (or read + move on)
-                if (ob.timer > 2.5 && (this.player.coins ?? 0) > 0) this._completeOnboardingStep();
-                else if (ob.timer > 10) this._advanceOnboarding();
-                break;
-            case 5:    // combo — advance on a real chain (or read + move on)
-                if (ob.timer > 2.5 && this.combo >= 5) this._completeOnboardingStep();
-                else if (ob.timer > 12) this._advanceOnboarding();
-                break;
-            case 6:    // shrines — the altar claim advances this (selectAltar path,
-                       // mirroring selectUpgrade — the overlay gate hides this.altar
-                       // from this tick), or read + move on.
-                if (ob.timer > 18) this._advanceOnboarding();
-                break;
-            case 7:    // the boss — advance when the warning fires (or read + move on)
-                if (ob.timer > 2.5 && this.bossWarning) this._completeOnboardingStep();
-                else if (ob.timer > 20) this._advanceOnboarding();
-                break;
-            case 8:    // send-off — linger long enough to read, then done for good
-                if (ob.timer > 7) this._advanceOnboarding();
-                break;
-            default: break;
-        }
-    }
-
-    // The lesson's trigger fired: latch the ✓ state for a short beat (the
-    // banner turns green) before _tickOnboarding advances. Timeouts skip this
-    // — nothing was accomplished, so nothing flashes.
-    _completeOnboardingStep() {
-        const ob = this.onboarding;
-        if (!ob || ob.done) return;
-        ob.done = true;
-        ob.doneTimer = 1.1;
-    }
-
-    _advanceOnboarding() {
-        if (!this.onboarding) return;
-        this.onboarding.step += 1;
-        this.onboarding.timer = 0;
-        this.onboarding.done = false;
-        this._tutorialTarget = null;
-        // Past the send-off → the guided run is complete.
-        if (this.onboarding.step > 8) this.onboarding = null;
     }
 
     // World-space point the current lesson is ABOUT (nearest shard / coin /
@@ -1440,36 +1395,12 @@ export class Game {
     // hint text, and whether the ✓ done-flash is showing. Null when no banner
     // should draw (no tutorial, dead, or the step teaches inside an overlay).
     _onboardingLessonState() {
-        const ob = this.onboarding;
-        if (!ob || this.gameOver) return null;
-        const text = this._onboardingHintText();
-        // No banner unless there's a hint line — EXCEPT during the ✓ done-flash,
-        // which shows "✓ Nice!" regardless (some steps, e.g. shards, have a
-        // conditional hint that can be null the moment they complete).
-        if (!text && !ob.done) return null;
-        return { n: ob.step + 1, total: 9, text: text || '', done: !!ob.done };
-    }
-
-    // The active gameplay hint pill text (null when nothing should show).
-    _onboardingHintText() {
-        const ob = this.onboarding;
-        if (!ob || this.gameOver) return null;
-        // Two plain-language lines each (split on \n by the HUD banner), written
-        // for someone new to games — every term is explained, not assumed.
-        switch (ob.step) {
-            case 0: return 'Move with the W A S D keys or the arrow keys (on a phone, drag the\nleft side of the screen). Enemies chase you — keep moving to stay safe.';
-            case 1: return 'Your wand attacks all by itself — you never press a button to fight.\nJust concentrate on steering away from the enemies.';
-            case 2: return ob.seenGem
-                ? 'Defeated enemies drop glowing shards. Walk over them to pick them up —\nthey fill the bar at the bottom that leads to your next "level up".'
-                : null;
-            case 3: return null;  // rendered inside the level-up overlay
-            case 4: return 'Tougher enemies drop coins. Coins are saved when the run ends, so you\ncan spend them back at base to get permanently stronger.';
-            case 5: return 'Defeat several enemies quickly in a row to build a "combo" (a kill\nstreak). Longer streaks reward you with bonus coins.';
-            case 6: return 'A glowing shrine can appear on the ground. Stand on it to choose a\n"relic" — a special power that lasts for the rest of this run.';
-            case 7: return 'A "boss" is a big, powerful enemy. Stay alive until it appears and\ndefeat it. Beating three bosses clears the whole area.';
-            case 8: return 'That\'s it: collect shards to level up, grab relics, and beat bosses.\nYour movement, blink, Kindle and focus controls are always shown below. Good luck!';
-            default: return null;
-        }
+        if (!this.onboarding || this.gameOver) return null;
+        const snapshot = this.onboarding.snapshot({
+            inputMode: this.input?.isTouchMode?.() ? 'touch' : 'keyboard',
+            kindleReady: !!this.kindleSystem?.ready,
+        });
+        return snapshot ? { ...snapshot, history: this.onboarding.history } : null;
     }
 
     // ── 3rd-boss victory overlay ─────────────────────────────────────────
@@ -1709,7 +1640,7 @@ export class Game {
         // default). Applied here so the in-run HUD stays a clean integer.
         const raw = Math.max(0, (this.player.coins ?? 0) - seed);
         const earned = Math.floor(raw * (this.player.coinMul ?? 1));
-        if (earned > 0) this.saveSystem.addCoins(earned);
+        this._runBaseCoinsCredited = earned > 0 ? this.saveSystem.addCoins(earned) : 0;
         this.bankedThisRun = true;
         return earned;
     }
@@ -2228,16 +2159,8 @@ export class Game {
     _presentLevelUp() {
         if (this.pendingLevelUps <= 0) return;
         this.pendingLevelUps -= 1;
-        // Onboarding fast-forward: the FIRST level-up IS the step-3 teach
-        // moment, and it usually arrives before the timed hints get there
-        // (step 2 alone needs ~13–21s while _tickOnboarding is frozen behind
-        // this overlay). Jump straight to step 3 so the "first pick" line
-        // shows on THIS overlay and selectUpgrade's clear guard fires —
-        // otherwise it would slip to the second level-up.
-        if (this.onboarding && this.onboarding.step < 3) {
-            this.onboarding.step = 3;
-            this.onboarding.timer = 0;
-        }
+        // The overlay teaches the first pick immediately. The director records
+        // its successful commit without discarding earlier unseen lessons.
         const choices = this.upgradeSystem.rollChoices(this, 3);
         this.setUpgradeChoices(choices.length > 0 ? choices : null);
     }
@@ -2617,7 +2540,10 @@ export class Game {
         else if (cur.elite && !cur.boss) this.focusTarget = nearest((e) => e.boss) || null;
         else this.focusTarget = null;   // was boss → clear
         this._focusOutOfRangeT = 0;
-        if (this.focusTarget) this.audio.uiTick?.();
+        if (this.focusTarget) {
+            this.audio.uiTick?.();
+            this.onboarding?.record?.('focus');
+        }
     }
 
     // KINDLED touch verbs (PR4): drain the two DISCRETE taps the bottom-right
@@ -2654,7 +2580,10 @@ export class Game {
         }
         this.focusTarget = best ? (this.focusTarget === best ? null : best) : null;
         this._focusOutOfRangeT = 0;
-        if (this.focusTarget) this.audio.uiTick?.();
+        if (this.focusTarget) {
+            this.audio.uiTick?.();
+            this.onboarding?.record?.('focus');
+        }
     }
 
     // Fold the run-scale layer (difficulty × active modifiers) into a freshly-
@@ -2860,6 +2789,7 @@ export class Game {
     _startBossWarning(id, provenance = BOSS_SPAWN_PROVENANCE.DIRECT) {
         const def = ENEMY[id];
         if (!def || !def.boss) return;
+        this.onboarding?.record?.('boss');
         const bossSpawnProvenance = normalizeBossSpawnProvenance(
             provenance,
             BOSS_SPAWN_PROVENANCE.DIRECT,
@@ -3229,10 +3159,12 @@ export class Game {
 
         // Bank run coins to total — exactly once (the helper is guarded by
         // bankedThisRun, which also covers abandoning via the pause overlay).
+        const firstDeath = this._replayRunDebrief || this.saveSystem.data.onboarding?.firstDeathSeen === false;
         const earned = this._bankRunCoins();
+        let bonusCredited = 0;
         // Difficulty/modifier coin bonus on top of what was earned.
         if (this.runBonus?.coin > 0 && earned > 0) {
-            this.saveSystem.addCoins(Math.round(earned * this.runBonus.coin));
+            bonusCredited = this.saveSystem.addCoins(Math.round(earned * this.runBonus.coin));
         }
         const objectiveSettlement = this._settleGuidedObjectiveRewards();
         const objectiveCoins = objectiveSettlement?.credited ?? 0;
@@ -3252,7 +3184,11 @@ export class Game {
             level: this.player.level,
             kills: this.kills,
             bossesDefeated: this.bossesDefeated,
+            // Keep historical lifetime/achievement accounting unchanged. UI
+            // banking receipts are separate from that legacy score metric.
             coinsEarned: earned + objectiveCoins,
+            runCoinsBanked: (this._runBaseCoinsCredited ?? 0) + bonusCredited + objectiveCoins,
+            coinReceipts: Object.freeze({ base: this._runBaseCoinsCredited ?? 0, bonus: bonusCredited, objective: objectiveCoins }),
             objectiveCoins,
             objectiveReceipts: objectiveSettlement?.accepted ?? [],
             totalCoins: this.saveSystem.data.totalCoins,
@@ -3299,21 +3235,38 @@ export class Game {
         this._checkDailyChallenges();
         this._awardBattlePass();
 
+        this.runSummary.totalCoins = this.saveSystem.data.totalCoins;
+        this.runDebrief = buildRunDebrief({
+            firstDeath,
+            cause: this.player.hp <= 0 ? this.lastHitBy : null,
+            coinReceipts: this.runSummary.coinReceipts,
+            bpResult: this.bpResult,
+        });
+
         // EMBERGLASS: stamp who dealt the killing blow onto the run summary and
         // queue the death recap card — it composes on the next render() once the
         // world death frame is captured.
         this.runSummary.killedBy = this.lastHitBy || null;
         this._queueDeathCard();
 
-        this.accessibility?.setScreen?.('gameOver',
-            `Level ${this.runSummary.level}. ${this.runSummary.kills} enemies defeated.`);
+        this.accessibility?.setScreen?.('gameOver', this.runDebrief.accessibilityText);
         this.accessibility?.setObjective?.(null);
         this.accessibility?.announce?.(
-            `Run over. Level ${this.runSummary.level}. ${this.runSummary.kills} enemies defeated. `
-            + `${this.runSummary.coinsEarned} coins earned. `
-            + `Run Path ${this._objDone?.size ?? 0} of 3.`);
+            `Run over. ${this.runDebrief.rewards.coins} run coins banked. ${this.runDebrief.rewards.passXp} Pass XP banked. `
+            + `${this.runDebrief.cause.text}. Next time: ${this.runDebrief.hint.text}`);
 
         this._updateJoystickEnabled();
+    }
+
+    _gameOverInputReady() {
+        return this.screen === 'gameOver' && this.gameOverAge >= 1.6;
+    }
+
+    _acknowledgeRunDebrief() {
+        if (!this._gameOverInputReady() || !this.runDebrief?.firstDeath) return false;
+        this.saveSystem.markFirstDeathSeen();
+        this.returnToShop();
+        return true;
     }
 
     // ── EMBERGLASS: auto-minted death / victory share cards ─────────────────

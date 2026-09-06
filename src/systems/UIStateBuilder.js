@@ -175,7 +175,8 @@ export function blueprintReceiptSnapshot(game) {
 // beneath a level-up, reward, shrine, pause, victory, death, or Lens surface.
 export function onboardingModalActive(game) {
     return !!(game.upgradeChoices || game.chestReward || game.altar || game.paused
-        || game.victory || game.gameOver || game.photoMode);
+        || game.victory || game.gameOver || game.photoMode || game.bossWarning
+        || game.activeBossRef?.active || game.activeLieutenantRef?.active);
 }
 
 // Pause confirmations expire on wall time because gameplay update is frozen.
@@ -643,11 +644,12 @@ export function buildUIState(game) {
     base.tutorialTarget = onboardingBlocked ? null : (game._tutorialTarget || null);
     // The reassurance belongs only to the tutorial's FIRST level-up lesson.
     // `>= 3` repeated it behind every later draft while onboarding was alive.
-    base.onboardingLevelUp = !!(game.onboarding && game.onboarding.step === 3 && game.upgradeChoices);
+    base.onboardingLevelUp = !!(game.onboarding && (game.onboarding.counts?.upgradesChosen ?? 0) === 0 && game.upgradeChoices);
     base.gameOver = game.gameOver;
     base.gameOverAge = game.gameOverAge;
     base.bossesDefeated = game.bossesDefeated;
     base.runSummary = game.runSummary;
+    base.runDebrief = game.runDebrief ?? null;
     base.newBest = game.newBest;
     // Battle-pass XP from this run (set in _enterGameOver) — the game-over
     // summary draws it, so the meta reward is VISIBLE, not silently banked.

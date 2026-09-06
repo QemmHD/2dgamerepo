@@ -286,7 +286,7 @@ function defaultData({ reducedEffects = false } = {}) {
         // OPENED at least once (drives the one-time "NEW" badge on tabs that
         // unlock by progression — see MenuRenderer tabUnlocked). tourDone
         // latches once the guided menu tour has been finished or skipped.
-        onboarding: { tabsSeen: [], tourDone: false },
+        onboarding: { tabsSeen: [], tourDone: false, firstDeathSeen: false },
         // Pact Mastery: highest Pact tier (active-Trial count, 0..N) a run has
         // CLEARED (3-boss victory) per character id — the "can't-farm" ladder.
         pactMastery: {},
@@ -945,6 +945,10 @@ export class SaveSystem {
         const ALL_TABS = ['play', 'skills', 'attune', 'loadout', 'character', 'shop', 'battlepass', 'stats', 'settings'];
         const dob = data.onboarding && typeof data.onboarding === 'object' ? data.onboarding : null;
         const onboarding = {
+            // Preserve explicit false after a reload before acknowledgment;
+            // veteran saves without this additive flag are not interrupted.
+            firstDeathSeen: typeof dob?.firstDeathSeen === 'boolean'
+                ? dob.firstDeathSeen : stats.runs > 0,
             tabsSeen: dob ? validateIdList(dob.tabsSeen, []) : (stats.runs > 0 ? [...ALL_TABS] : []),
             // Guided menu tour: done once finished/skipped. A pre-tour save with
             // recorded runs and no explicit flag is treated as done, so shipping
@@ -2447,6 +2451,15 @@ export class SaveSystem {
     // "Replay Tutorial" button so the tour re-arms on the next menu visit.
     isTourDone() {
         return this.data.onboarding?.tourDone === true;
+    }
+
+    markFirstDeathSeen() {
+        if (this.data.onboarding?.firstDeathSeen === true) return true;
+        return this._commitMutation(() => {
+            this.data.onboarding ??= { tabsSeen: [], tourDone: false };
+            this.data.onboarding.firstDeathSeen = true;
+            return true;
+        }).committed;
     }
 
     setTourDone(done) {

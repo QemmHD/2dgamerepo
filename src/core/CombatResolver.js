@@ -400,7 +400,15 @@ export const CombatResolverMethods = {
             }
         }
         if (collisionResult.playerHit) {
-            if (collisionResult.strongest) this.lastHitBy = collisionResult.strongest;   // death-card attribution
+            if (collisionResult.strongest) {
+                this.lastHitBy = collisionResult.strongest;
+                // Kill rewards may heal after contact resolves. Keep the legacy
+                // attacker label, but never call a recovered hit a fresh death.
+                if (this.player.hp > 0) {
+                    this.lastHitBy.lethal = false;
+                    this.lastHitBy.fresh = false;
+                }
+            }
             this._playerHurtShake(collisionResult.playerDamageTaken);
             this._pushFeedback('hit', 0.32);
             this.damageNumbers.push(new DamageNumber(

@@ -166,6 +166,10 @@ export class AccessibilityBridge {
                 ? 'EMBERWAKE run summary'
                 : 'EMBERWAKE main menu';
         this.canvas.setAttribute('aria-label', suffix ? `${base}. ${suffix}` : base);
+        // Preserve the complete debrief for deliberate screen-reader review;
+        // the short live announcement still has its existing 240-char limit.
+        this.canvas.setAttribute('aria-description', screen === 'gameOver'
+            ? String(detail).replace(/[\u0000-\u001f]/g, ' ').slice(0, 1024) : '');
     }
 
     // Queryable but deliberately non-live. Progress may update every frame;

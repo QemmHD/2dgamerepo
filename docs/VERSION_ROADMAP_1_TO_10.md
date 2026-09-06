@@ -121,7 +121,7 @@ definitions, 12 bosses, 40 weapons, 11 evolutions, 15 fusions, 20 passives, 11
 roads, 26 relics, 14 pacts, 10 keystones, 18 rites, 21 gear pieces, 65 cosmetics in
 7 complete sets, 50 battle-pass levels, Daily Road, Rite Trial, Boss Rush, Weekly
 Ember, photo mode, recap cards, adaptive music, touch controls, and four generated
-structure styles. Current main `bbe2217` contains 103 cosmetics in 15 complete sets
+structure styles. The PR #203 delivery at main `bbe2217` contains 103 cosmetics in 15 complete sets
 after the bounded Collection Growth I-A/I-B and Completion Truth deliveries described
 below.
 
