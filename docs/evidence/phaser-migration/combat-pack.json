@@ -1,0 +1,649 @@
+{
+  "baseCommit": "244fcd94d88f3ac1d25ae7e8a19acbab5c059cfc",
+  "scenario": {
+    "hero": "monkey",
+    "heroName": "Pyra",
+    "map": "emberwood",
+    "difficulty": "normal",
+    "loadout": "default",
+    "seed": 207001,
+    "viewport": [
+      1280,
+      720
+    ],
+    "onboarding": "skip via test-page query",
+    "renderSchedule": "once after all ticks",
+    "id": "combat-pack",
+    "ticks": 360,
+    "enemies": [
+      {
+        "type": "slime",
+        "dx": 120,
+        "dy": 0
+      },
+      {
+        "type": "bat",
+        "dx": 150,
+        "dy": 45
+      },
+      {
+        "type": "brute",
+        "dx": -180,
+        "dy": 30
+      },
+      {
+        "type": "crawler",
+        "dx": 80,
+        "dy": -120
+      }
+    ],
+    "actions": []
+  },
+  "node": {
+    "sameSeedRepeats": 3,
+    "changedSeed": 207002,
+    "changedGameplayState": true,
+    "receipt": {
+      "version": 1,
+      "runtime": "canvas",
+      "scenario": "combat-pack",
+      "seed": 207001,
+      "simulationTicks": 360,
+      "simulationSeconds": 6,
+      "environment": {
+        "kind": "node-procedural-stubs",
+        "storage": "memory-only",
+        "audio": "disabled",
+        "locks": "disabled",
+        "viewport": [
+          1920,
+          1080
+        ],
+        "renderSchedule": "final-only"
+      },
+      "player": {
+        "hero": "monkey",
+        "x": 0,
+        "y": 0,
+        "hp": 0,
+        "maxHp": 100,
+        "level": 1,
+        "xp": 2,
+        "xpNext": 6,
+        "coins": 0,
+        "kindle": 27.4,
+        "blinkCooldown": 0
+      },
+      "kindle": {
+        "max": 100,
+        "cost": 100,
+        "ready": false,
+        "aiming": false,
+        "aimKind": null
+      },
+      "run": {
+        "time": 3.433333333333326,
+        "map": "emberwood",
+        "difficulty": "normal",
+        "wave": 0,
+        "bosses": 0,
+        "kills": 2,
+        "blinks": 0,
+        "kindleReleases": 0,
+        "screen": "gameOver",
+        "paused": false,
+        "gameOver": true
+      },
+      "counts": {
+        "enemies": 6,
+        "bosses": 0,
+        "projectiles": 0,
+        "enemyProjectiles": 0,
+        "hazards": 0,
+        "gems": 0,
+        "coins": 0,
+        "healthOrbs": 0,
+        "chests": 0,
+        "shrines": 0
+      },
+      "build": {
+        "weapons": [
+          {
+            "id": "arcaneBolt",
+            "level": 1
+          }
+        ],
+        "passives": [],
+        "appliedCounts": {},
+        "relics": [],
+        "pacts": [],
+        "patrons": [],
+        "road": null
+      },
+      "boss": null,
+      "bossWarning": null,
+      "arena": null,
+      "overlays": {
+        "upgradeChoices": null,
+        "pendingLevelUps": 0,
+        "chest": false,
+        "altar": false,
+        "victory": false,
+        "photo": false
+      },
+      "enemySamples": [
+        {
+          "type": "brute",
+          "x": 0.9056379917752885,
+          "y": -1.430608204318735,
+          "hp": 10,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "crawler",
+          "x": -1.6189859169893008,
+          "y": 2.608694290539001,
+          "hp": 26,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 315.78138470385096,
+          "y": -927.050103398765,
+          "hp": 34.011344666666666,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 432.32943614032854,
+          "y": 698.3044947217741,
+          "hp": 34.02268933333333,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 393.086629198157,
+          "y": 818.7872955816558,
+          "hp": 34.08435777777778,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 914.9720396529667,
+          "y": 693.983197759583,
+          "hp": 34.14980777777778,
+          "elite": false,
+          "boss": false
+        }
+      ],
+      "progression": {
+        "source": "real-game-terminal-settlement",
+        "latches": {
+          "runRecorded": true,
+          "coinsBanked": true,
+          "objectivesSettled": true,
+          "battlePassAwarded": true,
+          "ritesAccrued": true
+        },
+        "authority": {
+          "storageAvailable": true,
+          "participationRequired": false,
+          "participationState": "unsupported",
+          "lastSaveFailureReason": null
+        },
+        "runSummary": {
+          "time": 3.433333333333326,
+          "level": 1,
+          "kills": 2,
+          "bossesDefeated": 0,
+          "coinsEarned": 0,
+          "objectiveCoins": 0,
+          "totalCoins": 2000,
+          "finalWave": 1,
+          "chestsOpened": 0,
+          "runPathCompleted": 0,
+          "objectivesCompleted": 0,
+          "vigilSitesActivated": 0,
+          "vigilSiteKindsMastered": 0,
+          "encountersCleared": 0,
+          "guardianPacksDefeated": 0,
+          "cleared": false,
+          "objectiveReceipts": [],
+          "ritesCompleted": [],
+          "achievements": [],
+          "dailies": [],
+          "weapons": [
+            {
+              "id": "arcaneBolt",
+              "level": 1
+            }
+          ],
+          "passives": []
+        },
+        "battlePass": {
+          "gained": 0,
+          "attempted": 0,
+          "levelBefore": 1,
+          "levelAfter": 1,
+          "everflameCaches": 0,
+          "everflameCoins": 0,
+          "persisted": true,
+          "leveledUp": false,
+          "crossedLevels": [],
+          "breakdown": {
+            "eligible": false,
+            "kindling": 0,
+            "endurance": 0,
+            "hunt": 0,
+            "deeds": 0,
+            "livingVigil": 0,
+            "trials": 0,
+            "core": 0,
+            "bonusRate": 0,
+            "threat": 0,
+            "total": 0
+          }
+        },
+        "objectiveSettlement": {
+          "credited": 0,
+          "receiptCount": 0,
+          "accepted": [],
+          "duplicates": [],
+          "failureReason": null
+        },
+        "saved": {
+          "bankCoins": 2000,
+          "battlePassXp": 0,
+          "stats": {
+            "runs": 1,
+            "totalKills": 2,
+            "totalBosses": 0,
+            "totalCoinsEarned": 0,
+            "playtimeSec": 3,
+            "bestTime": 3,
+            "bestWave": 1,
+            "bestLevel": 1,
+            "bestKills": 2,
+            "bestBosses": 0,
+            "ultsReleased": 0,
+            "blinks": 0,
+            "comboProcs": 0,
+            "vigilSitesActivated": 0,
+            "vigilSiteKindsMastered": 0,
+            "encountersCleared": 0,
+            "guardianPacksDefeated": 0
+          },
+          "streak": {
+            "day": 20702,
+            "count": 1
+          },
+          "heroRites": [
+            {
+              "id": "wellspring",
+              "progress": 0
+            },
+            {
+              "id": "nova",
+              "progress": 0
+            },
+            {
+              "id": "vigil",
+              "progress": 3
+            }
+          ],
+          "claimedAchievements": [],
+          "daily": {
+            "day": 20702,
+            "completed": []
+          },
+          "guidedObjectives": {
+            "activeRunSerial": 0,
+            "receiptCount": 0
+          }
+        }
+      },
+      "observations": {
+        "startPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "actions": [],
+        "maxPlayerProjectiles": 1,
+        "controlledPackDamaged": 3,
+        "bossWarningTick": null,
+        "firstBossWarningId": null,
+        "bossSpawnTick": null,
+        "firstBossId": null,
+        "firstBossProvenance": null,
+        "modalChoices": 0,
+        "rngCallsBeforeRender": 866,
+        "actionsConsumed": 0,
+        "blinks": 0,
+        "ultsReleased": 0,
+        "renderOnly": {
+          "simulationTicks": 0,
+          "gameTimeBefore": 3.433333333333326,
+          "gameTimeAfter": 3.433333333333326
+        },
+        "rngCallsAfterRender": 866
+      },
+      "errors": [],
+      "exceptionCount": 0,
+      "unhandledRejectionCount": 0
+    }
+  },
+  "browser": {
+    "sameSeedRepeats": 3,
+    "receipt": {
+      "version": 1,
+      "runtime": "canvas",
+      "scenario": "combat-pack",
+      "seed": 207001,
+      "simulationTicks": 360,
+      "simulationSeconds": 6,
+      "environment": {
+        "kind": "browser-assets",
+        "storage": "memory-only",
+        "audio": "disabled",
+        "locks": "disabled",
+        "viewport": [
+          1280,
+          720
+        ],
+        "renderSchedule": "final-only",
+        "storageWrites": 9
+      },
+      "player": {
+        "hero": "monkey",
+        "x": 0,
+        "y": 0,
+        "hp": 0,
+        "maxHp": 100,
+        "level": 1,
+        "xp": 2,
+        "xpNext": 6,
+        "coins": 0,
+        "kindle": 27.4,
+        "blinkCooldown": 0
+      },
+      "kindle": {
+        "max": 100,
+        "cost": 100,
+        "ready": false,
+        "aiming": false,
+        "aimKind": null
+      },
+      "run": {
+        "time": 3.433333333333326,
+        "map": "emberwood",
+        "difficulty": "normal",
+        "wave": 0,
+        "bosses": 0,
+        "kills": 2,
+        "blinks": 0,
+        "kindleReleases": 0,
+        "screen": "gameOver",
+        "paused": false,
+        "gameOver": true
+      },
+      "counts": {
+        "enemies": 6,
+        "bosses": 0,
+        "projectiles": 0,
+        "enemyProjectiles": 0,
+        "hazards": 0,
+        "gems": 0,
+        "coins": 0,
+        "healthOrbs": 0,
+        "chests": 0,
+        "shrines": 0
+      },
+      "build": {
+        "weapons": [
+          {
+            "id": "arcaneBolt",
+            "level": 1
+          }
+        ],
+        "passives": [],
+        "appliedCounts": {},
+        "relics": [],
+        "pacts": [],
+        "patrons": [],
+        "road": null
+      },
+      "boss": null,
+      "bossWarning": null,
+      "arena": null,
+      "overlays": {
+        "upgradeChoices": null,
+        "pendingLevelUps": 0,
+        "chest": false,
+        "altar": false,
+        "victory": false,
+        "photo": false
+      },
+      "enemySamples": [
+        {
+          "type": "brute",
+          "x": 0.9056379917752968,
+          "y": -1.4306082043187178,
+          "hp": 10,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "crawler",
+          "x": -1.6189859169893264,
+          "y": 2.6086942905389896,
+          "hp": 26,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 315.78138470385096,
+          "y": -927.050103398765,
+          "hp": 34.011344666666666,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 432.32943614032854,
+          "y": 698.3044947217741,
+          "hp": 34.02268933333333,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 393.086629198157,
+          "y": 818.7872955816558,
+          "hp": 34.08435777777778,
+          "elite": false,
+          "boss": false
+        },
+        {
+          "type": "slime",
+          "x": 914.9720396529667,
+          "y": 693.983197759583,
+          "hp": 34.14980777777778,
+          "elite": false,
+          "boss": false
+        }
+      ],
+      "progression": {
+        "source": "real-game-terminal-settlement",
+        "latches": {
+          "runRecorded": true,
+          "coinsBanked": true,
+          "objectivesSettled": true,
+          "battlePassAwarded": true,
+          "ritesAccrued": true
+        },
+        "authority": {
+          "storageAvailable": true,
+          "participationRequired": false,
+          "participationState": "unsupported",
+          "lastSaveFailureReason": null
+        },
+        "runSummary": {
+          "time": 3.433333333333326,
+          "level": 1,
+          "kills": 2,
+          "bossesDefeated": 0,
+          "coinsEarned": 0,
+          "objectiveCoins": 0,
+          "totalCoins": 2000,
+          "finalWave": 1,
+          "chestsOpened": 0,
+          "runPathCompleted": 0,
+          "objectivesCompleted": 0,
+          "vigilSitesActivated": 0,
+          "vigilSiteKindsMastered": 0,
+          "encountersCleared": 0,
+          "guardianPacksDefeated": 0,
+          "cleared": false,
+          "objectiveReceipts": [],
+          "ritesCompleted": [],
+          "achievements": [],
+          "dailies": [],
+          "weapons": [
+            {
+              "id": "arcaneBolt",
+              "level": 1
+            }
+          ],
+          "passives": []
+        },
+        "battlePass": {
+          "gained": 0,
+          "attempted": 0,
+          "levelBefore": 1,
+          "levelAfter": 1,
+          "everflameCaches": 0,
+          "everflameCoins": 0,
+          "persisted": true,
+          "leveledUp": false,
+          "crossedLevels": [],
+          "breakdown": {
+            "eligible": false,
+            "kindling": 0,
+            "endurance": 0,
+            "hunt": 0,
+            "deeds": 0,
+            "livingVigil": 0,
+            "trials": 0,
+            "core": 0,
+            "bonusRate": 0,
+            "threat": 0,
+            "total": 0
+          }
+        },
+        "objectiveSettlement": {
+          "credited": 0,
+          "receiptCount": 0,
+          "accepted": [],
+          "duplicates": [],
+          "failureReason": null
+        },
+        "saved": {
+          "bankCoins": 2000,
+          "battlePassXp": 0,
+          "stats": {
+            "runs": 1,
+            "totalKills": 2,
+            "totalBosses": 0,
+            "totalCoinsEarned": 0,
+            "playtimeSec": 3,
+            "bestTime": 3,
+            "bestWave": 1,
+            "bestLevel": 1,
+            "bestKills": 2,
+            "bestBosses": 0,
+            "ultsReleased": 0,
+            "blinks": 0,
+            "comboProcs": 0,
+            "vigilSitesActivated": 0,
+            "vigilSiteKindsMastered": 0,
+            "encountersCleared": 0,
+            "guardianPacksDefeated": 0
+          },
+          "streak": {
+            "day": 20702,
+            "count": 1
+          },
+          "heroRites": [
+            {
+              "id": "wellspring",
+              "progress": 0
+            },
+            {
+              "id": "nova",
+              "progress": 0
+            },
+            {
+              "id": "vigil",
+              "progress": 3
+            }
+          ],
+          "claimedAchievements": [],
+          "daily": {
+            "day": 20702,
+            "completed": []
+          },
+          "guidedObjectives": {
+            "activeRunSerial": 0,
+            "receiptCount": 0
+          }
+        }
+      },
+      "observations": {
+        "startPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "actions": [],
+        "maxPlayerProjectiles": 1,
+        "controlledPackDamaged": 3,
+        "bossWarningTick": null,
+        "firstBossWarningId": null,
+        "bossSpawnTick": null,
+        "firstBossId": null,
+        "firstBossProvenance": null,
+        "modalChoices": 0,
+        "rngCallsBeforeRender": 866,
+        "actionsConsumed": 0,
+        "blinks": 0,
+        "ultsReleased": 0,
+        "renderOnly": {
+          "simulationTicks": 0,
+          "gameTimeBefore": 3.433333333333326,
+          "gameTimeAfter": 3.433333333333326
+        },
+        "rngCallsAfterRender": 866
+      },
+      "errors": [],
+      "exceptionCount": 0,
+      "unhandledRejectionCount": 0
+    }
+  },
+  "screenshots": {
+    "produced": true,
+    "committed": false,
+    "path": "__out/migration/combat-pack-1.png",
+    "goldenImage": false
+  },
+  "limitations": [
+    "Semantic fixture, not universal deterministic replay.",
+    "Node and browser environments are separate baselines; asset decode, fonts, audio and GPU output are not proven equivalent.",
+    "Exactly one final render; no claim for arbitrary render cadence.",
+    "Fresh memory profile; no real browser save storage or Web Locks."
+  ]
+}

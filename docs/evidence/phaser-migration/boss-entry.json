@@ -1,0 +1,436 @@
+{
+  "baseCommit": "244fcd94d88f3ac1d25ae7e8a19acbab5c059cfc",
+  "scenario": {
+    "hero": "monkey",
+    "heroName": "Pyra",
+    "map": "emberwood",
+    "difficulty": "normal",
+    "loadout": "default",
+    "seed": 207001,
+    "viewport": [
+      1280,
+      720
+    ],
+    "onboarding": "skip via test-page query",
+    "renderSchedule": "once after all ticks",
+    "id": "boss-entry",
+    "ticks": 10320,
+    "invulnerable": true,
+    "resolveChoices": "first",
+    "actions": [
+      {
+        "tick": 0,
+        "action": "move",
+        "x": 1,
+        "y": 0
+      }
+    ],
+    "limitations": [
+      "Test-only damageTakenMul=0 to survive the authoritative 160-second boss route.",
+      "Any upgrade/chest/altar modal is resolved with its first legal choice; no game-time assignment."
+    ]
+  },
+  "node": {
+    "sameSeedRepeats": 3,
+    "changedSeed": 207002,
+    "changedGameplayState": true,
+    "receipt": {
+      "version": 1,
+      "runtime": "canvas",
+      "scenario": "boss-entry",
+      "seed": 207001,
+      "simulationTicks": 10320,
+      "simulationSeconds": 172,
+      "environment": {
+        "kind": "node-procedural-stubs",
+        "storage": "memory-only",
+        "audio": "disabled",
+        "locks": "disabled",
+        "viewport": [
+          1920,
+          1080
+        ],
+        "renderSchedule": "final-only"
+      },
+      "player": {
+        "hero": "monkey",
+        "x": 3550,
+        "y": 49.42471474334597,
+        "hp": 150,
+        "maxHp": 150,
+        "level": 10,
+        "xp": 38,
+        "xpNext": 42,
+        "coins": 14,
+        "kindle": 100,
+        "blinkCooldown": 0
+      },
+      "kindle": {
+        "max": 100,
+        "cost": 100,
+        "ready": true,
+        "aiming": false,
+        "aimKind": null
+      },
+      "run": {
+        "time": 171.23333333336174,
+        "map": "emberwood",
+        "difficulty": "normal",
+        "wave": 2,
+        "bosses": 0,
+        "kills": 225,
+        "blinks": 0,
+        "kindleReleases": 0,
+        "screen": "gameplay",
+        "paused": false,
+        "gameOver": false
+      },
+      "counts": {
+        "enemies": 1,
+        "bosses": 1,
+        "projectiles": 0,
+        "enemyProjectiles": 0,
+        "hazards": 1,
+        "gems": 51,
+        "coins": 11,
+        "healthOrbs": 0,
+        "chests": 0,
+        "shrines": 0
+      },
+      "build": {
+        "weapons": [
+          {
+            "id": "arcaneBolt",
+            "level": 2
+          },
+          {
+            "id": "ashfang",
+            "level": 1
+          }
+        ],
+        "passives": [
+          {
+            "id": "tempo",
+            "level": 2
+          },
+          {
+            "id": "ironHeart",
+            "level": 1
+          },
+          {
+            "id": "emberzeal",
+            "level": 1
+          },
+          {
+            "id": "spellbook",
+            "level": 1
+          },
+          {
+            "id": "featherstep",
+            "level": 1
+          }
+        ],
+        "appliedCounts": {
+          "weapon:ashfang:new": 1,
+          "stat:max-hp": 1,
+          "passive:tempo:new": 1,
+          "passive:ironHeart:new": 1,
+          "passive:emberzeal:new": 1,
+          "passive:spellbook:new": 1,
+          "weapon:arcaneBolt:upgrade": 1,
+          "passive:featherstep:new": 1,
+          "passive:tempo:upgrade": 1
+        },
+        "relics": [],
+        "pacts": [],
+        "patrons": [],
+        "road": null
+      },
+      "boss": {
+        "id": "stormwingAlpha",
+        "alive": true,
+        "x": 3520,
+        "y": 42.54374212312019,
+        "hp": 2361.269232000149,
+        "maxHp": 3125.250000000148,
+        "phase": 1,
+        "phase2Entered": false,
+        "phase2Pending": false,
+        "provenance": "map-director",
+        "activeAttack": "volley",
+        "lastAttack": "stormSeekers",
+        "windupRemaining": 0.30000000000000004,
+        "recoveryRemaining": 0,
+        "phaseBreakRemaining": 0
+      },
+      "bossWarning": null,
+      "arena": {
+        "x": 3550,
+        "y": 49.42471474334597,
+        "radius": 1120
+      },
+      "overlays": {
+        "upgradeChoices": null,
+        "pendingLevelUps": 0,
+        "chest": false,
+        "altar": false,
+        "victory": false,
+        "photo": false
+      },
+      "enemySamples": [
+        {
+          "type": "stormwingAlpha",
+          "x": 3520,
+          "y": 42.54374212312019,
+          "hp": 2361.269232000149,
+          "elite": false,
+          "boss": true
+        }
+      ],
+      "progression": null,
+      "observations": {
+        "startPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "actions": [
+          {
+            "tick": 0,
+            "action": "move",
+            "x": 1,
+            "y": 0
+          }
+        ],
+        "maxPlayerProjectiles": 3,
+        "controlledPackDamaged": 0,
+        "bossWarningTick": 9646,
+        "firstBossWarningId": "stormwingAlpha",
+        "bossSpawnTick": 9826,
+        "firstBossId": "stormwingAlpha",
+        "firstBossProvenance": "map-director",
+        "modalChoices": 9,
+        "rngCallsBeforeRender": 43618,
+        "actionsConsumed": 1,
+        "blinks": 0,
+        "ultsReleased": 0,
+        "renderOnly": {
+          "simulationTicks": 0,
+          "gameTimeBefore": 171.23333333336174,
+          "gameTimeAfter": 171.23333333336174
+        },
+        "rngCallsAfterRender": 43618
+      },
+      "errors": [],
+      "exceptionCount": 0,
+      "unhandledRejectionCount": 0
+    }
+  },
+  "browser": {
+    "sameSeedRepeats": 3,
+    "receipt": {
+      "version": 1,
+      "runtime": "canvas",
+      "scenario": "boss-entry",
+      "seed": 207001,
+      "simulationTicks": 10320,
+      "simulationSeconds": 172,
+      "environment": {
+        "kind": "browser-assets",
+        "storage": "memory-only",
+        "audio": "disabled",
+        "locks": "disabled",
+        "viewport": [
+          1280,
+          720
+        ],
+        "renderSchedule": "final-only",
+        "storageWrites": 3
+      },
+      "player": {
+        "hero": "monkey",
+        "x": 3550,
+        "y": 49.42471474334597,
+        "hp": 150,
+        "maxHp": 150,
+        "level": 10,
+        "xp": 38,
+        "xpNext": 42,
+        "coins": 14,
+        "kindle": 100,
+        "blinkCooldown": 0
+      },
+      "kindle": {
+        "max": 100,
+        "cost": 100,
+        "ready": true,
+        "aiming": false,
+        "aimKind": null
+      },
+      "run": {
+        "time": 171.23333333336174,
+        "map": "emberwood",
+        "difficulty": "normal",
+        "wave": 2,
+        "bosses": 0,
+        "kills": 225,
+        "blinks": 0,
+        "kindleReleases": 0,
+        "screen": "gameplay",
+        "paused": false,
+        "gameOver": false
+      },
+      "counts": {
+        "enemies": 1,
+        "bosses": 1,
+        "projectiles": 0,
+        "enemyProjectiles": 0,
+        "hazards": 1,
+        "gems": 51,
+        "coins": 11,
+        "healthOrbs": 0,
+        "chests": 0,
+        "shrines": 0
+      },
+      "build": {
+        "weapons": [
+          {
+            "id": "arcaneBolt",
+            "level": 2
+          },
+          {
+            "id": "ashfang",
+            "level": 1
+          }
+        ],
+        "passives": [
+          {
+            "id": "tempo",
+            "level": 2
+          },
+          {
+            "id": "ironHeart",
+            "level": 1
+          },
+          {
+            "id": "emberzeal",
+            "level": 1
+          },
+          {
+            "id": "spellbook",
+            "level": 1
+          },
+          {
+            "id": "featherstep",
+            "level": 1
+          }
+        ],
+        "appliedCounts": {
+          "weapon:ashfang:new": 1,
+          "stat:max-hp": 1,
+          "passive:tempo:new": 1,
+          "passive:ironHeart:new": 1,
+          "passive:emberzeal:new": 1,
+          "passive:spellbook:new": 1,
+          "weapon:arcaneBolt:upgrade": 1,
+          "passive:featherstep:new": 1,
+          "passive:tempo:upgrade": 1
+        },
+        "relics": [],
+        "pacts": [],
+        "patrons": [],
+        "road": null
+      },
+      "boss": {
+        "id": "stormwingAlpha",
+        "alive": true,
+        "x": 3520,
+        "y": 42.54374212312019,
+        "hp": 2361.269232000149,
+        "maxHp": 3125.250000000148,
+        "phase": 1,
+        "phase2Entered": false,
+        "phase2Pending": false,
+        "provenance": "map-director",
+        "activeAttack": "volley",
+        "lastAttack": "stormSeekers",
+        "windupRemaining": 0.30000000000000004,
+        "recoveryRemaining": 0,
+        "phaseBreakRemaining": 0
+      },
+      "bossWarning": null,
+      "arena": {
+        "x": 3550,
+        "y": 49.42471474334597,
+        "radius": 1120
+      },
+      "overlays": {
+        "upgradeChoices": null,
+        "pendingLevelUps": 0,
+        "chest": false,
+        "altar": false,
+        "victory": false,
+        "photo": false
+      },
+      "enemySamples": [
+        {
+          "type": "stormwingAlpha",
+          "x": 3520,
+          "y": 42.54374212312019,
+          "hp": 2361.269232000149,
+          "elite": false,
+          "boss": true
+        }
+      ],
+      "progression": null,
+      "observations": {
+        "startPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "actions": [
+          {
+            "tick": 0,
+            "action": "move",
+            "x": 1,
+            "y": 0
+          }
+        ],
+        "maxPlayerProjectiles": 3,
+        "controlledPackDamaged": 0,
+        "bossWarningTick": 9646,
+        "firstBossWarningId": "stormwingAlpha",
+        "bossSpawnTick": 9826,
+        "firstBossId": "stormwingAlpha",
+        "firstBossProvenance": "map-director",
+        "modalChoices": 9,
+        "rngCallsBeforeRender": 43618,
+        "actionsConsumed": 1,
+        "blinks": 0,
+        "ultsReleased": 0,
+        "renderOnly": {
+          "simulationTicks": 0,
+          "gameTimeBefore": 171.23333333336174,
+          "gameTimeAfter": 171.23333333336174
+        },
+        "rngCallsAfterRender": 43618
+      },
+      "errors": [],
+      "exceptionCount": 0,
+      "unhandledRejectionCount": 0
+    }
+  },
+  "screenshots": {
+    "produced": true,
+    "committed": false,
+    "path": "__out/migration/boss-entry-1.png",
+    "goldenImage": false
+  },
+  "limitations": [
+    "Semantic fixture, not universal deterministic replay.",
+    "Node and browser environments are separate baselines; asset decode, fonts, audio and GPU output are not proven equivalent.",
+    "Exactly one final render; no claim for arbitrary render cadence.",
+    "Fresh memory profile; no real browser save storage or Web Locks.",
+    "Test-only damageTakenMul=0 to survive the authoritative 160-second boss route.",
+    "Any upgrade/chest/altar modal is resolved with its first legal choice; no game-time assignment."
+  ]
+}

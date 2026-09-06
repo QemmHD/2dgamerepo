@@ -3,11 +3,11 @@
 **Canonical handoff:** read this file before planning or editing; update status,
 evidence, and next action in the same PR as the work.
 
-**Last grounded:** 2026-07-15
-**Main baseline:** [`3449a18`](https://github.com/QemmHD/2dgamerepo/commit/3449a18cf4ada4eac0926f0259275fae558f622d) — documentation reconciliation [#204](https://github.com/QemmHD/2dgamerepo/pull/204) after the bounded PR #203 delivery; the latest shipped player feature remains `bbe2217`
-**Active branch at grounding:** `feature/house-v2-ruin-bell` at candidate commit [`04e1c96`](https://github.com/QemmHD/2dgamerepo/commit/04e1c963d9a3af040edd0624c25c9ecfa710b837), based on `origin/main` at `3449a18`; draft [PR #205](https://github.com/QemmHD/2dgamerepo/pull/205) is open and the slice is not shipped
-**Latest shipped feature commit:** [`bbe2217`](https://github.com/QemmHD/2dgamerepo/commit/bbe2217c604816c0b22a6d8badb9a08585a9ab30)
-**Shipped ledger baseline before this tranche:** [`3449a18`](https://github.com/QemmHD/2dgamerepo/commit/3449a18cf4ada4eac0926f0259275fae558f622d); when this file is on `main`, its containing commit is the newer ledger truth
+**Last grounded:** 2026-09-06
+**Main baseline:** [`244fcd9`](https://github.com/QemmHD/2dgamerepo/commit/244fcd94d88f3ac1d25ae7e8a19acbab5c059cfc) — merged Phaser architecture audit [#207](https://github.com/QemmHD/2dgamerepo/pull/207).
+**Implementation branch at grounding:** `codex/migration-pr1-baseline`, based on `244fcd9`; this tranche is testability/evidence only, not a player update or Phaser integration.
+**Latest player-feature commit on main:** [`9ac5435`](https://github.com/QemmHD/2dgamerepo/commit/9ac5435) — THE CLEAR VIGIL [#206](https://github.com/QemmHD/2dgamerepo/pull/206), after House V2/Ruin Bell [#205](https://github.com/QemmHD/2dgamerepo/pull/205), merged as `70b25e1`.
+**Ledger baseline before this tranche:** `244fcd9`; when this file is on `main`, its containing commit is the newer ledger truth. Older candidate/status rows below retain their historical evidence and do not override this refreshed delivery header.
 **1.1 foundation feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / merged [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
 **Product roadmap:** [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md)
 
@@ -15,6 +15,32 @@ This ledger answers four questions for the next Codex or Claude session: what is
 actually shipped, what exists only on a working branch, what proof is missing, and
 what exact action should happen next. The roadmap owns product intent and scope; this
 file owns execution truth.
+
+## Current bounded tranche — migration PR 1
+
+**Implementation/delivery record:** [PR #208](https://github.com/QemmHD/2dgamerepo/pull/208).
+Its checks, merge state and post-merge delivery comment are the authoritative
+remote status; a copy of this document on a feature branch is not proof of merge.
+
+Read [the result and handoff](PHASER_MIGRATION_PR1.md) and
+[the four semantic baselines](evidence/phaser-migration/README.md) before resuming.
+This implementation adds tools-only fixed ticks, seeded unified RNG/wall time,
+isolated memory saves, renderer-neutral scenarios and detached JSON receipts.
+Production sources, entry, RAF, visuals, input, economy and save schema are unchanged.
+
+Local evidence: **199 syntax checks; 38/38 validators; 279 migration assertions;
+16 fresh-process fixtures** (three matching repeats and one changed seed per
+scenario); **12 matching browser captures** checked against the committed browser
+receipts. Existing run/menu/phone/portrait/developer-Settings smoke is `EXC:0`;
+all five `?dev=1` controls remain. Four adversarial test-infrastructure findings
+were fixed and re-reviewed. PR/main CI and Pages delivery are separate gates,
+recorded in this tranche's PR delivery receipt rather than inferred from local tests.
+
+**Next action:** finish/verify this tranche's delivery if its PR is not merged;
+otherwise stop. Do not begin Phaser migration PR 2 without an explicit request.
+Its audited scope is narrow platform, save-sandbox and lifetime seams, not a
+license to add Phaser immediately. Do not resume the separate First Light
+checkpoint branch or call roadmap 1.0–10.0 complete from this test-only delivery.
 
 ## Status and evidence contract
 
