@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Node 22+: `node --check` auto-detects ESM syntax in .js files (this
       # no-bundler repo has no package.json "type" field to declare it).
@@ -67,6 +69,9 @@ jobs:
 
       - name: Validate isolated platform and runtime lifetime
         run: node tools/validate-runtime-lifetime.js
+
+      - name: Validate isolated experimental Phaser runtime
+        run: node tools/validate-phaser-runtime.js
 
       - name: Validate fair gambling economy and disclosures
         run: node tools/validate-gambling-economy.js
@@ -1256,6 +1261,29 @@ jobs:
             echo 'FAIL: Collection Completion visual receipts were not ten distinct frames'; exit 1;
           }
           echo "Harness render matrix OK (4 biomes, house branches, Ruin Bell lifecycle, Living Vigil, touch, keyboard focus, accessibility preferences, combat statuses, Collection, Boutique, menus, Mines)"
+
+      - name: Experimental Phaser WebGL lifetime and isolation
+        run: |
+          set -e
+          # A separate lane: do not change the legacy Canvas flags or matrix.
+          python3 tools/artshot/serve.py 8910 . &
+          PHASER_SERVER_PID=$!
+          trap 'kill "$PHASER_SERVER_PID" 2>/dev/null || true' EXIT
+          sleep 1
+          CHROME=$(ls /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 || true)
+          CHROME=${CHROME:-$(command -v google-chrome || command -v chromium-browser || command -v chromium)}
+          node tools/artshot/verify-phaser-runtime.mjs \
+            --chrome="$CHROME" --base-url=http://127.0.0.1:8910 \
+            --output=__out/phaser-runtime
+
+      - name: Upload experimental Phaser runtime receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phaser-runtime-receipts
+          path: __out/phaser-runtime/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload Collection Growth I-A visual receipts
         uses: actions/upload-artifact@v4

@@ -1,0 +1,21 @@
+:root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #100e14; color: #eee2d0; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 28px 24px; }
+main { max-width: 960px; margin: 0 auto; }
+header { position: relative; padding-bottom: 18px; }
+.eyebrow { margin: 0 0 5px; color: #efba72; letter-spacing: .28em; font-weight: 650; }
+h1 { font-size: clamp(18px, 3.3vw, 28px); margin: 0; letter-spacing: .05em; }
+.badge { display: inline-block; margin: 12px 0 0; padding: 5px 11px; border: 1px solid #826944; border-radius: 4px; color: #f6cf8b; font-size: 12px; letter-spacing: .08em; }
+#experiment-stage { position: relative; width: 100%; height: min(48vh, 540px); background: #150f18; outline: 1px solid #453243; overflow: hidden; }
+#experiment-stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; margin: 0; background: transparent; }
+#phaser-world { z-index: 0; pointer-events: none; }
+#game { z-index: 1; pointer-events: none; }
+.readout { border-bottom: 1px solid #3c303d; padding: 14px 0; }
+h2 { font-size: 14px; margin: 0 0 5px; letter-spacing: .07em; color: #edbb7c; }
+#experiment-detail { margin: 0; color: #c8bfcd; overflow-wrap: anywhere; }
+.scope { color: #afa6b9; font-size: 13px; }
+a { display: inline-flex; align-items: center; gap: 18px; min-height: 44px; padding: 9px 16px; border: 1px solid #b58a55; border-radius: 4px; color: #f6dcac; text-decoration: none; }
+a:hover { background: #392a25; }
+a:focus-visible { outline: 3px solid #f6dcac; outline-offset: 4px; }
+body[data-failed="true"] h2 { color: #ffc0b5; }
+@media (max-width: 600px) { body { padding: 18px 14px; } }

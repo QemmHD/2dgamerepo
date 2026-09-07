@@ -1,0 +1,18 @@
+{
+  "engine": "Phaser",
+  "version": "4.2.1",
+  "tag": "v4.2.1",
+  "commit": "41be1e462bc600064e498cba370bfa8c5c055a22",
+  "repository": "https://github.com/phaserjs/phaser",
+  "artifactPath": "dist/phaser.esm.min.js",
+  "sourceUrl": "https://raw.githubusercontent.com/phaserjs/phaser/41be1e462bc600064e498cba370bfa8c5c055a22/dist/phaser.esm.min.js",
+  "byteSize": 1377611,
+  "sha256": "f4c5fd140d118c10fa9090641a03c17303bab9bfdc28e0626296777db1bb1bde",
+  "license": "MIT",
+  "licensePath": "LICENSE.md",
+  "licenseSha256": "c3a9ba7e38d4ef33dccf5fdd1046655c63df06714f84776118fe406f43db5cf2",
+  "vendoredDate": "2026-09-07",
+  "releaseDate": "2026-07-09T14:33:40Z",
+  "verification": "Run node tools/validate-phaser-runtime.js. Compare both SHA-256 hashes and artifact byte size with independently downloaded exact-commit upstream files. .gitattributes preserves vendor bytes. Check git show HEAD:src/vendor/phaser/4.2.1/phaser.esm.min.js against the same digest after commit.",
+  "upgrade": "Separate reviewed PR only. Recheck phaser.io/download/stable, official releases/latest, npm package metadata, exact tag/commit, tagged dist and LICENSE.md. If a newer stable4.x exists, request migration-target approval first. Download only the official built ESM from the approved immutable commit, keep its original license, compute actual byte size/SHA-256, use a new version directory, update imports and validators, and rerun WebGL, lifetime, production-isolation and unchanged Canvas baseline gates. Never silently substitute a CDN, prerelease or raw src entry."
+}

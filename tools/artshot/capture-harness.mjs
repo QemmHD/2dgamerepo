@@ -128,6 +128,15 @@ async function main() {
     const viewport = options.viewport ? parseDimensions(options.viewport, '--viewport') : null;
     const mobile = optionBoolean(options, 'mobile');
     const touch = optionBoolean(options, 'touch');
+    const renderer = options.renderer ?? 'canvas';
+    if (!['canvas', 'webgl', 'webgl-software'].includes(renderer)) {
+        throw new Error('--renderer must be canvas, webgl, or webgl-software');
+    }
+    // Keep legacy Canvas captures byte-for-byte equivalent by default. The
+    // software WebGL lane proves rendering/lifetime, not hardware performance.
+    const rendererArgs = renderer === 'canvas' ? ['--disable-gpu']
+        : renderer === 'webgl-software'
+            ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [];
     const deviceScaleFactor = Number.parseFloat(options['device-scale'] || '1');
     if (!(deviceScaleFactor > 0) || deviceScaleFactor > 4) {
         throw new Error('--device-scale must be greater than 0 and at most 4');
@@ -142,7 +151,7 @@ async function main() {
     const browserArgs = [
         '--headless=new',
         '--no-sandbox',
-        '--disable-gpu',
+        ...rendererArgs,
         '--mute-audio',
         '--autoplay-policy=no-user-gesture-required',
         '--disable-background-networking',

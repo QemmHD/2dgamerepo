@@ -1,0 +1,2 @@
+# Preserve official vendored artifacts byte-for-byte on Windows and Linux.
+src/vendor/phaser/4.2.1/* -text
