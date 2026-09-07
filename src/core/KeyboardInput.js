@@ -10,8 +10,11 @@ const GAME_KEYS = new Set([
 
 export class KeyboardInput {
     constructor() {
+        this._disposed = false;
+        this._listeners = [];
         this.keys = new Set();
         this._onKeyDown = (e) => {
+            if (this._disposed) return;
             this.keys.add(e.code);
             if (GAME_KEYS.has(e.code) && !e.metaKey && !e.ctrlKey && !e.altKey) {
                 e.preventDefault();
@@ -22,16 +25,33 @@ export class KeyboardInput {
         };
         this._onBlur = () => this.keys.clear();
 
-        window.addEventListener('keydown', this._onKeyDown);
-        window.addEventListener('keyup', this._onKeyUp);
-        window.addEventListener('blur', this._onBlur);
+        const listen = (type, callback) => {
+            window.addEventListener(type, callback);
+            this._listeners.push({ target: window, type, callback });
+        };
+        try {
+            listen('keydown', this._onKeyDown);
+            listen('keyup', this._onKeyUp);
+            listen('blur', this._onBlur);
+        } catch (error) { this.dispose(); throw error; }
+    }
+
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        for (const { target, type, callback } of this._listeners) {
+            target.removeEventListener(type, callback);
+        }
+        this._listeners.length = 0;
+        this.keys.clear();
     }
 
     isDown(code) {
-        return this.keys.has(code);
+        return !this._disposed && this.keys.has(code);
     }
 
     getVector() {
+        if (this._disposed) return { x: 0, y: 0 };
         let x = 0;
         let y = 0;
         if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) x -= 1;

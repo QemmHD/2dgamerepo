@@ -257,7 +257,7 @@ function startBattlePassClaim(game, kind, level = null) {
     const settle = (rawResult) => {
         const result = rawResult && typeof rawResult === 'object'
             ? rawResult : { ok: false, reason: 'transaction-lock-failed' };
-        if (game.battlePassClaimPending?.serial !== serial) return result;
+        if (game._disposed || game.battlePassClaimPending?.serial !== serial) return result;
         game.battlePassClaimPending = null;
         game.menuFocusNeedsRefresh = true;
         if (result.ok) {
@@ -365,7 +365,7 @@ function startShopPurchase(game, kind, id, label) {
     const settle = (rawResult) => {
         const result = rawResult && typeof rawResult === 'object'
             ? rawResult : { ok: false, reason: 'transaction-lock-failed' };
-        if (game.shopPurchasePending?.serial !== serial) return result;
+        if (game._disposed || game.shopPurchasePending?.serial !== serial) return result;
         game.shopPurchasePending = null;
         game.menuFocusNeedsRefresh = true;
         if (result.ok) {
@@ -832,6 +832,7 @@ export const GameInputActionMethods = {
     // Dispatch a click on a main-menu hotspot (see MenuRenderer). Any action
     // other than RESET cancels a pending reset confirmation.
     _menuAction(action, arg) {
+        if (this._disposed) return;
         // A menu tap is a user gesture — resume the audio context here and give
         // every interaction a click sound.
         this.audio.resume();
@@ -1092,13 +1093,13 @@ export const GameInputActionMethods = {
                     // await the browser's Web Lock task directly. Polling a
                     // virtual clock can starve that task in headless Chromium.
                     const purchaseTask = Promise.resolve(operation).then((result) => {
-                        if (this.blueprintPurchasePending?.serial !== serial
+                        if (this._disposed || this.blueprintPurchasePending?.serial !== serial
                             || this.blueprintPurchasePending?.id !== item.id) return;
                         this.blueprintPurchasePending = null;
                         completeBlueprintPurchase(this, item, cost, result);
                         this.menuFocusNeedsRefresh = true;
                     }).catch(() => {
-                        if (this.blueprintPurchasePending?.serial !== serial
+                        if (this._disposed || this.blueprintPurchasePending?.serial !== serial
                             || this.blueprintPurchasePending?.id !== item.id) return;
                         this.blueprintPurchasePending = null;
                         completeBlueprintPurchase(this, item, cost, {

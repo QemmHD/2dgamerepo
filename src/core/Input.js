@@ -1,5 +1,7 @@
 export class Input {
     constructor({ keyboard, touch, buttons }) {
+        this._disposed = false;
+        this._listeners = [];
         this.keyboard = keyboard;
         this.touch = touch;
         // KINDLED touch action buttons (blink + Kindle ult + Focus taps).
@@ -12,6 +14,7 @@ export class Input {
         // touch arrives, and switches back after actual keyboard/mouse use.
         this.modality = 'pointer';
         this._onModalityChange = null;
+        this._modalitySubscription = null;
         this._noteKeyboard = (event) => {
             // A held key can continue emitting repeat keydowns after the player
             // grabs a touch joystick. Repeats are not a new modality decision;
@@ -25,13 +28,19 @@ export class Input {
         this._noteTouch = () => this.setModality('touch');
         if (typeof window !== 'undefined' && window.addEventListener) {
             // Capture makes the state current before Game routes the same input.
-            window.addEventListener('keydown', this._noteKeyboard, { capture: true });
-            window.addEventListener('pointerdown', this._notePointer, { capture: true, passive: true });
-            window.addEventListener('touchstart', this._noteTouch, { capture: true, passive: true });
+            try {
+                window.addEventListener('keydown', this._noteKeyboard, { capture: true });
+                this._listeners.push({ target: window, type: 'keydown', callback: this._noteKeyboard });
+                window.addEventListener('pointerdown', this._notePointer, { capture: true, passive: true });
+                this._listeners.push({ target: window, type: 'pointerdown', callback: this._notePointer });
+                window.addEventListener('touchstart', this._noteTouch, { capture: true, passive: true });
+                this._listeners.push({ target: window, type: 'touchstart', callback: this._noteTouch });
+            } catch (error) { this.dispose(); throw error; }
         }
     }
 
     setModality(next) {
+        if (this._disposed) return false;
         if (next !== 'keyboard' && next !== 'pointer' && next !== 'touch') return false;
         if (this.modality === next) return false;
         // Switching away from touch must clear any held joystick/button state;
@@ -50,10 +59,33 @@ export class Input {
     isTouchMode() { return this.modality === 'touch'; }
 
     onModalityChange(callback) {
+        if (this._disposed) return () => {};
+        const subscription = {};
+        this._modalitySubscription = subscription;
         this._onModalityChange = typeof callback === 'function' ? callback : null;
+        return () => {
+            // A previous subscriber must not clear a later registration, even
+            // when both registrations use the same callback function.
+            if (this._modalitySubscription !== subscription) return;
+            this._modalitySubscription = null;
+            this._onModalityChange = null;
+        };
+    }
+
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        for (const { target, type, callback } of this._listeners) {
+            target.removeEventListener(type, callback, true);
+        }
+        this._listeners.length = 0;
+        this._modalitySubscription = null;
+        this._onModalityChange = null;
+        // Devices are borrowed. Their boot owner disposes them separately.
     }
 
     getMovement() {
+        if (this._disposed) return { x: 0, y: 0 };
         if (this.touch && this.touch.active) {
             return this.touch.getVector();
         }

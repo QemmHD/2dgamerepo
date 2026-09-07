@@ -1,15 +1,21 @@
 import { TestClock, installDeterministicGlobals } from './migration-clock.mjs';
 import { getScenario } from './scenarios.mjs';
 import { buildSemanticReceipt } from './migration-receipt.mjs';
+import { createMemoryStorage } from './migration-storage.mjs';
 
 // Canvas-specific adapter; scenarios and receipts contain no renderer objects.
-// Call once per fresh process/page, after installing isolated DOM/storage.
-export async function runFixture({ id, seed, renderer, environment, errors = [], prepareAssets }) {
+// Call once per fresh process/page. Persistence/audio use explicit services,
+// independent of the host's native storage, locks and AudioContext globals.
+export async function runFixture({ id, seed, renderer, environment, errors = [], prepareAssets,
+    storage = createMemoryStorage() }) {
     const scenario = getScenario(id);
     seed ??= scenario.seed;
     const clock = new TestClock(scenario.actions);
     const rng = installDeterministicGlobals(seed, clock);
     let game;
+    let primaryError;
+    const owned = [];
+    const own = (value) => { owned.push(value); return value; };
     try {
         const [{ Game }, { Input }, { KeyboardInput }, { TouchJoystick }, { TouchButtons }, { Enemy }] = await Promise.all([
             import('../../src/core/Game.js'), import('../../src/core/Input.js'),
@@ -17,14 +23,19 @@ export async function runFixture({ id, seed, renderer, environment, errors = [],
             import('../../src/core/TouchButtons.js'), import('../../src/entities/Enemy.js'),
         ]);
         if (prepareAssets) await prepareAssets();
-        const keyboard = new KeyboardInput();
-        const touch = new TouchJoystick(renderer);
-        const buttons = new TouchButtons(renderer);
+        const keyboard = own(new KeyboardInput());
+        const touch = own(new TouchJoystick(renderer));
+        const buttons = own(new TouchButtons(renderer));
         touch.supported = buttons.supported = !!scenario.touch;
-        const input = new Input({ keyboard, touch, buttons });
+        const input = own(new Input({ keyboard, touch, buttons }));
         input.setModality(scenario.touch ? 'touch' : 'keyboard');
         // No GameLoop.start or RAF. The real Game.update owns all mechanics.
-        game = new Game({ renderer, input, loop: { fps: 60 } });
+        const [{ SaveSystem }, { AudioSystem }] = await Promise.all([
+            import('../../src/systems/SaveSystem.js'), import('../../src/systems/AudioSystem.js'),
+        ]);
+        const saveSystem = own(new SaveSystem({ storage, participation: 'isolated' }));
+        const audio = own(new AudioSystem({ contextFactory: null }));
+        game = own(new Game({ renderer, input, loop: { fps: 60 }, services: { saveSystem, audio } }));
         await game.saveSystem.whenSaveParticipationReady();
         game._startRun({ campaignEligible: true });
         if (game._heroId !== scenario.hero || game._effectiveMapId() !== scenario.map
@@ -115,8 +126,29 @@ export async function runFixture({ id, seed, renderer, environment, errors = [],
         // Wait one native event-loop turn to include pending rejection reporting.
         await new Promise((resolve) => setTimeout(resolve, 0));
         return buildSemanticReceipt({ game, scenario, seed, clock, environment, errors, observations });
+    } catch (error) {
+        primaryError = error;
+        if (error?.cleanup) {
+            try { await error.cleanup; }
+            catch (cleanupError) {
+                primaryError = new AggregateError([error, cleanupError],
+                    'Fixture construction cleanup failed', { cause: error });
+            }
+        }
+        throw primaryError;
     } finally {
-        try { if (game) await game.saveSystem.dispose(); }
+        try {
+            // Join every owner even if one cleanup fails, before restoring time.
+            const results = await Promise.allSettled(owned.reverse().map(async (value) => {
+                if (await value.dispose?.() === false) throw new Error('Fixture service cleanup failed');
+            }));
+            const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+            if (primaryError && failures.length) {
+                throw new AggregateError([primaryError, ...failures], 'Fixture and cleanup failed', { cause: primaryError });
+            }
+            if (failures.length === 1) throw failures[0];
+            if (failures.length) throw new AggregateError(failures, 'Fixture cleanup failed');
+        }
         finally { rng.restore(); }
     }
 }

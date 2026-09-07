@@ -36,6 +36,7 @@ export class HapticsSystem {
             ? performance.now() / 1000
             : Date.now() / 1000),
     } = {}) {
+        this._disposed = false;
         this.navigator = navigatorRef;
         this.document = documentRef;
         this.now = now;
@@ -43,11 +44,23 @@ export class HapticsSystem {
         this.lastPulse = new Map();
     }
 
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        this.cancel();
+        this.strength = 'off';
+        this.lastPulse.clear();
+        this.navigator = null;
+        this.document = null;
+        this.now = () => 0;
+    }
+
     supported() {
         return typeof this.navigator?.vibrate === 'function';
     }
 
     setStrength(value) {
+        if (this._disposed) return this.strength;
         this.strength = normalizeVibrationStrength(value);
         if (this.strength === 'off') this.cancel();
         return this.strength;

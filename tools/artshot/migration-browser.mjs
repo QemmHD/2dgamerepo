@@ -1,6 +1,7 @@
 // Dedicated tools page only. Nothing here is reachable from the production entry.
 import { runFixture } from './migration-fixture.mjs';
 import { getScenario } from './scenarios.mjs';
+import { createMemoryStorage } from './migration-storage.mjs';
 
 const errors = [];
 window.addEventListener('error', (event) => errors.push(String(event.message || event.error)));
@@ -16,25 +17,13 @@ async function boot() {
     params.set('skipOnboarding', '1');
     params.delete('dev');
     history.replaceState(null, '', `${location.pathname}?${params}`);
-    const values = new Map();
-    let writes = 0;
-    const storage = {
-        get length() { return values.size; },
-        key(index) { return [...values.keys()][index] ?? null; },
-        getItem(key) { return values.get(String(key)) ?? null; },
-        setItem(key, value) { values.set(String(key), String(value)); writes++; },
-        removeItem(key) { values.delete(String(key)); writes++; },
-        clear() { values.clear(); writes++; },
-    };
-    // Never read the native storage getter or join the production origin's locks.
-    // These overrides live until this disposable page closes, including async work.
-    Object.defineProperty(window, 'localStorage', { configurable: true, value: storage });
-    Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
-    window.AudioContext = window.webkitAudioContext = undefined;
+    // Leave native storage/locks/audio globals intact, including their getters.
+    const storage = createMemoryStorage();
     const { Renderer } = await import('../../src/systems/Renderer.js');
     const renderer = new Renderer(document.getElementById('game'));
-    const receipt = await runFixture({
-        id: scenario.id, seed, renderer, errors,
+    let receipt;
+    try { receipt = await runFixture({
+        id: scenario.id, seed, renderer, errors, storage,
         environment: { kind: 'browser-assets', storage: 'memory-only', audio: 'disabled',
             locks: 'disabled', viewport: [innerWidth, innerHeight], renderSchedule: 'final-only' },
         prepareAssets: async () => {
@@ -47,8 +36,8 @@ async function boot() {
                 ['RenderedWeaponProps', 'loadRenderedProps'],
             ]) await (await import(`../../src/assets/${module}.js`))[loader]();
         },
-    });
-    receipt.environment.storageWrites = writes;
+    }); } finally { renderer.dispose(); }
+    receipt.environment.storageWrites = storage.writes;
     const output = document.createElement('script');
     output.id = 'migration-receipt';
     output.type = 'application/json';

@@ -3,6 +3,8 @@ import { TWO_PI, clamp } from './MathUtils.js';
 
 export class TouchJoystick {
     constructor(renderer) {
+        this._disposed = false;
+        this._listeners = [];
         this.renderer = renderer;
         this.maxRadius = JOYSTICK.maxRadius;
         this.deadzone = JOYSTICK.deadzone;
@@ -23,22 +25,40 @@ export class TouchJoystick {
         this._onEnd = (e) => this._handleEnd(e);
         this._onCancel = () => this._reset();
         this._onBlur = () => this._reset();
+        const documentTarget = document;
         this._onVisibility = () => {
-            if (document.hidden) this._reset();
+            if (documentTarget.hidden) this._reset();
         };
 
-        target.addEventListener('touchstart', this._onStart, opts);
-        target.addEventListener('touchmove', this._onMove, opts);
-        target.addEventListener('touchend', this._onEnd, opts);
-        target.addEventListener('touchcancel', this._onCancel, opts);
+        this._blockGesture = (e) => { if (!this._disposed) e.preventDefault(); };
+        const listen = (eventTarget, type, callback, options) => {
+            eventTarget.addEventListener(type, callback, options);
+            this._listeners.push({ target: eventTarget, type, callback });
+        };
+        try {
+            listen(target, 'touchstart', this._onStart, opts);
+            listen(target, 'touchmove', this._onMove, opts);
+            listen(target, 'touchend', this._onEnd, opts);
+            listen(target, 'touchcancel', this._onCancel, opts);
+            listen(window, 'blur', this._onBlur);
+            listen(documentTarget, 'visibilitychange', this._onVisibility);
+            listen(documentTarget, 'gesturestart', this._blockGesture);
+            listen(documentTarget, 'gesturechange', this._blockGesture);
+            listen(documentTarget, 'gestureend', this._blockGesture);
+        } catch (error) { this.dispose(); throw error; }
+    }
 
-        window.addEventListener('blur', this._onBlur);
-        document.addEventListener('visibilitychange', this._onVisibility);
-
-        const blockGesture = (e) => e.preventDefault();
-        document.addEventListener('gesturestart', blockGesture);
-        document.addEventListener('gesturechange', blockGesture);
-        document.addEventListener('gestureend', blockGesture);
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        for (const { target, type, callback } of this._listeners) {
+            target.removeEventListener(type, callback);
+        }
+        this._listeners.length = 0;
+        this.enabled = false;
+        this._reset();
+        this.origin = { x: 0, y: 0 };
+        this.current = { x: 0, y: 0 };
     }
 
     _reset() {
@@ -53,6 +73,7 @@ export class TouchJoystick {
     }
 
     setEnabled(enabled) {
+        if (this._disposed) return;
         this.enabled = !!enabled;
         if (!this.enabled) this._reset();
     }
@@ -71,6 +92,7 @@ export class TouchJoystick {
     }
 
     _handleStart(e) {
+        if (this._disposed) return;
         e.preventDefault();
         if (!this.enabled) return;
         if (this.active) return;
@@ -87,6 +109,7 @@ export class TouchJoystick {
     }
 
     _handleMove(e) {
+        if (this._disposed) return;
         e.preventDefault();
         if (!this.active) return;
         for (const t of e.changedTouches) {
@@ -98,6 +121,7 @@ export class TouchJoystick {
     }
 
     _handleEnd(e) {
+        if (this._disposed) return;
         e.preventDefault();
         if (!this.active) return;
         for (const t of e.changedTouches) {

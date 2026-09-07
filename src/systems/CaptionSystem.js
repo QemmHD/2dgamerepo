@@ -29,6 +29,7 @@ function finite(value, fallback) {
 
 export class CaptionSystem {
     constructor({ onPresent = null } = {}) {
+        this._disposed = false;
         this.enabled = true;
         this.detail = DEFAULT_CAPTION_DETAIL;
         this.onPresent = typeof onPresent === 'function' ? onPresent : null;
@@ -38,7 +39,16 @@ export class CaptionSystem {
         this.lastShown = new Map();
     }
 
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        this.enabled = false;
+        this.reset();
+        this.onPresent = null;
+    }
+
     setPreferences(enabled, detail) {
+        if (this._disposed) return { enabled: this.enabled, detail: this.detail };
         this.enabled = normalizeCaptions(enabled);
         this.detail = normalizeCaptionDetail(detail);
         if (!this.enabled) {
@@ -65,6 +75,7 @@ export class CaptionSystem {
     }
 
     update(dt) {
+        if (this._disposed) return;
         let remaining = Math.max(0, finite(dt, 0));
         this.clock += remaining;
         while (remaining > 0) {

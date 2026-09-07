@@ -128,6 +128,7 @@ export function menuHotspotLabel(action, arg, explicitLabel = '') {
 
 export class AccessibilityBridge {
     constructor(canvas, statusElement = null) {
+        this._disposed = false;
         this.canvas = canvas || null;
         this.status = statusElement || (typeof document !== 'undefined'
             ? document.getElementById('game-status')
@@ -146,6 +147,16 @@ export class AccessibilityBridge {
             this.canvas.setAttribute('aria-label', 'EMBERWAKE main menu');
             this.canvas.setAttribute('aria-describedby', 'game-instructions game-objective');
         }
+    }
+
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        // These nodes belong to the boot shell. Detach only this bridge: do not
+        // hide its canvas, erase live-region text, or remove shared ARIA setup.
+        this.canvas = null;
+        this.status = null;
+        this.objective = null;
     }
 
     focusCanvas() {
@@ -171,6 +182,7 @@ export class AccessibilityBridge {
     // Queryable but deliberately non-live. Progress may update every frame;
     // only assignment/completion events use the polite announcement channel.
     setObjective(snapshot) {
+        if (this._disposed) return false;
         const text = objectiveDescription(snapshot);
         if (text === this.lastObjective) return false;
         this.lastObjective = text;

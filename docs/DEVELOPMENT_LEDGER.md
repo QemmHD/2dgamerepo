@@ -3,11 +3,11 @@
 **Canonical handoff:** read this file before planning or editing; update status,
 evidence, and next action in the same PR as the work.
 
-**Last grounded:** 2026-09-06
-**Main baseline:** [`244fcd9`](https://github.com/QemmHD/2dgamerepo/commit/244fcd94d88f3ac1d25ae7e8a19acbab5c059cfc) — merged Phaser architecture audit [#207](https://github.com/QemmHD/2dgamerepo/pull/207).
-**Implementation branch at grounding:** `codex/migration-pr1-baseline`, based on `244fcd9`; this tranche is testability/evidence only, not a player update or Phaser integration.
+**Last grounded:** 2026-09-07
+**Main baseline:** [`3efcbcf`](https://github.com/QemmHD/2dgamerepo/commit/3efcbcff85f4654236ca16375fd1d8075f6d770b) — merged Migration PR 1 [#208](https://github.com/QemmHD/2dgamerepo/pull/208), after architecture audit #207.
+**Implementation branch at grounding:** `codex/migration-pr2-lifetime`, based on `3efcbcf`; this tranche is platform/lifetime only, not a player update or Phaser integration.
 **Latest player-feature commit on main:** [`9ac5435`](https://github.com/QemmHD/2dgamerepo/commit/9ac5435) — THE CLEAR VIGIL [#206](https://github.com/QemmHD/2dgamerepo/pull/206), after House V2/Ruin Bell [#205](https://github.com/QemmHD/2dgamerepo/pull/205), merged as `70b25e1`.
-**Ledger baseline before this tranche:** `244fcd9`; when this file is on `main`, its containing commit is the newer ledger truth. Older candidate/status rows below retain their historical evidence and do not override this refreshed delivery header.
+**Ledger baseline before this tranche:** `3efcbcf`; when this file is on `main`, its containing commit is the newer ledger truth. Older candidate/status rows below retain their historical evidence and do not override this refreshed delivery header.
 **1.1 foundation feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / merged [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
 **Product roadmap:** [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md)
 
@@ -16,7 +16,31 @@ actually shipped, what exists only on a working branch, what proof is missing, a
 what exact action should happen next. The roadmap owns product intent and scope; this
 file owns execution truth.
 
-## Current bounded tranche — migration PR 1
+## Current bounded tranche — migration PR 2
+
+**Implementation/delivery record:** [PR #209](https://github.com/QemmHD/2dgamerepo/pull/209),
+feature `e0d257d`. PR checks, merge state and the post-merge delivery comment own
+exact remote completion; this candidate header does not by itself claim shipping.
+
+Read [the ownership map, result and exact PR3 handoff](PHASER_MIGRATION_PR2.md).
+Only optional borrowed save/audio services, real SaveSystem isolated storage,
+explicit disposal, input/shell/audio cleanup and the 39th validator are in scope.
+No Phaser, art, UI, content, economy, schema or gameplay rules are changed.
+
+Candidate gate: **39/39 validators; 205/205 syntax; 601 lifetime assertions**;
+ten real Game cycles, ten shell cycles and ten audio-hook cycles; zero residual
+listeners/RAFs/owned participants and zero isolated host save/lock/audio getter
+accesses. All four PR1 Node/browser baselines match unchanged, with 12 browser
+captures. Pending production lock cleanup honestly waits for the original host
+request; memory fixtures do not claim cross-tab concurrency proof.
+
+**Next action:** finish PR2's commit/PR/CI/squash/main-CI/Pages/hosted-smoke delivery,
+record its exact remote identities, then stop. PR3 requires a separate request;
+its audited scope is vendoring and an empty isolated experimental boot/harness,
+not renderer cutover. The unrelated First Light checkpoint and full 1.0–10.0
+product roadmap remain open and must not be resumed implicitly.
+
+## Prior bounded tranche — migration PR 1 (merged)
 
 **Implementation/delivery record:** [PR #208](https://github.com/QemmHD/2dgamerepo/pull/208).
 Its checks, merge state and post-merge delivery comment are the authoritative
@@ -36,11 +60,9 @@ all five `?dev=1` controls remain. Four adversarial test-infrastructure findings
 were fixed and re-reviewed. PR/main CI and Pages delivery are separate gates,
 recorded in this tranche's PR delivery receipt rather than inferred from local tests.
 
-**Next action:** finish/verify this tranche's delivery if its PR is not merged;
-otherwise stop. Do not begin Phaser migration PR 2 without an explicit request.
-Its audited scope is narrow platform, save-sandbox and lifetime seams, not a
-license to add Phaser immediately. Do not resume the separate First Light
-checkpoint branch or call roadmap 1.0–10.0 complete from this test-only delivery.
+PR #208 is verified merged as `3efcbcf`; its four baselines are now unchanged
+regression authorities for the explicitly requested PR2 above. Its historical
+delivery evidence remains valid; no roadmap-completion claim follows from it.
 
 ## Status and evidence contract
 

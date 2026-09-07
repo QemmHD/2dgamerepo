@@ -29,6 +29,8 @@ function nowMs() {
 
 export class TouchButtons {
     constructor(renderer) {
+        this._disposed = false;
+        this._listeners = [];
         this.renderer = renderer;
         this.enabled = true;
         this.supported = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -61,15 +63,41 @@ export class TouchButtons {
         // disturb a still-held KINDLE aim. A cancelled kindle aim FIZZLES with a
         // refund (never fires) — see _handleCancel.
         this._onCancel = (e) => this._handleCancel(e);
-        target.addEventListener('touchstart', this._onStart, opts);
-        target.addEventListener('touchmove', this._onMove, opts);
-        target.addEventListener('touchend', this._onEnd, opts);
-        target.addEventListener('touchcancel', this._onCancel, opts);
-        window.addEventListener('blur', () => this._reset());
-        document.addEventListener('visibilitychange', () => { if (document.hidden) this._reset(); });
+        const documentTarget = document;
+        this._onBlur = () => this._reset();
+        this._onVisibility = () => { if (documentTarget.hidden) this._reset(); };
+        const listen = (eventTarget, type, callback, options) => {
+            eventTarget.addEventListener(type, callback, options);
+            this._listeners.push({ target: eventTarget, type, callback });
+        };
+        try {
+            listen(target, 'touchstart', this._onStart, opts);
+            listen(target, 'touchmove', this._onMove, opts);
+            listen(target, 'touchend', this._onEnd, opts);
+            listen(target, 'touchcancel', this._onCancel, opts);
+            listen(window, 'blur', this._onBlur);
+            listen(documentTarget, 'visibilitychange', this._onVisibility);
+        } catch (error) { this.dispose(); throw error; }
+    }
+
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        for (const { target, type, callback } of this._listeners) {
+            target.removeEventListener(type, callback);
+        }
+        this._listeners.length = 0;
+        this.enabled = false;
+        this._reset();
+        // Live reset intentionally arms an aim refund; teardown must leave no
+        // consumable command for a later runtime or stale polling callback.
+        this._kindleCancel = false;
+        this._kindleStart = 0;
+        this._focusStart = 0;
     }
 
     setEnabled(enabled) {
+        if (this._disposed) return;
         this.enabled = !!enabled;
         if (!this.enabled) this._reset();
     }
@@ -98,6 +126,7 @@ export class TouchButtons {
     // cancelled KINDLE aim arms the fizzle-refund; a cancelled BLINK/FOCUS drops
     // its pending action; an untracked cancelled touch is a no-op.
     _handleCancel(e) {
+        if (this._disposed) return;
         for (const t of e.changedTouches) {
             if (t.identifier === this._blinkId) { this._blinkId = null; this.blinkTap = false; }
             else if (t.identifier === this._kindleId) {
@@ -144,6 +173,7 @@ export class TouchButtons {
     }
 
     _handleMove(e) {
+        if (this._disposed) return;
         for (const t of e.changedTouches) {
             if (t.identifier === this._kindleId) {
                 e.preventDefault();
@@ -158,6 +188,7 @@ export class TouchButtons {
     }
 
     _handleEnd(e) {
+        if (this._disposed) return;
         for (const t of e.changedTouches) {
             if (t.identifier === this._blinkId) { this._blinkId = null; }
             else if (t.identifier === this._kindleId) {
