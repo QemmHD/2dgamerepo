@@ -236,9 +236,10 @@ causes and proves deterministic globals restore even when cleanup fails.
 
 ## Delivery and exact PR3 handoff
 
-This document records a verified candidate, not by itself a merge/deploy receipt.
-The delivery PR will contain the final CI, squash merge, main CI, Pages and hosted
-smoke identities. No Phaser dependency, vendor bytes or experimental entry exists
+Delivery: [PR #209](https://github.com/QemmHD/2dgamerepo/pull/209), feature commit
+`e0d257d`. Its final checks, merge state and post-merge delivery comment own the
+exact CI, squash, main CI, Pages and hosted-smoke identities; this feature-branch
+document alone is not proof of deployment. No Phaser dependency, vendor bytes or experimental entry exists
 in this change. No product-roadmap row or 1.0–10.0 arc is being marked complete.
 
 After this bounded delivery, **stop**. PR3 needs a separate explicit request.
