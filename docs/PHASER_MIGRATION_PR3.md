@@ -52,6 +52,10 @@ from the audit or confused with Git blob hashes. Original MIT copyright,
 permission notice and disclaimer are intact. `.gitattributes` disables text
 conversion for this immutable directory. The validator independently pins both
 hashes and checks the provenance's repository/tag/commit/path/date/upgrade gate.
+Both staged blobs and the committed blobs at
+`082935dead3f2ffb702214fab799c4352ba366a0` were read as binary Buffers through
+`git show` and independently hashed: the exact sizes and both SHA-256 values
+above match. No shell text conversion was used for those byte checks.
 No package manager, package manifest, lockfile, bundler, CDN or raw source build
 was introduced. All browser imports remain same-origin relative ESM.
 
@@ -224,6 +228,27 @@ coarse and includes the document/instrumentation. `preserveDrawingBuffer` is
 deliberate for this small infrastructure capture, not a future gameplay default.
 Do not compare these numbers or empty-scene FPS with full Canvas gameplay.
 
+### CI receipt
+
+[PR #210](https://github.com/QemmHD/2dgamerepo/pull/210), feature commit
+`082935dead3f2ffb702214fab799c4352ba366a0`, passed
+[CI 34102782433](https://github.com/QemmHD/2dgamerepo/actions/runs/34102782433).
+The complete old Canvas browser matrix passed before the separate WebGL step.
+The downloaded `phaser-runtime-receipts` artifact (ID `10011270830`) reports
+`passed:true`, ten clean cycles, the four classified failures, paused-import and
+pre-ready cancellation, unchanged production profile/lock owner, and all nine
+context-lifecycle booleans true. Normal errors/rejections and all experimental
+host storage/lock counts are zero. Only the intentionally injected Scene.create
+exception is accepted in that negative test.
+
+Actual CI context is **WebGL 1**, renderer
+`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)`.
+Independent PNG proof: 960x346, 332,160 opaque/nonblack pixels, 212,721 expected
+dark border pixels, and 1,974 center ember pixels. This is software correctness.
+One CI infrastructure sample: graph import **957.5 ms**, boot **240.3 ms**, first
+frame **237.9 ms**, heap **20,543,946 bytes**, four textures. The same measurement
+limitations above apply; this is not a gameplay or real-GPU benchmark.
+
 ## Dedicated 22-risk review
 
 | Risk | Resolution / evidence |
@@ -232,7 +257,7 @@ Do not compare these numbers or empty-scene FPS with full Canvas gameplay.
 | 2. CDN dependency | Local pinned relative imports only; no runtime remote engine URL. |
 | 3. Wrong build | Exact official built ESM, tag/commit and independent digest/size pins. |
 | 4. Missing license | Full original MIT notice, separate digest and required provenance. |
-| 5. Different committed bytes | Scoped -text attributes and staged/committed-byte hash check required at delivery. |
+| 5. Different committed bytes | Scoped -text attributes; staged and committed binary Buffer hashes at 082935d match the exact downloaded artifact/license bytes. |
 | 6. Live profile access | Explicit real SaveSystem injection; counted vendor-only memory facade; native probes zero. Fixed late-import restoration race. |
 | 7. Production lock participation | Isolated mode plus deny guard; same sole production lock client throughout. |
 | 8. Two Games | Exactly one real construction; counted active1/retired0 across ten cycles. |
@@ -255,6 +280,9 @@ Review-driven changes also removed experiment-only unactivated vibration cancell
 aligned harness readiness with the existing CDP driver, and kept pending-import
 guards and pre-texture-ready cleanup testable. Failure injections occur only in
 the verifier's disposable browser response, never in committed engine/game code.
+The independent final source review at `082935d` closed all 22 risks with no
+remaining source blocker, and reran the 703-check targeted validator. Remote
+delivery gates remain separate from that review decision.
 
 ## Reproduce and deliver
 
@@ -268,8 +296,14 @@ The complete existing Canvas CI matrix and its four artifact steps remain intact
 A separate focused WebGL step serves root on port 8910 and runs the verifier,
 retaining JSON/PNG receipts even on failure. Node stays 22; no frontend build step.
 
-Delivery status: local candidate, not yet shipped. Exact PR/check/merge/main/Pages
-identities and hosted verification must be recorded before final completion.
+Delivery record: [PR #210](https://github.com/QemmHD/2dgamerepo/pull/210), feature
+`082935d`, with the first complete PR CI and actual backend receipt above. This
+documentation-only evidence checkpoint must also pass the full CI before squash
+merge. The PR's final delivery comment records the exact final check, squash/main,
+Pages and deployed-smoke identities once observed; their success is not inferred
+from pre-merge CI. When this file is on main, its containing squash commit is the
+delivered implementation identity. Do not recursively amend a document to predict
+its own future merge SHA. Completion requires checking that live delivery receipt.
 
 ## Exact PR4 handoff and limitations
 

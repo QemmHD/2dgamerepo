@@ -27,6 +27,10 @@ save/silent audio and a separate presentation-only WebGL scene under a transpare
 Canvas overlay. `index.html`, production imports, rules, saves and all five
 `?dev=1` Settings controls remain unchanged.
 
+**Implementation/delivery record:** [PR #210](https://github.com/QemmHD/2dgamerepo/pull/210),
+feature `082935d`; its final delivery comment owns exact squash/main CI/Pages and
+hosted-smoke identities, not a predicted future SHA in this pre-merge document.
+
 Local candidate: ten real WebGL boot/render/dispose cycles and independent native
 listener/RAF/storage/lock probes pass; native context restore and a second
 lost-context disposal/late restore pass without resurrection. Backend is ANGLE
@@ -35,8 +39,12 @@ authorities and all old sources/validators remain unchanged; final **40/40 valid
 **214/214 syntax modules**, the new validator's **703 assertions**, and 12 browser
 baseline captures pass. Four classified failures, paused-import cancellation and
 pre-ready disposal pass after the independent 22-risk review's fixes, including
-the pinned SYSTEM_READY cleanup boundary. PR CI, merge, main CI, Pages and deployed
-smoke still own the final delivery decision; local success alone is not shipping.
+the pinned SYSTEM_READY cleanup boundary. The first full
+[PR CI 34102782433](https://github.com/QemmHD/2dgamerepo/actions/runs/34102782433)
+also passes: old Canvas matrix intact, actual ANGLE SwiftShader WebGL receipt,
+ten clean cycles, four failures, cancellation/context probes and zero experimental
+native save/lock accesses. The final docs-only checkpoint CI, merge, main CI,
+Pages and deployed smoke still own delivery completion; PR CI alone is not shipping.
 
 **Next action:** finish only PR3 verification/delivery, record its exact remote
 identities, then stop. PR4 requires a separate explicit request and owns the single
