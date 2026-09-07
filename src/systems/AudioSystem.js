@@ -123,10 +123,27 @@ const SFX_SAMPLES = {
 };
 
 export class AudioSystem {
-    constructor() {
-        const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
-        this.enabled = !!AC;
+    constructor({ contextFactory } = {}) {
+        // An explicit factory (including null) never reads browser audio globals.
+        // Silent instances still select scores: their playlist RNG is gameplay-
+        // visible through the existing shared stream and must not be skipped.
+        const AC = contextFactory === undefined && typeof window !== 'undefined'
+            && (window.AudioContext || window.webkitAudioContext);
+        this._contextFactory = contextFactory === undefined
+            ? (AC ? () => new AC() : null) : contextFactory;
+        if (this._contextFactory !== null && typeof this._contextFactory !== 'function') {
+            throw new TypeError('Audio contextFactory must be a function or null');
+        }
+        this.enabled = typeof this._contextFactory === 'function';
         this._AC = AC || null;
+        this._disposed = false;
+        this._disposePromise = null;
+        this._contextClosePromise = Promise.resolve(true);
+        this._graphNodes = new Set();
+        this._voiceNodes = new Map();
+        this._loadController = null;
+        this._fadingRecorded = new Map();
+        this._recordedEnded = null;
         this.ctx = null;
         this.master = null;
         this.outputBus = null;   // explicit 2ch/1ch player mix before limiting
@@ -202,28 +219,33 @@ export class AudioSystem {
     }
 
     _ensure() {
-        if (!this.enabled || this.ctx) return;
+        if (this._disposed || !this.enabled || this.ctx) return;
         try {
-            this.ctx = new this._AC();
-            // A disposed system may be unlocked again by an embedding shell.
-            // Targets belong to the old AudioContext and must not suppress the
-            // first automation pass on the freshly-created graph.
+            this.ctx = this._contextFactory();
+            if (!this.ctx) { this.enabled = false; return; }
+            if (this._disposed) {
+                const ctx = this.ctx;
+                this.ctx = null;
+                this._contextClosePromise = this._closeContext(ctx);
+                return;
+            }
+            // The graph is constructed only on the first real unlock gesture.
             this._layerTargets = {};
             this._toneTarget = null;
             // Master has only clip protection. Tone shaping belongs to music,
             // otherwise a low-HP color pass also muffles hit and warning cues.
-            this.master = this.ctx.createGain();
+            this.master = this._ownGraphNode(this.ctx.createGain());
             this.master.gain.value = 0.72;
             // One standards-defined channel-mode switch covers every source:
             // tracker/streamed music, SFX, reverb and decoded voice all meet at
             // master before this point. `speakers` downmixes stereo to
             // 0.5 * (L + R); the limiter remains AFTER the downmix so a mono
             // sum cannot clip the output.
-            this.outputBus = this.ctx.createGain();
+            this.outputBus = this._ownGraphNode(this.ctx.createGain());
             this.outputBus.channelInterpretation = 'speakers';
             this.outputBus.channelCountMode = 'explicit';
             this.outputBus.channelCount = this.monoAudio ? 1 : 2;
-            this.limiter = this.ctx.createDynamicsCompressor();
+            this.limiter = this._ownGraphNode(this.ctx.createDynamicsCompressor());
             this.limiter.threshold.value = -3;
             this.limiter.knee.value = 0;
             this.limiter.ratio.value = 20;
@@ -234,28 +256,28 @@ export class AudioSystem {
             this.limiter.connect(this.ctx.destination);
 
             // Light reverb: a short feedback delay tap for ambience (stable fb).
-            const delay = this.ctx.createDelay(0.5);
+            const delay = this._ownGraphNode(this.ctx.createDelay(0.5));
             delay.delayTime.value = 0.17;
-            const fb = this.ctx.createGain();
+            const fb = this._ownGraphNode(this.ctx.createGain());
             fb.gain.value = 0.28;
-            const verbOut = this.ctx.createGain();
+            const verbOut = this._ownGraphNode(this.ctx.createGain());
             verbOut.gain.value = 0.5;
             delay.connect(fb); fb.connect(delay);
             delay.connect(verbOut); verbOut.connect(this.master);
-            this.verbSend = this.ctx.createGain();
+            this.verbSend = this._ownGraphNode(this.ctx.createGain());
             this.verbSend.gain.value = 0.18;
             this.verbSend.connect(delay);
 
-            this.musicBus = this.ctx.createGain();
+            this.musicBus = this._ownGraphNode(this.ctx.createGain());
             this.musicBus.gain.value = this.volMusic * AUDIO_MIX.musicTrim;
             this.musicBus.connect(this.master);
             this.musicBus.connect(this.verbSend);
             // Tracker/stream → duck → pause → MUSIC-ONLY filter → music bus.
-            this.musicDuck = this.ctx.createGain();
+            this.musicDuck = this._ownGraphNode(this.ctx.createGain());
             this.musicDuck.gain.value = 1;
-            this.musicPause = this.ctx.createGain();
+            this.musicPause = this._ownGraphNode(this.ctx.createGain());
             this.musicPause.gain.value = this._paused ? 0.45 : 1;
-            this.musicFilter = this.ctx.createBiquadFilter();
+            this.musicFilter = this._ownGraphNode(this.ctx.createBiquadFilter());
             this.musicFilter.type = 'lowpass';
             this.musicFilter.frequency.value = AUDIO_MIX.calmCutoff;
             this.musicFilter.Q.value = 0.35;
@@ -264,15 +286,15 @@ export class AudioSystem {
             this.musicFilter.connect(this.musicBus);
 
             for (const [name, initial] of Object.entries({ bed: 1, motion: AUDIO_MIX.calmMotionFloor, swarm: 0, apex: 0 })) {
-                const layer = this.ctx.createGain();
+                const layer = this._ownGraphNode(this.ctx.createGain());
                 layer.gain.value = initial;
                 layer.connect(this.musicDuck);
                 this._musicLayers[name] = layer;
             }
 
-            this.sfxBus = this.ctx.createGain();
+            this.sfxBus = this._ownGraphNode(this.ctx.createGain());
             this.sfxBus.gain.value = this.volSfx * AUDIO_MIX.sfxTrim;
-            this.sfxCompressor = this.ctx.createDynamicsCompressor();
+            this.sfxCompressor = this._ownGraphNode(this.ctx.createDynamicsCompressor());
             this.sfxCompressor.threshold.value = -9;
             this.sfxCompressor.knee.value = 6;
             this.sfxCompressor.ratio.value = 4;
@@ -280,7 +302,7 @@ export class AudioSystem {
             this.sfxCompressor.release.value = 0.09;
             this.sfxBus.connect(this.sfxCompressor);
             this.sfxCompressor.connect(this.master);
-            this.voiceBus = this.ctx.createGain();
+            this.voiceBus = this._ownGraphNode(this.ctx.createGain());
             this.voiceBus.gain.value = this.volVoice * AUDIO_MIX.voiceTrim;
             this.voiceBus.connect(this.master);
 
@@ -292,22 +314,50 @@ export class AudioSystem {
             this._applyScoreMix(this._activeScore);
         } catch (e) {
             this.enabled = false;
+            const ctx = this.ctx;
+            this.ctx = null;
+            this._disconnectGraph();
+            this._contextClosePromise = this._closeContext(ctx);
         }
     }
 
+    _ownGraphNode(node) {
+        this._graphNodes.add(node);
+        return node;
+    }
+
+    _disconnectGraph() {
+        for (const node of this._graphNodes) {
+            try { node.disconnect(); } catch (_) { /* partially built or closed */ }
+        }
+        this._graphNodes.clear();
+        for (const key of ['master', 'outputBus', 'masterFilter', 'limiter', 'musicBus',
+            'musicDuck', 'musicPause', 'musicFilter', 'sfxBus', 'sfxCompressor', 'voiceBus', 'verbSend']) {
+            this[key] = null;
+        }
+        this._musicLayers = {};
+        this._noiseBuf = null;
+    }
+
+    _closeContext(ctx) {
+        try { return Promise.resolve(ctx?.close?.()).then(() => true, () => false); }
+        catch (_) { return Promise.resolve(false); }
+    }
+
     async unlock() {
-        if (!this.enabled) return false;
+        if (this._disposed || !this.enabled) return false;
         if (this._unlockPromise) return this._unlockPromise;
         this._ensure();
-        if (!this.ctx) return false;
+        const ctx = this.ctx;
+        if (!ctx) return false;
         const task = (async () => {
             try {
                 // Safari also exposes `interrupted`; resume every non-running
                 // state and await it before starting the look-ahead scheduler.
-                if (this.ctx.state !== 'running' && typeof this.ctx.resume === 'function') {
-                    await this.ctx.resume();
+                if (ctx.state !== 'running' && typeof ctx.resume === 'function') {
+                    await ctx.resume();
                 }
-                if (this.ctx.state !== 'running') return false;
+                if (this._disposed || this.ctx !== ctx || ctx.state !== 'running') return false;
                 if (this._schedId == null) this._startScheduler();
                 this._loadSamples();
                 if (this._bossId) this.prefetchBoss(this._bossId);
@@ -336,21 +386,25 @@ export class AudioSystem {
     // Fetch + decode the CC0 one-shots once, on the first user gesture. Per-file
     // failures are swallowed (that cue just keeps its synth voice); no fetch (or a
     // failed decode) leaves _samples empty so EVERY cue falls back gracefully.
+    _fetchAudio(url) {
+        if (this._disposed) return Promise.resolve(null);
+        try {
+            if (!this._loadController && typeof AbortController === 'function') {
+                this._loadController = new AbortController();
+            }
+            return Promise.resolve(fetch(url, this._loadController
+                ? { signal: this._loadController.signal } : undefined));
+        } catch (error) { return Promise.reject(error); }
+    }
+
     _loadSamples() {
-        if (!this.ctx || this._samplesState !== 'idle') return;
+        if (this._disposed || !this.ctx || this._samplesState !== 'idle') return;
         if (typeof fetch !== 'function') { this._samplesState = 'skip'; return; }
+        const ctx = this.ctx;
         this._samplesState = 'loading';
         // decodeAudioData is promise-based in modern browsers, callback-based in old
         // ones — support both so nothing hangs or throws.
-        const decode = (ab) => new Promise((res, rej) => {
-            let done = false;
-            const ok = (b) => { if (!done) { done = true; res(b); } };
-            const no = (e) => { if (!done) { done = true; rej(e); } };
-            try {
-                const p = this.ctx.decodeAudioData(ab, ok, no);
-                if (p && typeof p.then === 'function') p.then(ok, no);
-            } catch (e) { no(e); }
-        });
+        const decode = (ab) => this._decodeBuffer(ab, ctx);
         const jobs = [];
         for (const key of Object.keys(SFX_SAMPLES)) {
             this._samples[key] = [];
@@ -359,15 +413,19 @@ export class AudioSystem {
                 try { url = new URL(`../assets/audio/sfx/${file}`, import.meta.url).href; }
                 catch (e) { continue; }
                 jobs.push(
-                    fetch(url)
+                    this._fetchAudio(url)
                         .then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); return r.arrayBuffer(); })
                         .then((ab) => decode(ab))
-                        .then((buf) => { if (buf) this._samples[key].push(buf); })
+                        .then((buf) => {
+                            if (buf && !this._disposed && this.ctx === ctx) this._samples[key].push(buf);
+                        })
                         .catch(() => { /* leave slot empty → synth fallback */ })
                 );
             }
         }
-        Promise.all(jobs).then(() => { this._samplesState = 'ready'; });
+        Promise.all(jobs).then(() => {
+            if (!this._disposed && this.ctx === ctx) this._samplesState = 'ready';
+        });
     }
 
     // Play one loaded variant of a cue's sample bank through sfxBus (so it still
@@ -396,34 +454,43 @@ export class AudioSystem {
         return true;
     }
 
-    _decodeBuffer(ab) {
-        if (!this.ctx) return Promise.reject(new Error('audio context unavailable'));
+    _decodeBuffer(ab, ctx = this.ctx) {
+        if (this._disposed || !ctx || this.ctx !== ctx) return Promise.resolve(null);
         return new Promise((resolve, reject) => {
             let done = false;
-            const ok = (buffer) => { if (!done) { done = true; resolve(buffer); } };
+            const ok = (buffer) => {
+                if (!done) {
+                    done = true;
+                    resolve(!this._disposed && this.ctx === ctx ? buffer : null);
+                }
+            };
             const no = (error) => { if (!done) { done = true; reject(error); } };
             try {
-                const pending = this.ctx.decodeAudioData(ab, ok, no);
+                const pending = ctx.decodeAudioData(ab, ok, no);
                 if (pending?.then) pending.then(ok, no);
             } catch (error) { no(error); }
         });
     }
 
     _loadVoice(id) {
+        if (this._disposed) return Promise.resolve(null);
         if (this._voiceBuffers[id]) return Promise.resolve(this._voiceBuffers[id]);
         if (this._voiceLoads[id]) return this._voiceLoads[id];
         const cue = VOICE_STINGERS[id];
         if (!cue || !this.ctx || typeof fetch !== 'function') return Promise.resolve(null);
-        this._voiceLoads[id] = fetch(cue.file)
+        const ctx = this.ctx;
+        const task = this._fetchAudio(cue.file)
             .then((response) => { if (!response.ok) throw new Error(`http ${response.status}`); return response.arrayBuffer(); })
-            .then((data) => this._decodeBuffer(data))
+            .then((data) => this._decodeBuffer(data, ctx))
             .then((buffer) => {
+                if (this._disposed || this.ctx !== ctx) return null;
                 if (buffer) this._voiceBuffers[id] = buffer;
                 return buffer || null;
             })
             .catch(() => null)
-            .finally(() => { delete this._voiceLoads[id]; });
-        return this._voiceLoads[id];
+            .finally(() => { if (this._voiceLoads[id] === task) delete this._voiceLoads[id]; });
+        this._voiceLoads[id] = task;
+        return task;
     }
 
     prefetchBoss(id = this._bossId) {
@@ -456,7 +523,7 @@ export class AudioSystem {
     }
 
     _playBossVoice(id, buffer) {
-        if (!this.ctx || !buffer || !this.voiceBus) return false;
+        if (this._disposed || !this.ctx || !buffer || !this.voiceBus) return false;
         const now = this.ctx.currentTime;
         if (this._activeVoice && this._activeVoiceGain) {
             const old = this._activeVoice;
@@ -474,6 +541,8 @@ export class AudioSystem {
         source.connect(gain);
         gain.connect(this.voiceBus);
         source.onended = () => {
+            this._voiceNodes.delete(source);
+            source.onended = null;
             if (this._activeVoice === source) {
                 this._activeVoice = null;
                 this._activeVoiceGain = null;
@@ -481,6 +550,7 @@ export class AudioSystem {
             try { source.disconnect(); } catch (e) { /* no-op */ }
             try { gain.disconnect(); } catch (e) { /* no-op */ }
         };
+        this._voiceNodes.set(source, gain);
         source.start(now);
         this._activeVoice = source;
         this._activeVoiceGain = gain;
@@ -572,6 +642,7 @@ export class AudioSystem {
     }
 
     playMusic(theme, detail = null) {
+        if (this._disposed) return;
         if (theme === 'boss' && (typeof detail === 'string' || detail?.bossId)) {
             this.setBossProfile(typeof detail === 'string' ? detail : detail.bossId);
         }
@@ -612,7 +683,7 @@ export class AudioSystem {
     }
 
     _applyScore(score) {
-        if (!score) return;
+        if (this._disposed || !score) return;
         this._stopRecorded(true);
         this._activeScore = score;
         this._pendingScore = null;
@@ -631,29 +702,33 @@ export class AudioSystem {
     }
 
     _fallbackRecorded(score) {
-        if (this._activeScore?.id !== score?.id) return;
+        if (this._disposed || this._activeScore?.id !== score?.id) return;
         const fallback = MUSIC_BY_ID[score.fallbackId] || MENU_COMPOSITIONS.find((item) => item.kind === 'tracker');
         this._applyScore(fallback);
     }
 
     _startRecorded(score) {
+        if (this._disposed || !this.ctx) return;
         if (!score || score.kind !== 'recorded' || this._recorded || typeof Audio !== 'function') {
             if (score?.kind === 'recorded' && typeof Audio !== 'function') this._fallbackRecorded(score);
             return;
         }
-        let audio;
+        const ctx = this.ctx;
+        let audio, source, gain, ended;
         try {
             audio = new Audio();
             audio.preload = 'metadata';
             audio.loop = false;
             audio.src = score.file;
-            audio.addEventListener('ended', () => {
-                if (this._recorded !== audio || this.theme !== 'menu' || this._activeScore?.id !== score.id) return;
+            ended = () => {
+                if (this._disposed || this.ctx !== ctx || this._recorded !== audio
+                    || this.theme !== 'menu' || this._activeScore?.id !== score.id) return;
                 this._stopRecorded(false);
                 this._applyScore(this._nextMenuScore());
-            }, { once: true });
-            const source = this.ctx.createMediaElementSource(audio);
-            const gain = this.ctx.createGain();
+            };
+            audio.addEventListener('ended', ended, { once: true });
+            source = this.ctx.createMediaElementSource(audio);
+            gain = this.ctx.createGain();
             gain.gain.setValueAtTime(0.0001, this.ctx.currentTime);
             gain.gain.linearRampToValueAtTime(0.92, this.ctx.currentTime + 0.35);
             source.connect(gain);
@@ -661,17 +736,22 @@ export class AudioSystem {
             this._recorded = audio;
             this._recordedSource = source;
             this._recordedGain = gain;
+            this._recordedEnded = ended;
             const promise = audio.play();
             if (promise?.catch) promise.catch(() => {
-                if (this._recorded !== audio) return;
+                if (this._disposed || this.ctx !== ctx || this._recorded !== audio) return;
                 this._stopRecorded(false);
                 this._fallbackRecorded(score);
             });
         } catch (e) {
-            try { audio?.pause(); } catch (ignored) { /* no-op */ }
+            try { audio?.removeEventListener('ended', ended); } catch (_) { /* partial setup */ }
+            try { audio?.pause(); audio?.removeAttribute('src'); audio?.load(); } catch (_) { /* no-op */ }
+            try { source?.disconnect(); } catch (_) { /* no-op */ }
+            try { gain?.disconnect(); } catch (_) { /* no-op */ }
             this._recorded = null;
             this._recordedSource = null;
             this._recordedGain = null;
+            this._recordedEnded = null;
             this._fallbackRecorded(score);
         }
     }
@@ -680,18 +760,29 @@ export class AudioSystem {
         const audio = this._recorded;
         const source = this._recordedSource;
         const gain = this._recordedGain;
+        const ended = this._recordedEnded;
         this._recorded = null;
         this._recordedSource = null;
         this._recordedGain = null;
+        this._recordedEnded = null;
         if (!audio) return;
+        try { if (ended) audio.removeEventListener('ended', ended); } catch (_) { /* no-op */ }
+        let timer = null, finished = false;
         const finish = () => {
+            if (finished) return;
+            finished = true;
+            if (timer !== null) {
+                clearTimeout(timer);
+                this._fadingRecorded.delete(timer);
+            }
             try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) { /* no-op */ }
             try { source?.disconnect(); } catch (e) { /* no-op */ }
             try { gain?.disconnect(); } catch (e) { /* no-op */ }
         };
-        if (fade && gain && this.ctx) {
+        if (fade && gain && this.ctx && !this._disposed) {
             this._rampParam(gain.gain, 0.0001, this.ctx.currentTime, 0.12);
-            setTimeout(finish, 150);
+            timer = setTimeout(finish, 150);
+            this._fadingRecorded.set(timer, finish);
         } else finish();
     }
 
@@ -803,7 +894,7 @@ export class AudioSystem {
 
     // ── Music scheduler ──────────────────────────────────────────────────
     _startScheduler() {
-        if (!this.ctx || this._schedId != null) return;
+        if (this._disposed || !this.ctx || this._schedId != null) return;
         this._nextTime = this.ctx.currentTime + 0.08;
         this._step = 0;
         this._bar = 0;
@@ -811,7 +902,7 @@ export class AudioSystem {
     }
 
     _schedulerTick() {
-        if (!this.ctx) return;
+        if (this._disposed || !this.ctx) return;
         this._drainCleanup();
         if (this.ctx.state !== 'running') return;
         if (!this.theme || !this._activeScore || this._activeScore.kind !== 'tracker') {
@@ -1507,21 +1598,50 @@ export class AudioSystem {
     }
 
     dispose() {
+        if (this._disposePromise) return this._disposePromise;
+        // Seal synchronously before stopping resources: event delivery or pending
+        // resume/decode callbacks must never revive this instance. Closing the
+        // browser context is the only asynchronous teardown we wait for.
+        let finishDispose;
+        this._disposePromise = new Promise((resolve) => { finishDispose = resolve; });
+        this._disposed = true;
+        this.enabled = false;
         if (this._schedId != null) clearInterval(this._schedId);
         this._schedId = null;
+        try { this._loadController?.abort(); } catch (_) { /* optional capability */ }
+        this._loadController = null;
         this._stopRecorded(false);
-        if (this._activeVoice) {
+        for (const finish of [...this._fadingRecorded.values()]) finish();
+        this._fadingRecorded.clear();
+        for (const [source, gain] of this._voiceNodes) {
+            source.onended = null;
+            try { source.stop(); } catch (_) { /* already stopped */ }
+            try { source.disconnect(); } catch (_) { /* no-op */ }
+            try { gain.disconnect(); } catch (_) { /* no-op */ }
+        }
+        const trackedActiveVoice = this._voiceNodes.has(this._activeVoice);
+        this._voiceNodes.clear();
+        if (this._activeVoice && !trackedActiveVoice) {
             try { this._activeVoice.stop(); } catch (e) { /* already stopped */ }
+            try { this._activeVoice.disconnect(); } catch (_) { /* no-op */ }
+            try { this._activeVoiceGain?.disconnect(); } catch (_) { /* no-op */ }
         }
         this._activeVoice = null;
         this._activeVoiceGain = null;
         this._drainCleanup(true);
         const ctx = this.ctx;
         this.ctx = null;
-        this.outputBus = null;
-        if (ctx?.close) {
-            try { ctx.close(); } catch (e) { /* no-op */ }
-        }
+        this._disconnectGraph();
+        this._samples = {};
+        this._samplesState = 'skip';
+        this._voiceBuffers = {};
+        this._voiceLoads = {};
+        this._unlockPromise = null;
+        this._contextFactory = null;
+        this._AC = null;
+        Promise.all([this._contextClosePromise, this._closeContext(ctx)])
+            .then((results) => finishDispose(results.every(Boolean)));
+        return this._disposePromise;
     }
 }
 

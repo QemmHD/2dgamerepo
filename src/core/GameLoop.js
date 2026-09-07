@@ -2,6 +2,11 @@ import { FIXED_DT, MAX_FRAME_DT } from '../config/GameConfig.js';
 
 export class GameLoop {
     constructor({ update, render, fixedDt = FIXED_DT, maxFrameDt = MAX_FRAME_DT }) {
+        this._disposed = false;
+        this._frameId = null;
+        this._visibilityAttached = false;
+        this._document = document;
+        this._cancelFrame = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame.bind(globalThis) : null;
         this.update = update;
         this.render = render;
         this.fixedDt = fixedDt;
@@ -21,20 +26,39 @@ export class GameLoop {
         this.profiler = null;
 
         this._tick = this._tick.bind(this);
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) this._resetClock();
-        });
+        this._onVisibility = () => {
+            if (!this._disposed && !this._document.hidden) this._resetClock();
+        };
+        try {
+            this._document.addEventListener('visibilitychange', this._onVisibility);
+            this._visibilityAttached = true;
+        } catch (error) { this.dispose(); throw error; }
     }
 
     start() {
-        if (this.running) return;
+        if (this._disposed || this.running) return;
         this.running = true;
         this._resetClock();
-        requestAnimationFrame(this._tick);
+        this._frameId = requestAnimationFrame(this._tick);
     }
 
     stop() {
         this.running = false;
+        if (this._frameId !== null) this._cancelFrame?.(this._frameId);
+        this._frameId = null;
+    }
+
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        this.stop();
+        if (this._visibilityAttached) {
+            this._document.removeEventListener('visibilitychange', this._onVisibility);
+            this._visibilityAttached = false;
+        }
+        this.profiler = null;
+        this.update = null;
+        this.render = null;
     }
 
     _resetClock() {
@@ -43,7 +67,8 @@ export class GameLoop {
     }
 
     _tick(now) {
-        if (!this.running) return;
+        if (this._disposed || !this.running) return;
+        this._frameId = null;
         try {
             let frameDt = (now - this.last) / 1000;
             this.last = now;
@@ -60,7 +85,7 @@ export class GameLoop {
             const prof = this.profiler;
             this.accumulator += frameDt;
             let steps = 0;
-            while (this.accumulator >= this.fixedDt && steps < 8) {
+            while (this.running && this.accumulator >= this.fixedDt && steps < 8) {
                 if (prof) prof.begin('update');
                 this.update(this.fixedDt);
                 if (prof) prof.end('update');
@@ -68,6 +93,7 @@ export class GameLoop {
                 steps += 1;
             }
 
+            if (!this.running) return;
             const alpha = this.accumulator / this.fixedDt;
             if (prof) prof.begin('render');
             this.render(alpha);
@@ -76,7 +102,7 @@ export class GameLoop {
         } catch (err) {
             console.error('[GameLoop] frame error:', err);
         } finally {
-            if (this.running) requestAnimationFrame(this._tick);
+            if (this.running && this._frameId === null) this._frameId = requestAnimationFrame(this._tick);
         }
     }
 }

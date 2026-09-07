@@ -51,6 +51,7 @@ export function gemLightColor(tier) {
 
 export const GameUpdateMethods = {
     update(dt) {
+        if (this._disposed) return;
         // Feedback flashes + press states tick on every screen so they
         // animate even while gameplay is frozen behind an overlay.
         this._updateFeedback(dt);

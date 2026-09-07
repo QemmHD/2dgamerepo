@@ -108,21 +108,31 @@ import {
 const DEBUG_BUTTON_TOUCH_SLOP = 24;
 
 export class Game {
-    constructor({ renderer, input, loop }) {
+    // Shell objects and explicitly supplied services are borrowed. Only services
+    // constructed here belong to this lifetime; gameplay systems stay internal.
+    constructor({ renderer, input, loop, services = {} }) {
+        this._disposed = false;
+        this._disposePromise = null;
+        this._ownedServices = [];
+        this._listeners = [];
+        this._unsubscribeModality = null;
+        try {
         this.renderer = renderer;
         this.input = input;
         this.loop = loop;
-        this.accessibility = new AccessibilityBridge(renderer?.canvas);
+        this.accessibility = this._ownService(new AccessibilityBridge(renderer?.canvas));
         this.menuFocusKey = null;
         this.menuFocusNeedsRefresh = false;
         this.minesFocusIndex = 0;
-        this.input?.onModalityChange?.((modality) => {
+        this._unsubscribeModality = this.input?.onModalityChange?.((modality) => {
+            if (this._disposed) return;
             if (modality === 'keyboard') this.accessibility.focusCanvas();
             else if (this.screen === 'start') this._resetMenuFocus();
         });
         this.camera = new Camera();
         this.ui = new UISystem({ renderer, loop });
-        this.saveSystem = new SaveSystem();
+        this.saveSystem = Object.hasOwn(services, 'saveSystem')
+            ? services.saveSystem : this._ownService(new SaveSystem());
         this.captionSystem = new CaptionSystem({
             onPresent: (caption) => {
                 // Spoken lines enter the polite live region once. Curated sound
@@ -133,11 +143,13 @@ export class Game {
                 }
             },
         });
+        this._ownService(this.captionSystem);
         this.captionSystem.setPreferences(
             this.saveSystem.getSetting('captions'),
             this.saveSystem.getSetting('captionDetail'),
         );
         this.haptics = new HapticsSystem();
+        this._ownService(this.haptics);
         this.haptics.setStrength(this.saveSystem.getSetting('vibration'));
         // MapRenderer lives outside _initRunState — its cached tile
         // pattern and per-chunk decoration tables are world-static,
@@ -158,7 +170,8 @@ export class Game {
         this.hazardSystem = new HazardSystem();
         // Procedural audio (synthesized; silent no-op when unsupported/headless).
         // Volumes seed from saved settings; the context resumes on first input.
-        this.audio = new AudioSystem();
+        this.audio = Object.hasOwn(services, 'audio')
+            ? services.audio : this._ownService(new AudioSystem());
         this.audio.setVolumes(
             this.saveSystem.getSetting('volMusic'),
             this.saveSystem.getSetting('volSfx'),
@@ -324,13 +337,16 @@ export class Game {
         // sites); enabled only while the debug HUD shows, so it's free otherwise.
         this.profiler = new FrameProfiler();
         this.profiler.enabled = this.showDebug;
-        if (this.loop) this.loop.profiler = this.profiler;
+        if (this.loop) {
+            this._previousLoopProfiler = this.loop.profiler;
+            this.loop.profiler = this.profiler;
+        }
         // Performance/accessibility render flags (re-read at each run start).
         this.damageNumbersEnabled = this.saveSystem.getSetting('damageNumbers') !== false;
         this.particlesEnabled = this.saveSystem.getSetting('particles') !== false;
         this.reducedEffects = this.saveSystem.getSetting('reducedEffects') === true;
 
-        window.addEventListener('keydown', (e) => {
+        this._listen(window, 'keydown', (e) => {
             // All commands handled below are one-press actions. Keep browser
             // repeat from double-confirming resets, crossing modal boundaries,
             // or toggling pause twice; Tab/arrows and state-driven movement are
@@ -809,7 +825,7 @@ export class Game {
             return true;
         };
 
-        this.renderer.canvas.addEventListener('touchstart', (e) => {
+        this._listen(this.renderer.canvas, 'touchstart', (e) => {
             // EMBERGLASS Lens owns all touches while open (drag pans / toolbar).
             if (this.photoMode) {
                 e.preventDefault();
@@ -842,7 +858,7 @@ export class Game {
             }
         }, { passive: false });
 
-        this.renderer.canvas.addEventListener('mousedown', (e) => {
+        this._listen(this.renderer.canvas, 'mousedown', (e) => {
             if (this.photoMode) { this._tryPhotoAt(e.clientX, e.clientY, 'down'); return; }
             if (this.chestReward) {
                 this._dismissChestReward();
@@ -869,20 +885,20 @@ export class Game {
 
         // EMBERGLASS Lens: drag-to-pan (mouse + one finger) and wheel zoom. All
         // gated to photo mode so they never interfere with normal play.
-        this.renderer.canvas.addEventListener('mousemove', (e) => {
+        this._listen(this.renderer.canvas, 'mousemove', (e) => {
             if (this.photoMode && this._dragPhotoPrev) this._tryPhotoAt(e.clientX, e.clientY, 'move');
         });
-        window.addEventListener('mouseup', () => { if (this.photoMode) this._tryPhotoAt(0, 0, 'up'); });
-        this.renderer.canvas.addEventListener('touchmove', (e) => {
+        this._listen(window, 'mouseup', () => { if (this.photoMode) this._tryPhotoAt(0, 0, 'up'); });
+        this._listen(this.renderer.canvas, 'touchmove', (e) => {
             if (!this.photoMode) return;
             e.preventDefault();
             const t = e.changedTouches[0];
             if (t) this._tryPhotoAt(t.clientX, t.clientY, 'move');
         }, { passive: false });
-        this.renderer.canvas.addEventListener('touchend', (e) => {
+        this._listen(this.renderer.canvas, 'touchend', (e) => {
             if (this.photoMode) { e.preventDefault(); this._tryPhotoAt(0, 0, 'up'); }
         }, { passive: false });
-        this.renderer.canvas.addEventListener('wheel', (e) => {
+        this._listen(this.renderer.canvas, 'wheel', (e) => {
             if (!this.photoMode) return;
             e.preventDefault();
             this._photoZoomBy(e.deltaY < 0 ? EMBERGLASS.photo.zoomStep : 1 / EMBERGLASS.photo.zoomStep);
@@ -901,8 +917,8 @@ export class Game {
                 this._updateJoystickEnabled();
             }
         };
-        window.addEventListener('blur', autoPause);
-        document.addEventListener('visibilitychange', () => {
+        this._listen(window, 'blur', autoPause);
+        this._listen(document, 'visibilitychange', () => {
             if (document.hidden) autoPause();
         });
 
@@ -920,6 +936,64 @@ export class Game {
         // Every boot now lands on the menu, so disable and clear the touch
         // controls until an explicit launch. _startRun re-enables them.
         this._updateJoystickEnabled();
+        } catch (cause) {
+            // Constructors cannot await. Detach synchronous resources now and
+            // expose the join to the boot owner, preserving the original cause.
+            const error = new Error('Game construction failed', { cause });
+            error.cleanup = this.dispose();
+            // A caller may only inspect cause; still observe cleanup rejection.
+            void error.cleanup.catch(() => {});
+            throw error;
+        }
+    }
+
+    _ownService(service) {
+        this._ownedServices.push(service);
+        return service;
+    }
+
+    _listen(target, type, callback, options) {
+        const listener = (event) => { if (!this._disposed) callback(event); };
+        const capture = typeof options === 'boolean' ? options : !!options?.capture;
+        // Record before installation so a partially failing target can unwind.
+        this._listeners.push({ target, type, listener, capture });
+        target.addEventListener(type, listener, options);
+    }
+
+    dispose() {
+        if (this._disposePromise) return this._disposePromise;
+        this._disposed = true;
+        const failures = [];
+        const pending = [];
+        let resolveDispose, rejectDispose;
+        this._disposePromise = new Promise((resolve, reject) => {
+            resolveDispose = resolve; rejectDispose = reject;
+        });
+        const clean = (callback) => {
+            try { pending.push(Promise.resolve(callback())); }
+            catch (error) { failures.push(error); }
+        };
+        for (const { target, type, listener, capture } of this._listeners.splice(0).reverse()) {
+            clean(() => target.removeEventListener(type, listener, capture));
+        }
+        if (typeof this._unsubscribeModality === 'function') clean(this._unsubscribeModality);
+        this._unsubscribeModality = null;
+        if (this.profiler && this.loop?.profiler === this.profiler) {
+            clean(() => { this.loop.profiler = this._previousLoopProfiler; });
+        }
+        // No run-end methods here: disposal neither retires nor pays a run.
+        // Already accepted save transactions finish under SaveSystem's protocol.
+        for (const service of this._ownedServices.splice(0).reverse()) {
+            if (typeof service?.dispose === 'function') clean(async () => {
+                if (await service.dispose() === false) throw new Error('Owned service cleanup did not complete');
+            });
+        }
+        Promise.allSettled(pending).then((results) => {
+            for (const result of results) if (result.status === 'rejected') failures.push(result.reason);
+            if (failures.length) rejectDispose(new AggregateError(failures, 'Game disposal failed'));
+            else resolveDispose();
+        });
+        return this._disposePromise;
     }
 
     // The effective map id for THIS run: the Daily Road override (unlock-bypassed,
@@ -948,6 +1022,7 @@ export class Game {
     // the canonical "begin a fresh game" entry point. Used by the START RUN
     // shop button AND the RESTART game-over button.
     _startRun({ campaignEligible = false } = {}) {
+        if (this._disposed) return;
         // A confirmed pause exit can never bleed into the new run it creates.
         this.pauseExitConfirm = null;
         resetCollectionCompletionFlow(this);
@@ -1721,6 +1796,7 @@ export class Game {
             // two lifecycle paths observe the same already-started operation.
             if (this._dailyRoadCasePending.day === day && summary) {
                 this._dailyRoadCaseTask.then((result) => {
+                    if (this._disposed) return;
                     if (result?.ok) summary.dailyRoadCase = result.label;
                     summary.dailyRoadCasePending = false;
                 });
@@ -1748,6 +1824,7 @@ export class Game {
         const settle = (rawResult) => {
             const result = rawResult && typeof rawResult === 'object'
                 ? rawResult : { ok: false, reason: 'transaction-lock-failed' };
+            if (this._disposed) return result;
             if (summary) {
                 summary.dailyRoadCasePending = false;
                 if (result.ok) summary.dailyRoadCase = result.label;
@@ -3519,6 +3596,7 @@ export class Game {
         return 'A run in EMBERWAKE.';
     }
     _afterShare(res) {
+        if (this._disposed) return;
         const method = (res && res.method) || 'none';
         const text = { clipboard: 'COPIED TO CLIPBOARD', share: 'SHARED',
             download: 'SAVED AS PNG', none: 'SHARE FAILED — TRY AGAIN' }[method] || 'SAVED AS PNG';
@@ -3555,6 +3633,7 @@ Object.assign(Game.prototype, GameInputActionMethods);
 // maxed-out control from leaving an invisible orphan key for the next input.
 const renderWithMenuFocusReconciliation = Game.prototype.render;
 Game.prototype.render = function renderWithAccessibleMenuFocus(...args) {
+    if (this._disposed) return;
     const result = renderWithMenuFocusReconciliation.apply(this, args);
     this._refreshMenuFocusAfterRender();
     return result;

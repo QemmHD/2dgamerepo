@@ -97,7 +97,7 @@ export const PhotoModeMethods = {
     // toolbar), capture it, compose the 'photo' card, and run the share ladder —
     // all inside the tap gesture so clipboard/share holds.
     _snapPhoto() {
-        if (!this.photoMode) return;
+        if (this._disposed || !this.photoMode) return;
         this._suppressToolbar = true;
         try { this.render(); } catch (e) { /* toolbar-free frame */ }
         this._suppressToolbar = false;
@@ -109,11 +109,14 @@ export const PhotoModeMethods = {
             this.saveSystem.incrementStat('photosTaken', 1);
             comp.share({ title: 'EMBERWAKE', text: 'A shot from EMBERWAKE.', filename: 'emberwake-photo.png' })
                 .then((res) => {
+                    if (this._disposed) return;
                     const m = (res && res.method) || 'none';
                     this.shareToast = { text: { clipboard: 'PHOTO COPIED', share: 'PHOTO SHARED',
                         download: 'PHOTO SAVED', none: 'SAVE FAILED' }[m] || 'PHOTO SAVED', timer: EMBERGLASS.toast.duration };
                 })
-                .catch(() => { this.shareToast = { text: 'PHOTO SAVED', timer: EMBERGLASS.toast.duration }; });
+                .catch(() => {
+                    if (!this._disposed) this.shareToast = { text: 'PHOTO SAVED', timer: EMBERGLASS.toast.duration };
+                });
         } catch (e) { /* snap is best-effort */ }
         if (this.photoMode) this.photoMode.toolbarFade = EMBERGLASS.photo.toolbarFade;
     },

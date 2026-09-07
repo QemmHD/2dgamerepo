@@ -20,6 +20,7 @@ import { WEAPON_AURA } from './content/weapons.js';
 import { WEAPON_FX_GLOWS } from './systems/WeaponSystem.js';
 import { COSMETICS } from './content/cosmetics.js';
 import { PRISM_COLORS } from './assets/CosmeticFx.js';
+import { installAudioLifecycle } from './platform/AudioLifecycle.js';
 
 // ── Loading splash ──────────────────────────────────────────────────────
 // A purely procedural ember animation (no asset — nothing to download) shown
@@ -77,25 +78,49 @@ function startSplash(canvas) {
 }
 
 async function boot() {
+    const resources = [];
+    const removers = [];
+    let loop, disposal;
+    const own = (value) => { resources.push(value); return value; };
+    const listen = (target, type, callback, options) => {
+        const capture = typeof options === 'boolean' ? options : !!options?.capture;
+        removers.push(() => target.removeEventListener(type, callback, capture));
+        target.addEventListener(type, callback, options);
+    };
+    const dispose = () => {
+        if (disposal) return disposal;
+        loop?.stop();
+        const cleanup = [
+            ...removers.splice(0).reverse(),
+            ...resources.splice(0).reverse().map((value) => () => value.dispose()),
+        ];
+        disposal = Promise.allSettled(cleanup.map(async (remove) => remove())).then((results) => {
+            const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+            if (failures.length) throw new AggregateError(failures, 'Browser runtime disposal failed');
+        });
+        return disposal;
+    };
+    try {
     const canvas = document.getElementById('game');
     if (!canvas) {
         throw new Error('Canvas element #game not found');
     }
 
-    document.addEventListener('contextmenu', (e) => e.preventDefault());
-    document.addEventListener('dblclick', (e) => e.preventDefault());
+    listen(document, 'contextmenu', (e) => e.preventDefault());
+    listen(document, 'dblclick', (e) => e.preventDefault());
 
-    const renderer = new Renderer(canvas);
+    const renderer = own(new Renderer(canvas));
     // Splash up FIRST (Renderer has sized the canvas): the ember loading
     // animation runs while sprites prewarm + the art set downloads below.
     const splash = startSplash(canvas);
-    const keyboard = new KeyboardInput();
-    const touch = new TouchJoystick(renderer);
+    removers.push(() => splash.stop());
+    const keyboard = own(new KeyboardInput());
+    const touch = own(new TouchJoystick(renderer));
     // KINDLED touch verbs (blink + Kindle ult + Focus taps): the bottom-RIGHT
     // action surface, sibling to the left-half steer joystick. Own listeners,
     // own touch ids, so move + aim + blink work simultaneously (multi-touch).
-    const buttons = new TouchButtons(renderer);
-    const input = new Input({ keyboard, touch, buttons });
+    const buttons = own(new TouchButtons(renderer));
+    const input = own(new Input({ keyboard, touch, buttons }));
 
     // Orientation lock must be requested from a user gesture; try once on the
     // first interaction (succeeds on Android / installed PWA, harmless no-op
@@ -105,18 +130,22 @@ async function boot() {
         window.removeEventListener('touchstart', tryLock);
         window.removeEventListener('pointerdown', tryLock);
     };
-    window.addEventListener('touchstart', tryLock, { passive: true });
-    window.addEventListener('pointerdown', tryLock, { passive: true });
+    listen(window, 'touchstart', tryLock, { passive: true });
+    listen(window, 'pointerdown', tryLock, { passive: true });
 
     // Drop an in-progress joystick drag if the screen rotation flips, so a
     // stale touch origin can't produce a bogus steer across the convention.
-    renderer.onOrientationChange = () => { touch.reset(); buttons.reset(); };
+    const resetTouches = () => { touch.reset(); buttons.reset(); };
+    renderer.onOrientationChange = resetTouches;
+    removers.push(() => {
+        if (renderer.onOrientationChange === resetTouches) renderer.onOrientationChange = null;
+    });
 
     let game;
-    const loop = new GameLoop({
+    loop = own(new GameLoop({
         update: (dt) => game.update(dt),
         render: () => game.render(),
-    });
+    }));
 
     // Rasterize all procedural sprites once, before the first frame, so
     // no spawn/boss/coin hitches the loop by building art mid-frame.
@@ -151,36 +180,27 @@ async function boot() {
         loadRenderedProps()]);
 
     splash.stop();
-    game = new Game({ renderer, input, loop });
+    game = own(new Game({ renderer, input, loop }));
 
     // A fresh save can enter gameplay before any click handler runs. Unlock the
     // shared AudioContext from any real gesture (including a movement key) and
     // keep this tiny recovery hook installed: Safari can later move a running
     // context back to `interrupted` after a call, route, or device change.
-    const unlockAudio = () => {
-        void game.audio.unlock();
-    };
-    window.addEventListener('pointerdown', unlockAudio, { capture: true, passive: true });
-    window.addEventListener('touchstart', unlockAudio, { capture: true, passive: true });
-    window.addEventListener('keydown', unlockAudio, { capture: true, passive: true });
-
-    // Mirror involuntary background pauses into the independent music gate.
-    // Restore it on focus only when gameplay itself is not paused; menu music
-    // must never remain permanently dim after a tab switch.
-    const syncAudioPause = () => {
-        const held = game.screen === 'gameplay' && (document.hidden || game.paused);
-        game.audio.setPaused(held);
-    };
-    window.addEventListener('blur', () => {
-        if (game.screen === 'gameplay') game.audio.setPaused(true);
-    });
-    window.addEventListener('focus', syncAudioPause);
-    document.addEventListener('visibilitychange', syncAudioPause);
+    removers.push(installAudioLifecycle(game));
     loop.start();
+    return { game, dispose };
+    } catch (error) {
+        // A failing Game constructor has already detached its listeners; join
+        // its owned async cleanup as well as every completed shell component.
+        const results = await Promise.allSettled([error?.cleanup, dispose()]);
+        const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+        if (failures.length) throw new AggregateError([error, ...failures], 'Browser boot failed', { cause: error });
+        throw error;
+    }
 }
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
 } else {
     boot();
 }

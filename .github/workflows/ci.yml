@@ -65,6 +65,9 @@ jobs:
       - name: Validate reproducible migration baseline fixtures
         run: node tools/validate-migration-baseline.js
 
+      - name: Validate isolated platform and runtime lifetime
+        run: node tools/validate-runtime-lifetime.js
+
       - name: Validate fair gambling economy and disclosures
         run: node tools/validate-gambling-economy.js
 

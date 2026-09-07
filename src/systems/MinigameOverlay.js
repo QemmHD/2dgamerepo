@@ -138,6 +138,7 @@ export class MinigameOverlay {
     }
 
     _rejectCaseOpen(reason) {
+        if (this.game._disposed) return Object.freeze({ ok: false, reason });
         const message = this._caseFailureMessage(reason);
         this.game._setToast(message, false);
         this.game.accessibility?.announce?.(message);
@@ -197,6 +198,7 @@ export class MinigameOverlay {
         }
 
         const task = Promise.resolve(atomicTask).then((res) => {
+            if (this.game._disposed) return res;
             if (!res?.ok) return this._rejectCaseOpen(
                 typeof res?.reason === 'string' ? res.reason : 'transaction-lock-failed',
             );
@@ -339,6 +341,7 @@ export class MinigameOverlay {
     _rejectMinesStart(result) {
         const receipt = result && typeof result === 'object'
             ? result : { ok: false, reason: 'transaction-lock-failed' };
+        if (this.game._disposed) return Object.freeze({ ...receipt, ok: false });
         const message = this._minesStartFailureMessage(receipt);
         this.game._setToast(message, false);
         this.game.accessibility?.announce?.(message);
@@ -450,6 +453,7 @@ export class MinigameOverlay {
             }
         }
         const task = Promise.resolve(exclusiveTask).then((result) => {
+            if (this.game._disposed) return result;
             if (!result?.ok) return this._rejectMinesStart(result);
             try {
                 // Board state and the forge cue become visible only after the
@@ -536,6 +540,7 @@ export class MinigameOverlay {
     _rejectMinesCashout(result) {
         const receipt = result && typeof result === 'object'
             ? result : { ok: false, reason: 'transaction-lock-failed' };
+        if (this.game._disposed) return Object.freeze({ ...receipt, ok: false });
         const message = this._minesCashoutFailureMessage(receipt);
         this.game?._setToast?.(message, false);
         this.game?.accessibility?.announce?.(message);
@@ -641,6 +646,7 @@ export class MinigameOverlay {
             }
         }
         const task = Promise.resolve(exclusiveTask).then((result) => {
+            if (this.game._disposed) return result;
             if (!result?.ok) return this._rejectMinesCashout(result);
             try {
                 // BANKED/result/reveal publish only after the payout write is

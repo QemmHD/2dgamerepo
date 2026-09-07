@@ -2,6 +2,11 @@ import { INTERNAL_WIDTH, INTERNAL_HEIGHT, BACKGROUND_COLOR, RENDER } from '../co
 
 export class Renderer {
     constructor(canvasEl) {
+        this._disposed = false;
+        this._listeners = [];
+        this._resizeFrameId = null;
+        this._hintFrameId = null;
+        this._cancelFrame = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame.bind(globalThis) : null;
         this.canvas = canvasEl;
         this.ctx = canvasEl.getContext('2d', { alpha: false });
         this.internalWidth = INTERNAL_WIDTH;
@@ -31,22 +36,47 @@ export class Renderer {
         // don't reallocate the backing store many times per gesture.
         this._resizeQueued = false;
         this._onResize = () => {
-            if (this._resizeQueued) return;
+            if (this._disposed || this._resizeQueued) return;
             this._resizeQueued = true;
-            const run = () => { this._resizeQueued = false; this.resize(); };
-            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+            const run = () => {
+                this._resizeFrameId = null;
+                this._resizeQueued = false;
+                if (!this._disposed) this.resize();
+            };
+            if (typeof requestAnimationFrame === 'function') this._resizeFrameId = requestAnimationFrame(run);
             else run();
         };
-        window.addEventListener('resize', this._onResize);
-        window.addEventListener('orientationchange', this._onResize);
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', this._onResize);
-        }
+        const listen = (target, type) => {
+            target.addEventListener(type, this._onResize);
+            this._listeners.push({ target, type });
+        };
+        try {
+            listen(window, 'resize');
+            listen(window, 'orientationchange');
+            if (window.visualViewport) listen(window.visualViewport, 'resize');
+            this.resize();
+        } catch (error) { this.dispose(); throw error; }
+    }
 
-        this.resize();
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        for (const { target, type } of this._listeners) {
+            target.removeEventListener(type, this._onResize);
+        }
+        this._listeners.length = 0;
+        if (this._resizeFrameId !== null) this._cancelFrame?.(this._resizeFrameId);
+        if (this._hintFrameId !== null) this._cancelFrame?.(this._hintFrameId);
+        this._resizeFrameId = null;
+        this._hintFrameId = null;
+        this._resizeQueued = false;
+        this._hintHideAt = 0;
+        this.onOrientationChange = null;
+        // The boot owner owns the Canvas and its DOM; never remove or hide it.
     }
 
     resize() {
+        if (this._disposed) return;
         const winW = window.visualViewport?.width ?? window.innerWidth;
         const winH = window.visualViewport?.height ?? window.innerHeight;
         if (!(winW > 0) || !(winH > 0)) return;
@@ -191,6 +221,7 @@ export class Renderer {
     }
 
     beginFrame() {
+        if (this._disposed) return false;
         if (this.canvas.width === 0 || this.canvas.height === 0 || this.scale === 0) {
             return false;
         }
@@ -232,12 +263,17 @@ export class Renderer {
     // Best-effort native orientation lock (works in installed PWA / Android /
     // fullscreen; harmless no-op on iOS Safari). Call from a user gesture.
     tryLockLandscape() {
+        if (this._disposed) return;
         try {
             const lock = window.screen?.orientation?.lock;
             if (typeof lock !== 'function') return;
             const p = lock.call(window.screen.orientation, 'landscape');
             if (p && typeof p.then === 'function') {
-                p.then(() => { this._lockedLandscape = true; this.resize(); }).catch(() => {});
+                p.then(() => {
+                    if (this._disposed) return;
+                    this._lockedLandscape = true;
+                    this.resize();
+                }).catch(() => {});
             }
         } catch (_) { /* not supported — CSS-rotate fallback handles it */ }
     }
@@ -245,6 +281,7 @@ export class Renderer {
     // FPS-governor lever: lower/raise the DPR cap to shed/restore backing
     // store cost on sustained low/high fps. No-op if the cap is unchanged.
     setDprCap(cap) {
+        if (this._disposed) return;
         // Allow sub-1 caps (down to RENDER.minDpr) so the governor can force a
         // downscale on a fill-rate-bound high-res display as a last resort.
         const c = Math.max(RENDER.minDpr ?? 1, Math.min(RENDER.maxDpr, cap));
@@ -254,6 +291,7 @@ export class Renderer {
     }
 
     _updateRotateHint() {
+        if (this._disposed) return;
         if (this._hintEl === null && typeof document !== 'undefined') {
             this._hintEl = document.getElementById('rotate-hint') || false;
         }
@@ -270,15 +308,16 @@ export class Renderer {
                 el.classList.remove('hidden');
                 this._hintHideAt = (window.performance?.now?.() ?? 0) + 2500;
                 const tick = () => {
-                    if (!this.rotated) return;
+                    this._hintFrameId = null;
+                    if (this._disposed || !this.rotated) return;
                     if ((window.performance?.now?.() ?? Infinity) >= this._hintHideAt) {
                         el.classList.add('hidden');
                         this._hintHideAt = 0;
                         return;
                     }
-                    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tick);
+                    if (typeof requestAnimationFrame === 'function') this._hintFrameId = requestAnimationFrame(tick);
                 };
-                if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tick);
+                if (typeof requestAnimationFrame === 'function') this._hintFrameId = requestAnimationFrame(tick);
             } else if (this._hintHideAt > 0
                 && (window.performance?.now?.() ?? Infinity) < this._hintHideAt) {
                 // iOS may emit several visualViewport resizes during the first

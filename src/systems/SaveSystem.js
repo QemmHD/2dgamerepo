@@ -54,6 +54,32 @@ import {
 } from './CampaignProgression.js';
 
 const SAVE_KEY = 'monkey-survivor:save:v1';
+// Keep capabilities outside the public save/draft graph. Composable transaction
+// drafts inherit their owner's configuration; exclusive drafts are registered
+// explicitly because their prototype is SaveSystem.prototype, not a live save.
+const SAVE_DEPENDENCIES = new WeakMap();
+
+function saveDependencies(save) {
+    for (let owner = save; owner; owner = Object.getPrototypeOf(owner)) {
+        const dependencies = SAVE_DEPENDENCIES.get(owner);
+        if (dependencies) return dependencies;
+    }
+    throw new TypeError('SaveSystem has no storage authority');
+}
+
+function saveStorage(save) {
+    const dependencies = saveDependencies(save);
+    // Resolve the legacy getter only inside each caller's existing try/catch.
+    return dependencies.hasStorage ? dependencies.storage : globalThis.localStorage;
+}
+
+function saveLocks(save) {
+    const dependencies = saveDependencies(save);
+    // Isolation takes precedence even over an injected locks getter/manager.
+    if (dependencies.participation === 'isolated') return null;
+    return dependencies.hasLocks ? dependencies.locks : globalThis.navigator?.locks;
+}
+
 export const SAVE_TRANSACTION_LOCK_NAME = 'emberwake:save:v1:exclusive';
 export const SAVE_PARTICIPATION_LOCK_NAME = 'emberwake:save:v1:participants';
 export const MAX_COIN_BALANCE = Number.MAX_SAFE_INTEGER;
@@ -448,7 +474,22 @@ function immutableTransactionReceipt(value) {
 }
 
 export class SaveSystem {
-    constructor() {
+    constructor(options = {}) {
+        const participation = options.participation ?? 'auto';
+        if (participation !== 'auto' && participation !== 'isolated') {
+            throw new TypeError('Unknown SaveSystem participation mode');
+        }
+        const hasStorage = Object.prototype.hasOwnProperty.call(options, 'storage');
+        const storage = hasStorage ? options.storage : undefined;
+        if (participation === 'isolated' && (!hasStorage || storage === undefined)) {
+            throw new TypeError('Isolated SaveSystem requires explicit storage');
+        }
+        const hasLocks = participation !== 'isolated'
+            && Object.prototype.hasOwnProperty.call(options, 'locks');
+        SAVE_DEPENDENCIES.set(this, Object.freeze({
+            participation, hasStorage, storage, hasLocks,
+            locks: hasLocks ? options.locks : undefined,
+        }));
         // QA map access is intentionally session-only. It must never contaminate
         // campaign progression, selection, or serialized settings.
         this._session = { unlockMaps: false, selectedMap: null };
@@ -472,10 +513,13 @@ export class SaveSystem {
         this._saveParticipationHasGranted = false;
         this._saveParticipationDisposeRequested = false;
         this._saveParticipationTransactionDone = null;
+        this._saveParticipationDisposeTask = null;
+        this._settleSaveParticipationReady = null;
         this.available = this._probe();
         this.data = this._loadOrDefault();
         this._beginSaveParticipation();
         const retireInterruptedRun = () => {
+            if (this._saveParticipationDisposeRequested) return false;
             const current = normalizeGuidedObjectives(this.data.guidedObjectives);
             if (current.activeRunSerial <= 0) return false;
             return this._commitMutation(() => {
@@ -507,7 +551,8 @@ export class SaveSystem {
     // ordinary save. Node validators and non-browser workers keep the explicit
     // injected-lock seam used by the deterministic test suite.
     _beginSaveParticipation() {
-        const manager = globalThis.navigator?.locks;
+        if (this._saveParticipationDisposeRequested) return Promise.resolve(false);
+        const manager = saveLocks(this);
         const browserRuntime = typeof globalThis.window !== 'undefined';
         if (!browserRuntime || !manager || typeof manager.request !== 'function') {
             this._saveParticipationRequired = false;
@@ -522,6 +567,7 @@ export class SaveSystem {
         const generation = ++this._saveParticipationGeneration;
         let settleReady;
         this._saveParticipationReady = new Promise((resolve) => { settleReady = resolve; });
+        this._settleSaveParticipationReady = settleReady;
         try {
             this._saveParticipationRequest = Promise.resolve(manager.request(
                 SAVE_PARTICIPATION_LOCK_NAME,
@@ -578,7 +624,7 @@ export class SaveSystem {
         if (!this.available) return false;
         let raw;
         try {
-            raw = localStorage.getItem(SAVE_KEY);
+            raw = saveStorage(this).getItem(SAVE_KEY);
         } catch (e) {
             console.warn('[SaveSystem] participation refresh failed', e);
             this._lastSaveFailureReason = 'persistence-unavailable';
@@ -607,12 +653,15 @@ export class SaveSystem {
     }
 
     _saveParticipationAllowsWrite() {
+        if (this._saveParticipationState === 'disposed'
+            || this._saveParticipationState === 'disposing') return false;
         return !this._saveParticipationRequired
             || this._saveParticipationState === 'held'
             || this._saveParticipationState === 'exclusive';
     }
 
     whenSaveParticipationReady() {
+        if (this._saveParticipationDisposeRequested) return Promise.resolve(false);
         return this._saveParticipationRequired
             ? this._saveParticipationReady.then((ready) => ready === true)
             : Promise.resolve(true);
@@ -622,39 +671,38 @@ export class SaveSystem {
     // share before constructing the real game instance. A disposed instance is
     // permanently write-disabled; callers cannot accidentally resume unsafe
     // persistence after giving up participation.
-    async releaseSaveParticipation() {
-        if (!this._saveParticipationRequired) return true;
-        if (this._saveParticipationState === 'disposed') return true;
+    releaseSaveParticipation() {
+        if (this._saveParticipationDisposeTask) return this._saveParticipationDisposeTask;
         this._saveParticipationDisposeRequested = true;
-        if (['releasing', 'released', 'exclusive'].includes(this._saveParticipationState)) {
-            return this._saveParticipationTransactionDone
-                ? this._saveParticipationTransactionDone.then(() => true, () => false)
-                : false;
+        const transactionDone = this._saveParticipationTransactionDone;
+        if (transactionDone && ['releasing', 'released', 'exclusive']
+            .includes(this._saveParticipationState)) {
+            // An already accepted exclusive transaction keeps its one commit.
+            // Its finally block owns disposal and must not reacquire a share.
+            this._saveParticipationDisposeTask = transactionDone
+                .then(() => true, () => false);
+            return this._saveParticipationDisposeTask;
         }
-        const ready = await this._saveParticipationReady;
-        if (['releasing', 'released', 'exclusive'].includes(this._saveParticipationState)) {
-            return this._saveParticipationTransactionDone
-                ? this._saveParticipationTransactionDone.then(() => true, () => false)
-                : false;
-        }
-        if (!ready || this._saveParticipationState !== 'held'
-            || !this._releaseSaveParticipation) return false;
         const heldRequest = this._saveParticipationRequest;
-        this._saveParticipationState = 'disposing';
         const release = this._releaseSaveParticipation;
-        this._releaseSaveParticipation = null;
-        release();
-        try {
-            await heldRequest;
-        } catch (e) {
-            this._saveParticipationState = 'failed';
-            return false;
-        }
+        // Keep the original request options/timing. A queued request may grant
+        // later, but cannot refresh, repair, write, or retain a share for this
+        // retired generation. Cleanup joins that host-owned request; readiness
+        // is settled immediately so waiting callers cannot restart this save.
         this._markSaveParticipationDisposed();
-        return true;
+        if (release) release();
+        // A transaction may already be reacquiring its shared share in finally.
+        // Retire that pending/held request too, then join both owners.
+        this._saveParticipationDisposeTask = Promise.all([heldRequest, transactionDone]).then(
+            () => true,
+            () => false,
+        );
+        return this._saveParticipationDisposeTask;
     }
 
     _markSaveParticipationDisposed() {
+        this._settleSaveParticipationReady?.(false);
+        this._settleSaveParticipationReady = null;
         this._saveParticipationGeneration += 1;
         this._saveParticipationState = 'disposed';
         this._saveParticipationReady = Promise.resolve(false);
@@ -690,8 +738,8 @@ export class SaveSystem {
     _probe() {
         try {
             const key = '__monkey_survivor_probe__';
-            localStorage.setItem(key, '1');
-            localStorage.removeItem(key);
+            saveStorage(this).setItem(key, '1');
+            saveStorage(this).removeItem(key);
             return true;
         } catch (e) {
             console.warn('[SaveSystem] localStorage unavailable; running in memory-only mode');
@@ -703,7 +751,7 @@ export class SaveSystem {
         if (!this.available) return freshDefaultData();
         let raw = null;
         try {
-            raw = localStorage.getItem(SAVE_KEY);
+            raw = saveStorage(this).getItem(SAVE_KEY);
             this._lastPersistedRaw = raw;
         } catch (e) {
             console.warn('[SaveSystem] read failed', e);
@@ -1067,7 +1115,7 @@ export class SaveSystem {
         }
         try {
             const serialized = JSON.stringify(this.data);
-            localStorage.setItem(SAVE_KEY, serialized);
+            saveStorage(this).setItem(SAVE_KEY, serialized);
             this._lastPersistedRaw = serialized;
             this._lastSaveFailureReason = null;
             return true;
@@ -1084,7 +1132,7 @@ export class SaveSystem {
             return { ok: false, reason: 'persistence-unavailable' };
         }
         try {
-            return localStorage.getItem(SAVE_KEY) === this._lastPersistedRaw
+            return saveStorage(this).getItem(SAVE_KEY) === this._lastPersistedRaw
                 ? { ok: true }
                 : { ok: false, reason: 'external-save-changed' };
         } catch (e) {
@@ -1171,14 +1219,14 @@ export class SaveSystem {
         // instance's potentially stale full data object. A reloaded/newer tab
         // may already own a different run and counter; that authority wins.
         try {
-            const persisted = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+            const persisted = JSON.parse(saveStorage(this).getItem(SAVE_KEY) || 'null');
             if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) return false;
             const ledger = normalizeGuidedObjectives(persisted.guidedObjectives);
             if (ledger.activeRunSerial !== sessionSerial) return false;
             ledger.activeRunSerial = 0;
             persisted.guidedObjectives = ledger;
             const serialized = JSON.stringify(persisted);
-            localStorage.setItem(SAVE_KEY, serialized);
+            saveStorage(this).setItem(SAVE_KEY, serialized);
             this._lastPersistedRaw = serialized;
             this._lastSaveFailureReason = null;
             // This merge may have observed a newer tab. Synchronize the whole
@@ -1217,7 +1265,7 @@ export class SaveSystem {
         let persistedActiveSerial = ledger.activeRunSerial;
         if (this.available) {
             try {
-                const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+                const raw = JSON.parse(saveStorage(this).getItem(SAVE_KEY) || 'null');
                 persistedActiveSerial = normalizeGuidedObjectives(
                     raw?.guidedObjectives,
                 ).activeRunSerial;
@@ -1703,7 +1751,10 @@ export class SaveSystem {
     // managers fail closed before any mutation. Headless validators retain the
     // directly injected exclusive-lock seam.
     purchaseCosmeticBlueprintAtomic(id, quotedCost) {
-        const manager = globalThis.navigator?.locks;
+        if (this._saveParticipationDisposeRequested) {
+            return Promise.resolve(Object.freeze({ ok: false, reason: 'transaction-lock-unavailable' }));
+        }
+        const manager = saveLocks(this);
         if (!manager || typeof manager.request !== 'function') {
             return Promise.resolve(Object.freeze({
                 ok: false, reason: 'transaction-lock-unavailable',
@@ -1759,6 +1810,7 @@ export class SaveSystem {
         // toggles and helper assignments cannot walk the prototype chain into
         // the live SaveSystem.
         const draft = Object.create(SaveSystem.prototype);
+        SAVE_DEPENDENCIES.set(draft, saveDependencies(this));
         Object.defineProperties(draft, {
             data: { configurable: true, enumerable: true, writable: true,
                 value: cloneSaveTransactionValue(liveData) },
@@ -1848,8 +1900,11 @@ export class SaveSystem {
     }
 
     runExclusiveSaveTransaction(callback) {
-        const manager = globalThis.navigator?.locks;
         const lockFailure = (reason) => immutableTransactionReceipt({ ok: false, reason });
+        if (this._saveParticipationDisposeRequested) {
+            return Promise.resolve(lockFailure('transaction-lock-unavailable'));
+        }
+        const manager = saveLocks(this);
         if (typeof callback !== 'function') {
             return Promise.resolve(lockFailure('transaction-callback-invalid'));
         }
