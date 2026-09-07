@@ -4,10 +4,10 @@
 evidence, and next action in the same PR as the work.
 
 **Last grounded:** 2026-09-07
-**Main baseline:** [`3efcbcf`](https://github.com/QemmHD/2dgamerepo/commit/3efcbcff85f4654236ca16375fd1d8075f6d770b) — merged Migration PR 1 [#208](https://github.com/QemmHD/2dgamerepo/pull/208), after architecture audit #207.
-**Implementation branch at grounding:** `codex/migration-pr2-lifetime`, based on `3efcbcf`; this tranche is platform/lifetime only, not a player update or Phaser integration.
+**Main baseline:** [`33d45b9`](https://github.com/QemmHD/2dgamerepo/commit/33d45b9d4e7aad34e56df701a28ee2a2e3e4d8e9) — merged Migration PR 2 [#209](https://github.com/QemmHD/2dgamerepo/pull/209), after #207/#208.
+**Implementation branch at grounding:** `codex/migration-pr3-bootstrap`, based on `33d45b9`; this tranche is an isolated WebGL bootstrap, not a gameplay port or default switch.
 **Latest player-feature commit on main:** [`9ac5435`](https://github.com/QemmHD/2dgamerepo/commit/9ac5435) — THE CLEAR VIGIL [#206](https://github.com/QemmHD/2dgamerepo/pull/206), after House V2/Ruin Bell [#205](https://github.com/QemmHD/2dgamerepo/pull/205), merged as `70b25e1`.
-**Ledger baseline before this tranche:** `3efcbcf`; when this file is on `main`, its containing commit is the newer ledger truth. Older candidate/status rows below retain their historical evidence and do not override this refreshed delivery header.
+**Ledger baseline before this tranche:** `33d45b9`; when this file is on `main`, its containing commit is the newer ledger truth. Older candidate/status rows below retain their historical evidence and do not override this refreshed delivery header.
 **1.1 foundation feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / merged [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
 **Product roadmap:** [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md)
 
@@ -16,7 +16,34 @@ actually shipped, what exists only on a working branch, what proof is missing, a
 what exact action should happen next. The roadmap owns product intent and scope; this
 file owns execution truth.
 
-## Current bounded tranche — migration PR 2
+## Current bounded tranche — migration PR 3
+
+Read [the implementation map, evidence and PR4 boundary](PHASER_MIGRATION_PR3.md).
+Phaser **4.2.1** is pinned to the official built ESM, SHA-256
+`f4c5fd140d118c10fa9090641a03c17303bab9bfdc28e0626296777db1bb1bde`,
+**1,377,611 bytes**, with original MIT license and immutable provenance.
+The explicit `phaser.html` creates one dormant real Game with isolated memory
+save/silent audio and a separate presentation-only WebGL scene under a transparent
+Canvas overlay. `index.html`, production imports, rules, saves and all five
+`?dev=1` Settings controls remain unchanged.
+
+Local candidate: ten real WebGL boot/render/dispose cycles and independent native
+listener/RAF/storage/lock probes pass; native context restore and a second
+lost-context disposal/late restore pass without resurrection. Backend is ANGLE
+SwiftShader (software correctness, not hardware performance). PR1's four JSON
+authorities and all old sources/validators remain unchanged; final **40/40 validators**,
+**214/214 syntax modules**, the new validator's **703 assertions**, and 12 browser
+baseline captures pass. Four classified failures, paused-import cancellation and
+pre-ready disposal pass after the independent 22-risk review's fixes, including
+the pinned SYSTEM_READY cleanup boundary. PR CI, merge, main CI, Pages and deployed
+smoke still own the final delivery decision; local success alone is not shipping.
+
+**Next action:** finish only PR3 verification/delivery, record its exact remote
+identities, then stop. PR4 requires a separate explicit request and owns the single
+simulation clock, real viewport/input and Canvas UI bridge. No product-roadmap
+milestone or unrelated First Light work is promoted by this infrastructure tranche.
+
+## Prior bounded tranche — migration PR 2 (merged)
 
 **Implementation/delivery record:** [PR #209](https://github.com/QemmHD/2dgamerepo/pull/209),
 feature `e0d257d`. PR checks, merge state and the post-merge delivery comment own
@@ -34,11 +61,12 @@ accesses. All four PR1 Node/browser baselines match unchanged, with 12 browser
 captures. Pending production lock cleanup honestly waits for the original host
 request; memory fixtures do not claim cross-tab concurrency proof.
 
-**Next action:** finish PR2's commit/PR/CI/squash/main-CI/Pages/hosted-smoke delivery,
-record its exact remote identities, then stop. PR3 requires a separate request;
-its audited scope is vendoring and an empty isolated experimental boot/harness,
-not renderer cutover. The unrelated First Light checkpoint and full 1.0–10.0
-product roadmap remain open and must not be resumed implicitly.
+PR2 is verified merged as `33d45b9`; main CI `34096901812` and Pages
+`34096901783` passed. Exact delivery is recorded in the
+[PR2 hosted-smoke receipt](https://github.com/QemmHD/2dgamerepo/pull/209#issuecomment-5567201210).
+Its separately requested successor is the PR3 tranche above. Preserve the PR2
+ownership seams; the unrelated First Light checkpoint and full 1.0–10.0 product
+roadmap remain open and must not be resumed implicitly.
 
 ## Prior bounded tranche — migration PR 1 (merged)
 
