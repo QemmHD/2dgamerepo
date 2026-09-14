@@ -1,6 +1,7 @@
 # Phaser migration PR4 — shared clock, retained overlay and viewport
 
-Status: locally validated candidate; hosted delivery still pending. PR5 is out of scope.
+Status: PR #211 feature passes full hosted CI; evidence checkpoint awaits final
+delivery. PR5 is out of scope. See the delivery record below before resuming.
 
 ## Pre-edit implementation map (2026-09-14)
 
@@ -197,12 +198,14 @@ Actual backend: **ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)
 (0x0000C0DE)), SwiftShader driver)**, WebGL1. This is software correctness evidence,
 not physical-phone, GPU throughput, thermal, battery or 120-Hz display acceptance.
 
-Local artifact directories (ignored, reproducible; CI uploads permanent run artifacts):
+Local artifact directories (ignored, reproducible; CI artifacts are retained 30 days):
 
 - `__out/pr4-before-baselines`: 12 pre-edit PR1 browser receipts.
 - `__out/pr4-before-phaser`: unchanged PR3 baseline suite.
 - `__out/pr4-integrated`: seven semantic/cadence captures, 12 projection captures,
   five behavior captures and their independent aggregate receipt.
+- `__out/pr4-final-integrated`: final repeat of that full suite plus all seven
+  staged visual captures; every case passes.
 - `__out/phaser-pr4-connected-lifetime-final`: public HOME/PLAY/gameplay/pause and
   production screenshots plus native lifecycle/failure/coexistence receipts.
 - `__out/pr4-projection`: original-resolution projection review wall.
@@ -261,9 +264,31 @@ node tools/artshot/verify-phaser-runtime.mjs --chrome=/path/to/chrome --base-url
 node tools/artshot/verify-phaser-clock-viewport.mjs --chrome=/path/to/chrome --base-url=http://127.0.0.1:8140/ --output=__out/phaser-clock-viewport
 ```
 
-PR, feature/final head, hosted CI, squash SHA, main CI, Pages and deployed smoke
-identities are pending and must be reconciled before this candidate is called
-shipped. No product-roadmap version milestone is promoted.
+### Hosted feature evidence and delivery record
+
+[PR #211](https://github.com/QemmHD/2dgamerepo/pull/211), feature head
+[`90e371c74f51377884c5117878857f04da4eba95`](https://github.com/QemmHD/2dgamerepo/commit/90e371c74f51377884c5117878857f04da4eba95),
+passes full [CI 34826739630](https://github.com/QemmHD/2dgamerepo/actions/runs/34826739630):
+41 validators, 224 syntax files, the complete old Canvas browser matrix, active
+Phaser lifetime/isolation and the new clock/viewport lane. No gate was removed.
+
+| Hosted artifact | ID | Observed result |
+| --- | --- | --- |
+| `phaser-runtime-receipts` | `10341025173` | 10 active cycles, zero owned resources after each disposal; independent HOME/PLAY/gameplay/pause image review passes. 120 transition frames include 115 gameplay frames / 230 transparent pixel samples; 40 menu samples are opaque. Native input handoff, production coexistence and all failure/context/cancellation paths pass. |
+| `phaser-clock-viewport-receipts` | `10341415371` | All four immutable semantic authorities, all 30/60/120/stall variants, 12 projection captures / 936 comparisons, five interrupted-state suites and seven staged visuals pass. Errors exactly match the projection table above. |
+
+Both downloaded JSON receipts report `passed: true`, zero experimental host
+storage/lock accesses and the same actual ANGLE/Vulkan SwiftShader backend recorded
+above. Original-resolution hosted screenshots are reviewed; software evidence is
+not a physical-device or performance claim. Canvas Collection/Ruin Bell artifacts
+remain attached to the same successful run.
+
+This documentation-only checkpoint must pass full CI before squash merge. The
+PR's final delivery comment records the exact final head/check, squash/main SHA,
+main CI, Pages and deployed smoke once observed. When this report is on main, its
+containing squash commit identifies the delivered change; do not amend it to
+predict its own future SHA. Verify that delivery comment before treating the
+checkpoint as shipped. No product-roadmap version milestone is promoted.
 
 ## Exact PR5 handoff / stop boundary
 

@@ -26,7 +26,7 @@ Renderer owns sizing/DPR/rotation/safe areas; Phaser mirrors its detached contra
 The native experiment panel owns a separate focus scope and never steals held
 input on key/pointer release. Saves stay memory-only; audio stays silent.
 
-Local candidate: **41 validators**, **716** PR3 guard checks, **3,460** PR4 guard
+Local and hosted feature: **41 validators**, **224 syntax files**, **716** PR3 guard checks, **3,460** PR4 guard
 assertions; all four immutable PR1 authorities match actual Phaser-hosted runs.
 Touch cadence 30/60/120 and a stalled frame match; hard catch-up cap **8** is
 preserved. Twelve native projection captures / **936** comparisons are below
@@ -41,10 +41,17 @@ use existing pause semantics when native experiment controls take focus. Existin
 public UI RNG use is documented: cadence parity uses PR1's final-only UI policy,
 not a new claim of universal deterministic public replays.
 
-**Delivery:** candidate, not yet shipped. Exact PR/head/CI/merge/main/Pages/smoke
-identities will be recorded in the PR4 report and delivery comment. The full old
-Canvas matrix and all 40 prior validators are preserved; the focused CI lane is
-additive. No art, rule/economy, default-entry, save-schema or `?dev=1` change.
+**Delivery checkpoint:** [PR #211](https://github.com/QemmHD/2dgamerepo/pull/211),
+feature `90e371c74f51377884c5117878857f04da4eba95`, passes full
+[CI 34826739630](https://github.com/QemmHD/2dgamerepo/actions/runs/34826739630).
+Hosted active-runtime artifact `10341025173` and clock/viewport artifact
+`10341415371` both pass, with original-resolution evidence review. The report
+indexes exact counts and limitations. This evidence-only head still needs full
+CI, squash merge, main CI, Pages and deployed smoke; the PR's final delivery
+comment records those observed identities. When on main, this containing squash
+commit is the updated implementation/ledger truth. The full old Canvas matrix
+and all 40 prior validators are preserved; the focused CI lane is additive.
+No art, rule/economy, default-entry, save-schema or `?dev=1` change.
 
 **Next action:** finish PR4 validation and delivery, then STOP. PR5 content work
 requires a separate explicit request; do not promote any product roadmap arc.
