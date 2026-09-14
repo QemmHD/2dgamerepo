@@ -3,11 +3,11 @@
 **Canonical handoff:** read this file before planning or editing; update status,
 evidence, and next action in the same PR as the work.
 
-**Last grounded:** 2026-09-07
-**Main baseline:** [`33d45b9`](https://github.com/QemmHD/2dgamerepo/commit/33d45b9d4e7aad34e56df701a28ee2a2e3e4d8e9) — merged Migration PR 2 [#209](https://github.com/QemmHD/2dgamerepo/pull/209), after #207/#208.
-**Implementation branch at grounding:** `codex/migration-pr3-bootstrap`, based on `33d45b9`; this tranche is an isolated WebGL bootstrap, not a gameplay port or default switch.
+**Last grounded:** 2026-09-14
+**Main baseline:** [`5e0881f`](https://github.com/QemmHD/2dgamerepo/commit/5e0881f47448bfa108021baad987c54f72ff8b98) — merged Migration PR 3 [#210](https://github.com/QemmHD/2dgamerepo/pull/210), after #207/#208/#209.
+**Implementation branch at grounding:** `codex/migration-pr4-clock-viewport`, based on `5e0881f`; this tranche connects one isolated simulation and retains Canvas UI, not a world-art port or default switch.
 **Latest player-feature commit on main:** [`9ac5435`](https://github.com/QemmHD/2dgamerepo/commit/9ac5435) — THE CLEAR VIGIL [#206](https://github.com/QemmHD/2dgamerepo/pull/206), after House V2/Ruin Bell [#205](https://github.com/QemmHD/2dgamerepo/pull/205), merged as `70b25e1`.
-**Ledger baseline before this tranche:** `33d45b9`; when this file is on `main`, its containing commit is the newer ledger truth. Older candidate/status rows below retain their historical evidence and do not override this refreshed delivery header.
+**Ledger baseline before this tranche:** `5e0881f`; when this file is on `main`, its containing commit is the newer ledger truth. Older candidate/status rows below retain their historical evidence and do not override this refreshed delivery header.
 **1.1 foundation feature commit / PR:** [`b06915e`](https://github.com/QemmHD/2dgamerepo/commit/b06915e) / merged [#186](https://github.com/QemmHD/2dgamerepo/pull/186)
 **Product roadmap:** [Ten Fires Roadmap](VERSION_ROADMAP_1_TO_10.md)
 
@@ -16,7 +16,40 @@ actually shipped, what exists only on a working branch, what proof is missing, a
 what exact action should happen next. The roadmap owns product intent and scope; this
 file owns execution truth.
 
-## Current bounded tranche — migration PR 3
+## Current bounded tranche — migration PR 4
+
+Read [the implementation map, results and PR5 boundary](PHASER_MIGRATION_PR4.md).
+One real Game now receives fixed updates from Phaser's raw PRE_STEP timestamp
+through the same GameLoop accumulator used by production. POST_RENDER draws the
+shared Canvas overlay; the lower WebGL scene remains diagnostic markers, not art.
+Renderer owns sizing/DPR/rotation/safe areas; Phaser mirrors its detached contract.
+The native experiment panel owns a separate focus scope and never steals held
+input on key/pointer release. Saves stay memory-only; audio stays silent.
+
+Local candidate: **41 validators**, **716** PR3 guard checks, **3,460** PR4 guard
+assertions; all four immutable PR1 authorities match actual Phaser-hosted runs.
+Touch cadence 30/60/120 and a stalled frame match; hard catch-up cap **8** is
+preserved. Twelve native projection captures / **936** comparisons are below
+**0.000072 CSS px**, with exact matching layer bounds. Five interrupted-state
+behavior suites exercise Focus, all freeze states, real memory-only death
+settlement and teardown; host storage/lock accesses remain **0**. Ten trusted
+public starts/disposals retain one live RAF and zero resources after teardown.
+Backend: ANGLE SwiftShader, correctness only; no physical-phone/performance claim.
+
+Confirmed ownership handoff fixes clear held keyboard/touch/photo drag state and
+use existing pause semantics when native experiment controls take focus. Existing
+public UI RNG use is documented: cadence parity uses PR1's final-only UI policy,
+not a new claim of universal deterministic public replays.
+
+**Delivery:** candidate, not yet shipped. Exact PR/head/CI/merge/main/Pages/smoke
+identities will be recorded in the PR4 report and delivery comment. The full old
+Canvas matrix and all 40 prior validators are preserved; the focused CI lane is
+additive. No art, rule/economy, default-entry, save-schema or `?dev=1` change.
+
+**Next action:** finish PR4 validation and delivery, then STOP. PR5 content work
+requires a separate explicit request; do not promote any product roadmap arc.
+
+## Prior bounded tranche — migration PR 3 (merged)
 
 Read [the implementation map, evidence and PR4 boundary](PHASER_MIGRATION_PR3.md).
 Phaser **4.2.1** is pinned to the official built ESM, SHA-256
@@ -46,10 +79,11 @@ ten clean cycles, four failures, cancellation/context probes and zero experiment
 native save/lock accesses. The final docs-only checkpoint CI, merge, main CI,
 Pages and deployed smoke still own delivery completion; PR CI alone is not shipping.
 
-**Next action:** finish only PR3 verification/delivery, record its exact remote
-identities, then stop. PR4 requires a separate explicit request and owns the single
-simulation clock, real viewport/input and Canvas UI bridge. No product-roadmap
-milestone or unrelated First Light work is promoted by this infrastructure tranche.
+**Delivery reconciliation:** PR #210 merged at `5e0881f47448bfa108021baad987c54f72ff8b98`;
+final PR CI `34103299809`, main CI `34103648897` and Pages `34103648886` passed.
+The [delivery comment](https://github.com/QemmHD/2dgamerepo/pull/210#issuecomment-5568196046)
+records deployed byte identity and browser smoke. The explicit subsequent PR4
+request supersedes only its next-action boundary, not its preserved evidence.
 
 ## Prior bounded tranche — migration PR 2 (merged)
 

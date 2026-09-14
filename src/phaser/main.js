@@ -18,7 +18,7 @@ const state = {
     errors: { exceptionCount: 0, unhandledRejectionCount: 0, contextLossCount: 0,
         contextRestoreCount: 0, webglErrorCount: 0 },
     failure: null,
-    measurements: { label: 'PR3 INFRASTRUCTURE MEASUREMENTS', artifactBytes: 1377611,
+    measurements: { label: 'PR4 DIAGNOSTIC INFRASTRUCTURE MEASUREMENTS', artifactBytes: 1377611,
         importMs: null, bootMs: null, firstFrameMs: null, initialHeapBytes: null, textureCount: 0 },
 };
 const listeners = [], restorers = [];
@@ -107,14 +107,26 @@ async function boot() {
         catch (error) { error.experimentClassification = 'isolated-save'; throw error; }
         denyHostAccess(window, 'localStorage', state.storage, 'hostStorageAccesses');
         denyHostAccess(navigator, 'locks', state.locks, 'hostLockAccesses');
-        // Stopped RAF alone does not disable Game's menu actions. Install ahead
-        // of all legacy handlers. No preventDefault: native Tab, scrolling,
-        // keyboard link activation and browser shortcuts keep working.
-        const quarantine = event => event.stopImmediatePropagation();
+        // Native shell focus is separate from the retained Canvas input scope.
+        // Canvas events flow once to existing handlers, never to Phaser input.
+        // No preventDefault here: links and native Tab keep browser behavior.
+        const nativeScope = event => {
+            const target = event.target;
+            const native = target?.closest?.('[data-native-shell]');
+            const canvas = document.getElementById('game');
+            if (native || ((event.type === 'keydown' || event.type === 'keyup') && target !== canvas)) {
+                if (['keydown', 'keyup', 'pointerdown', 'pointerup', 'mousedown', 'mouseup',
+                    'touchstart', 'touchend', 'touchcancel'].includes(event.type)) runtime?.releaseInput();
+                event.stopImmediatePropagation();
+            }
+        };
         for (const type of ['keydown', 'keyup', 'pointerdown', 'pointerup', 'mousedown', 'mouseup',
             'mousemove', 'touchstart', 'touchmove', 'touchend', 'touchcancel', 'wheel']) {
-            listen(window, type, quarantine, { capture: true, passive: true });
+            listen(window, type, nativeScope, { capture: true, passive: true });
         }
+        listen(window, 'focusin', event => {
+            if (event.target !== document.getElementById('game')) runtime?.releaseInput();
+        }, { capture: true });
         listen(window, 'error', () => {
             state.errors.exceptionCount++;
             fail(state.boot.frameRendered ? 'runtime-exception' : 'scene-boot');
@@ -136,16 +148,21 @@ async function boot() {
         catch (error) { error.experimentClassification = 'engine-import'; throw error; }
         state.measurements.importMs = performance.now() - start;
         if (disposing) return publish();
-        runtime = new module.PhaserRuntime({ stage: document.getElementById('experiment-stage'),
+        runtime = new module.PhaserRuntime({ stage: document.getElementById('stage'),
             state, memory, publish, onFailure: fail });
         await runtime.boot();
         if (disposing) return publish();
-        status.textContent = `PHASER ${state.phaserVersion} · WEBGL ACTIVE`;
-        detail.textContent = `RENDERER: ${state.renderer.identity} · SAVE: ISOLATED · SIMULATION: NOT CONNECTED`;
+        status.textContent = `ENGINE: PHASER ${state.phaserVersion} · WEBGL: ACTIVE · SIMULATION: CONNECTED`;
+        detail.textContent = 'WORLD VIEW: DIAGNOSTIC · SAVE: ISOLATED · Silent audio';
+        const info = document.getElementById('experiment-info');
+        info.querySelector('summary').textContent = 'PHASER RUNTIME EXPERIMENT · DIAGNOSTIC · PROGRESS IS NOT SAVED';
+        info.open = false;
         document.body.dataset.qaReady = 'true';
         document.documentElement.dataset.qaReady = '1';
         return publish();
     } catch (error) {
+        state.failureDetail = String(error.cause?.stack || error.stack || error);
+        document.body.dataset.error = state.failureDetail;
         fail(state.failure || error.experimentClassification || (disposing ? 'boot-cancelled' : 'scene-boot'), false);
         try { await dispose(); } catch { /* cleanup failure is already visible */ }
         return publish();

@@ -73,6 +73,9 @@ jobs:
       - name: Validate isolated experimental Phaser runtime
         run: node tools/validate-phaser-runtime.js
 
+      - name: Validate Phaser shared clock and viewport
+        run: node tools/validate-phaser-clock-viewport.js
+
       - name: Validate fair gambling economy and disclosures
         run: node tools/validate-gambling-economy.js
 
@@ -1282,6 +1285,28 @@ jobs:
         with:
           name: phaser-runtime-receipts
           path: __out/phaser-runtime/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Phaser fixed-clock semantic and viewport acceptance
+        run: |
+          set -e
+          python3 tools/artshot/serve.py 8911 . &
+          PR4_SERVER_PID=$!
+          trap 'kill "$PR4_SERVER_PID" 2>/dev/null || true' EXIT
+          sleep 1
+          CHROME=$(ls /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 || true)
+          CHROME=${CHROME:-$(command -v google-chrome || command -v chromium-browser || command -v chromium)}
+          node tools/artshot/verify-phaser-clock-viewport.mjs \
+            --chrome="$CHROME" --base-url=http://127.0.0.1:8911/ \
+            --output=__out/phaser-clock-viewport
+
+      - name: Upload Phaser clock and viewport receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phaser-clock-viewport-receipts
+          path: __out/phaser-clock-viewport/
           if-no-files-found: error
           retention-days: 30
 

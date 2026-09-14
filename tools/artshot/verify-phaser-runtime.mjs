@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Real-browser PR3 integration proof. No production runtime import, Canvas stub,
+// Real-browser PR3 lifetime/isolation gates retained through the PR4 connection.
+// No production runtime import, Canvas stub,
 // deterministic clock, or synthetic WebGL implementation is used here.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -57,25 +58,33 @@ function pngProof(png, expectedWidth, expectedHeight) {
             pixels[at] = (filtered[y * (stride + 1) + x + 1] + predictor) & 255;
         }
     }
-    let opaque = 0, nonBlack = 0, outer = 0, outerBackground = 0, center = 0, centerEmber = 0;
+    let opaque = 0, nonBlack = 0, background = 0, grid = 0, center = 0, centerPlayer = 0;
+    const gridRows = new Set(), gridColumns = new Set();
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
         const at = y * stride + x * channels;
         const [r, g, b] = pixels.subarray(at, at + 3);
         const alpha = channels === 4 ? pixels[at + 3] : 255;
         if (alpha >= 240) opaque++;
         if (r + g + b > 12) nonBlack++;
-        if (x < width * .2 || x > width * .8 || y < height * .2 || y > height * .8) {
-            outer++;
-            if (Math.abs(r - 21) <= 4 && Math.abs(g - 15) <= 4 && Math.abs(b - 24) <= 4 && alpha >= 240) outerBackground++;
+        if (Math.abs(r - 21) <= 4 && Math.abs(g - 15) <= 4 && Math.abs(b - 24) <= 4 && alpha >= 240) background++;
+        // The authored diagnostic grid is #392735. Allow MSAA edge blending,
+        // but reject the old PR3 center-only emblem: grid color must span the
+        // full framebuffer in both directions, independently of runtime data.
+        if (r >= 35 && r <= 65 && g >= 24 && g <= 50 && b >= 35 && b <= 65 && alpha >= 240) {
+            grid++;
+            gridRows.add(Math.min(7, Math.floor(y * 8 / height)));
+            gridColumns.add(Math.min(7, Math.floor(x * 8 / width)));
         }
         if (x > width * .3 && x < width * .7 && y > height * .3 && y < height * .7) {
             center++;
-            if (r > 170 && g > 70 && g < r && b < 150 && alpha >= 240) centerEmber++;
+            if (r > 170 && g > 70 && g < r && b < 150 && alpha >= 240) centerPlayer++;
         }
     }
-    const result = { width, height, opaque, nonBlack, outer, outerBackground, center, centerEmber,
+    const result = { width, height, opaque, nonBlack, background, grid,
+        gridRows: gridRows.size, gridColumns: gridColumns.size, center, centerPlayer,
         passed: opaque > width * height * .95 && nonBlack > width * height * .95
-            && outerBackground > outer * .95 && centerEmber > center * .02 };
+            && background > width * height * .85 && grid > width * height * .002
+            && gridRows.size === 8 && gridColumns.size === 8 && centerPlayer > center * .001 };
     assert.equal(result.passed, true, `independent PNG region proof ${JSON.stringify(result)}`);
     return result;
 }
@@ -281,8 +290,25 @@ function installBrowserProbe() {
     const label = (target) => target === window ? 'window' : target === document ? 'document'
         : target === window.visualViewport ? 'visualViewport'
             : `${target.constructor?.name || 'EventTarget'}${target.id ? `#${target.id}` : ''}`;
+    const overlayPixels = () => {
+        const canvas = document.getElementById('game');
+        const ctx = canvas?.getContext('2d');
+        if (!ctx) return null;
+        return [[300, 540], [1620, 540]].map(([x, y]) => ({ logical: [x, y],
+            rgba: Array.from(ctx.getImageData(Math.floor(x * canvas.width / 1920),
+                Math.floor(y * canvas.height / 1080), 1, 1).data) }));
+    };
     window.__phaserBrowserProbe = Object.freeze({
         async settle() { await new Promise((done) => raf(() => raf(done))); },
+        overlayPixels,
+        async overlayFrames(count) {
+            const result = [];
+            for (let index = 0; index < count; index++) {
+                await new Promise(done => raf(done));
+                result.push({ screen: window.__phaserExperiment.receipt().simulation.screen, pixels: overlayPixels() });
+            }
+            return result;
+        },
         selfCheck() {
             const active = () => records.filter((entry) => entry.active && !entry.signal?.aborted).length;
             const baseline = active(), pending = frames.size, checks = [];
@@ -356,7 +382,7 @@ function assertLive(receipt, probe, label) {
     assert.equal(receipt.boot.sceneReady, true);
     assert.equal(receipt.boot.frameRendered, true);
     assert.equal(receipt.boot.gameConstructed, true);
-    assert.equal(receipt.boot.simulationConnected, false);
+    assert.equal(receipt.boot.simulationConnected, true);
     assert.equal(receipt.boot.isolatedSave, true);
     assert.equal(receipt.boot.audioMode, 'silent-no-context');
     assert.equal(receipt.boot.physicsEnabled, false);
@@ -365,11 +391,16 @@ function assertLive(receipt, probe, label) {
     assert.equal(receipt.lifetime.disposed, false);
     assert.equal(receipt.lifetime.ownedSaveParticipants, 0);
     assert.equal(receipt.lifetime.canvasCount, 2);
-    assert.equal(receipt.simulation.time, 0);
-    assert.equal(receipt.simulation.screen, 'start');
-    assert.equal(receipt.simulation.updateCalls, 0);
-    assert.equal(receipt.simulation.renderCalls, 0);
-    assert.equal(receipt.simulation.loopRunning, false);
+    assert.ok(Number.isFinite(receipt.simulation.time) && receipt.simulation.time >= 0);
+    assert.ok(['start', 'gameplay', 'gameOver'].includes(receipt.simulation.screen));
+    assert.ok(receipt.simulation.updateCalls > 0, `${label}: shared fixed clock receives Phaser frames`);
+    assert.ok(receipt.simulation.renderCalls > 0, `${label}: retained overlay receives presented frames`);
+    assert.equal(receipt.simulation.loopRunning, true);
+    assert.equal(receipt.simulation.scheduler, 'external');
+    assert.equal(receipt.simulation.legacyRAFActive, false);
+    assert.equal(receipt.lifetime.phaserLoopRunning, true);
+    assert.equal(receipt.lifetime.phaserRAFRunning, true);
+    assert.equal(probe.pendingRAF, 1, `${label}: exactly one native browser-frame owner`);
     assert.equal(receipt.renderer.overlay.alpha, true, `${label}: transparent real Canvas overlay`);
     assert.match(receipt.renderer.overlay.background, /^(?:transparent|rgba\(0, 0, 0, 0\))$/);
     for (const key of ['x', 'y', 'width', 'height']) {
@@ -398,6 +429,8 @@ function assertDisposed(receipt, probe, label) {
     }
     assert.equal(receipt.lifetime.phaserLoopRunning, false);
     assert.equal(receipt.lifetime.phaserRAFRunning, false);
+    assert.equal(receipt.simulation.loopRunning, false);
+    assert.equal(Boolean(receipt.simulation.legacyRAFActive), false);
     assert.equal(probe.pendingRAF, 0, `${label}: pending native RAF`);
     assert.equal(probe.activeListenerCount, 0, `${label}: remaining listeners ${JSON.stringify(probe.activeListeners)}`);
     assert.equal(probe.canvases.length, 0);
@@ -503,13 +536,69 @@ async function main() {
         }
         async function key(connection, keyName, code, keyCode) {
             await connection.send('Input.dispatchKeyEvent', { type: 'keyDown', key: keyName, code,
-                windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode });
+                windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode,
+                ...(keyName === 'Enter' ? { text: '\r', unmodifiedText: '\r' } : {}) });
             await connection.send('Input.dispatchKeyEvent', { type: 'keyUp', key: keyName, code,
                 windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode });
         }
         async function screenshot(connection, name) {
             const result = await connection.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
             await writeFile(join(output, name), Buffer.from(result.data, 'base64'));
+        }
+        const stateAt = (connection, realm = 'window', stacks = false) => connection.evaluate(
+            `({receipt:${realm}.__phaserExperiment.receipt(),probe:${realm}.__phaserBrowserProbe.snapshot(${stacks})})`);
+        async function focusGame(connection, realm = 'window') {
+            await connection.send('Page.bringToFront');
+            await connection.evaluate(`${realm}.document.getElementById('game').focus()`);
+            assert.equal(await connection.evaluate(`${realm}.document.activeElement?.id`), 'game',
+                'existing Canvas owns experimental keyboard focus');
+        }
+        async function startTrustedRun(connection, realm = 'window', screenshotPrefix = null) {
+            await focusGame(connection, realm);
+            const home = await stateAt(connection, realm);
+            assert.equal(home.receipt.simulation.screen, 'start');
+            assert.equal(home.receipt.simulation.menuTab, 'home');
+            assert.equal(home.receipt.simulation.time, 0, 'fresh isolated profile has no running game time');
+            const homePixels = await connection.evaluate(`${realm}.__phaserBrowserProbe.overlayPixels()`);
+            assert.ok(homePixels.every(point => point.rgba[3] === 255), 'HOME retained menu is actually opaque in Canvas pixels');
+            await connection.evaluate(`${realm}.document.getElementById('experiment-info').open=false`);
+            if (screenshotPrefix) await screenshot(connection, `${screenshotPrefix}-home.png`);
+            await key(connection, 'Enter', 'Enter', 13);
+            const play = await until(() => stateAt(connection, realm),
+                value => value.receipt.simulation.screen === 'start' && value.receipt.simulation.menuTab === 'play',
+                'one trusted Enter opens PLAY without duplicate start');
+            assert.equal(play.receipt.simulation.time, 0);
+            const playPixels = await connection.evaluate(`${realm}.__phaserBrowserProbe.overlayPixels()`);
+            assert.ok(playPixels.every(point => point.rgba[3] === 255), 'PLAY retained menu is actually opaque in Canvas pixels');
+            if (screenshotPrefix) await screenshot(connection, `${screenshotPrefix}-play.png`);
+            await connection.evaluate(`void (${realm}.__overlayTransition=${realm}.__phaserBrowserProbe.overlayFrames(12))`);
+            await key(connection, 'Enter', 'Enter', 13);
+            const run = await until(() => stateAt(connection, realm),
+                value => value.receipt.simulation.screen === 'gameplay' && value.receipt.simulation.time > .05,
+                'second trusted Enter starts one isolated run');
+            await connection.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'd', code: 'KeyD',
+                windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 });
+            let moved;
+            try {
+                moved = await until(() => stateAt(connection, realm), value =>
+                    value.receipt.simulation.time >= run.receipt.simulation.time + .2
+                    && value.receipt.simulation.renderCalls >= run.receipt.simulation.renderCalls + 3
+                    && value.receipt.simulation.player.x > run.receipt.simulation.player.x + 1,
+                'trusted held movement advances through several real Phaser frames');
+            } finally {
+                await connection.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'd', code: 'KeyD',
+                    windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 });
+            }
+            assert.ok(moved.probe.trustedKeydowns >= home.probe.trustedKeydowns + 3,
+                'browser trusted keys reached the existing input realm');
+            const transition = await connection.evaluate(`${realm}.__overlayTransition`);
+            const gameplayFrames = transition.filter(value => value.screen === 'gameplay');
+            assert.ok(gameplayFrames.length >= 5, 'sample at least five actual presented gameplay frames');
+            assert.ok(gameplayFrames.every(value => value.pixels.every(point => point.rgba[3] === 0)),
+                'every sampled gameplay frame clears UI transparently, including run transition');
+            assertLive(moved.receipt, moved.probe, 'trusted live isolated run');
+            if (screenshotPrefix) await screenshot(connection, `${screenshotPrefix}-gameplay.png`);
+            return { home, play, run, moved, overlay: { homePixels, playPixels, transition } };
         }
         const production = await newPage(new URL('index.html', base).href);
         await until(async () => {
@@ -553,32 +642,70 @@ async function main() {
             const live = await harness.evaluate(`(async()=>{const w=${frame};await w.__phaserExperiment.ready;await w.__phaserBrowserProbe.settle();return {receipt:w.__phaserExperiment.receipt(),probe:w.__phaserBrowserProbe.snapshot()};})()`);
             report.currentCheck = { label: `cycle ${index + 1} live`, live };
             assertLive(live.receipt, live.probe, `cycle ${index + 1} live`);
+            const connectedRun = await startTrustedRun(harness, frame, index === 0 ? 'experimental' : null);
             if (index === 0) {
-                await harness.send('Page.bringToFront');
-                await harness.evaluate(`document.getElementById('experiment-frame').focus();${frame}.focus()`);
-                await key(harness, 'Enter', 'Enter', 13);
-                await key(harness, 'Enter', 'Enter', 13);
-                const afterKeys = await harness.evaluate(`({receipt:${frame}.__phaserExperiment.receipt(),probe:${frame}.__phaserBrowserProbe.snapshot()})`);
-                assert.ok(afterKeys.probe.trustedKeydowns >= 2, 'trusted Enter reaches experimental iframe realm');
-                assert.equal(afterKeys.receipt.simulation.screen, 'start', 'real Game must remain dormant after Enter twice');
-                assert.equal(afterKeys.receipt.simulation.time, 0);
-                assert.equal(afterKeys.receipt.simulation.updateCalls, 0);
-                assert.equal(afterKeys.receipt.simulation.renderCalls, 0);
-                assert.equal(afterKeys.receipt.simulation.loopRunning, false);
-                const detached = await harness.evaluate(`(()=>{const api=${frame}.__phaserExperiment;const a=api.receipt();a.boot.simulationConnected=true;a.storage.memoryWrites=-1;a.pixels.passed=false;const b=api.receipt();return !b.boot.simulationConnected&&b.storage.memoryWrites>=0&&b.pixels.passed;})()`);
+                const detached = await harness.evaluate(`(()=>{const api=${frame}.__phaserExperiment;const a=api.receipt();a.boot.simulationConnected=false;a.storage.memoryWrites=-1;a.pixels.passed=false;a.simulation.player.x=999999;const b=api.receipt();return b.boot.simulationConnected&&b.storage.memoryWrites>=0&&b.pixels.passed&&b.simulation.player.x!==999999;})()`);
                 assert.equal(detached, true, 'receipt mutation cannot alias live runtime state');
-                report.experimentalTrustedKeys = afterKeys;
+                report.experimentalTrustedKeys = connectedRun;
+                await key(harness, 'p', 'KeyP', 80);
+                const pausedState = await until(() => stateAt(harness, frame), value => value.receipt.simulation.paused,
+                    'trusted pause key');
+                await harness.evaluate(`${frame}.__phaserBrowserProbe.settle()`);
+                const stillPaused = await stateAt(harness, frame);
+                assert.equal(stillPaused.receipt.simulation.time, pausedState.receipt.simulation.time,
+                    'manual pause freezes game time while Phaser remains frame owner');
+                assertLive(stillPaused.receipt, stillPaused.probe, 'paused live runtime');
+                await screenshot(harness, 'experimental-pause.png');
+                await key(harness, 'p', 'KeyP', 80);
+                await until(() => stateAt(harness, frame), value => !value.receipt.simulation.paused
+                    && value.receipt.simulation.time > stillPaused.receipt.simulation.time, 'trusted resume key');
+                report.pauseResume = { paused: pausedState, frozen: stillPaused };
+                // A release targets the newly focused native control, not the
+                // Canvas which saw keydown. Prove the ownership handoff clears
+                // held state rather than merely hiding a stuck key behind pause.
+                const beforeHandoff = await stateAt(harness, frame);
+                await harness.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'd', code: 'KeyD',
+                    windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 });
+                await until(() => stateAt(harness, frame), value =>
+                    value.receipt.simulation.player.x > beforeHandoff.receipt.simulation.player.x + 1,
+                'held key moves before native focus handoff');
+                await harness.evaluate(`${frame}.document.querySelector('[data-native-shell] summary').focus()`);
+                await harness.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'd', code: 'KeyD',
+                    windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68 });
+                const handedOff = await stateAt(harness, frame);
+                assert.equal(handedOff.receipt.simulation.paused, true, 'native focus safely pauses live input ownership');
+                await harness.evaluate(`${frame}.__phaserBrowserProbe.settle()`);
+                const idleNative = await stateAt(harness, frame);
+                assert.deepEqual(idleNative.receipt.simulation.player, handedOff.receipt.simulation.player,
+                    'release outside Canvas cannot keep moving while native control owns focus');
+                await key(harness, 'Enter', 'Enter', 13);
+                report.nativeShellAfterEnter = await harness.evaluate(`({open:${frame}.document.getElementById('experiment-info').open,
+                    tag:${frame}.document.activeElement?.tagName,id:${frame}.document.activeElement?.id})`);
+                assert.equal(report.nativeShellAfterEnter.open, true, 'trusted native Enter expands experiment details');
                 await key(harness, 'Tab', 'Tab', 9);
                 const nativeTabTarget = await harness.evaluate(`${frame}.document.activeElement?.id`);
-                assert.equal(nativeTabTarget, 'canvas-link', 'input quarantine preserves native keyboard link focus');
+                assert.equal(nativeTabTarget, 'canvas-link', 'native shell Enter/Tab works without Canvas gameplay ownership');
                 report.experimentalNativeTabTarget = nativeTabTarget;
+                assert.equal((await stateAt(harness, frame)).receipt.simulation.screen, 'gameplay',
+                    'native shell Enter does not invoke a Canvas menu action');
+                await harness.evaluate(`${frame}.document.getElementById('experiment-info').open=false`);
+                await focusGame(harness, frame);
+                await key(harness, 'p', 'KeyP', 80);
+                const afterHandoffResume = await until(() => stateAt(harness, frame), value =>
+                    !value.receipt.simulation.paused && value.receipt.simulation.time > handedOff.receipt.simulation.time + .15,
+                'explicit resume after native focus handoff');
+                assert.deepEqual(afterHandoffResume.receipt.simulation.player, handedOff.receipt.simulation.player,
+                    'resuming without a fresh movement press cannot revive the released key');
+                report.nativeInputHandoff = { before: beforeHandoff, handedOff, idleNative, resumed: afterHandoffResume };
                 report.resizes = [];
                 for (const size of [{ width: 960, height: 640 }, { width: 1280, height: 720 }]) {
                     await harness.send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 1, mobile: false });
                     await until(() => harness.evaluate(`(()=>{const w=${frame};return {viewport:w.innerWidth,
-                        stage:w.document.getElementById('experiment-stage').getBoundingClientRect().width,
+                        stage:w.document.getElementById('stage').getBoundingClientRect().width,
+                        contract:w.__phaserExperiment.receipt().viewport,
                         canvas:w.__phaserExperiment.receipt().renderer.cssViewport.width};})()`),
-                    (value) => value.viewport === size.width && value.stage > 0 && Math.abs(value.canvas - value.stage) < 1
+                    (value) => value.viewport === size.width && value.stage > 0
+                        && Math.abs(value.canvas - value.contract.cssWidth) < 1
                         && (size.width === 960 ? value.canvas < live.receipt.renderer.cssViewport.width - 1
                             : Math.abs(value.canvas - live.receipt.renderer.cssViewport.width) < 1),
                     `actual experiment resize ${size.width}`);
@@ -587,24 +714,58 @@ async function main() {
                     assertLive(resized.receipt, resized.probe, `resized ${size.width}x${size.height}`);
                     for (const key of ['width', 'height']) {
                         const canvasKey = key === 'width' ? 'canvasWidth' : 'canvasHeight';
-                        assert.ok(Math.abs(resized.receipt.renderer[canvasKey] - resized.receipt.renderer.cssViewport[key]) <= 1);
+                        const backingKey = key === 'width' ? 'backingWidth' : 'backingHeight';
+                        assert.equal(resized.receipt.renderer[canvasKey], resized.receipt.viewport[backingKey]);
                         assert.equal(resized.receipt.renderer.overlay[key], resized.receipt.renderer[canvasKey]);
                     }
                     report.resizes.push({ viewport: size, ...resized });
                 }
+                // Photo drag lives in the real Game controller. Releasing over
+                // native chrome must not leave its mouse-drag origin latched.
+                // Compare the actual stable diagnostic framebuffer, not a test
+                // copy of private Game/camera state or an exposed engine object.
+                await key(harness, 'c', 'KeyC', 67);
+                await harness.evaluate(`${frame}.__phaserBrowserProbe.settle()`);
+                const beforePhotoDrag = await harness.evaluate(`${frame}.__phaserExperiment.capture()`);
+                await harness.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 640, y: 360,
+                    button: 'left', buttons: 1, clickCount: 1 });
+                await harness.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 410, buttons: 1 });
+                await harness.evaluate(`${frame}.__phaserBrowserProbe.settle()`);
+                const duringPhotoDrag = await harness.evaluate(`${frame}.__phaserExperiment.capture()`);
+                assert.notEqual(duringPhotoDrag, beforePhotoDrag, 'trusted held photo drag moves diagnostic camera');
+                const nativePoint = await harness.evaluate(`(()=>{const r=${frame}.document.querySelector('[data-native-shell] summary').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+                await harness.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...nativePoint,
+                    button: 'left', buttons: 0, clickCount: 1 });
+                await harness.evaluate(`${frame}.__phaserBrowserProbe.settle()`);
+                const releasedPhotoDrag = await harness.evaluate(`${frame}.__phaserExperiment.capture()`);
+                await harness.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 760, y: 450, buttons: 0 });
+                await harness.evaluate(`${frame}.__phaserBrowserProbe.settle()`);
+                const afterReleasedPhotoDrag = await harness.evaluate(`${frame}.__phaserExperiment.capture()`);
+                assert.equal(afterReleasedPhotoDrag, releasedPhotoDrag,
+                    'unheld mousemove after native release cannot keep panning photo camera');
+                report.photoInputHandoff = { heldDragMovedFramebuffer: true, releasedDragStayedStill: true };
+                await focusGame(harness, frame);
+                await key(harness, 'c', 'KeyC', 67);
+                if ((await stateAt(harness, frame)).receipt.simulation.paused) await key(harness, 'p', 'KeyP', 80);
                 await screenshot(harness, 'harness-live.png');
                 const during = await production.evaluate('window.__phaserBrowserProbe.hostState()');
                 assert.deepEqual(participants(during), participants(before), 'experiment cannot join production save participation');
                 assert.equal(during.save, before.save, 'experiment cannot alter production save bytes');
                 report.production.during = during;
             }
+            if (index === 1) {
+                await key(harness, 'p', 'KeyP', 80);
+                await until(() => stateAt(harness, frame), value => value.receipt.simulation.paused,
+                    'lifetime disposal while manually paused');
+            }
             const disposed = await harness.evaluate(`(async()=>{const w=${frame};const first=w.__phaserExperiment.dispose();const second=w.__phaserExperiment.dispose();const samePromise=first===second;await first;await w.__phaserBrowserProbe.settle();return {samePromise,receipt:w.__phaserExperiment.receipt(),probe:w.__phaserBrowserProbe.snapshot(true)};})()`);
             report.currentCheck = { label: `cycle ${index + 1} disposed`, disposed };
             assert.equal(disposed.samePromise, true, `cycle ${index + 1}: cached dispose promise`);
             assertDisposed(disposed.receipt, disposed.probe, `cycle ${index + 1} disposed`);
-            report.cycles.push({ index: index + 1, live, disposed });
+            report.cycles.push({ index: index + 1, live, connectedRun,
+                disposalState: index === 1 ? 'paused' : 'active-gameplay', disposed });
             delete report.currentCheck;
-            console.log(`PASS Phaser browser cycle ${index + 1}/10: actual WebGL pixels; zero disposed listeners/RAF/canvases/participants`);
+            console.log(`PASS Phaser browser cycle ${index + 1}/10: trusted start/movement, connected simulation; zero disposed listeners/RAF/canvases/participants`);
             if (index < 9) await harness.evaluate('window.__phaserHarness.cycle()');
         }
         await harness.evaluate('window.__phaserHarness.dispose()');
@@ -613,6 +774,8 @@ async function main() {
         const experiment = await newPage(new URL('phaser.html', base).href);
         await until(() => experiment.evaluate('!!window.__phaserExperiment?.ready'), Boolean, 'direct Phaser public API');
         await experiment.evaluate('window.__phaserExperiment.ready');
+        await experiment.evaluate('window.__phaserBrowserProbe.settle()');
+        report.directTrustedRun = await startTrustedRun(experiment);
         const direct = await experiment.evaluate('({receipt:window.__phaserExperiment.receipt(),probe:window.__phaserBrowserProbe.snapshot()})');
         assertLive(direct.receipt, direct.probe, 'actual phaser.html');
         await screenshot(experiment, 'phaser-live.png');
@@ -739,10 +902,10 @@ async function main() {
                 receipt:window.__phaserExperiment.receipt(),probe:window.__phaserBrowserProbe.snapshot(true)};
         })()`);
         report.cancelBeforeEngineReady = earlyResult;
-        assert.equal(earlyResult.before.boot.gameConstructed, true);
+        assert.equal(earlyResult.before.boot.gameConstructed, false);
         assert.equal(earlyResult.before.boot.sceneReady, false);
         assert.equal(earlyResult.before.boot.frameRendered, false);
-        assert.equal(earlyResult.before.lifetime.activeGameCount, 1);
+        assert.equal(earlyResult.before.lifetime.activeGameCount, 0);
         assert.equal(earlyResult.cached, true);
         assert.ok(earlyResult.results.every((result) => result.status === 'fulfilled'), JSON.stringify(earlyResult.results));
         assertDisposed(earlyResult.receipt, earlyResult.probe, 'dispose before engine default textures/READY');

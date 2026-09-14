@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// The 40th gate: an isolated empty-engine shell, not gameplay/renderer parity.
-// Existing production and PR1 authorities are immutable against the PR2 base.
+// The 40th gate retains PR3 engine, isolation, lifetime and authority guards.
+// PR4's four reviewed shared seams are behaviorally checked by the 41st gate;
+// all unrelated production sources and PR1 authorities remain immutable.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -14,6 +15,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = '33d45b9d4e7aad34e56df701a28ee2a2e3e4d8e9';
 const PHASER_VERSION = '4.2.1';
 const PHASER_COMMIT = '41be1e462bc600064e498cba370bfa8c5c055a22';
+const PR4_GATE = 'tools/validate-phaser-clock-viewport.js';
+// Not a blanket src/ exemption: these are the exact four files authorized for
+// shared frame, input-ownership, overlay and viewport seams in PR4.
+const REVIEWED_SHARED_SEAMS = new Set([
+    'src/core/GameLoop.js', 'src/core/Game.js', 'src/core/GameRender.js', 'src/systems/Renderer.js',
+]);
 // Independently pinned after reading the approved tagged files. These are raw
 // artifact SHA-256 values, not Git blob ids or npm package-tarball integrity.
 const VENDOR = 'src/vendor/phaser/4.2.1';
@@ -180,19 +187,35 @@ const protectedPaths = new Set(basePaths.filter((path) => path.startsWith('src/'
     || path.startsWith('docs/evidence/phaser-migration/')));
 const changedPaths = git('diff', '--name-only', BASE, '--', 'src', 'index.html', 'styles.css',
     'site.webmanifest', 'tools', 'docs/evidence/phaser-migration').split('\n').filter(Boolean);
-same(changedPaths.filter((path) => protectedPaths.has(path)), [],
-    'all existing src/assets, production shell, 39 gates and PR1 authorities remain unchanged');
+same(changedPaths.filter((path) => protectedPaths.has(path) && !REVIEWED_SHARED_SEAMS.has(path)), [],
+    'all unrelated src/assets, production shell, 39 original gates and PR1 authorities remain unchanged');
+same([...REVIEWED_SHARED_SEAMS].sort(), [
+    'src/core/Game.js', 'src/core/GameLoop.js', 'src/core/GameRender.js', 'src/systems/Renderer.js',
+], 'only the four individually reviewed PR4 shared seams may differ from the audited base');
+check(existsSync(resolve(ROOT, PR4_GATE)), 'approved seam exceptions require the permanent PR4 behavioral gate');
 for (const path of protectedPaths) check(existsSync(resolve(ROOT, path)), `protected authority exists: ${path}`);
 same(readdirSync(resolve(ROOT, 'tools')).filter((name) => /^validate-[^/]+\.js$/.test(name)).length,
-    40, 'PR3 adds exactly one top-level validator');
+    41, 'PR4 adds exactly one top-level validator and retains all 40 prior gates');
 for (const name of ['package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock',
     'pnpm-lock.yaml', 'bun.lock', 'bun.lockb']) {
     check(!existsSync(resolve(ROOT, name)), `no package-manager/build switch: ${name}`);
 }
 const ciSource = text('.github/workflows/ci.yml');
-for (const path of [...oldValidators, 'tools/validate-phaser-runtime.js']) {
+for (const path of [...oldValidators, 'tools/validate-phaser-runtime.js', PR4_GATE]) {
     check(ciSource.includes(`run: node ${path}`), `CI retains the executable gate: ${path}`);
 }
+function workflowStep(source, name) {
+    const normalized = source.replace(/\r\n/g, '\n');
+    const start = normalized.indexOf(`      - name: ${name}\n`);
+    check(start >= 0, `CI retains named step: ${name}`);
+    const end = normalized.indexOf('\n      - name:', start + 1);
+    return normalized.slice(start, end < 0 ? undefined : end).trimEnd();
+}
+same(workflowStep(ciSource, 'Harness smoke (EXC 0, enemies alive)'),
+    workflowStep(git('show', `${BASE}:.github/workflows/ci.yml`), 'Harness smoke (EXC 0, enemies alive)'),
+    'the complete production Canvas browser matrix, flags and acceptance checks remain unchanged');
+check(/verify-phaser-runtime\.mjs/.test(ciSource) && /phaser-runtime-receipts/.test(ciSource),
+    'the independent real WebGL lifetime/isolation lane and durable receipts remain in CI');
 
 // Tagged, same-origin built ESM and its complete original license. Hash checks
 // are independent of the adjacent provenance manifest, so changing both cannot
@@ -250,12 +273,12 @@ for (const path of basePaths.filter((path) => path.startsWith('src/') && path.en
 check(!/phaser\.html|src\/phaser|src\/vendor/i.test(text('index.html') + text('site.webmanifest')),
     'default entry, manifest and production links do not activate the experiment');
 
-// These source checks lock the zero-simulation integration choices; the separate
-// CDP browser gate proves actual WebGL pixels, input quarantine and teardown.
-// Static configuration is not represented as device or gameplay parity proof.
+// These source checks retain ownership and isolation while admitting PR4's
+// reviewed simulation connection. Separate behavioral and CDP gates prove
+// actual clock/input/viewport parity, WebGL pixels and teardown.
 for (const path of ['phaser.html', 'src/phaser/main.js', 'src/phaser/PhaserRuntime.js',
     'src/phaser/WorldScene.js']) {
-    check(existsSync(resolve(ROOT, path)), `required PR3 shell exists: ${path}`);
+    check(existsSync(resolve(ROOT, path)), `required isolated Phaser shell exists: ${path}`);
 }
 const entry = text('phaser.html');
 const main = text('src/phaser/main.js');
@@ -268,8 +291,8 @@ check(/type=["']module["']/.test(entry) && /PROGRESS IS NOT SAVED/.test(entry)
 check(/href=["']\.\/index\.html["']/.test(entry) && /OPEN CANVAS VERSION/.test(entry),
     'failure recovery is an explicit relative Canvas navigation link');
 check(!/src=["'][^"']*src\/main\.js/.test(entry)
-    && !/href=["'](?:\.\/)?styles\.css/.test(entry),
-'experiment does not execute production boot or replace its stylesheet');
+    && /href=["']\.\/src\/phaser\/experiment\.css["']/.test(entry),
+'experiment has its own boot and scoped stylesheet; immutable production viewport CSS may be reused');
 check(/name=["']robots["'][^>]+content=["']noindex["']/.test(entry),
     'experimental page is not presented as an indexed replacement game');
 
@@ -306,28 +329,38 @@ check(/physics\s*:\s*\{\s*default\s*:\s*false/.test(runtime),
 for (const device of ['keyboard', 'mouse', 'touch', 'gamepad', 'windowEvents']) {
     check(new RegExp(`\\b${device}\\s*:\\s*false`).test(runtime), `Phaser input is disabled: ${device}`);
 }
-check(!/\bthis\.game\.(?:update|render|_startRun|_enterGameOver|_enterWin)\s*\(/.test(runtime)
-    && !/\bthis\.loop\.start\s*\(/.test(runtime),
-'no simulation, gameplay rendering, terminal reward or legacy-clock invocation is connected');
-check(/this\.game\.update\s*=/.test(runtime) && /simulation\.updateCalls\+\+/.test(runtime)
-    && /this\.game\.render\s*=/.test(runtime) && /simulation\.renderCalls\+\+/.test(runtime),
-'dormant Game update/render have counted failure tripwires, not fake success callbacks');
+check(!/\bthis\.game\.(?:render|_startRun|_enterGameOver|_enterWin)\s*\(/.test(runtime)
+    && !/\bthis\.loop\.start\s*\(/.test(runtime)
+    && !/\brequestAnimationFrame\s*\(/.test(runtime),
+'the adapter neither draws the legacy world nor invokes terminal rewards nor starts another browser scheduler');
+check(/new\s+GameLoop\s*\(\s*\{\s*update\s*:\s*dt\s*=>/.test(runtime)
+    && /simulation\.updateCalls\+\+/.test(runtime) && /this\.game\.update\(dt\)/.test(runtime)
+    && /this\.game\.renderOverlay\(\)/.test(runtime) && /simulation\.renderCalls\+\+/.test(runtime)
+    && !/this\.game\.update\s*=/.test(runtime),
+'the shared fixed loop invokes the real update and retained overlay, with real observation counters');
+check(/Phaser\.Core\.Events\.PRE_STEP,\s*timestamp\s*=>\s*this\.beforeFrame\(timestamp\)/.test(runtime)
+    && /this\.loop\.processFrame\(timestamp\)/.test(runtime)
+    && /Phaser\.Core\.Events\.POST_RENDER/.test(runtime) && /this\.loop\.renderFrame\(this\.frame\)/.test(runtime)
+    && /this\.loop\.startExternal\(performance\.now\(\)\)/.test(runtime),
+'Phaser hosts raw timestamp fixed updates before world rendering and the overlay afterwards');
 for (const field of ['time', 'screen', 'loopRunning']) {
     check(new RegExp(`s\\.simulation\\.${field}\\s*=`).test(runtime),
-        `receipt samples actual dormant runtime state: simulation.${field}`);
+        `receipt samples actual connected runtime state: simulation.${field}`);
 }
 const sceneImports = [...scene.matchAll(/\bfrom\s*["']([^"']+)["']/g)].map((match) => match[1]);
-same(sceneImports, ['../vendor/phaser/4.2.1/phaser.esm.min.js'],
-    'thin verification scene imports no gameplay, save or content systems');
-check(!/\.(?:gainXP|takeDamage|addCoins|recordRun|_startRun)\s*\(/.test(scene),
-    'verification primitives do not own gameplay or reward actions');
+check(sceneImports.every(specifier => [
+    '../vendor/phaser/4.2.1/phaser.esm.min.js', '../systems/ViewportContract.js',
+].includes(specifier)), 'diagnostic scene imports only pinned Phaser and the shared presentation contract');
+check(!/\.(?:gainXP|takeDamage|addCoins|recordRun|_startRun|processFrame|startExternal)\s*\(/.test(scene),
+    'diagnostic primitives do not own simulation scheduling, gameplay or reward actions');
 
 check(main.includes("import { detachReceipt } from './Receipt.js'")
     && /detachReceipt\(state\)/.test(main) && /return\s+detachReceipt\(result\)/.test(main),
 'public receipt publication uses the dynamically tested strict detached JSON helper');
 check(/simulationConnected\s*:\s*false/.test(main)
+    && inSourceOrder(runtime, [/this\.loop\.startExternal\(/, /this\.state\.boot\.simulationConnected\s*=\s*true/])
     && /phaserInputDrivesSimulation\s*:\s*false/.test(main),
-'receipt explicitly disclaims simulation and input integration');
+'receipt reports simulation connected only after the external clock starts; Phaser input stays disabled');
 const bootStart = main.indexOf('async function boot() {');
 const publicApiStart = main.indexOf('window.__phaserExperiment =');
 const disposeStart = main.indexOf('function dispose() {');
@@ -379,10 +412,15 @@ check(!inSourceOrder(disposeSource.replace(/await\s+loadingTask\s*;/, ''), dispo
 check(/key\s*===\s*'localStorage'\s*&&\s*engineImportOnly/.test(main)
     && /engineMemoryFacadeAccesses\+\+/.test(main),
 'the unmodified vendor import-only feature probe receives counted memory, never the native storage getter');
-check(/event\.stopImmediatePropagation\(\)/.test(main)
+check(/target\?\.closest\?\.\(['"]\[data-native-shell\]['"]\)/.test(main)
+    && /if\s*\(native\s*\|\|[\s\S]*?target\s*!==\s*canvas[\s\S]*?event\.stopImmediatePropagation\(\)/.test(main)
     && /capture\s*:\s*true/.test(main) && /['"]keydown['"]/.test(main)
-    && !/event\.preventDefault\s*\(/.test(main),
-'early quarantine blocks legacy game actions while preserving native link and Tab defaults');
+    && !/event\.preventDefault\s*\(/.test(main) && !/const\s+quarantine\s*=/.test(main),
+'native shell targets keep native defaults while Canvas-owned events can reach the existing input once');
+for (const device of ['KeyboardInput', 'TouchJoystick', 'TouchButtons', 'Input']) {
+    same((runtime.match(new RegExp(`new\\s+${device}\\s*\\(`, 'g')) ?? []).length, 1,
+        `exactly one retained input owner is constructed: ${device}`);
+}
 check(/PHASER EXPERIMENT FAILED/.test(main) && /engine-import/.test(main)
     && /OPEN CANVAS VERSION/.test(main), 'import/runtime failures remain explicit instead of silently booting Canvas');
 check(/if\s*\(disposeTask\)\s*return\s+disposeTask/.test(main)
@@ -392,6 +430,9 @@ check(/this\.phaser\.destroy\(true,\s*false\)/.test(runtime)
     && /this\.phaser\.step\(performance\.now\(\),\s*0\)/.test(runtime)
     && /resource\.dispose\(\)/.test(runtime),
 'teardown drains pinned deferred engine destruction and every explicitly owned legacy service');
+check(/this\.connectionTask\s*=\s*this\.connectSimulation\(\)/.test(runtime)
+    && /await\s+this\.connectionTask/.test(runtime.slice(runtime.indexOf('dispose() {'))),
+'disposal also joins late Game/asset preparation before the public entry can restore native host guards');
 check(/removeEventListener/.test(main) && /restorers\.reverse\(\)/.test(main)
     && /removeEventListener/.test(runtime) && /this\.worldCanvas\?\.remove\(\)/.test(runtime)
     && /this\.overlay\?\.remove\(\)/.test(runtime),

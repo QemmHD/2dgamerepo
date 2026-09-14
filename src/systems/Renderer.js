@@ -1,14 +1,19 @@
 import { INTERNAL_WIDTH, INTERNAL_HEIGHT, BACKGROUND_COLOR, RENDER } from '../config/GameConfig.js';
 
 export class Renderer {
-    constructor(canvasEl) {
+    constructor(canvasEl, { alpha = false, frameSource = 'raf' } = {}) {
+        if (frameSource !== 'raf' && frameSource !== 'external') throw new TypeError('Unknown Renderer frame source');
         this._disposed = false;
+        this._frameSource = frameSource;
+        this._viewportSubscribers = new Set();
+        this._viewportSnapshot = null;
+        this._viewportVersion = 0;
         this._listeners = [];
         this._resizeFrameId = null;
         this._hintFrameId = null;
         this._cancelFrame = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame.bind(globalThis) : null;
         this.canvas = canvasEl;
-        this.ctx = canvasEl.getContext('2d', { alpha: false });
+        this.ctx = canvasEl.getContext('2d', { alpha });
         this.internalWidth = INTERNAL_WIDTH;
         this.internalHeight = INTERNAL_HEIGHT;
 
@@ -38,6 +43,9 @@ export class Renderer {
         this._onResize = () => {
             if (this._disposed || this._resizeQueued) return;
             this._resizeQueued = true;
+            // The experimental host supplies its own presentation frame. It
+            // also services resize/hint work, so Renderer owns no second RAF.
+            if (this._frameSource === 'external') return;
             const run = () => {
                 this._resizeFrameId = null;
                 this._resizeQueued = false;
@@ -72,6 +80,7 @@ export class Renderer {
         this._resizeQueued = false;
         this._hintHideAt = 0;
         this.onOrientationChange = null;
+        this._viewportSubscribers.clear();
         // The boot owner owns the Canvas and its DOM; never remove or hide it.
     }
 
@@ -165,6 +174,53 @@ export class Renderer {
 
         this._computeSafeArea(winW, winH);
         this._updateRotateHint();
+        const rect = this.canvas.getBoundingClientRect();
+        this._viewportSnapshot = {
+            version: ++this._viewportVersion,
+            logicalWidth: this.internalWidth, logicalHeight: this.internalHeight,
+            cssWidth: this.cssWidth, cssHeight: this.cssHeight,
+            backingWidth: this.canvas.width, backingHeight: this.canvas.height,
+            requestedDpr: raw, effectiveDpr: this.dpr, dprCap: this._dprCap,
+            logicalToBackingScale: this.scale,
+            fitMode: cropFrac <= RENDER.maxCoverCrop ? 'cover' : 'contain',
+            coverCrop: cropFrac <= RENDER.maxCoverCrop ? cropFrac : 0,
+            orientation: winH > winW ? 'portrait' : 'landscape',
+            rotated: this.rotated, nativeLandscapeLocked: this._lockedLandscape,
+            safeInsets: { ...this.safeArea }, safeInsetsCss: { ...this._safeInsetsCss },
+            cssBounds: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+            stage: { width: winW, height: winH, rotationDegrees: this.rotated ? 90 : 0,
+                transformOrigin: 'center center' },
+        };
+        for (const callback of this._viewportSubscribers) callback(this.getViewportSnapshot());
+    }
+
+    // All fields are presentation values, never live DOM/Canvas objects.
+    getViewportSnapshot() {
+        return this._viewportSnapshot ? JSON.parse(JSON.stringify(this._viewportSnapshot)) : null;
+    }
+
+    subscribeViewport(callback) {
+        if (typeof callback !== 'function') throw new TypeError('Viewport subscriber must be a function');
+        if (this._disposed) return () => {};
+        // Independent registration identity prevents an old unsubscribe from
+        // removing a newer registration of the same callback.
+        const notify = snapshot => callback(snapshot);
+        this._viewportSubscribers.add(notify);
+        try { if (this._viewportSnapshot) notify(this.getViewportSnapshot()); }
+        catch (error) { this._viewportSubscribers.delete(notify); throw error; }
+        return () => this._viewportSubscribers.delete(notify);
+    }
+
+    processPresentationFrame(timestamp) {
+        if (this._disposed || this._frameSource !== 'external') return;
+        if (this._resizeQueued) {
+            this._resizeQueued = false;
+            this.resize();
+        }
+        if (this.rotated && this._hintHideAt > 0 && timestamp >= this._hintHideAt) {
+            this._hintEl?.classList?.add('hidden');
+            this._hintHideAt = 0;
+        }
     }
 
     _computeSafeArea(winW, winH) {
@@ -175,6 +231,7 @@ export class Renderer {
         const insetRight = readPx('--sai-right');
         const insetBottom = readPx('--sai-bottom');
         const insetLeft = readPx('--sai-left');
+        this._safeInsetsCss = { top: insetTop, right: insetRight, bottom: insetBottom, left: insetLeft };
 
         const internalPerCss = this.internalWidth / Math.max(1, this.cssWidth);
 
@@ -220,20 +277,25 @@ export class Renderer {
         };
     }
 
-    beginFrame() {
+    beginFrame({ transparent = false } = {}) {
         if (this._disposed) return false;
         if (this.canvas.width === 0 || this.canvas.height === 0 || this.scale === 0) {
             return false;
         }
         const ctx = this.ctx;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = BACKGROUND_COLOR;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        if (transparent) ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        else {
+            ctx.fillStyle = BACKGROUND_COLOR;
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
         ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         return true;
     }
+
+    beginOverlayFrame() { return this.beginFrame({ transparent: true }); }
 
     // Map a client (event) point into the 1920×1080 internal space. Works
     // through the CSS rotation when portrait — this is the single chokepoint
@@ -317,7 +379,7 @@ export class Renderer {
                     }
                     if (typeof requestAnimationFrame === 'function') this._hintFrameId = requestAnimationFrame(tick);
                 };
-                if (typeof requestAnimationFrame === 'function') this._hintFrameId = requestAnimationFrame(tick);
+                if (this._frameSource !== 'external' && typeof requestAnimationFrame === 'function') this._hintFrameId = requestAnimationFrame(tick);
             } else if (this._hintHideAt > 0
                 && (window.performance?.now?.() ?? Infinity) < this._hintHideAt) {
                 // iOS may emit several visualViewport resizes during the first

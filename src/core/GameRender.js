@@ -93,13 +93,7 @@ export const GameRenderMethods = {
         // simpler to read and avoids drawing entities that haven't been
         // bootstrapped by a real run yet.
         if (this.screen === 'start') {
-            ctx.fillStyle = '#0a0e16';
-            ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
-            this.ui.draw(ctx, buildUIState(this));
-            // The Mines overlay is Game-drawn (not part of the menu renderer),
-            // so it must be painted here — the start screen returns before the
-            // gameplay-tail overlay block below.
-            if (this.minigame.mines) this.minigame.drawMines(ctx);
+            this._drawMenuOverlay(ctx);
             return;
         }
 
@@ -507,12 +501,44 @@ export const GameRenderMethods = {
         // semantics), before the gameplay HUD and modal overlays are painted.
         if (this._pendingCardMint) this._mintPendingCard();
 
+        this._drawCanvasOverlay(ctx, { includeWorld: true, uiScale, highContrast, viewW, viewH });
+    },
+
+    // Retained UI authority for an external world presenter. Clearing this
+    // surface never paints a legacy map, actor, light veil or particle frame.
+    // Menu background/layout/hotspots and the gameplay HUD share the exact
+    // production draw methods below; only world-owned presentation is omitted.
+    renderOverlay() {
+        const r = this.renderer;
+        if (!r.beginOverlayFrame()) return;
+        const ctx = r.ctx;
+        if (this.screen === 'start') {
+            this._drawMenuOverlay(ctx);
+            return;
+        }
+        const highContrast = this.saveSystem?.getSetting?.('highContrast') === true;
+        const uiScale = this.saveSystem?.getSetting?.('uiScale') ?? 100;
+        this._drawCanvasOverlay(ctx, { includeWorld: false, uiScale, highContrast });
+    },
+
+    _drawMenuOverlay(ctx) {
+        ctx.fillStyle = '#0a0e16';
+        ctx.fillRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+        this.ui.draw(ctx, buildUIState(this));
+        // Mines is Game-drawn, not part of MenuRenderer. Keep it above every
+        // menu screen in both complete-Canvas and external-world presentations.
+        if (this.minigame.mines) this.minigame.drawMines(ctx);
+    },
+
+    _drawCanvasOverlay(ctx, { includeWorld, uiScale, highContrast, viewW, viewH }) {
         // EMBERGLASS photo mode: HUD off. Draw the rule-of-thirds grid + the
         // minimal Lens toolbar instead (both excluded from a SNAP via the
         // _suppressToolbar flag). Optionally re-show the gameplay HUD for an
         // annotated shot.
         if (this.photoMode) {
-            this._drawPhotoFilter(ctx);   // grades the world; part of a SNAP
+            // Filters grade the completed legacy world, not a transparent UI
+            // surface. The diagnostic host separately limits photo exports.
+            if (includeWorld) this._drawPhotoFilter(ctx);
             if (this.photoMode.hudShown) {
                 const photoUIState = buildUIState(this);
                 if (this.screen === 'gameplay' && this.vigilTracker
@@ -535,7 +561,7 @@ export const GameRenderMethods = {
 
         // Site interaction copy stays above the darkness veil so RESTORE,
         // READ, OPEN, and KINDLE remain readable in the darkest interiors.
-        if (this.vigilSiteSystem) {
+        if (includeWorld && this.vigilSiteSystem) {
             ctx.save();
             this.camera.apply(ctx);
             this.vigilSiteSystem.drawAbove(ctx, this.camera, viewW, viewH);

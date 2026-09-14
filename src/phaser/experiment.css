@@ -1,21 +1,17 @@
-:root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #100e14; color: #eee2d0; }
-* { box-sizing: border-box; }
-body { margin: 0; padding: 28px 24px; }
-main { max-width: 960px; margin: 0 auto; }
-header { position: relative; padding-bottom: 18px; }
-.eyebrow { margin: 0 0 5px; color: #efba72; letter-spacing: .28em; font-weight: 650; }
-h1 { font-size: clamp(18px, 3.3vw, 28px); margin: 0; letter-spacing: .05em; }
-.badge { display: inline-block; margin: 12px 0 0; padding: 5px 11px; border: 1px solid #826944; border-radius: 4px; color: #f6cf8b; font-size: 12px; letter-spacing: .08em; }
-#experiment-stage { position: relative; width: 100%; height: min(48vh, 540px); background: #150f18; outline: 1px solid #453243; overflow: hidden; }
-#experiment-stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; margin: 0; background: transparent; }
+:root { color-scheme: dark; }
+#stage { background: #150f18; }
+#stage canvas { position: absolute; display: block; flex: none; margin: 0; }
 #phaser-world { z-index: 0; pointer-events: none; }
-#game { z-index: 1; pointer-events: none; }
-.readout { border-bottom: 1px solid #3c303d; padding: 14px 0; }
-h2 { font-size: 14px; margin: 0 0 5px; letter-spacing: .07em; color: #edbb7c; }
-#experiment-detail { margin: 0; color: #c8bfcd; overflow-wrap: anywhere; }
-.scope { color: #afa6b9; font-size: 13px; }
-a { display: inline-flex; align-items: center; gap: 18px; min-height: 44px; padding: 9px 16px; border: 1px solid #b58a55; border-radius: 4px; color: #f6dcac; text-decoration: none; }
-a:hover { background: #392a25; }
-a:focus-visible { outline: 3px solid #f6dcac; outline-offset: 4px; }
+#stage #game { z-index: 1; background: transparent; pointer-events: auto; }
+main[data-native-shell] { position: fixed; z-index: 20; left: max(8px, var(--sai-left)); bottom: max(6px, var(--sai-bottom)); max-width: min(680px, calc(100vw - 16px)); color: #eee2d0; font: 12px/1.4 system-ui, sans-serif; }
+#experiment-info { border: 1px solid #765842; border-radius: 6px; background: rgba(16,14,20,.95); padding: 7px 10px; }
+body[data-screen="gameplay"] main[data-native-shell], body[data-screen="gameOver"] main[data-native-shell] { bottom: auto; top: 40%; max-width: 180px; }
+body[data-screen="gameplay"] main:has(details[open]), body[data-screen="gameOver"] main:has(details[open]) { max-width: min(500px, calc(100vw - 16px)); }
+summary { cursor: pointer; color: #ffd294; font-weight: 650; font-size: 10px; letter-spacing: .04em; }
+.readout { margin-top: 8px; }
+h2 { font-size: 12px; margin: 0 0 4px; color: #edbb7c; }
+#experiment-detail, .scope { margin: 5px 0; color: #c8bfcd; }
+a { display: inline-flex; align-items: center; min-height: 36px; padding: 5px 12px; border: 1px solid #b58a55; border-radius: 4px; color: #f6dcac; text-decoration: none; }
+a:focus-visible, summary:focus-visible { outline: 3px solid #f6dcac; outline-offset: 2px; }
 body[data-failed="true"] h2 { color: #ffc0b5; }
-@media (max-width: 600px) { body { padding: 18px 14px; } }
+@media (max-width: 900px) { main[data-native-shell] { max-width: calc(100vw - 16px); } summary { font-size: 9px; } }
