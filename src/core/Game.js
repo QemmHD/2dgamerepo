@@ -3638,3 +3638,13 @@ Game.prototype.render = function renderWithAccessibleMenuFocus(...args) {
     this._refreshMenuFocusAfterRender();
     return result;
 };
+
+// The external-world host draws the same menus through the overlay-only seam.
+// Reconcile their freshly generated hotspots before the next input there too.
+const renderOverlayWithMenuFocusReconciliation = Game.prototype.renderOverlay;
+Game.prototype.renderOverlay = function renderOverlayWithAccessibleMenuFocus(...args) {
+    if (this._disposed) return;
+    const result = renderOverlayWithMenuFocusReconciliation.apply(this, args);
+    this._refreshMenuFocusAfterRender();
+    return result;
+};

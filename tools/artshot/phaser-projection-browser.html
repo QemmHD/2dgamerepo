@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>EMBERWAKE — projection fixture loading</title>
+  <link rel="stylesheet" href="../../styles.css">
+  <link rel="stylesheet" href="../../src/phaser/experiment.css">
+  <style>#projection-status { position:fixed; z-index:30; left:8px; bottom:8px; margin:0; padding:5px 8px; max-width:calc(100vw - 16px); color:#fff0d4; background:#17111ee8; font:11px/1.4 monospace; } #projection-receipt { display:none; }</style>
+</head>
+<body>
+  <div id="stage"><canvas id="phaser-world" aria-hidden="true"></canvas><canvas id="game" aria-hidden="true"></canvas></div>
+  <div id="rotate-hint" aria-hidden="true"><span>Rotate your phone for landscape play</span></div>
+  <p id="projection-status">PR4 PROJECTION INFRASTRUCTURE — NOT GAMEPLAY ART</p>
+  <pre id="projection-receipt"></pre>
+  <script type="module" src="./phaser-projection-browser.mjs"></script>
+</body>
+</html>

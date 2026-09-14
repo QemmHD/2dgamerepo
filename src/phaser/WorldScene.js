@@ -1,35 +1,52 @@
 import { Scene } from '../vendor/phaser/4.2.1/phaser.esm.min.js';
+import { applyCameraToPhaser } from '../systems/ViewportContract.js';
 
-// Presentation only. Deliberately has no EMBERWAKE Game, input or save reference.
+// Diagnostic presentation only: no Game, input, save or simulation methods.
+// Every point is a detached observation of the existing simulation.
 export class WorldScene extends Scene {
     constructor(onReady) {
         super({ key: 'verification-world' });
         this.onReady = onReady;
-        this.presentationMs = 0;
+        this.presentation = null;
     }
     create() {
         this.cameras.main.setBackgroundColor('#150f18');
-        this.ember = this.add.graphics();
-        this.ember.fillStyle(0x432239, 1).fillCircle(0, 0, 100);
-        this.ember.fillStyle(0x803925, 1).fillCircle(0, 0, 70);
-        this.ember.fillStyle(0xe97735, 1).fillTriangle(-39, 35, 0, -80, 41, 35);
-        this.ember.fillStyle(0xffce79, 1).fillTriangle(-17, 35, 1, -31, 20, 35);
-        this.spark = this.add.circle(0, 0, 6, 0xffdc95);
-        this.layout();
+        this.markers = this.add.graphics();
+        this.drawDiagnostic();
         this.onReady();
-        this.events.once('shutdown', () => { this.onReady = null; });
+        this.events.once('shutdown', () => { this.onReady = null; this.presentation = null; });
     }
-    layout() {
-        const { width, height } = this.scale;
-        const scale = Math.min(width / 960, height / 540);
-        this.ember?.setPosition(width / 2, height / 2).setScale(scale);
-        this.spark?.setScale(scale);
-    }
-    update(_time, delta) {
-        this.presentationMs += Math.min(delta, 100);
-        this.layout();
-        const t = this.presentationMs / 1200;
-        this.spark.setPosition(this.scale.width * .5 + Math.cos(t) * this.scale.width * .19,
-            this.scale.height * .5 + Math.sin(t) * this.scale.height * .21);
+    setPresentation(snapshot) { this.presentation = snapshot; }
+    update() { this.drawDiagnostic(); }
+    drawDiagnostic() {
+        const g = this.markers;
+        if (!g) return;
+        g.clear();
+        const p = this.presentation;
+        if (!p) {
+            const x = this.scale.width / 2, y = this.scale.height / 2;
+            g.fillStyle(0x432239, 1).fillCircle(x, y, 65);
+            g.fillStyle(0xe97735, 1).fillCircle(x, y, 35);
+            g.fillStyle(0xffce79, 1).fillCircle(x, y, 12);
+            return;
+        }
+        applyCameraToPhaser(p.camera, this.cameras.main, p.viewport);
+        const { x, y } = p.camera.center;
+        const reach = 2200 / Math.max(.5, p.camera.zoom);
+        const spacing = 160;
+        g.lineStyle(1, 0x392735, 1);
+        for (let gx = Math.floor((x - reach) / spacing) * spacing; gx <= x + reach; gx += spacing) {
+            g.lineBetween(gx, y - reach, gx, y + reach);
+        }
+        for (let gy = Math.floor((y - reach) / spacing) * spacing; gy <= y + reach; gy += spacing) {
+            g.lineBetween(x - reach, gy, x + reach, gy);
+        }
+        g.lineStyle(3, 0x91624e, 1).lineBetween(-50, 0, 50, 0).lineBetween(0, -50, 0, 50);
+        g.lineStyle(2, 0x8d829e, 1).strokeCircle(x, y, 52);
+        g.fillStyle(0xe97735, 1).fillCircle(p.player.x, p.player.y, 28);
+        g.fillStyle(0xffce79, 1).fillCircle(p.player.x, p.player.y, 10);
+        for (const e of p.enemies) g.fillStyle(e.boss ? 0xe891ee : 0xec6674, 1).fillCircle(e.x, e.y, e.boss ? 32 : 12);
+        g.fillStyle(0x8eebe7, 1);
+        for (const e of p.projectiles) g.fillCircle(e.x, e.y, 7);
     }
 }

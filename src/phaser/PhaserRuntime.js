@@ -1,34 +1,10 @@
 import Phaser from '../vendor/phaser/4.2.1/phaser.esm.min.js';
 import { WorldScene } from './WorldScene.js';
-import { Game } from '../core/Game.js';
 import { GameLoop } from '../core/GameLoop.js';
-import { Input } from '../core/Input.js';
-import { KeyboardInput } from '../core/KeyboardInput.js';
-import { TouchJoystick } from '../core/TouchJoystick.js';
-import { TouchButtons } from '../core/TouchButtons.js';
 import { Renderer } from '../systems/Renderer.js';
-import { SaveSystem } from '../systems/SaveSystem.js';
-import { AudioSystem } from '../systems/AudioSystem.js';
+import { snapshotCamera } from '../systems/ViewportContract.js';
 
 let activeGameCount = 0;
-
-// Only a bounded verification-stage resize. PR4 owns rotation, DPR, safe areas,
-// cover/contain, camera projection and the actual retained Canvas UI bridge.
-class ExperimentRenderer extends Renderer {
-    resize() {
-        if (this._disposed) return;
-        const bounds = this.canvas.parentElement.getBoundingClientRect();
-        this.cssWidth = Math.max(1, bounds.width);
-        this.cssHeight = Math.max(1, bounds.height);
-        this.dpr = 1;
-        this.scale = this.cssWidth / this.internalWidth;
-        this.canvas.width = Math.round(this.cssWidth);
-        this.canvas.height = Math.round(this.cssHeight);
-        this.canvas.style.width = '100%';
-        this.canvas.style.height = '100%';
-        this.onStageResize?.(this.canvas.width, this.canvas.height);
-    }
-}
 
 function bounds(canvas) {
     const { x, y, width, height } = canvas.getBoundingClientRect();
@@ -53,11 +29,11 @@ function pixelProof(gl) {
     return { width, height, nonBlack, nonTransparent, distinctColors: colors.size,
         emberPixels, backgroundPixels,
         passed: area > 0 && nonBlack > area * .9 && nonTransparent > area * .95
-            && emberPixels > area * .003 && backgroundPixels > area * .5 && colors.size >= 5 };
+            && emberPixels > 0 && backgroundPixels > area * .5 && colors.size >= 5 };
 }
 
 export class PhaserRuntime {
-    constructor({ stage, state, memory, publish, onFailure }) {
+    constructor({ stage, state, memory, publish, onFailure, beforeSimulation, prepareAssets, prepareInput, onSimulation }) {
         this.stage = stage;
         this.state = state;
         this.memory = memory;
@@ -70,6 +46,14 @@ export class PhaserRuntime {
         this.countedGame = false;
         this.probing = false;
         this.visibilityProperties = [];
+        // Internal dependency seams used by the dedicated tools fixture, never
+        // exposed by the public entry or selected by a production query string.
+        this.beforeSimulation = beforeSimulation;
+        this.prepareAssets = prepareAssets;
+        this.prepareInput = prepareInput;
+        this.onSimulation = onSimulation;
+        this.presentationEnabled = true;
+        this.frame = null;
     }
     own(resource) { this.resources.push(resource); return resource; }
     listen(target, type, callback) {
@@ -81,12 +65,6 @@ export class PhaserRuntime {
         const s = this.state;
         s.phaserVersion = Phaser.VERSION;
         if (Phaser.VERSION !== s.expectedPinnedVersion) throw new Error('pinned-version-mismatch');
-        try {
-            this.save = this.own(new SaveSystem({ storage: this.memory, participation: 'isolated' }));
-            if (!this.save.available) throw new Error('memory-storage-unavailable');
-            s.boot.isolatedSave = !this.save._saveParticipationRequired;
-        } catch (error) { error.experimentClassification = 'isolated-save'; throw error; }
-        this.audio = this.own(new AudioSystem({ contextFactory: null }));
         this.worldCanvas = document.createElement('canvas');
         this.worldCanvas.id = 'phaser-world';
         this.worldCanvas.setAttribute('aria-hidden', 'true');
@@ -97,38 +75,11 @@ export class PhaserRuntime {
         // The first context acquisition decides alpha; Renderer must reuse this
         // actual transparent 2D context, not its normal opaque production one.
         if (!this.overlay.getContext('2d', { alpha: true })) throw new Error('canvas-overlay-unavailable');
-        this.renderer = this.own(new ExperimentRenderer(this.overlay));
-        this.keyboard = this.own(new KeyboardInput());
-        this.touch = this.own(new TouchJoystick(this.renderer));
-        this.buttons = this.own(new TouchButtons(this.renderer));
-        this.input = this.own(new Input({ keyboard: this.keyboard, touch: this.touch, buttons: this.buttons }));
-        this.loop = this.own(new GameLoop({ update: () => { throw new Error('PR3 clock disconnected'); }, render: () => {} }));
-        try {
-            this.game = this.own(new Game({ renderer: this.renderer, input: this.input, loop: this.loop,
-                services: { saveSystem: this.save, audio: this.audio } }));
-        } catch (error) { await error.cleanup; throw error; }
-        activeGameCount++;
-        this.countedGame = true;
-        s.boot.gameConstructed = true;
-        // No gameplay feedback is active in this dormant shell. Avoid even a
-        // native vibration-cancel on teardown of an untouched experiment frame.
-        this.game.haptics.navigator = null;
-        this.game.haptics.setStrength('off');
-        s.boot.hapticsMode = 'disabled-experimental';
-        // Tripwires, not a scheduler. Even an accidental future connection fails
-        // visibly instead of advancing rules before the separately gated PR4.
-        this.game.update = () => { s.simulation.updateCalls++; throw new Error('PR3 simulation is not connected'); };
-        this.game.render = () => { s.simulation.renderCalls++; throw new Error('PR3 Canvas gameplay rendering is not connected'); };
-        // The empty overlay is not a playable application. Native shell controls
-        // own focus until an actual UI bridge exists; do not announce fake HUD.
-        this.overlay.removeAttribute('role');
-        this.overlay.removeAttribute('aria-describedby');
-        this.overlay.removeAttribute('aria-label');
-        this.overlay.setAttribute('aria-hidden', 'true');
-        this.overlay.tabIndex = -1;
+        this.renderer = this.own(new Renderer(this.overlay, { alpha: true, frameSource: 'external' }));
         this.listen(this.worldCanvas, 'webglcontextlost', event => {
             event.preventDefault();
             s.errors.contextLossCount++;
+            this.loop?.stop();
             this.phaser?.loop.stop();
             this.onFailure('webgl-context-lost', !this.probing);
         });
@@ -165,6 +116,7 @@ export class PhaserRuntime {
                     // must not skip a later READY listener and deadlock cleanup.
                     engine.events.once(Phaser.Core.Events.SYSTEM_READY, () => this.resolveEngineReady());
                     this.captureVisibilityLifetime(engine);
+                    engine.events.on(Phaser.Core.Events.PRE_STEP, timestamp => this.beforeFrame(timestamp));
                     engine.events.on(Phaser.Core.Events.POST_RENDER, () => this.afterFrame(started));
                 } },
             });
@@ -174,17 +126,106 @@ export class PhaserRuntime {
             clearTimeout(this.bootTimeout);
             this.rejectBoot(error);
         }
-        this.renderer.onStageResize = (width, height) => {
-            if (this.disposed || !this.phaser?.isBooted) return;
-            this.phaser.scale.resize(width, height);
-            this.worldCanvas.style.width = '100%';
-            this.worldCanvas.style.height = '100%';
-            this.captureNext = true;
-        };
         await booted;
+        if (this.disposed) return this.publish();
+        this.unsubscribeViewport = this.renderer.subscribeViewport(viewport => this.mirrorViewport(viewport));
+        this.mirrorViewport(this.renderer.getViewportSnapshot());
+        this.connectionTask = this.connectSimulation();
+        await this.connectionTask;
         s.measurements.bootMs = performance.now() - started;
         this.snapshot();
         return this.publish();
+    }
+    mirrorViewport(viewport) {
+        if (this.disposed) return;
+        this.viewport = viewport;
+        this.phaser.scale.resize(viewport.backingWidth, viewport.backingHeight);
+        this.worldCanvas.style.width = `${viewport.cssWidth}px`;
+        this.worldCanvas.style.height = `${viewport.cssHeight}px`;
+        this.captureNext = true;
+    }
+    async connectSimulation() {
+        await this.beforeSimulation?.(this);
+        const [{ Game }, { Input }, { KeyboardInput }, { TouchJoystick }, { TouchButtons },
+            { SaveSystem }, { AudioSystem }] = await Promise.all([
+            import('../core/Game.js'), import('../core/Input.js'), import('../core/KeyboardInput.js'),
+            import('../core/TouchJoystick.js'), import('../core/TouchButtons.js'),
+            import('../systems/SaveSystem.js'), import('../systems/AudioSystem.js'),
+        ]);
+        // Original PR1 loader order is also suitable for the retained menus.
+        if (this.prepareAssets) await this.prepareAssets();
+        else for (const [module, loader] of [
+            ['LpcSprites', 'loadLpcSprites'], ['WorldTextures', 'loadWorldTextures'],
+            ['CustomIcons', 'loadIconGlyphs'], ['MonsterSprites', 'loadMonsterSprites'],
+            ['EnemySprites', 'loadEnemyAiSprites'], ['HeroAiSprites', 'loadHeroAiSprites'],
+            ['ObstacleSprites', 'loadObstacleSprites'], ['DecorSprites', 'loadDecorSprites'],
+            ['RenderedWeaponProps', 'loadRenderedProps'],
+        ]) await (await import(`../assets/${module}.js`))[loader]();
+        if (this.disposed) return;
+        this.keyboard = this.own(new KeyboardInput());
+        this.touch = this.own(new TouchJoystick(this.renderer));
+        this.buttons = this.own(new TouchButtons(this.renderer));
+        this.input = this.own(new Input({ keyboard: this.keyboard, touch: this.touch, buttons: this.buttons }));
+        this.prepareInput?.(this);
+        try {
+            this.save = this.own(new SaveSystem({ storage: this.memory, participation: 'isolated' }));
+            if (!this.save.available) throw new Error('memory-storage-unavailable');
+            this.state.boot.isolatedSave = !this.save._saveParticipationRequired;
+        } catch (error) { error.experimentClassification = 'isolated-save'; throw error; }
+        this.audio = this.own(new AudioSystem({ contextFactory: null }));
+        this.loop = this.own(new GameLoop({ update: dt => {
+            this.state.simulation.updateCalls++;
+            this.game.update(dt);
+        }, render: () => {
+            if (!this.presentationEnabled || this.disposed) return;
+            this.state.simulation.renderCalls++;
+            this.game.renderOverlay();
+        } }));
+        try {
+            this.game = this.own(new Game({ renderer: this.renderer, input: this.input, loop: this.loop,
+                services: { saveSystem: this.save, audio: this.audio } }));
+        } catch (error) { await error.cleanup; throw error; }
+        activeGameCount++;
+        this.countedGame = true;
+        this.state.boot.gameConstructed = true;
+        this.game.haptics.navigator = null;
+        this.game.haptics.setStrength('off');
+        this.state.boot.hapticsMode = 'disabled-experimental';
+        this.game.render = this.game.renderOverlay.bind(this.game);
+        this.game._snapPhoto = () => {
+            this.game.shareToast = { text: 'Diagnostic photo export is not available yet', timer: 4 };
+        };
+        this.loop.profiler = this.game.profiler;
+        this.loop.startExternal(performance.now());
+        this.state.boot.simulationConnected = true;
+        await this.onSimulation?.(this);
+        if (this.presentationEnabled && !this.disposed) this.game.renderOverlay();
+    }
+    beforeFrame(timestamp) {
+        if (this.disposed) return;
+        this.renderer.processPresentationFrame(timestamp);
+        if (!this.game || !this.loop?.running) return;
+        // PRE_STEP timestamp is the pinned TimeStep's raw monotonic input;
+        // its smoothed delta and Scene.update delta are deliberately unused.
+        this.frame = this.loop.processFrame(timestamp);
+        this.state.simulation.maxFrameSteps = Math.max(this.state.simulation.maxFrameSteps || 0, this.frame?.steps || 0);
+        this.scene.setPresentation({ viewport: this.viewport,
+            camera: snapshotCamera(this.game.camera),
+            player: { x: this.game.player.x, y: this.game.player.y },
+            enemies: this.game.enemies.filter(e => e.active).map(e => ({ x: e.x, y: e.y, boss: !!e.boss })),
+            projectiles: this.game.projectiles.filter(e => e.active).map(e => ({ x: e.x, y: e.y })),
+        });
+    }
+    releaseInput() {
+        if (this.disposed) return;
+        this.keyboard?.keys.clear();
+        this.touch?.reset();
+        this.buttons?.reset();
+        if (this.game) this.game._dragPhotoPrev = null;
+        // A native experiment control is a separate focus scope. Use the
+        // existing pause action so a held Kindle is refunded, not accidentally
+        // released as an attack while the user inspects the shell/link.
+        if (this.game?.screen === 'gameplay' && !this.game.paused) this.game.togglePause();
     }
     captureVisibilityLifetime(engine) {
         // Tagged 4.2.1 VisibilityHandler installs an anonymous document listener
@@ -212,6 +253,8 @@ export class PhaserRuntime {
     }
     afterFrame(started) {
         if (this.disposed || !this.state.boot.sceneReady) return;
+        if (this.game) document.body.dataset.screen = this.game.screen;
+        if (this.frame) { this.loop.renderFrame(this.frame); this.frame = null; }
         const s = this.state;
         if (!s.boot.frameRendered || this.captureNext) {
             this.captureNext = false;
@@ -253,6 +296,15 @@ export class PhaserRuntime {
         s.simulation.time = this.game?.time ?? 0;
         s.simulation.screen = this.game?.screen ?? null;
         s.simulation.loopRunning = this.loop?.running ?? false;
+        s.simulation.legacyRAFActive = this.loop?._frameId != null;
+        s.simulation.scheduler = this.loop?.scheduler ?? null;
+        s.simulation.accumulator = this.loop?.accumulator ?? 0;
+        s.simulation.player = this.game?.player ? { x: this.game.player.x, y: this.game.player.y, hp: this.game.player.hp } : null;
+        s.simulation.enemyCount = this.game?.enemies?.filter(e => e.active).length ?? 0;
+        s.simulation.projectileCount = this.game?.projectiles?.filter(e => e.active).length ?? 0;
+        s.simulation.paused = !!this.game?.paused;
+        s.simulation.menuTab = this.game?.menuTab ?? null;
+        s.viewport = this.renderer?.getViewportSnapshot() ?? null;
         s.boot.physicsEnabled = Boolean(engine?.config?.defaultPhysicsSystem);
         s.boot.audioMode = !this.audio?.ctx && engine?.config?.audio?.noAudio ? 'silent-no-context' : 'unverified';
         const shellListeners = this.resources.reduce((n, item) => n + (item._listeners?.length ?? 0), 0)
@@ -322,7 +374,12 @@ export class PhaserRuntime {
         this.rejectBoot?.(new Error('experiment-disposed'));
         this.disposeTask = (async () => {
             const failures = [];
-            this.renderer && (this.renderer.onStageResize = null);
+            this.loop?.stop();
+            this.unsubscribeViewport?.();
+            // Join asset/module preparation before removing owners or letting
+            // the public entry restore its host-storage guards. connect checks
+            // disposed before constructing any late Game/input/save resources.
+            try { await this.connectionTask; } catch { /* boot owns classification */ }
             try {
                 if (this.phaser) {
                     // Default texture images finish asynchronously. Destruction

@@ -15,6 +15,7 @@ export class GameLoop {
         this.accumulator = 0;
         this.last = 0;
         this.running = false;
+        this.scheduler = null;
         this.fps = 0;
         this._fpsAccum = 0;
         this._fpsFrames = 0;
@@ -27,7 +28,7 @@ export class GameLoop {
 
         this._tick = this._tick.bind(this);
         this._onVisibility = () => {
-            if (!this._disposed && !this._document.hidden) this._resetClock();
+            if (!this._disposed && !this._document.hidden) this.resetClock();
         };
         try {
             this._document.addEventListener('visibilitychange', this._onVisibility);
@@ -38,12 +39,23 @@ export class GameLoop {
     start() {
         if (this._disposed || this.running) return;
         this.running = true;
-        this._resetClock();
+        this.scheduler = 'raf';
+        this.resetClock();
         this._frameId = requestAnimationFrame(this._tick);
+    }
+
+    // External hosts own presentation cadence, never a second accumulator or
+    // RAF chain. Timestamps use the same monotonic domain as performance.now().
+    startExternal(now = performance.now()) {
+        if (this._disposed || this.running) return;
+        this.running = true;
+        this.scheduler = 'external';
+        this.resetClock(now);
     }
 
     stop() {
         this.running = false;
+        this.scheduler = null;
         if (this._frameId !== null) this._cancelFrame?.(this._frameId);
         this._frameId = null;
     }
@@ -61,48 +73,63 @@ export class GameLoop {
         this.render = null;
     }
 
-    _resetClock() {
-        this.last = performance.now();
+    resetClock(now = performance.now()) {
+        if (this._disposed) return;
+        this.last = now;
         this.accumulator = 0;
     }
 
+    // Shared simulation/frame-accounting policy. Preserve the exact arithmetic:
+    // no delta smoothing, lower clamp, epsilon, or discarded remainder here.
+    processFrame(now) {
+        if (this._disposed || !this.running) return null;
+        let frameDt = (now - this.last) / 1000;
+        this.last = now;
+        if (frameDt > this.maxFrameDt) frameDt = this.maxFrameDt;
+
+        this._fpsAccum += frameDt;
+        this._fpsFrames += 1;
+        if (this._fpsAccum >= 0.5) {
+            this.fps = this._fpsFrames / this._fpsAccum;
+            this._fpsAccum = 0;
+            this._fpsFrames = 0;
+        }
+
+        const prof = this.profiler;
+        this.accumulator += frameDt;
+        let steps = 0;
+        while (this.running && this.accumulator >= this.fixedDt && steps < 8) {
+            if (prof) prof.begin('update');
+            this.update(this.fixedDt);
+            if (prof) prof.end('update');
+            this.accumulator -= this.fixedDt;
+            steps += 1;
+        }
+
+        if (!this.running) return null;
+        // Private host token, not a serializable receipt: retaining the profiler
+        // preserves the original per-frame snapshot across update and render.
+        return { steps, alpha: this.accumulator / this.fixedDt, profiler: prof };
+    }
+
+    renderFrame(frame) {
+        if (this._disposed || !this.running || !frame) return;
+        const prof = frame.profiler;
+        if (prof) prof.begin('render');
+        this.render(frame.alpha);
+        if (prof) prof.end('render');
+        if (prof) prof.frame();
+    }
+
     _tick(now) {
-        if (this._disposed || !this.running) return;
+        if (this._disposed || !this.running || this.scheduler !== 'raf') return;
         this._frameId = null;
         try {
-            let frameDt = (now - this.last) / 1000;
-            this.last = now;
-            if (frameDt > this.maxFrameDt) frameDt = this.maxFrameDt;
-
-            this._fpsAccum += frameDt;
-            this._fpsFrames += 1;
-            if (this._fpsAccum >= 0.5) {
-                this.fps = this._fpsFrames / this._fpsAccum;
-                this._fpsAccum = 0;
-                this._fpsFrames = 0;
-            }
-
-            const prof = this.profiler;
-            this.accumulator += frameDt;
-            let steps = 0;
-            while (this.running && this.accumulator >= this.fixedDt && steps < 8) {
-                if (prof) prof.begin('update');
-                this.update(this.fixedDt);
-                if (prof) prof.end('update');
-                this.accumulator -= this.fixedDt;
-                steps += 1;
-            }
-
-            if (!this.running) return;
-            const alpha = this.accumulator / this.fixedDt;
-            if (prof) prof.begin('render');
-            this.render(alpha);
-            if (prof) prof.end('render');
-            if (prof) prof.frame();
+            this.renderFrame(this.processFrame(now));
         } catch (err) {
             console.error('[GameLoop] frame error:', err);
         } finally {
-            if (this.running && this._frameId === null) this._frameId = requestAnimationFrame(this._tick);
+            if (this.running && this.scheduler === 'raf' && this._frameId === null) this._frameId = requestAnimationFrame(this._tick);
         }
     }
 }
